@@ -865,6 +865,26 @@ export default function VideoDetail({ id }: { id: string }) {
         )}
       </div>
 
+      {/* Video player */}
+      {isDone && project.videoUrl && !fileMissing && (
+        <div style={{ marginBottom: 24 }}>
+          <video
+            key={project.videoUrl}
+            controls
+            playsInline
+            style={{
+              width: '100%',
+              maxHeight: 540,
+              borderRadius: 'var(--radius)',
+              background: '#000',
+              display: 'block',
+            }}
+          >
+            <source src={project.videoUrl} type="video/mp4" />
+          </video>
+        </div>
+      )}
+
       {/* Download button */}
       {isDone && project.videoUrl && (
         <div style={{ background: fileMissing ? 'rgba(127,29,29,0.2)' : 'var(--bg-card)', border: `1px solid ${fileMissing ? '#7f1d1d' : '#1a3a1a'}`, borderRadius: 'var(--radius)', padding: 20, marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>

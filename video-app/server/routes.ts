@@ -785,7 +785,7 @@ async function generateScriptAudio(projectId: string, script: Script, language: 
 }
 
 // ── Background stock precheck — runs after script_ready, checks Pexels for ALL scenes ──
-// Found → auto-sets videoSource='stock'; not found → keeps videoSource='ai'
+// Video found → videoSource='stock'; Photo found → videoSource='stock-animated'; Nothing → videoSource='ai'
 async function runStockPrecheck(projectId: string, script: Script, format: VideoFormat, clipDuration?: number) {
   const clipsDir = path.join(DATA_PATHS.imagesDir(projectId), 'clips');
   await fs.mkdir(clipsDir, { recursive: true });
@@ -840,7 +840,7 @@ async function runStockPrecheck(projectId: string, script: Script, format: Video
   const updatedScenes = fresh.script.scenes.map((s, i) => {
     const r = results.find((x) => x.i === i);
     if (!r) return s;
-    const videoSource = r.available ? 'stock' : 'ai';
+    const videoSource = r.available ? 'stock' : r.photoAvailable ? 'stock-animated' : 'ai';
     return {
       ...s,
       stockAvailable: r.available,

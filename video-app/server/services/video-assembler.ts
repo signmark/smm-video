@@ -730,6 +730,7 @@ export async function mixBackgroundMusic(params: {
   try {
     await execFileAsync(FFMPEG_BIN, [
       '-y',
+      '-loglevel', 'error',
       '-i', videoPath,
       '-i', musicPath,
       '-filter_complex',
@@ -739,7 +740,7 @@ export async function mixBackgroundMusic(params: {
       '-c:v', 'copy',
       '-c:a', 'aac', '-b:a', '128k',
       tmpOut,
-    ]);
+    ], { timeout: 180_000, maxBuffer: 50 * 1024 * 1024 });
     await fs.rename(tmpOut, videoPath);
     console.log(`[music] Mixed into video (music volume=${musicVolume})`);
   } catch (err: any) {

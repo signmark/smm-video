@@ -212,7 +212,7 @@ services:
     image: nginx:alpine
     restart: always
     volumes:
-      - ./smm/smmniap_static:/usr/share/nginx/html:ro
+      - ./smmniap_static:/usr/share/nginx/html:ro
     labels:
       - traefik.enable=true
       - traefik.http.routers.smmniap.rule=Host(`omemo.tech`)

@@ -34,7 +34,7 @@ import { assembleVideo, assembleFromClips, extractLastFrame, burnSubtitles, subt
 import { generateBackgroundMusic, buildMusicPrompt } from './services/music-generator.js';
 
 import { animateFrame, animateText, isT2VModel } from './services/fal-animator.js';
-import { searchAndDownloadStockClip } from './services/stock-video.js';
+import { searchAndDownloadStockClip, searchAndDownloadStockPhoto } from './services/stock-video.js';
 import { ensureKeysLoaded } from './load-keys.js';
 
 const VALID_SUBTITLE_STYLES: SubtitleStyle[] = ['none', 'plain', 'fade', 'karaoke', 'tiktok', 'word-by-word', 'cinematic', 'cinematic-full', 'bar'];
@@ -793,16 +793,22 @@ async function runStockPrecheck(projectId: string, script: Script, format: Video
   console.log(`[stock-precheck] Checking all ${script.scenes.length} scene(s) for project ${projectId}`);
 
   // Run all checks in parallel, collect results
-  const results: { i: number; available: boolean }[] = await Promise.all(
+  // For each scene: try stock video → try stock photo → fallback to AI generation
+  const results: { i: number; available: boolean; photoAvailable: boolean }[] = await Promise.all(
     script.scenes.map(async (s, i) => {
       const query = s.stockQuery || s.imagePrompt || s.text;
       const clipPath = path.join(clipsDir, `clip_${i}.mp4`);
+      const variantsDir = path.join(DATA_PATHS.imagesDir(projectId), 'variants');
+      const photoPath = path.join(variantsDir, `scene_${i}_v0.jpg`);
+
+      // If video clip already cached, reuse it
       try {
-        // If clip already downloaded (e.g. manually tagged stock + cached), reuse it
         await fs.access(clipPath);
-        console.log(`[stock-precheck] Scene ${i + 1}: ✓ already cached`);
-        return { i, available: true };
+        console.log(`[stock-precheck] Scene ${i + 1}: ✓ video already cached`);
+        return { i, available: true, photoAvailable: false };
       } catch {}
+
+      // Try stock video
       try {
         await searchAndDownloadStockClip({
           query,
@@ -810,36 +816,51 @@ async function runStockPrecheck(projectId: string, script: Script, format: Video
           durationSeconds: clipDuration ?? s.duration,
           format,
         });
-        console.log(`[stock-precheck] Scene ${i + 1}: ✓ found "${query.slice(0, 50)}"`);
-        return { i, available: true };
-      } catch (err: any) {
-        console.log(`[stock-precheck] Scene ${i + 1}: ✗ not found`);
-        return { i, available: false };
-      }
+        console.log(`[stock-precheck] Scene ${i + 1}: ✓ video found "${query.slice(0, 50)}"`);
+        return { i, available: true, photoAvailable: false };
+      } catch {}
+
+      // No video found — try stock photo (will be used as I2V source, variant 0)
+      try {
+        await fs.mkdir(variantsDir, { recursive: true });
+        await searchAndDownloadStockPhoto({ query, outputPath: photoPath, format });
+        console.log(`[stock-precheck] Scene ${i + 1}: 📷 photo found "${query.slice(0, 50)}"`);
+        return { i, available: false, photoAvailable: true };
+      } catch {}
+
+      console.log(`[stock-precheck] Scene ${i + 1}: ✗ no stock found → AI generation`);
+      return { i, available: false, photoAvailable: false };
     })
   );
 
-  // Single DB update: set stockAvailable + auto-switch videoSource based on result
+  // Single DB update: set stockAvailable + stockPhotoAvailable + auto-switch videoSource
   const fresh = await getProject(projectId);
   if (!fresh?.script) return;
 
   const updatedScenes = fresh.script.scenes.map((s, i) => {
     const r = results.find((x) => x.i === i);
     if (!r) return s;
-    // Auto-switch: found → stock, not found → ai
     const videoSource = r.available ? 'stock' : 'ai';
-    return { ...s, stockAvailable: r.available, videoSource };
+    return {
+      ...s,
+      stockAvailable: r.available,
+      videoSource,
+      stockPhotoAvailable: r.photoAvailable,
+      // Pre-select variant 0 if a stock photo was found (so I2V has a ready image)
+      selectedVariant: (!r.available && r.photoAvailable) ? 0 : s.selectedVariant,
+    };
   });
 
   await updateProject(projectId, {
     script: { ...fresh.script, scenes: updatedScenes, stockPrechecked: true },
   });
 
-  const found = results.filter((r) => r.available).length;
-  console.log(`[stock-precheck] Done for ${projectId}: ${found}/${script.scenes.length} scenes → stock, rest → ai`);
+  const foundVideo = results.filter((r) => r.available).length;
+  const foundPhoto = results.filter((r) => !r.available && r.photoAvailable).length;
+  console.log(`[stock-precheck] Done for ${projectId}: ${foundVideo} video, ${foundPhoto} photo, ${script.scenes.length - foundVideo - foundPhoto} AI`);
 
-  // Auto-generate 3 image variants for every scene that didn't get a stock clip
-  const aiScenes = results.filter((r) => !r.available);
+  // Auto-generate 3 image variants only for scenes with no stock at all
+  const aiScenes = results.filter((r) => !r.available && !r.photoAvailable);
   if (aiScenes.length > 0) {
     const freshProject = await getProject(projectId);
     if (freshProject?.script) {

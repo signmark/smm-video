@@ -289,6 +289,10 @@ interface Scene {
   t2vPrompt?: string;
   duration: number;
   selectedVariant?: number;
+  videoSource?: 'ai' | 'stock';
+  stockAvailable?: boolean;
+  stockPhotoAvailable?: boolean;
+  stockQuery?: string;
 }
 
 interface VideoProject {
@@ -341,12 +345,14 @@ function SceneImageVariants({
   sceneId,
   selectedVariant,
   onSelect,
+  stockPhotoAvailable,
 }: {
   projectId: string;
   sceneIndex: number;
   sceneId: string;
   selectedVariant?: number;
   onSelect: (variant: number) => void;
+  stockPhotoAvailable?: boolean;
 }) {
   const [loading, setLoading] = useState(false);
   const [regenerating, setRegenerating] = useState(false);
@@ -465,6 +471,9 @@ function SceneImageVariants({
                   />
                   {isSelected && (
                     <div style={{ position: 'absolute', top: 4, right: 4, background: '#7c3aed', borderRadius: '50%', width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: 'white', fontWeight: 700 }}>✓</div>
+                  )}
+                  {v === 0 && stockPhotoAvailable && (
+                    <div style={{ position: 'absolute', top: 4, left: 4, background: '#0ea5e9', borderRadius: 3, fontSize: 9, color: 'white', padding: '1px 5px', fontWeight: 700 }}>📷</div>
                   )}
                   <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.5)', fontSize: 10, color: 'white', textAlign: 'center', padding: '2px 0' }}>{v + 1}</div>
                 </div>
@@ -1012,52 +1021,58 @@ export default function VideoDetail({ id }: { id: string }) {
                         {scene.narration}
                       </div>
                     )}
-                    {/* ── Detailed prompt block ── */}
+                    {/* ── Prompt inline (truncated, expandable) ── */}
                     {(() => {
                       const isT2VScene = project.animationModel === 'chain' ? i === 0 : !!scene.t2vPrompt;
                       const promptField: 't2vPrompt' | 'imagePrompt' = isT2VScene ? 't2vPrompt' : 'imagePrompt';
                       const promptValue = isT2VScene ? (scene.t2vPrompt || '') : (scene.imagePrompt || '');
                       const isExpanded = expandedPrompts.has(scene.id);
                       const isEditingThisPrompt = editingPrompt === scene.id;
+                      const TRUNC = 110;
+                      const needsTrunc = promptValue.length > TRUNC;
                       return (
                         <>
-                          <div style={{ marginTop: 10 }}>
-                            <button
-                              onClick={() => togglePrompt(scene.id)}
-                              style={{ background: 'none', border: 'none', padding: 0, color: '#a78bfa', fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
-                            >
-                              {isExpanded ? '▾' : '▸'} {isT2VScene ? 'T2V промпт' : 'Image промпт'}
-                              {!promptValue && <span style={{ color: '#ef4444', marginLeft: 4 }}>пусто</span>}
-                            </button>
-                            {isExpanded && (
-                              <div style={{ marginTop: 6 }}>
-                                {isEditingThisPrompt ? (
-                                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                                    <textarea
-                                      value={editPromptText}
-                                      onChange={(e) => setEditPromptText(e.target.value)}
-                                      autoFocus
-                                      rows={5}
-                                      style={{ width: '100%', background: 'var(--bg-card2)', border: '1.5px solid #7c3aed', borderRadius: 'var(--radius-sm)', color: 'var(--text)', padding: '8px 10px', fontSize: 12, lineHeight: 1.6, outline: 'none', resize: 'vertical', boxSizing: 'border-box' }}
-                                    />
-                                    <div style={{ display: 'flex', gap: 6 }}>
-                                      <button onClick={() => handleSavePrompt(scene.id, promptField)} style={{ padding: '5px 14px', border: 'none', borderRadius: 'var(--radius-sm)', background: '#7c3aed', color: 'white', fontSize: 12, cursor: 'pointer' }}>✓ Сохранить</button>
-                                      <button onClick={() => setEditingPrompt(null)} style={{ padding: '5px 10px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', background: 'transparent', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer' }}>✕</button>
-                                    </div>
-                                  </div>
+                          <div style={{ marginTop: 8 }}>
+                            {isEditingThisPrompt ? (
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                <textarea
+                                  value={editPromptText}
+                                  onChange={(e) => setEditPromptText(e.target.value)}
+                                  autoFocus
+                                  rows={5}
+                                  style={{ width: '100%', background: 'var(--bg-card2)', border: '1.5px solid #7c3aed', borderRadius: 'var(--radius-sm)', color: 'var(--text)', padding: '8px 10px', fontSize: 12, lineHeight: 1.6, outline: 'none', resize: 'vertical', boxSizing: 'border-box' }}
+                                />
+                                <div style={{ display: 'flex', gap: 6 }}>
+                                  <button onClick={() => handleSavePrompt(scene.id, promptField)} style={{ padding: '5px 14px', border: 'none', borderRadius: 'var(--radius-sm)', background: '#7c3aed', color: 'white', fontSize: 12, cursor: 'pointer' }}>✓ Сохранить</button>
+                                  <button onClick={() => setEditingPrompt(null)} style={{ padding: '5px 10px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', background: 'transparent', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer' }}>✕</button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6, wordBreak: 'break-word' }}>
+                                <span style={{ color: isT2VScene ? '#86efac' : '#93c5fd', fontWeight: 600, marginRight: 4 }}>
+                                  {isT2VScene ? 'T2V:' : 'Промпт:'}
+                                </span>
+                                {promptValue ? (
+                                  <>
+                                    {(isExpanded || !needsTrunc) ? promptValue : promptValue.slice(0, TRUNC)}
+                                    {needsTrunc && !isExpanded && (
+                                      <button onClick={() => togglePrompt(scene.id)} style={{ background: 'none', border: 'none', color: '#a78bfa', fontSize: 11, cursor: 'pointer', padding: '0 3px' }}>
+                                        ...ещё
+                                      </button>
+                                    )}
+                                    {needsTrunc && isExpanded && (
+                                      <button onClick={() => togglePrompt(scene.id)} style={{ background: 'none', border: 'none', color: '#a78bfa', fontSize: 11, cursor: 'pointer', padding: '0 3px' }}>
+                                        {' '}скрыть
+                                      </button>
+                                    )}
+                                  </>
                                 ) : (
-                                  <div style={{ position: 'relative' }}>
-                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6, background: 'rgba(124,58,237,0.07)', border: '1px solid rgba(124,58,237,0.2)', borderRadius: 'var(--radius-sm)', padding: '8px 10px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                                      {promptValue || <span style={{ color: '#6b7280', fontStyle: 'italic' }}>Промпт не задан</span>}
-                                    </div>
-                                    <button
-                                      onClick={() => { setEditingPrompt(scene.id); setEditPromptText(promptValue); }}
-                                      style={{ position: 'absolute', top: 6, right: 6, padding: '2px 7px', border: '1px solid rgba(124,58,237,0.3)', borderRadius: 4, background: 'rgba(124,58,237,0.15)', color: '#c4b5fd', fontSize: 10, cursor: 'pointer' }}
-                                    >
-                                      ✏️ Изменить
-                                    </button>
-                                  </div>
+                                  <span style={{ color: '#6b7280', fontStyle: 'italic' }}>пусто</span>
                                 )}
+                                <button
+                                  onClick={() => { setEditingPrompt(scene.id); setEditPromptText(promptValue); }}
+                                  style={{ marginLeft: 5, padding: '1px 6px', border: '1px solid rgba(124,58,237,0.3)', borderRadius: 3, background: 'rgba(124,58,237,0.1)', color: '#c4b5fd', fontSize: 10, cursor: 'pointer' }}
+                                >✏️</button>
                               </div>
                             )}
                           </div>
@@ -1069,6 +1084,7 @@ export default function VideoDetail({ id }: { id: string }) {
                               sceneId={scene.id}
                               selectedVariant={scene.selectedVariant}
                               onSelect={(v) => handleSelectVariant(scene.id, v)}
+                              stockPhotoAvailable={scene.stockPhotoAvailable}
                             />
                           )}
                         </>
@@ -1107,8 +1123,19 @@ export default function VideoDetail({ id }: { id: string }) {
                   key={scene.id}
                   style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '14px 16px', display: 'flex', gap: 14 }}
                 >
-                  {/* Selected image thumbnail */}
-                  {hasImage && (
+                  {/* Selected image or stock clip thumbnail */}
+                  {scene.videoSource === 'stock' && scene.stockAvailable ? (
+                    <div style={{ width: 80, flexShrink: 0, borderRadius: 6, overflow: 'hidden', background: '#000', alignSelf: 'flex-start' }}>
+                      <video
+                        src={`${API}/videos/${project.id}/clips/${i}`}
+                        style={{ width: '100%', display: 'block' }}
+                        muted
+                        playsInline
+                        preload="metadata"
+                        controls
+                      />
+                    </div>
+                  ) : hasImage && (
                     <div style={{ width: 54, flexShrink: 0, borderRadius: 6, overflow: 'hidden', background: 'var(--bg-card2)', aspectRatio: '9/16', alignSelf: 'flex-start' }}>
                       <img
                         src={`${API}/videos/${project.id}/images/${i}/${scene.selectedVariant}`}

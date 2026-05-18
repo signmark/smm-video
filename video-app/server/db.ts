@@ -21,7 +21,7 @@ export interface Scene {
   t2vPrompt?: string;
   imagePath?: string;
   duration: number;
-  videoSource?: 'ai' | 'stock'; // 'ai' = generate via FAL/Imagen (default), 'stock' = Pexels stock clip
+  videoSource?: 'ai' | 'stock' | 'stock-animated'; // 'ai' = generate via FAL/Imagen (default), 'stock' = Pexels stock clip, 'stock-animated' = Pexels photo animated via FAL
   stockQuery?: string;          // custom search query for Pexels (defaults to imagePrompt)
   stockAvailable?: boolean;     // set by precheck: true = clip found & downloaded, false = not found
   stockPhotoAvailable?: boolean; // set by precheck: true = Pexels photo found, saved as variant 0

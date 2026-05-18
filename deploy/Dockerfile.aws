@@ -1,0 +1,44 @@
+# Используем актуальную версию Node.js
+FROM node:18
+
+# Устанавливаем рабочий каталог
+WORKDIR /app
+
+# Устанавливаем системные зависимости через apt
+RUN apt-get update && \
+    apt-get install -y python3 make g++ ffmpeg curl wget && \
+    rm -rf /var/lib/apt/lists/*
+
+# Копируем только package.json сначала для установки зависимостей
+COPY package*.json ./
+
+# Очищаем существующие node_modules и lock-файлы для чистой установки
+RUN rm -rf node_modules package-lock.json
+
+# Установка AWS SDK перед основными зависимостями
+RUN npm install --save --no-audit \
+    @aws-sdk/client-s3@3.523.0 \
+    @aws-sdk/s3-request-presigner@3.523.0 \
+    @aws-sdk/lib-storage@3.523.0 \
+    && npm ls @aws-sdk/client-s3 \
+    && echo "AWS SDK установлен успешно"
+
+# Устанавливаем зависимости
+RUN npm install --no-audit
+
+# Остальные явные установки
+RUN npm install react-draggable@4.4.6 --save --no-audit
+RUN npm install multer@1.4.5-lts.2 @types/multer@1.4.12 --save --no-audit
+RUN npm install @google/generative-ai --save --no-audit
+
+# Копируем исходный код
+COPY . .
+
+# Экспортируем порт для приложения
+EXPOSE 5000
+
+# Проверяем доступность AWS SDK
+RUN node -e "try { require('@aws-sdk/client-s3'); console.log('AWS SDK client-s3 доступен'); } catch (e) { console.error('Ошибка импорта AWS SDK:', e); process.exit(1); }"
+
+# Команда для сборки и запуска приложения
+CMD ["npm", "run", "dev"]

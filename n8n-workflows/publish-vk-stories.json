@@ -1,0 +1,450 @@
+{
+  "name": "Publish VK Stories",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "publish-vk-stories",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.DIRECTUS_URL}}/items/campaign_content/{{$json.body.contentId}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "get-content",
+      "name": "Get Content",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "directus-auth",
+          "name": "Directus Auth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.DIRECTUS_URL}}/items/campaigns/{{$json.data.campaign_id}}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "get-campaign",
+      "name": "Get Campaign",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [660, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "directus-auth",
+          "name": "Directus Auth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"contentId\": \"{{ $node['Webhook'].json.body.contentId }}\",\n  \"mediaUrl\": \"{{ $node['Get Content'].json.data.video_url || $node['Get Content'].json.data.image_url }}\",\n  \"isVideo\": {{ $node['Get Content'].json.data.video_url ? true : false }},\n  \"groupId\": \"{{ $node['Get Campaign'].json.data.social_settings.vk.groupId }}\",\n  \"accessToken\": \"{{ $node['Get Campaign'].json.data.social_settings.vk.token }}\"\n}",
+        "options": {}
+      },
+      "id": "prepare-data",
+      "name": "Prepare Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.isVideo }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check-media-type",
+      "name": "Is Video?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.vk.com/method/stories.getVideoUploadServer",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "group_id",
+              "value": "={{ $node['Prepare Data'].json.groupId.replace('club', '').replace('-', '') }}"
+            },
+            {
+              "name": "add_to_news",
+              "value": "1"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $node['Prepare Data'].json.accessToken }}"
+            },
+            {
+              "name": "v",
+              "value": "5.199"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-video-upload-server",
+      "name": "Get Video Upload Server",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.vk.com/method/stories.getPhotoUploadServer",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "group_id",
+              "value": "={{ $node['Prepare Data'].json.groupId.replace('club', '').replace('-', '') }}"
+            },
+            {
+              "name": "add_to_news",
+              "value": "1"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $node['Prepare Data'].json.accessToken }}"
+            },
+            {
+              "name": "v",
+              "value": "5.199"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-photo-upload-server",
+      "name": "Get Photo Upload Server",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, 400]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $node['Prepare Data'].json.mediaUrl }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "download-media",
+      "name": "Download Media",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, 600]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $node['Get Video Upload Server'].json.response.upload_url }}",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "video_file",
+              "parameterType": "formBinaryData",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "upload-video-story",
+      "name": "Upload Video Story",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1540, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $node['Get Photo Upload Server'].json.response.upload_url }}",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "file",
+              "parameterType": "formBinaryData",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "upload-photo-story",
+      "name": "Upload Photo Story",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1540, 400]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.vk.com/method/stories.save",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "upload_results",
+              "value": "={{ $json.response.upload_result }}"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $node['Prepare Data'].json.accessToken }}"
+            },
+            {
+              "name": "v",
+              "value": "5.199"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "save-story",
+      "name": "VK stories.save",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1760, 300]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{$env.DIRECTUS_URL}}/items/campaign_content/{{ $node['Webhook'].json.body.contentId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "status",
+              "value": "published"
+            },
+            {
+              "name": "published_at",
+              "value": "={{ $now.toISO() }}"
+            },
+            {
+              "name": "post_url",
+              "value": "=https://vk.com/stories/club{{ $node['Prepare Data'].json.groupId.replace('club', '').replace('-', '') }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-directus",
+      "name": "Update Directus",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1980, 300],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "directus-auth",
+          "name": "Directus Auth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"storyId\": \"{{ $node['VK stories.save'].json.response.items[0].id }}\",\n  \"storyUrl\": \"https://vk.com/stories/club{{ $node['Prepare Data'].json.groupId.replace('club', '').replace('-', '') }}\"\n}",
+        "options": {}
+      },
+      "id": "respond-success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2200, 300]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Get Content",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Content": {
+      "main": [
+        [
+          {
+            "node": "Get Campaign",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Campaign": {
+      "main": [
+        [
+          {
+            "node": "Prepare Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Data": {
+      "main": [
+        [
+          {
+            "node": "Is Video?",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Download Media",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Video?": {
+      "main": [
+        [
+          {
+            "node": "Get Video Upload Server",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Photo Upload Server",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Video Upload Server": {
+      "main": [
+        [
+          {
+            "node": "Upload Video Story",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Photo Upload Server": {
+      "main": [
+        [
+          {
+            "node": "Upload Photo Story",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Video Story": {
+      "main": [
+        [
+          {
+            "node": "VK stories.save",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Photo Story": {
+      "main": [
+        [
+          {
+            "node": "VK stories.save",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "VK stories.save": {
+      "main": [
+        [
+          {
+            "node": "Update Directus",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Directus": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "tags": [
+    {
+      "name": "VK",
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    },
+    {
+      "name": "Stories",
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    }
+  ],
+  "triggerCount": 1,
+  "pinData": {}
+}

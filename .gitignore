@@ -1,0 +1,96 @@
+
+# System and Cache
+.bun/
+.cache/
+.nvm/
+.npm/
+.yarn/
+.pnpm-store/
+
+# Dependencies
+node_modules/
+dist/
+.DS_Store
+
+# Environment files
+.env
+.env.*
+!.env.sample
+!.env.example
+.env.local
+.env.docker
+
+# Security
+.secrets
+*.pem
+*.key
+*.cert
+*.log
+
+# Temp files
+temp_*
+*.tar.gz
+test-proxy-check.js
+gemini-proxy-worker.js
+list-models.ts
+list-studio-models.ts
+
+# Replit specific
+.config
+.upm
+.breakpoints
+replit.nix
+.replit
+
+# Build artifacts
+build/
+dist/
+server/public/
+vite.config.ts.*
+
+# Attached assets (screenshots, logs)
+attached_assets/
+error-screenshot-*.png
+playwright-report/
+test-results/
+playwright/.auth/
+
+# Test artifacts
+coverage/
+uploads/test-images/
+
+# Exports and reports
+lint-results.json
+*_export.sql
+*_user_data_*.sql
+
+# Data and Local Configs
+n8n_data/
+traefik_data/
+pgadmin_data/
+postgres/
+.claude/
+backup_settings/
+docker-compose.local.yml
+all_databases_*.sql
+
+# Runtime state files with sensitive data
+data/autonomous-states.json
+
+# Media files (generated images, videos, audio)
+uploads/images/
+uploads/videos/
+uploads/audio/
+data/images/
+data/videos/
+data/audio/
+data/imagespreviews/
+video-app/data/images/
+video-app/data/videos/
+video-app/data/audio/
+*.mp4
+*.mp3
+*.wav
+*.ogg
+*.webm
+

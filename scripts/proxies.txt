@@ -1,0 +1,6 @@
+# HTTP прокси для парсинга TGStat (серверные)
+# Формат: http://user:password@host:port
+
+http://0VWnQp:GVkVL9XxVi@46.8.222.74:1050
+http://0VWnQp:GVkVL9XxVi@194.32.229.63:1050
+http://0VWnQp:GVkVL9XxVi@194.32.229.179:1050

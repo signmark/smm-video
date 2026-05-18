@@ -1,0 +1,697 @@
+{
+  "name": "YouTube Video Publishing",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "publish-youtube",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "1abdc28a-73cd-40ea-b1e8-c8b0fa85f70d",
+      "name": "YouTube Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -1540,
+        180
+      ],
+      "webhookId": "publish-youtube"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "1cdde36e-865e-4f1d-85bb-c1fa96fc4a39",
+              "leftValue": "={{ $json.contentId }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty",
+                "name": "filter.operator.isNotEmpty"
+              }
+            },
+            {
+              "id": "platform-check",
+              "leftValue": "={{ $json.platform }}",
+              "rightValue": "youtube",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1320,
+        180
+      ],
+      "id": "89be6a5c-8136-4162-a102-91db1c18fd6f",
+      "name": "Validate Input"
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "campaign_content",
+          "mode": "list",
+          "cachedResultName": "campaign_content"
+        },
+        "where": {
+          "values": [
+            {
+              "column": "id",
+              "value": "={{ $json.contentId }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -900,
+        80
+      ],
+      "id": "ab2777c8-89fe-4a1e-9985-501c811e3db4",
+      "name": "Get Content Data",
+      "credentials": {
+        "postgres": {
+          "id": "lO4gl1E2I2lsrRce",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "user_campaigns",
+          "mode": "list",
+          "cachedResultName": "user_campaigns"
+        },
+        "where": {
+          "values": [
+            {
+              "column": "id",
+              "value": "={{ $('Get Content Data').item.json.campaign_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -680,
+        80
+      ],
+      "id": "get-campaign-settings",
+      "name": "Get Campaign Settings",
+      "credentials": {
+        "postgres": {
+          "id": "lO4gl1E2I2lsrRce",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-video",
+              "leftValue": "={{ $('Get Content Data').item.json.video_url }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty"
+              }
+            },
+            {
+              "id": "has-youtube-settings",
+              "leftValue": "={{ $('Get Campaign Settings').item.json.social_media_settings.youtube.accessToken }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "validate-requirements",
+      "name": "Validate Requirements",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -400,
+        80
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем данные контента и кампании\nconst contentData = $('Get Content Data').first().json;\nconst campaignData = $('Get Campaign Settings').first().json;\nconst youtubeSettings = campaignData.social_media_settings.youtube;\n\n// Формируем описание видео из content\nlet description = contentData.content || '';\n\n// Добавляем keywords как теги\nlet tags = [];\nif (contentData.keywords && Array.isArray(contentData.keywords)) {\n  tags = contentData.keywords;\n}\n\n// Формируем metadata для YouTube API\nconst metadata = {\n  snippet: {\n    title: contentData.title || 'Видео',\n    description: description,\n    tags: tags,\n    categoryId: '22' // People & Blogs\n  },\n  status: {\n    privacyStatus: 'public'\n  }\n};\n\nreturn {\n  contentId: contentData.id,\n  videoUrl: contentData.video_url,\n  youtubeSettings: youtubeSettings,\n  metadata: JSON.stringify(metadata)\n};"
+      },
+      "id": "3db69f5d-878e-4e6e-bdad-104dd202cf2d",
+      "name": "Prepare YouTube Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -80,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Prepare YouTube Data').item.json.videoUrl }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "6787e692-90b6-4424-8cf3-d3c3570338d3",
+      "name": "Download Video File",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        120,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://www.googleapis.com/upload/youtube/v3/videos",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "part",
+              "value": "snippet,status"
+            },
+            {
+              "name": "uploadType",
+              "value": "multipart"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $('Prepare YouTube Data').item.json.youtubeSettings.accessToken }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formData",
+              "name": "snippet",
+              "value": "={{ JSON.stringify(JSON.parse($('Prepare YouTube Data').item.json.metadata).snippet) }}"
+            },
+            {
+              "parameterType": "formData", 
+              "name": "status",
+              "value": "={{ JSON.stringify(JSON.parse($('Prepare YouTube Data').item.json.metadata).status) }}"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "media",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ee5858bf-d154-4cfd-806e-42a75a9224d4",
+      "name": "Upload Video to YouTube",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        320,
+        -40
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "upload-success",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "cc28da2a-fc22-4c09-b8d4-4241ac28d6a9",
+      "name": "Check Upload Result",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        520,
+        -40
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Формируем данные успешной публикации\nconst uploadResult = $('Upload Video to YouTube').item.json;\nconst contentId = $('Prepare YouTube Data').item.json.contentId;\n\nconst videoId = uploadResult.id;\nconst videoUrl = `https://www.youtube.com/watch?v=${videoId}`;\n\nreturn {\n  contentId: contentId,\n  platform: 'youtube',\n  status: 'published',\n  postUrl: videoUrl,\n  videoId: videoId,\n  publishedAt: new Date().toISOString(),\n  updatedAt: new Date().toISOString()\n};"
+      },
+      "id": "b0cba8b6-94ce-437e-8df8-ed7028c7f0ad",
+      "name": "Format Success Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://directus.roboflow.tech/items/campaign_content/{{ $json.contentId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImFkbWluIiwicm9sZSI6bnVsbCwiYXBwX2FjY2VzcyI6dHJ1ZSwiYWRtaW5fYWNjZXNzIjp0cnVlLCJpYXQiOjE3NDkxMjQ3MDUsImV4cCI6MTc0OTEzMTkwNSwiaXNzIjoiZGlyZWN0dXMifQ.DzuIq9U0aIYb5Vo_uJAWi70qQOl8FV-TYlT36Ru0ZNs"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "social_platforms",
+              "value": "={{ JSON.stringify({youtube: {status: $json.status, postUrl: $json.postUrl, videoId: $json.videoId, platform: $json.platform, publishedAt: $json.publishedAt, updatedAt: $json.updatedAt}}) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e743f2c9-1269-4201-934c-a5645785cd58",
+      "name": "Update Success Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        920,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Формируем данные ошибки публикации\nconst error = $('Upload Video to YouTube').item.error || $input.item.json;\nconst contentId = $('Prepare YouTube Data').item.json.contentId;\n\nlet errorMessage = 'Неизвестная ошибка при загрузке видео';\nlet status = 'failed';\n\nif (error.message) {\n  errorMessage = error.message;\n} else if (error.error && error.error.message) {\n  errorMessage = error.error.message;\n} else if (typeof error === 'string') {\n  errorMessage = error;\n}\n\n// Специальная обработка ошибки миниатюр 403\nif (error.status === 403 && errorMessage.includes('upload and set custom video thumbnails')) {\n  // Это не критическая ошибка - видео все равно должно быть загружено\n  console.log('ПРЕДУПРЕЖДЕНИЕ: Канал не имеет прав для загрузки кастомных миниатюр');\n  console.log('Видео будет опубликовано без кастомной миниатюры');\n  console.log('Для загрузки миниатюр нужно: 1) Верифицировать канал, 2) Иметь историю без нарушений');\n  \n  // Проверяем, было ли видео все-таки загружено\n  const uploadResult = $('Upload Video to YouTube').item.json;\n  if (uploadResult && uploadResult.id) {\n    // Видео загружено успешно, игнорируем ошибку миниатюры\n    const videoId = uploadResult.id;\n    const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;\n    \n    return {\n      contentId: contentId,\n      platform: 'youtube',\n      status: 'published',\n      postUrl: videoUrl,\n      videoId: videoId,\n      publishedAt: new Date().toISOString(),\n      updatedAt: new Date().toISOString(),\n      warning: 'Видео опубликовано без кастомной миниатюры (канал не верифицирован)'\n    };\n  }\n}\n\n// Проверяем на quota exceeded ошибку\nif (errorMessage.includes('exceeded your quota') || (error.status === 403 && !errorMessage.includes('upload and set custom video thumbnails'))) {\n  status = 'quota_exceeded';\n  errorMessage = 'YouTube API quota exceeded - попробуйте позже';\n}\n\nreturn {\n  contentId: contentId,\n  platform: 'youtube',\n  status: status,\n  error: errorMessage,\n  updatedAt: new Date().toISOString()\n};"
+      },
+      "id": "7fa851da-73d8-4ba0-b9b9-6cb74f2f66b2",
+      "name": "Format Error Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "=https://directus.roboflow.tech/items/campaign_content/{{ $json.contentId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImFkbWluIiwicm9sZSI6bnVsbCwiYXBwX2FjY2VzcyI6dHJ1ZSwiYWRtaW5fYWNjZXNzIjp0cnVlLCJpYXQiOjE3NDkxMjQ3MDUsImV4cCI6MTc0OTEzMTkwNSwiaXNzIjoiZGlyZWN0dXMifQ.DzuIq9U0aIYb5Vo_uJAWi70qQOl8FV-TYlT36Ru0ZNs"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "social_platforms",
+              "value": "={{ JSON.stringify({youtube: {status: $json.status, error: $json.error, platform: $json.platform, updatedAt: $json.updatedAt}}) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8dd87e6f-1c94-4e24-9be2-9859a44dfb2e",
+      "name": "Update Error Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        920,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Возвращаем успешный результат\nreturn {\n  success: true,\n  platform: 'youtube',\n  status: 'published',\n  postUrl: $('Format Success Result').item.json.postUrl,\n  videoId: $('Format Success Result').item.json.videoId,\n  message: 'Видео успешно опубликовано на YouTube'\n};"
+      },
+      "id": "3220b05f-76b1-4e4b-a07f-5013a752abb8",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        -160
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Возвращаем ошибку\nconst errorData = $('Format Error Result').item.json;\n\nreturn {\n  success: false,\n  platform: 'youtube',\n  status: errorData.status,\n  error: errorData.error,\n  message: `Ошибка публикации на YouTube: ${errorData.error}`\n};"
+      },
+      "id": "4e5467a1-2e7d-4ae9-a5db-8365afcc1998",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Ошибка валидации данных\nreturn {\n  success: false,\n  platform: 'youtube',\n  status: 'failed',\n  error: 'Отсутствует видео или настройки YouTube',\n  message: 'Не удалось найти видео или настройки YouTube для публикации'\n};"
+      },
+      "id": "af99426d-9479-46a9-8221-9b19f0facf79",
+      "name": "Validation Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -80,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Ошибка входных данных\nreturn {\n  success: false,\n  platform: 'youtube',\n  status: 'failed',\n  error: 'Некорректные входные данные',\n  message: 'Не указан contentId или platform != youtube'\n};"
+      },
+      "id": "29c573b2-6ae1-4760-a7f7-640240c5dc98",
+      "name": "Input Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1100,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "0e84972f-dcb9-4c3f-a1f6-0820626e7f1a",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        1320,
+        40
+      ]
+    }
+  ],
+  "connections": {
+    "YouTube Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input": {
+      "main": [
+        [
+          {
+            "node": "Get Content Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Input Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Content Data": {
+      "main": [
+        [
+          {
+            "node": "Get Campaign Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Campaign Settings": {
+      "main": [
+        [
+          {
+            "node": "Validate Requirements",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Requirements": {
+      "main": [
+        [
+          {
+            "node": "Prepare YouTube Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare YouTube Data": {
+      "main": [
+        [
+          {
+            "node": "Download Video File",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Video File": {
+      "main": [
+        [
+          {
+            "node": "Upload Video to YouTube",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Video to YouTube": {
+      "main": [
+        [
+          {
+            "node": "Check Upload Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Error Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Upload Result": {
+      "main": [
+        [
+          {
+            "node": "Format Success Result",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Format Error Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Success Result": {
+      "main": [
+        [
+          {
+            "node": "Update Success Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Success Status": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Error Result": {
+      "main": [
+        [
+          {
+            "node": "Update Error Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Error Status": {
+      "main": [
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Success Response": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error Response": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validation Error": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Input Error": {
+      "main": [
+        [
+          {
+            "node": "Webhook Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [],
+  "triggerCount": 0,
+  "updatedAt": "2025-01-01T13:20:00.000Z",
+  "versionId": "1"
+}

@@ -1,0 +1,60 @@
+{
+  "name": "SMM Manager - Управление социальными сетями",
+  "short_name": "SMM Manager",
+  "description": "Автоматизированная система управления контентом в социальных сетях",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#3b82f6",
+  "orientation": "portrait-primary",
+  "scope": "/",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/favicon.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ],
+  "categories": ["business", "productivity", "social"],
+  "screenshots": [],
+  "shortcuts": [
+    {
+      "name": "Панель управления",
+      "short_name": "Dashboard",
+      "description": "Открыть главную панель",
+      "url": "/",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Создать публикацию",
+      "short_name": "Создать",
+      "description": "Быстро создать новый контент",
+      "url": "/content/new",
+      "icons": [
+        {
+          "src": "/icon-192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ],
+  "prefer_related_applications": false
+}

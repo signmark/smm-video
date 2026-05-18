@@ -1,0 +1,366 @@
+{
+  "name": "YouTube Token Refresh - PostgreSQL Direct",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "youtube-refresh-token",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-start",
+      "name": "YouTube Token Refresh Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "youtube-refresh-token"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Логирование входящих данных\nconsole.log('YouTube Token Refresh - Input data:', JSON.stringify($input.all(), null, 2));\nreturn $input.all();"
+      },
+      "id": "debug-log",
+      "name": "Debug Log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [360, 300]
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "global_api_keys",
+          "mode": "list",
+          "cachedResultName": "global_api_keys"
+        },
+        "where": {
+          "values": [
+            {
+              "column": "service_name",
+              "value": "YouTube"
+            }
+          ]
+        },
+        "returnFields": {
+          "values": [
+            {
+              "column": "api_key"
+            },
+            {
+              "column": "api_secret"
+            },
+            {
+              "column": "additional_settings"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [480, 300],
+      "id": "get-youtube-credentials",
+      "name": "Get YouTube Credentials",
+      "credentials": {
+        "postgres": {
+          "id": "lO4gl1E2I2lsrRce",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "user_campaigns",
+          "mode": "list",
+          "cachedResultName": "user_campaigns"
+        },
+        "where": {
+          "values": [
+            {
+              "column": "id",
+              "value": "={{ $('YouTube Token Refresh Webhook').item.json.campaign_id }}"
+            }
+          ]
+        },
+        "returnFields": {
+          "values": [
+            {
+              "column": "social_media_settings"
+            },
+            {
+              "column": "name"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [480, 180],
+      "id": "get-campaign-settings",
+      "name": "Get Campaign Settings",
+      "credentials": {
+        "postgres": {
+          "id": "lO4gl1E2I2lsrRce",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://oauth2.googleapis.com/token",
+        "options": {
+          "bodyContentType": "form-urlencoded"
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "client_id",
+              "value": "={{ $('Get YouTube Credentials').item.json.api_key }}"
+            },
+            {
+              "name": "client_secret",
+              "value": "={{ $('Get YouTube Credentials').item.json.api_secret }}"
+            },
+            {
+              "name": "refresh_token",
+              "value": "={{ $('YouTube Token Refresh Webhook').item.json.refresh_token }}"
+            },
+            {
+              "name": "grant_type",
+              "value": "refresh_token"
+            }
+          ]
+        }
+      },
+      "id": "google-oauth-refresh",
+      "name": "Google OAuth Token Refresh",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [600, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "success-condition",
+              "leftValue": "={{ $json.access_token }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-token-success",
+      "name": "Check Token Success",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [720, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Объединяем новые токены с существующими настройками\nconst webhookData = $('YouTube Token Refresh Webhook').item.json;\nconst campaignData = $('Get Campaign Settings').item.json;\nconst tokenData = $('Google OAuth Token Refresh').item.json;\n\n// Получаем текущие настройки социальных сетей\nlet socialSettings = {};\ntry {\n  socialSettings = typeof campaignData.social_media_settings === 'string' \n    ? JSON.parse(campaignData.social_media_settings) \n    : (campaignData.social_media_settings || {});\n} catch (e) {\n  console.log('Не удалось распарсить social_media_settings, используем пустой объект');\n  socialSettings = {};\n}\n\n// Обновляем YouTube настройки\nif (!socialSettings.youtube) {\n  socialSettings.youtube = {};\n}\n\nsocialSettings.youtube.access_token = tokenData.access_token;\nif (tokenData.refresh_token) {\n  socialSettings.youtube.refresh_token = tokenData.refresh_token;\n}\nsocialSettings.youtube.token_expires_at = new Date(Date.now() + (tokenData.expires_in * 1000)).toISOString();\nsocialSettings.youtube.last_token_refresh = new Date().toISOString();\n\nconsole.log('Обновленные настройки YouTube:', socialSettings.youtube);\n\nreturn [{\n  json: {\n    campaign_id: webhookData.campaign_id,\n    social_media_settings: JSON.stringify(socialSettings),\n    token_data: tokenData\n  }\n}];"
+      },
+      "id": "prepare-update-data",
+      "name": "Prepare Update Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [840, 200]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "user_campaigns",
+          "mode": "list",
+          "cachedResultName": "user_campaigns"
+        },
+        "where": {
+          "values": [
+            {
+              "column": "id",
+              "value": "={{ $json.campaign_id }}"
+            }
+          ]
+        },
+        "columnsUi": {
+          "values": [
+            {
+              "column": "social_media_settings",
+              "value": "={{ $json.social_media_settings }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [960, 200],
+      "id": "update-campaign-tokens",
+      "name": "Update Campaign Tokens",
+      "credentials": {
+        "postgres": {
+          "id": "lO4gl1E2I2lsrRce",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: true, message: 'YouTube tokens updated successfully', access_token: $('Prepare Update Data').item.json.token_data.access_token, expires_in: $('Prepare Update Data').item.json.token_data.expires_in, token_type: $('Prepare Update Data').item.json.token_data.token_type, campaign_id: $('Prepare Update Data').item.json.campaign_id, expires_at: new Date(Date.now() + ($('Prepare Update Data').item.json.token_data.expires_in * 1000)).toISOString() } }}"
+      },
+      "id": "success-response",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1080, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: false, error: 'Token refresh failed', details: $('Google OAuth Token Refresh').item.json, credentials_found: $('Get YouTube Credentials').item.json ? 1 : 0, campaign_found: $('Get Campaign Settings').item.json ? 1 : 0 } }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "error-response",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [840, 400]
+    }
+  ],
+  "connections": {
+    "YouTube Token Refresh Webhook": {
+      "main": [
+        [
+          {
+            "node": "Debug Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Debug Log": {
+      "main": [
+        [
+          {
+            "node": "Get YouTube Credentials",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Campaign Settings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get YouTube Credentials": {
+      "main": [
+        [
+          {
+            "node": "Google OAuth Token Refresh",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google OAuth Token Refresh": {
+      "main": [
+        [
+          {
+            "node": "Check Token Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Token Success": {
+      "main": [
+        [
+          {
+            "node": "Prepare Update Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Update Data": {
+      "main": [
+        [
+          {
+            "node": "Update Campaign Tokens",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Campaign Tokens": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["youtube", "oauth", "token-refresh", "postgres"],
+  "triggerCount": 0,
+  "updatedAt": "2025-07-10T07:15:00.000Z",
+  "versionId": "1"
+}

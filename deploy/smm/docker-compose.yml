@@ -1,0 +1,143 @@
+version: '3'
+
+services:
+  traefik:
+    image: traefik:v2.11
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.endpoint=unix:///var/run/docker.sock"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entryPoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.mytlschallenge.acme.tlschallenge=true"
+      - "--certificatesresolvers.mytlschallenge.acme.email=${SSL_EMAIL}"
+      - "--certificatesresolvers.mytlschallenge.acme.storage=/letsencrypt/acme.json"
+    environment:
+      - DOCKER_API_VERSION=1.52
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./traefik_data:/letsencrypt
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  postgres:
+    image: postgres:16
+    restart: always
+    shm_size: 128mb
+    environment:
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - ./postgres:/var/lib/postgresql/data
+
+  pgadmin:
+    image: dpage/pgadmin4
+    restart: always
+    depends_on:
+      - postgres
+    volumes:
+      - ./pgadmin_data:/var/lib/pgadmin
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=${SSL_EMAIL}
+      - PGADMIN_DEFAULT_PASSWORD=${PASSWORD_PGADMIN}
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.pgadmin.rule=Host(`pgadmin.nplanner.ru`)
+      - traefik.http.routers.pgadmin.entrypoints=websecure
+      - traefik.http.routers.pgadmin.tls=true
+      - traefik.http.routers.pgadmin.tls.certresolver=mytlschallenge
+      - traefik.http.services.pgadmin.loadbalancer.server.port=80
+
+  directus:
+    image: directus/directus:latest
+    restart: always
+    depends_on:
+      - postgres
+    env_file:
+      - ../../.env
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8055
+      - PUBLIC_URL=https://directus.nplanner.ru
+      - SECRET=${DIRECTUS_SECRET}
+      - DB_CLIENT=pg
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_DATABASE=directus
+      - DB_USER=postgres
+      - DB_PASSWORD=${DIRECTUS_DB_PASSWORD}
+      - ADMIN_EMAIL=${DIRECTUS_ADMIN_EMAIL}
+      - ADMIN_PASSWORD=${DIRECTUS_ADMIN_PASSWORD}
+      - CORS_ENABLED=true
+      - CORS_ORIGIN=true
+      - CORS_CREDENTIALS=true
+      - ACCESS_TOKEN_TTL=24h
+      - REFRESH_TOKEN_TTL=1d
+    volumes:
+      - ./directus_data:/directus/uploads
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.directus.rule=Host(`directus.nplanner.ru`)
+      - traefik.http.routers.directus.entrypoints=websecure
+      - traefik.http.routers.directus.tls=true
+      - traefik.http.routers.directus.tls.certresolver=mytlschallenge
+      - traefik.http.services.directus.loadbalancer.server.port=8055
+
+  n8n:
+    build:
+      context: ../.
+      dockerfile: Dockerfile-n8n
+    restart: always
+    depends_on:
+      - postgres
+    env_file:
+      - ../../.env
+    ports:
+      - "127.0.0.1:5678:5678"
+    environment:
+      - N8N_HOST=n8n.nplanner.ru
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=https
+      - WEBHOOK_URL=https://n8n.nplanner.ru/
+      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE}
+      - DB_TYPE=postgresdb
+      - DB_TABLE_PREFIX=n8n_
+      - DB_POSTGRESDB_DATABASE=n8n
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_USER=postgres
+      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - ../n8n_data:/home/node/.n8n
+      - ../local-files:/files
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.n8n.rule=Host(`n8n.nplanner.ru`)
+      - traefik.http.routers.n8n.entrypoints=websecure
+      - traefik.http.routers.n8n.tls=true
+      - traefik.http.routers.n8n.tls.certresolver=mytlschallenge
+      - traefik.http.services.n8n.loadbalancer.server.port=5678
+
+  smm:
+    build:
+      context: ./smm
+      dockerfile: Dockerfile
+    restart: always
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - DIRECTUS_INTERNAL_URL=http://directus:8055
+      - DIRECTUS_PUBLIC_URL=https://directus.nplanner.ru
+    command: npm run start
+    ports:
+      - "5000:5000"
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.smm.rule=Host(`smm.omemo.tech`)
+      - traefik.http.routers.smm.entrypoints=websecure
+      - traefik.http.routers.smm.tls=true
+      - traefik.http.routers.smm.tls.certresolver=mytlschallenge
+      - traefik.http.services.smm.loadbalancer.server.port=5000

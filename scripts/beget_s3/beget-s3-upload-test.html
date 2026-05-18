@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Тестирование Beget S3 API</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        h1, h2, h3 {
+            margin-top: 1.5em;
+            color: #333;
+        }
+        .container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+        }
+        .card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            flex: 1 1 400px;
+            background-color: #f9f9f9;
+        }
+        button, input[type="submit"] {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+        button:hover, input[type="submit"]:hover {
+            background-color: #0056b3;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 8px;
+            margin-bottom: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        pre {
+            background-color: #f0f0f0;
+            padding: 10px;
+            border-radius: 4px;
+            overflow: auto;
+            font-size: 14px;
+        }
+        .success {
+            color: #28a745;
+        }
+        .error {
+            color: #dc3545;
+        }
+        #results {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Тестирование Beget S3 API</h1>
+    <p>Эта страница позволяет тестировать различные функции Beget S3 API.</p>
+
+    <div class="container">
+        <div class="card">
+            <h2>Проверка подключения</h2>
+            <button id="testConnection">Проверить подключение</button>
+        </div>
+
+        <div class="card">
+            <h2>Информация о хранилище</h2>
+            <button id="getStorageInfo">Получить информацию</button>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="card">
+            <h2>Загрузка текстового контента</h2>
+            <form id="uploadContentForm">
+                <div>
+                    <label for="content">Контент:</label>
+                    <textarea id="content" rows="5" required>Тестовый контент для загрузки в Beget S3. 
+Время создания: {{currentTime}}</textarea>
+                </div>
+                <div>
+                    <label for="contentFileName">Имя файла:</label>
+                    <input type="text" id="contentFileName" value="test-upload-{{timestamp}}.txt">
+                </div>
+                <div>
+                    <label for="contentFolder">Папка:</label>
+                    <input type="text" id="contentFolder" value="uploads">
+                </div>
+                <input type="submit" value="Загрузить контент">
+            </form>
+        </div>
+
+        <div class="card">
+            <h2>Загрузка файла</h2>
+            <form id="uploadFileForm">
+                <div>
+                    <label for="file">Файл:</label>
+                    <input type="file" id="file" required>
+                </div>
+                <div>
+                    <label for="fileFolder">Папка:</label>
+                    <input type="text" id="fileFolder" value="uploads">
+                </div>
+                <input type="submit" value="Загрузить файл">
+            </form>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="card">
+            <h2>Список файлов</h2>
+            <div>
+                <label for="listFolder">Папка:</label>
+                <input type="text" id="listFolder" value="">
+            </div>
+            <button id="listFiles">Получить список файлов</button>
+        </div>
+
+        <div class="card">
+            <h2>Проверка существования файла</h2>
+            <div>
+                <label for="checkFileKey">Ключ файла:</label>
+                <input type="text" id="checkFileKey" required placeholder="uploads/file.txt">
+            </div>
+            <button id="checkFileExists">Проверить существование</button>
+        </div>
+    </div>
+
+    <h2>Результаты</h2>
+    <pre id="results">Здесь будут отображаться результаты операций.</pre>
+
+    <script>
+        // Используем текущее время для тестовых данных
+        document.addEventListener('DOMContentLoaded', function() {
+            const currentTime = new Date().toISOString();
+            const timestamp = Date.now();
+            
+            // Заполняем шаблоны в полях формы
+            document.getElementById('content').value = 
+                document.getElementById('content').value.replace('{{currentTime}}', currentTime);
+            document.getElementById('contentFileName').value = 
+                document.getElementById('contentFileName').value.replace('{{timestamp}}', timestamp);
+        });
+
+        // Вспомогательная функция для отображения результатов
+        function showResult(result, isError = false) {
+            const resultsElement = document.getElementById('results');
+            if (typeof result === 'object') {
+                result = JSON.stringify(result, null, 2);
+            }
+            
+            if (isError) {
+                resultsElement.innerHTML = `<span class="error">Ошибка: ${result}</span>`;
+            } else {
+                resultsElement.innerHTML = `<span class="success">Успех:</span>\n${result}`;
+            }
+        }
+
+        // Проверка подключения
+        document.getElementById('testConnection').addEventListener('click', async function() {
+            try {
+                const response = await fetch('/api/beget-s3/test', {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ошибка: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                showResult(data);
+            } catch (error) {
+                showResult(error.message, true);
+            }
+        });
+
+        // Получение информации о хранилище
+        document.getElementById('getStorageInfo').addEventListener('click', async function() {
+            try {
+                const response = await fetch('/api/beget-s3/info', {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ошибка: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                showResult(data);
+            } catch (error) {
+                showResult(error.message, true);
+            }
+        });
+
+        // Загрузка текстового контента
+        document.getElementById('uploadContentForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const content = document.getElementById('content').value;
+            const filename = document.getElementById('contentFileName').value;
+            const folder = document.getElementById('contentFolder').value;
+            
+            try {
+                const response = await fetch('/api/beget-s3/upload-content', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        content,
+                        filename,
+                        folder,
+                        contentType: 'text/plain'
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ошибка: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                showResult(data);
+            } catch (error) {
+                showResult(error.message, true);
+            }
+        });
+
+        // Загрузка файла
+        document.getElementById('uploadFileForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const fileInput = document.getElementById('file');
+            const folder = document.getElementById('fileFolder').value;
+            
+            if (!fileInput.files || fileInput.files.length === 0) {
+                showResult('Необходимо выбрать файл', true);
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+            formData.append('folder', folder);
+            
+            try {
+                const response = await fetch('/api/beget-s3/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ошибка: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                showResult(data);
+            } catch (error) {
+                showResult(error.message, true);
+            }
+        });
+
+        // Получение списка файлов
+        document.getElementById('listFiles').addEventListener('click', async function() {
+            const folder = document.getElementById('listFolder').value;
+            
+            try {
+                const url = new URL('/api/beget-s3/list', window.location.origin);
+                if (folder) {
+                    url.searchParams.append('folder', folder);
+                }
+                
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ошибка: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                showResult(data);
+            } catch (error) {
+                showResult(error.message, true);
+            }
+        });
+
+        // Проверка существования файла
+        document.getElementById('checkFileExists').addEventListener('click', async function() {
+            const fileKey = document.getElementById('checkFileKey').value;
+            
+            if (!fileKey) {
+                showResult('Необходимо указать ключ файла', true);
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/beget-s3/exists/${encodeURIComponent(fileKey)}`, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json'
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ошибка: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                showResult(data);
+            } catch (error) {
+                showResult(error.message, true);
+            }
+        });
+    </script>
+</body>
+</html>

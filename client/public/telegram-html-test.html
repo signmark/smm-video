@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Тест HTML-форматирования для Telegram</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .container {
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        textarea {
+            width: 100%;
+            height: 200px;
+            margin-bottom: 10px;
+            font-family: monospace;
+        }
+        button {
+            padding: 10px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        code {
+            display: block;
+            background-color: #f8f8f8;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            margin: 10px 0;
+        }
+        #result {
+            margin-top: 20px;
+            white-space: pre-wrap;
+            background-color: #f0f0f0;
+            padding: 15px;
+            border-radius: 4px;
+        }
+        .example {
+            cursor: pointer;
+            margin: 5px 0;
+            padding: 5px;
+            background-color: #f8f8f8;
+            border-radius: 3px;
+        }
+        .example:hover {
+            background-color: #e0e0e0;
+        }
+    </style>
+</head>
+<body>
+    <h1>Тест HTML-форматирования для Telegram</h1>
+    
+    <div class="container">
+        <h2>Примеры</h2>
+        <div class="example" onclick="loadExample(1)">Пример 1: Базовый HTML</div>
+        <div class="example" onclick="loadExample(2)">Пример 2: HTML с эмодзи</div>
+        <div class="example" onclick="loadExample(3)">Пример 3: Маркированный список</div>
+        <div class="example" onclick="loadExample(4)">Пример 4: Ссылки</div>
+        <div class="example" onclick="loadExample(5)">Пример 5: Нестандартные HTML-теги</div>
+    </div>
+    
+    <div class="container">
+        <h2>Ввод HTML и эмодзи</h2>
+        <p>Введите HTML-текст с форматированием и эмодзи для отправки в Telegram:</p>
+        <textarea id="input" placeholder="Введите HTML-текст здесь..."></textarea>
+        <div>
+            <label for="campaignId">ID кампании:</label>
+            <input type="text" id="campaignId" value="46868c44-c6a4-4bed-accf-9ad07bba790e" style="width: 300px;">
+        </div>
+        <div style="margin-top: 10px;">
+            <button onclick="testFormatApi()">Проверить форматирование</button>
+            <button onclick="sendToTelegram()">Отправить в Telegram</button>
+        </div>
+    </div>
+    
+    <div class="container">
+        <h2>Результат</h2>
+        <div id="result">Нажмите кнопку для проверки...</div>
+    </div>
+
+    <script>
+        // Примеры HTML-текста
+        const examples = [
+            `<p>Тестовый текст с <strong>жирным шрифтом</strong>, <em>курсивом</em> и <u>подчеркиванием</u>.</p>
+<p>Абзац с <s>зачеркнутым</s> текстом.</p>`,
+            
+            `<p>Пример текста с эмодзи 🎉 и <strong>жирным шрифтом</strong> 👍</p>
+<p>Второй абзац с <em>курсивом</em> и эмодзи 🚀 в конце</p>`,
+            
+            `<p>Маркированный список:</p>
+<ul>
+    <li>Первый пункт 👋</li>
+    <li>Второй пункт с <strong>жирным</strong> текстом</li>
+    <li>Третий пункт с <em>курсивом</em></li>
+</ul>`,
+            
+            `<p>Текст со <a href="https://t.me/example">ссылкой на Telegram</a> и еще одной <a href="https://example.com">внешней ссылкой</a>.</p>
+<p>Абзац с эмодзи 🔗 и <strong>жирным</strong> текстом.</p>`,
+            
+            `<div>Текст внутри div с <span style="color:red;">цветным span</span> и <div>вложенным div</div></div>
+<p>Абзац с <strong><em>жирным курсивом</em></strong> и эмодзи 💯</p>`
+        ];
+        
+        // Загружает пример в текстовое поле
+        function loadExample(index) {
+            document.getElementById('input').value = examples[index - 1];
+        }
+        
+        // Проверяет форматирование с помощью API
+        async function testFormatApi() {
+            const htmlText = document.getElementById('input').value;
+            const resultDiv = document.getElementById('result');
+            
+            if (!htmlText) {
+                resultDiv.textContent = 'Введите текст для проверки';
+                return;
+            }
+            
+            resultDiv.textContent = 'Проверка форматирования...';
+            
+            try {
+                const response = await fetch('/api/test/format-client-html', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ html: htmlText }),
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    let resultText = 'Результаты проверки форматирования:\n\n';
+                    resultText += 'Исходный текст:\n' + data.original + '\n\n';
+                    resultText += 'Клиентское форматирование:\n' + data.clientFormatted + '\n\n';
+                    resultText += 'Серверное форматирование:\n' + data.serverFormatted + '\n\n';
+                    resultText += 'Серверное форматирование (агрессивное):\n' + data.serverFormattedAggressive + '\n\n';
+                    
+                    resultText += 'Информация о проблемах:\n';
+                    if (data.problems && data.problems.length > 0) {
+                        resultText += data.problems.join('\n');
+                    } else {
+                        resultText += 'Проблем не обнаружено';
+                    }
+                    
+                    resultDiv.textContent = resultText;
+                } else {
+                    resultDiv.textContent = 'Ошибка: ' + (data.error || 'Неизвестная ошибка');
+                }
+            } catch (error) {
+                resultDiv.textContent = 'Ошибка: ' + error.message;
+            }
+        }
+        
+        // Отправляет текст в Telegram
+        async function sendToTelegram() {
+            const htmlText = document.getElementById('input').value;
+            const campaignId = document.getElementById('campaignId').value;
+            const resultDiv = document.getElementById('result');
+            
+            if (!htmlText) {
+                resultDiv.textContent = 'Введите текст для отправки';
+                return;
+            }
+            
+            if (!campaignId) {
+                resultDiv.textContent = 'Введите ID кампании';
+                return;
+            }
+            
+            resultDiv.textContent = 'Отправка в Telegram...';
+            
+            try {
+                const response = await fetch('/api/test/telegram-emoji-html', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ 
+                        text: htmlText,
+                        campaignId: campaignId
+                    }),
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    let resultText = 'Сообщение успешно отправлено в Telegram!\n\n';
+                    resultText += 'Message ID: ' + data.message_id + '\n';
+                    resultText += 'URL сообщения: ' + data.message_url + '\n\n';
+                    resultText += 'Исходный текст:\n' + data.original_text + '\n\n';
+                    resultText += 'Отформатированный текст:\n' + data.formatted_text;
+                    
+                    if (data.note) {
+                        resultText += '\n\n' + data.note;
+                    }
+                    
+                    resultDiv.textContent = resultText;
+                } else {
+                    resultDiv.textContent = 'Ошибка: ' + (data.error || 'Неизвестная ошибка');
+                }
+            } catch (error) {
+                resultDiv.textContent = 'Ошибка: ' + error.message;
+            }
+        }
+        
+        // Загружаем первый пример при загрузке страницы
+        document.addEventListener('DOMContentLoaded', () => {
+            loadExample(1);
+        });
+    </script>
+</body>
+</html>

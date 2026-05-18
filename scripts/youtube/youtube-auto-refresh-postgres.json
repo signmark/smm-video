@@ -1,0 +1,364 @@
+{
+  "name": "YouTube Auto Token Refresh - PostgreSQL",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "cronExpression": "0 */2 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Every 2 Hours",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "global_api_keys",
+          "mode": "list",
+          "cachedResultName": "global_api_keys"
+        },
+        "where": {
+          "values": [
+            {
+              "column": "service_name",
+              "value": "YouTube"
+            }
+          ]
+        },
+        "returnFields": {
+          "values": [
+            {
+              "column": "api_key"
+            },
+            {
+              "column": "api_secret"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [460, 300],
+      "id": "get-youtube-credentials",
+      "name": "Get YouTube Credentials",
+      "credentials": {
+        "postgres": {
+          "id": "lO4gl1E2I2lsrRce",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "user_campaigns",
+          "mode": "list",
+          "cachedResultName": "user_campaigns"
+        },
+        "where": {
+          "values": [
+            {
+              "column": "social_media_settings",
+              "value": "%\"youtube\":%"
+            }
+          ]
+        },
+        "returnFields": {
+          "values": [
+            {
+              "column": "id"
+            },
+            {
+              "column": "name"
+            },
+            {
+              "column": "social_media_settings"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [460, 180],
+      "id": "get-youtube-campaigns",
+      "name": "Get YouTube Campaigns",
+      "credentials": {
+        "postgres": {
+          "id": "lO4gl1E2I2lsrRce",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Фильтруем кампании которым нужно обновить токен\nconst campaigns = $('Get YouTube Campaigns').all();\nconst now = new Date();\n\nconst campaignsNeedingRefresh = [];\n\ncampaigns.forEach(campaign => {\n  const campaignData = campaign.json;\n  let socialSettings = {};\n  \n  try {\n    socialSettings = typeof campaignData.social_media_settings === 'string' \n      ? JSON.parse(campaignData.social_media_settings) \n      : (campaignData.social_media_settings || {});\n  } catch (e) {\n    console.log(`Campaign ${campaignData.id}: Не удалось распарсить social_media_settings`);\n    return;\n  }\n  \n  const youtube = socialSettings.youtube;\n  \n  if (!youtube?.refresh_token) {\n    console.log(`Campaign ${campaignData.id}: Нет refresh токена`);\n    return;\n  }\n  \n  // Проверяем, нужно ли обновлять токен (истекает в течение часа)\n  if (youtube.token_expires_at) {\n    const expiresAt = new Date(youtube.token_expires_at);\n    const oneHourFromNow = new Date(now.getTime() + 60 * 60 * 1000);\n    \n    if (expiresAt > oneHourFromNow) {\n      console.log(`Campaign ${campaignData.id}: токен действителен до ${expiresAt}`);\n      return;\n    }\n  }\n  \n  console.log(`Campaign ${campaignData.id}: токен нужно обновить`);\n  campaignsNeedingRefresh.push({\n    json: {\n      campaign_id: campaignData.id,\n      campaign_name: campaignData.name || 'Unnamed Campaign',\n      refresh_token: youtube.refresh_token,\n      current_settings: socialSettings\n    }\n  });\n});\n\nconsole.log(`Найдено ${campaignsNeedingRefresh.length} кампаний требующих обновления токена`);\n\nreturn campaignsNeedingRefresh;"
+      },
+      "id": "filter-campaigns",
+      "name": "Filter Campaigns Needing Refresh",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 240]
+    },
+    {
+      "parameters": {
+        "url": "https://oauth2.googleapis.com/token",
+        "options": {
+          "bodyContentType": "form-urlencoded"
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "client_id",
+              "value": "={{ $('Get YouTube Credentials').first().json.api_key }}"
+            },
+            {
+              "name": "client_secret",
+              "value": "={{ $('Get YouTube Credentials').first().json.api_secret }}"
+            },
+            {
+              "name": "refresh_token",
+              "value": "={{ $json.refresh_token }}"
+            },
+            {
+              "name": "grant_type",
+              "value": "refresh_token"
+            }
+          ]
+        }
+      },
+      "id": "refresh-token",
+      "name": "Refresh YouTube Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [900, 240]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-access-token",
+              "leftValue": "={{ $json.access_token }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-success",
+      "name": "Check If Success",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 240]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Подготавливаем обновленные настройки\nconst campaignData = $('Filter Campaigns Needing Refresh').item.json;\nconst tokenData = $('Refresh YouTube Token').item.json;\n\nlet socialSettings = campaignData.current_settings || {};\n\n// Обновляем YouTube настройки\nif (!socialSettings.youtube) {\n  socialSettings.youtube = {};\n}\n\nsocialSettings.youtube.access_token = tokenData.access_token;\nif (tokenData.refresh_token) {\n  socialSettings.youtube.refresh_token = tokenData.refresh_token;\n}\nsocialSettings.youtube.token_expires_at = new Date(Date.now() + (tokenData.expires_in * 1000)).toISOString();\nsocialSettings.youtube.last_token_refresh = new Date().toISOString();\n\nconsole.log(`✅ Токен обновлен для кампании: ${campaignData.campaign_name} (${campaignData.campaign_id})`);\nconsole.log(`🔑 Новый токен истекает: ${socialSettings.youtube.token_expires_at}`);\n\nreturn [{\n  json: {\n    campaign_id: campaignData.campaign_id,\n    campaign_name: campaignData.campaign_name,\n    social_media_settings: JSON.stringify(socialSettings),\n    token_expires_at: socialSettings.youtube.token_expires_at\n  }\n}];"
+      },
+      "id": "prepare-update",
+      "name": "Prepare Update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 140]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "user_campaigns",
+          "mode": "list",
+          "cachedResultName": "user_campaigns"
+        },
+        "where": {
+          "values": [
+            {
+              "column": "id",
+              "value": "={{ $json.campaign_id }}"
+            }
+          ]
+        },
+        "columnsUi": {
+          "values": [
+            {
+              "column": "social_media_settings",
+              "value": "={{ $json.social_media_settings }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [1560, 140],
+      "id": "update-campaign",
+      "name": "Update Campaign",
+      "credentials": {
+        "postgres": {
+          "id": "lO4gl1E2I2lsrRce",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Логируем успешное обновление\nconst data = $('Prepare Update').item.json;\nconsole.log(`✅ Успешно обновлен токен для кампании: ${data.campaign_name}`);\nconsole.log(`📅 Токен действителен до: ${data.token_expires_at}`);\n\nreturn [{ json: { \n  success: true, \n  campaign_id: data.campaign_id,\n  campaign_name: data.campaign_name,\n  token_expires_at: data.token_expires_at\n}}];"
+      },
+      "id": "log-success",
+      "name": "Log Success",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1780, 140]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Логируем ошибку обновления\nconst campaignData = $('Filter Campaigns Needing Refresh').item.json;\nconst errorData = $('Refresh YouTube Token').item.json;\n\nconsole.error(`❌ Не удалось обновить токен для кампании: ${campaignData.campaign_name} (${campaignData.campaign_id})`);\nconsole.error(`🔍 Детали ошибки:`, errorData);\n\nreturn [{ json: { \n  success: false, \n  campaign_id: campaignData.campaign_id,\n  campaign_name: campaignData.campaign_name,\n  error: errorData\n}}];"
+      },
+      "id": "log-error",
+      "name": "Log Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 340]
+    }
+  ],
+  "connections": {
+    "Every 2 Hours": {
+      "main": [
+        [
+          {
+            "node": "Get YouTube Credentials",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get YouTube Campaigns",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get YouTube Campaigns": {
+      "main": [
+        [
+          {
+            "node": "Filter Campaigns Needing Refresh",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Campaigns Needing Refresh": {
+      "main": [
+        [
+          {
+            "node": "Refresh YouTube Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Refresh YouTube Token": {
+      "main": [
+        [
+          {
+            "node": "Check If Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check If Success": {
+      "main": [
+        [
+          {
+            "node": "Prepare Update",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Update": {
+      "main": [
+        [
+          {
+            "node": "Update Campaign",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Campaign": {
+      "main": [
+        [
+          {
+            "node": "Log Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["youtube", "automation", "token-refresh", "postgres"],
+  "triggerCount": 0,
+  "updatedAt": "2025-07-10T07:20:00.000Z",
+  "versionId": "1"
+}

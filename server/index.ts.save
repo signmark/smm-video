@@ -1,0 +1,880 @@
+import 'dotenv/config';
+dotenv.config();
+import express, { type Request, Response, NextFunction } from "express";
+import cookieParser from "cookie-parser";
+import swaggerUi from 'swagger-ui-express';
+import swaggerSpecs from './config/swagger';
+import { createServer } from 'http';
+import { WebSocketServer } from 'ws';
+import path from 'path';
+import { registerRoutes } from "./routes";
+import { registerFalAiImageRoutes } from "./routes-fal-ai-images";
+import { registerClaudeRoutes } from "./routes-claude";
+import { registerDeepSeekRoutes } from "./routes-deepseek";
+import { registerDeepSeekModelsRoute } from "./routes-deepseek-models";
+import { registerQwenRoutes } from "./routes-qwen";
+import { registerGeminiRoutes } from "./routes-gemini";
+import { registerImgurRoutes } from "./routes-imgur";
+import imgbbUploadRouter from "./routes/imgbb-upload";
+import { registerBegetS3Routes } from "./routes-beget-s3";
+import { registerUserApiKeysRoutes } from "./routes-user-api-keys";
+import { registerAnalyticsRoutes } from "./routes/analytics";
+import { registerTelegramChannelsRoutes } from "./routes/telegram-channels-routes";
+import supportRoutes from "./routes/support-routes";
+import { log, logEnvironmentInfo } from "./utils/logger";
+import { directusApiManager } from './directus';
+import { registerXmlRiverRoutes } from './api/xmlriver-routes';
+import { falAiUniversalService } from './services/fal-ai-universal';
+import { initializeHeavyServices } from './optimize-startup';
+// Импортируем тестовые маршруты для Telegram
+import testRouter from './api/test-routes';
+// Импортируем маршруты для диагностики и исправления URL в Telegram
+import telegramDiagnosticsRouter from './api/test-routes-last-telegram';
+// Импортируем API аналитики
+import analyticsRouter from './analytics-api';
+// Импортируем маршруты для видео
+import videoRouter from './routes/video.js';
+// Импортируем валидатор статусов публикаций
+import { statusValidator } from './services/status-validator';
+// Импортируем исправленный планировщик публикаций
+import { getPublishScheduler } from './services/publish-scheduler';
+// Импортируем Telegram бота
+import { startTelegramBot, getWebhookCallback } from './telegram-bot/bot-launcher';
+
+// Import additional route handlers
+import adminUsersRoutes from './routes/admin-users';
+import begetS3Routes from './routes/beget-s3-aws';
+import realVideoConverterRoutes from './routes/real-video-converter';
+import webCrawlerRoutes from './routes/web-crawler-routes';
+
+// Установка переменных окружения для отладки
+// DEBUG отключен для чистых логов
+// process.env.DEBUG = 'express:*,vite:*';
+// NODE_ENV должен определяться системой (development или production)
+
+// Глобальная переменная для доступа к directusApiManager без импорта (избегаем циклические зависимости)
+// @ts-ignore - игнорируем проверку типов
+global['directusApiManager'] = directusApiManager;
+
+const app = express();
+const server = createServer(app);
+
+// Тестовые endpoints удалены для исправления перехвата API
+
+// WebSocket server для real-time уведомлений
+const wss = new WebSocketServer({ server });
+
+// Обработка WebSocket подключений
+wss.on('connection', (ws) => {
+  log('WebSocket клиент подключен', 'websocket');
+
+  ws.on('message', (message) => {
+    try {
+      const data = JSON.parse(message.toString());
+      log(`WebSocket сообщение получено: ${data.type}`, 'websocket');
+    } catch (error) {
+      log(`Ошибка парсинга WebSocket сообщения: ${error}`, 'websocket');
+    }
+  });
+
+  ws.on('close', () => {
+    log('WebSocket клиент отключен', 'websocket');
+  });
+});
+
+// Функция для отправки уведомлений всем подключенным клиентам
+export function broadcastNotification(type: string, data: any) {
+  const message = JSON.stringify({ type, data, timestamp: new Date().toISOString() });
+
+  wss.clients.forEach((client) => {
+    if (client.readyState === client.OPEN) {
+      client.send(message);
+    }
+  });
+}
+
+// Экспортируем WebSocket server для использования в других модулях
+export { wss };
+
+// Увеличиваем лимиты для обработки изображений Stories
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: false, limit: '50mb' }));
+app.use(cookieParser());
+
+// Health check endpoint for deployment monitoring
+app.get('/health', (req, res) => {
+  res.status(200).json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    environment: process.env.NODE_ENV || 'development',
+    version: '1.0.0'
+  });
+});
+
+// Request logging (only for debugging specific issues)
+app.use((req, res, next) => {
+  if (req.method === 'GET' && req.path.includes('youtube/channel-info')) {
+    console.log('🎯 YOUTUBE CHANNEL INFO:', req.url);
+  }
+  next();
+});
+
+// Добавляем API маршруты для проверки статуса и проверки админа явно, чтобы они работали до инициализации Vite
+app.get('/api/status-check', (req, res) => {
+  return res.json({ status: 'ok', server: 'running', time: new Date().toISOString() });
+});
+
+// Регистрируем прямые маршруты аутентификации до инициализации Vite
+import { isUserAdmin } from './routes-global-api-keys';
+import { registerAuthRoutes } from './api/auth-routes';
+import { registerSimpleAnalyticsAPI } from './simple-analytics-api';
+
+// Регистрируем простой API аналитики ПЕРЕД всеми остальными маршрутами
+registerSimpleAnalyticsAPI(app);
+
+// Старый код API аналитики удален - теперь используется simple-analytics-api.ts
+
+// Регистрируем все маршруты аутентификации и API ключей раньше Vite
+registerAuthRoutes(app);
+
+// Импортируем и регистрируем маршруты для глобальных API ключей
+import { registerGlobalApiKeysRoutes } from './routes-global-api-keys';
+// Импортируем Instagram Setup Wizard
+import instagramSetupRoutes from './routes/instagram-setup-wizard';
+// Импортируем Facebook Pages router
+import facebookPagesRouter from './routes/facebook-pages';
+// Импортируем Facebook Debug router
+import facebookDebugRouter from './routes/facebook-debug';
+// Импортируем Facebook Page URL router
+import facebookPageUrlRouter from './routes/facebook-page-url';
+// Импортируем Facebook Groups Discovery router
+import facebookGroupsRouter from './routes/facebook-groups-discovery';
+registerGlobalApiKeysRoutes(app);
+log('Global API keys routes registered early to avoid Vite middleware interception');
+
+// Регистрируем маршруты для пользовательских API ключей раньше Vite
+registerUserApiKeysRoutes(app);
+log('User API keys routes registered early to avoid Vite middleware interception');
+
+// Регистрируем Instagram Setup Wizard маршруты
+app.use('/api/instagram-setup', instagramSetupRoutes);
+log('Instagram Setup Wizard routes registered');
+
+// Регистрируем Facebook Pages маршруты
+app.use('/api/facebook', facebookPagesRouter);
+log('Facebook Pages routes registered');
+
+// Регистрируем Facebook Debug маршруты
+app.use('/api/facebook', facebookDebugRouter);
+log('Facebook Debug routes registered');
+
+// Регистрируем Facebook Page URL маршруты
+app.use('/api/facebook', facebookPageUrlRouter);
+log('Facebook Page URL routes registered');
+
+// Регистрируем Facebook Groups Discovery маршруты
+app.use('/api', facebookGroupsRouter);
+log('Facebook Groups Discovery routes registered');
+
+// Регистрируем Directus Proxy routes (Backend API Gateway)
+import { proxyRouter } from './api/proxy-routes';
+app.use('/api/proxy', proxyRouter);
+log('Directus Proxy routes registered (Backend API Gateway)');
+
+// Регистрируем YouTube Auth маршруты раньше всех
+import youtubeAuthRouter from './routes/youtube-auth';
+import youtubeSettingsRouter from './routes/campaign-youtube-settings';
+app.use('/api', youtubeAuthRouter);
+app.use('/api', youtubeSettingsRouter);
+log('YouTube Auth and Settings routes registered early to avoid 404 errors');
+
+// Instagram Campaign Settings маршруты будут зарегистрированы ПОСЛЕ registerRoutes
+// чтобы иметь приоритет над конфликтующими маршрутами в routes.ts
+log('Instagram Campaign Settings routes will be registered after main routes');
+
+// Дополнительно дублируем маршрут is-admin с явными заголовками Content-Type
+app.get('/api/auth/is-admin', async (req, res) => {
+  try {
+    // Указываем явно content-type как JSON
+    res.setHeader('Content-Type', 'application/json');
+    // Добавляем заголовки для предотвращения кэширования
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.setHeader('Surrogate-Control', 'no-store');
+
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      log('Запрос на проверку админа без токена', 'auth');
+      return res.status(401).json({
+        success: false,
+        isAdmin: false,
+        message: 'Требуется токен авторизации'
+      });
+    }
+
+    const token = authHeader.substring(7);
+    log(`Проверка статуса админа с токеном: ${token.substring(0, 10)}...`, 'auth');
+
+    const isAdmin = await isUserAdmin(req, token);
+    log(`Результат проверки администратора: ${isAdmin}`, 'auth');
+
+    // Добавляем случайный параметр в ответ, чтобы предотвратить кэширование
+    return res.status(200).json({
+      success: true,
+      isAdmin,
+      timestamp: Date.now(),
+      source: 'early-route'
+    });
+  } catch (error) {
+    log(`Ошибка при проверке статуса администратора: ${error instanceof Error ? error.message : 'Unknown error'}`, 'auth');
+    return res.status(500).json({
+      success: false,
+      error: 'Произошла ошибка при проверке статуса администратора',
+      timestamp: Date.now(),
+      source: 'early-route'
+    });
+  }
+});
+
+// Добавляем маршрут для проверки здоровья
+app.get('/health', (req, res) => {
+  return res.status(200).send('OK');
+});
+
+// Статические файлы для лендингов (должно быть ДО маршрута)
+app.use('/landing', express.static('smmniap_static'));
+app.use('/smmniap_static', express.static('smmniap_static'));
+app.use('/alisa', express.static('alisa_static'));
+app.use('/alisa_static', express.static('alisa_static'));
+
+// Маршрут для лендинга
+app.get('/landing', (req, res) => {
+  res.sendFile(process.cwd() + '/smmniap_static/index.html');
+});
+
+// Маршрут для smmniap_static
+app.get('/smmniap_static', (req, res) => {
+  res.sendFile(process.cwd() + '/smmniap_static/index.html');
+});
+
+// Маршрут для ALISA
+app.get('/alisa', (req, res) => {
+  res.sendFile(process.cwd() + '/alisa_static/index.html');
+});
+
+app.get('/alisa_static', (req, res) => {
+  res.sendFile(process.cwd() + '/alisa_static/index.html');
+});
+
+// Специальный маршрут для проверки доступности сервера с интерфейсом
+app.get('/server-health', (req, res) => {
+  const content = `
+  <!DOCTYPE html>
+  <html lang="ru">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Сервер работает</title>
+    <style>
+      body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }
+      .status { color: #4caf50; font-weight: bold; }
+      .time { color: #2196f3; margin-top: 20px; }
+      pre { text-align: left; max-width: 800px; margin: 20px auto; background: #f5f5f5; padding: 15px; border-radius: 5px; }
+    </style>
+  </head>
+  <body>
+    <h1>Статус сервера: <span class="status">Работает</span></h1>
+    <div class="time">Текущее время: ${new Date().toLocaleString('ru-RU')}</div>
+    <pre>
+API маршруты:
+- GET /api/status-check - Проверка статуса API
+- GET /api/claude/test-api-key - Проверка API ключа Claude
+- POST /api/claude/improve-text - Улучшение текста с Claude AI
+
+Конфигурация сервера:
+- NODE_ENV: ${process.env.NODE_ENV || 'не задано'}
+- PORT: ${process.env.PORT || '5001 (по умолчанию)'}
+    </pre>
+  </body>
+  </html>
+  `;
+  return res.status(200).type('html').send(content);
+});
+
+// Middleware для логирования запросов
+app.use((req, res, next) => {
+  const start = Date.now();
+  const path = req.path;
+  let capturedJsonResponse: Record<string, any> | undefined = undefined;
+
+  const originalResJson = res.json;
+  res.json = function (bodyJson, ...args) {
+    capturedJsonResponse = bodyJson;
+    return originalResJson.apply(res, [bodyJson, ...args]);
+  };
+
+  res.on("finish", () => {
+    const duration = Date.now() - start;
+    if (path.startsWith("/api")) {
+      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
+      if (capturedJsonResponse) {
+        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+      }
+
+      if (logLine.length > 80) {
+        logLine = logLine.slice(0, 79) + "…";
+      }
+
+      log(logLine);
+    }
+  });
+
+  next();
+});
+
+// Middleware для извлечения userId из заголовка и сохранения в req.userId
+app.use((req, res, next) => {
+  const userId = req.headers['x-user-id'] as string;
+  if (userId) {
+    (req as any).userId = userId;
+  }
+  next();
+});
+
+(async () => {
+  try {
+    console.log("=== SERVER INITIALIZATION START ===");
+    log("Starting server initialization...");
+
+    // Регистрируем видео роуты
+    app.use('/api/video', videoRouter);
+    log("Video processing routes registered");
+
+    // Регистрируем webhook для Telegram бота
+    app.post('/telegram-webhook', express.json(), async (req, res) => {
+      console.log('📥 [telegram-webhook] Получен запрос от Telegram');
+      const webhookCallback = getWebhookCallback();
+      if (webhookCallback) {
+        console.log('✅ [telegram-webhook] Webhook callback готов, обрабатываем запрос');
+        try {
+          await webhookCallback(req, res);
+          console.log('✅ [telegram-webhook] Запрос успешно обработан');
+        } catch (error) {
+          console.error('❌ [telegram-webhook] Ошибка обработки:', error instanceof Error ? error.message : error);
+          if (!res.headersSent) {
+            res.status(500).send('Internal error processing webhook');
+          }
+        }
+      } else {
+        console.warn('⚠️ [telegram-webhook] Бот ещё не готов, пожалуйста подождите...');
+        console.warn('⚠️ [telegram-webhook] Callback = null, возможно бот ещё инициализируется');
+        res.status(503).send('Telegram bot is starting, please wait...');
+      }
+    });
+    log("Telegram webhook endpoint registered");
+
+    // Регистрируем тестовые маршруты для проверки Telegram и других API
+    console.log("Registering test API routes...");
+    log("Registering test API routes first...");
+    // Регистрируем основные тестовые маршруты
+    app.use('/api/test', testRouter);
+    // Регистрируем маршруты для диагностики и исправления проблем с URL Telegram
+    app.use('/api/telegram-diagnostics', telegramDiagnosticsRouter);
+    // Тестовые маршруты для диагностики Instagram видео
+    const instagramVideoTestRoutes = (await import('./routes/instagram-video-test')).default;
+    app.use('/api/test', instagramVideoTestRoutes);
+
+    // Прокси для Instagram видео (решение проблемы S3)
+    const instagramVideoProxyRoutes = (await import('./routes/instagram-video-proxy')).default;
+    app.use('/api', instagramVideoProxyRoutes);
+    console.log("Test API routes registered");
+    log("Test API routes registered successfully");
+
+    // Регистрируем маршруты для Claude AI
+    console.log("Registering Claude AI routes...");
+    log("Registering Claude AI routes...");
+    registerClaudeRoutes(app);
+    console.log("Claude AI routes registered");
+    log("Claude AI routes registered successfully");
+
+    // Регистрируем маршруты для DeepSeek
+    console.log("Registering DeepSeek routes...");
+    log("Registering DeepSeek routes...");
+    registerDeepSeekRoutes(app);
+    console.log("DeepSeek routes registered");
+    log("DeepSeek routes registered successfully");
+
+    // Регистрируем маршруты для Qwen
+    console.log("Registering Qwen routes...");
+    log("Registering Qwen routes...");
+    registerQwenRoutes(app);
+    console.log("Qwen routes registered");
+    log("Qwen routes registered successfully");
+
+    // Регистрируем маршруты для Gemini
+    console.log("Registering Gemini routes...");
+    log("Registering Gemini routes...");
+    registerGeminiRoutes(app);
+    console.log("Gemini routes registered");
+    log("Gemini routes registered successfully");
+
+    // Регистрируем маршруты Claude
+    log("Registering Claude routes...");
+    registerClaudeRoutes(app);
+    console.log("Claude routes registered");
+    log("Claude routes registered successfully");
+
+    // Регистрируем YouTube Channel Info маршруты ПЕРЕД основными маршрутами
+    console.log("Registering YouTube Channel routes EARLY...");
+    log("Registering YouTube Channel routes EARLY...");
+    const youtubeChannelRouter = (await import('./routes/youtube-channel')).default;
+
+    // Добавляем отладочное логирование для проверки регистрации маршрута
+    console.log('📍 [YOUTUBE-ROUTER] Router imported successfully:', !!youtubeChannelRouter);
+    console.log('📍 [YOUTUBE-ROUTER] Registering at /api prefix EARLY');
+
+    app.use('/api', youtubeChannelRouter);
+    console.log("YouTube Channel routes registered EARLY");
+    log("YouTube Channel routes registered successfully EARLY");
+
+    // Регистрируем YouTube OAuth маршруты ПЕРЕД основными маршрутами
+    console.log("Registering YouTube OAuth routes EARLY...");
+    log("Registering YouTube OAuth routes EARLY...");
+    const youtubeAuthRouter = (await import('./routes/youtube-auth')).default;
+    app.use('/api', youtubeAuthRouter);
+    console.log("YouTube OAuth routes registered EARLY");
+    log("YouTube OAuth routes registered successfully EARLY");
+
+    log("Registering main routes after YouTube routes...");
+    console.log("Starting route registration...");
+    const server = await registerRoutes(app);
+
+    // Swagger API Documentation - добавляем после всех маршрутов
+    app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpecs, {
+      customCss: '.swagger-ui .topbar { display: none }',
+      customSiteTitle: 'SMM Manager API Documentation',
+      customfavIcon: '/favicon.ico',
+      swaggerOptions: {
+        persistAuthorization: true,
+        displayOperationId: false,
+        filter: true,
+        showExtensions: true,
+        showCommonExtensions: true,
+      }
+    }));
+
+    // JSON endpoint для Swagger spec
+    app.get('/api-docs.json', (req, res) => {
+      res.setHeader('Content-Type', 'application/json');
+      res.send(swaggerSpecs);
+    });
+
+    log('Swagger API Documentation доступна по адресу /api-docs', 'swagger');
+
+    // Регистрируем Instagram Campaign Settings маршруты ПОСЛЕ registerRoutes
+    // чтобы они имели приоритет над конфликтующими маршрутами в routes.ts
+    console.log("Registering Instagram Campaign Settings routes...");
+    log("Registering Instagram Campaign Settings routes...");
+    const campaignInstagramRoutes = (await import('./routes/campaign-instagram-settings')).default;
+    app.use('/api', campaignInstagramRoutes);
+    console.log("Instagram Campaign Settings routes registered");
+    log('Instagram Campaign Settings routes registered with priority');
+
+    // Регистрируем Instagram OAuth маршруты
+    console.log("Registering Instagram OAuth routes...");
+    log("Registering Instagram OAuth routes...");
+    const instagramOAuthRouter = (await import('./routes/instagram-oauth')).default;
+    app.use('/api', instagramOAuthRouter);
+    console.log("Instagram OAuth routes registered");
+    log("Instagram OAuth routes registered successfully");
+
+    // Регистрируем VK OAuth маршруты
+    console.log("Registering VK OAuth routes...");
+    log("Registering VK OAuth routes...");
+    const vkOAuthRouter = (await import('./routes/vk-oauth')).default;
+    app.use('/api', vkOAuthRouter);
+    console.log("VK OAuth routes registered");
+    log("VK OAuth routes registered successfully");
+
+    // Регистрируем VK настройки кампании
+    console.log("Registering VK Campaign Settings routes...");
+    log("Registering VK Campaign Settings routes...");
+    const vkSettingsRouter = (await import('./routes/campaign-vk-settings')).default;
+    app.use('/api', vkSettingsRouter);
+    console.log("VK Campaign Settings routes registered");
+    log("VK Campaign Settings routes registered successfully");
+
+    // Регистрируем Facebook настройки кампании
+    console.log("Registering Facebook Campaign Settings routes...");
+    log("Registering Facebook Campaign Settings routes...");
+    const facebookSettingsRouter = (await import('./routes/campaign-facebook-settings')).default;
+    app.use('/api', facebookSettingsRouter);
+    console.log("Facebook Campaign Settings routes registered");
+    log("Facebook Campaign Settings routes registered successfully");
+
+    // Регистрируем Facebook Debug маршруты
+    console.log("Registering Facebook Debug routes...");
+    log("Registering Facebook Debug routes...");
+    const facebookDebugRouter = (await import('./routes/facebook-debug')).default;
+    app.use('/api', facebookDebugRouter);
+    console.log("Facebook Debug routes registered");
+    log("Facebook Debug routes registered successfully");
+
+    // Регистрируем Facebook Groups Discovery маршруты
+    console.log("Registering Facebook Groups Discovery routes...");
+    log("Registering Facebook Groups Discovery routes...");
+    const facebookGroupsRouter = (await import('./routes/facebook-groups-discovery')).default;
+    app.use('/api', facebookGroupsRouter);
+    console.log("Facebook Groups Discovery routes registered");
+    log("Facebook Groups Discovery routes registered successfully");
+
+    // Регистрируем YouTube настройки кампании
+    console.log("Registering YouTube Campaign Settings routes...");
+    log("Registering YouTube Campaign Settings routes...");
+    const youtubeSettingsRouter = (await import('./routes/campaign-youtube-settings')).default;
+    app.use('/api', youtubeSettingsRouter);
+    console.log("YouTube Campaign Settings routes registered");
+    log("YouTube Campaign Settings routes registered successfully");
+
+    // Регистрируем общие настройки кампании (для trend_analysis_settings и др.)
+    console.log("Registering Campaign Settings routes...");
+    log("Registering Campaign Settings routes...");
+    const campaignSettingsRouter = (await import('./routes/campaign-settings')).default;
+    app.use('/api', campaignSettingsRouter);
+    console.log("Campaign Settings routes registered");
+    log("Campaign Settings routes registered successfully");
+
+    // Регистрируем роут для снятия публикаций из соцсетей
+    console.log("Registering Unpublish Content routes...");
+    log("Registering Unpublish Content routes...");
+    const unpublishContentRouter = (await import('./routes/unpublish-content')).default;
+    app.use('/api', unpublishContentRouter);
+    console.log("Unpublish Content routes registered");
+    log("Unpublish Content routes registered successfully");
+
+    // Регистрируем роут для удаления контента
+    console.log("Registering Delete Content routes...");
+    log("Registering Delete Content routes...");
+    const deleteContentRouter = (await import('./routes/delete-content')).default;
+    app.use('/api', deleteContentRouter);
+    console.log("Delete Content routes registered");
+    log("Delete Content routes registered successfully");
+
+    // Register stories routes with proper API fixes
+    console.log("Registering Stories routes...");
+    log("Registering Stories routes...");
+    const storiesRoutes = (await import('./routes/stories')).default;
+    app.use('/api/stories', storiesRoutes);
+    console.log("Stories routes registered");
+    log("Stories routes registered successfully");
+
+    // Register stories image generator
+    console.log("Registering Stories Image Generator routes...");
+    log("Registering Stories Image Generator routes...");
+    const storiesImageGenerator = (await import('./routes/stories-image-generator')).default;
+    app.use('/api/stories', storiesImageGenerator);
+    console.log("Stories Image Generator routes registered");
+    log("Stories Image Generator routes registered successfully");
+
+    // Tutorial routes already registered in routes.ts (line 4289), no duplicate needed
+
+    // регистрируем маршруты аналитики
+    log("Registering Analytics routes...");
+    registerAnalyticsRoutes(app);
+    log("Analytics routes registered successfully");
+
+    // Регистрируем маршруты для Telegram каналов
+    log("Registering Telegram Channels routes...");
+    registerTelegramChannelsRoutes(app);
+    log("Telegram Channels routes registered successfully");
+
+    // Регистрируем маршруты AI поддержки
+    log("Registering AI Support routes...");
+    app.use('/api/support', supportRoutes);
+    log("AI Support routes registered successfully");
+
+    // Регистрируем специальные маршруты для XMLRiver API
+    log("Registering XMLRiver API routes...");
+    registerXmlRiverRoutes(app);
+    log("XMLRiver API routes registered successfully");
+
+    // Регистрируем универсальный интерфейс для моделей FAL.AI
+    log("Registering FAL.AI Universal Image Generation routes...");
+    registerFalAiImageRoutes(app);
+    log("FAL.AI Universal Image Generation routes registered successfully");
+
+    // Регистрируем маршруты для Imgur Uploader
+    log("Registering Imgur Uploader routes...");
+    registerImgurRoutes(app);
+    log("Imgur Uploader routes registered successfully");
+
+    // Регистрируем маршруты для получения моделей DeepSeek
+    log("Registering DeepSeek Models route...");
+    registerDeepSeekModelsRoute(app);
+    log("DeepSeek Models route registered successfully");
+
+    // Регистрируем маршруты для работы с Beget S3
+    log("Registering Beget S3 routes...");
+    registerBegetS3Routes(app);
+    log("Beget S3 routes registered successfully");
+
+    // Регистрируем маршрут для очистки кэша
+    log("Registering clear cache routes...");
+    const clearCacheRouter = (await import('./routes/clear-cache')).default;
+    app.use('/api', clearCacheRouter);
+    log("Clear cache routes registered successfully");
+
+    // Регистрируем ImgBB upload endpoint с увеличенными лимитами
+    log("Registering ImgBB upload endpoint...");
+    app.use('/api/imgbb', imgbbUploadRouter);
+    log("ImgBB upload endpoint registered successfully");
+
+    // Маршруты для работы с личными API ключами пользователя уже зарегистрированы в начале файла
+    log("User API keys routes already registered early");
+
+    // Register additional routes
+    app.use('/', adminUsersRoutes);
+    app.use('/', begetS3Routes);
+    app.use('/', realVideoConverterRoutes);
+    app.use('/', webCrawlerRoutes);
+
+    // Закомментировано, т.к. мы уже зарегистрировали тестовые маршруты в начале
+    // log("Registering Telegram test routes...");
+    // app.use('/api/test', testRouter);
+    // log("Telegram test routes registered successfully");
+
+    // Убираем старый неработающий endpoint
+
+    console.log("Route registration completed");
+    log("Routes registered successfully");
+
+    // Глобальный обработчик ошибок
+    app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+      const status = err.status || err.statusCode || 500;
+      const message = err.message || "Internal Server Error";
+
+      log(`Error encountered: ${status} - ${message}`);
+      res.status(status).json({ message });
+    });
+
+    // Middleware для Service Worker и Manifest - РАЗРЕШАЕМ кеширование для PWA
+    app.get('/service-worker.js', (req, res, next) => {
+      res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+      // КЕШИРУЕМ Service Worker на 1 час для быстрой загрузки
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      next();
+    });
+
+    app.get('/manifest.json', (req, res, next) => {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      // КЕШИРУЕМ manifest на 1 день
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      next();
+    });
+
+    // Настраиваем Vite или статические файлы в зависимости от окружения
+    const isProduction = process.env.NODE_ENV === 'production';
+    
+    if (isProduction) {
+      log("Production mode: serving static files with PWA caching...");
+      try {
+        // Import модулей для production static serving
+        const urlModule = await import('url');
+        const pathModule = await import('path');
+        const fsModule = await import('fs');
+        
+        const __filename = urlModule.fileURLToPath(import.meta.url);
+        const __dirname = pathModule.dirname(__filename);
+        const distPath = pathModule.resolve(__dirname, "..", "public");
+        
+        if (!fsModule.existsSync(distPath)) {
+          throw new Error(`Build directory not found: ${distPath}`);
+        }
+        
+        // Статические файлы с агрессивным кешированием (навсегда)
+        app.use(express.static(distPath, {
+          maxAge: '31536000000', // 1 год в миллисекундах
+          immutable: true,
+          setHeaders: (res, filePath) => {
+            // JS, CSS, изображения, шрифты - кешируем навсегда
+            if (filePath.match(/\.(js|css|png|jpg|jpeg|gif|svg|webp|woff|woff2|ttf|eot|ico)$/)) {
+              res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+            }
+            // index.html - не кешируем (пользователь может обновить через Ctrl+Shift+R)
+            else if (filePath.endsWith('index.html')) {
+              res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+              res.setHeader('Pragma', 'no-cache');
+              res.setHeader('Expires', '0');
+            }
+          }
+        }));
+        
+        // Fallback на index.html для SPA
+        app.use("*", (_req, res) => {
+          res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+          res.setHeader('Pragma', 'no-cache');
+          res.setHeader('Expires', '0');
+          res.sendFile(path.resolve(distPath, "index.html"));
+        });
+        log(`Static files served from: ${distPath} with PWA caching`);
+      } catch (staticError) {
+        log(`Error serving static files: ${staticError instanceof Error ? staticError.message : 'Unknown error'}`);
+        throw staticError; // В production это критическая ошибка
+      }
+    } else {
+      log("Development mode: serving PRODUCTION BUILD for Telegram cache compatibility");
+      
+      try {
+        // КРИТИЧНО: Serve production build в dev для Telegram Mini App
+        // Telegram кеширует модули без хешей, поэтому используем production build с хешами
+        const path = await import('path');
+        const distPath = path.resolve(import.meta.dirname, "../dist/public");
+        
+        // Production static files с хешированными именами
+        app.use(express.static(distPath, {
+          maxAge: 0, // Dev режим - без долгого кеша
+          setHeaders: (res, filePath) => {
+            if (filePath.endsWith('.html') || filePath.endsWith('index.html')) {
+              res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+              res.setHeader('Pragma', 'no-cache');
+              res.setHeader('Expires', '0');
+            }
+          }
+        }));
+        
+        // Fallback на index.html для SPA
+        app.use("*", (_req, res) => {
+          res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+          res.setHeader('Pragma', 'no-cache');
+          res.setHeader('Expires', '0');
+          res.sendFile(path.resolve(distPath, "index.html"));
+        });
+        
+        log(`✅ Production build served from: ${distPath} (for Telegram compatibility)`);
+      } catch (staticError) {
+        log(`Error serving static files: ${staticError instanceof Error ? staticError.message : 'Unknown error'}`);
+        throw staticError;
+      }
+    }
+
+    // Всегда используем порт 5000 для соответствия настройкам .replit
+    const PORT = 5000;
+    console.log(`=== STARTING SERVER ON PORT ${PORT} ===`);
+    log(`Attempting to start server on port ${PORT}...`);
+
+    server.listen(PORT, "0.0.0.0", () => {
+      console.log(`=== SERVER SUCCESSFULLY STARTED ON PORT ${PORT} ===`);
+      log(`Server successfully started on port ${PORT}`);
+
+      // Печатаем URL-адрес приложения
+      console.log(`=== SERVER URL: http://0.0.0.0:${PORT} ===`);
+
+      // Логируем информацию об окружении
+      logEnvironmentInfo();
+
+      // Инициализируем тяжелые сервисы после успешного запуска сервера
+      initializeHeavyServices();
+
+      // Запускаем валидатор статусов публикаций для автоматического исправления некорректных статусов
+      setTimeout(() => {
+        log('Запуск валидатора статусов публикаций', 'status-validator');
+        statusValidator.startValidation();
+      }, 30000); // Задержка 30 секунд для завершения инициализации всех сервисов
+
+      // Запускаем планировщик публикаций с поддержкой индивидуального времени платформ
+      setTimeout(() => {
+        log('Запуск планировщика публикаций с поддержкой N8N', 'scheduler');
+        const scheduler = getPublishScheduler();
+        scheduler.start();
+        log('✅ Планировщик публикаций успешно запущен', 'scheduler');
+      }, 35000); // Задержка 35 секунд для завершения инициализации всех сервисов
+
+      // Запускаем Telegram бота
+      setTimeout(async () => {
+        try {
+          log('Запуск Telegram бота...', 'telegram-bot');
+          await startTelegramBot();
+        } catch (error) {
+          log(`⚠️ Не удалось запустить Telegram бота: ${error}`, 'telegram-bot');
+        }
+      }, 5000); // Запускаем через 5 секунд (бот не зависит от тяжелых сервисов)
+    }).on('error', (err: NodeJS.ErrnoException) => {
+      console.log(`=== SERVER START ERROR: ${err.message} ===`);
+      if (err.code === 'EADDRINUSE') {
+        log(`Fatal error: Port ${PORT} is already in use. Please ensure no other process is using this port.`);
+      } else {
+        log(`Fatal error starting server: ${err.message}`);
+      }
+      process.exit(1);
+    });
+
+  } catch (error) {
+    log(`Fatal error during server startup: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    process.exit(1);
+  }
+})();
+
+// CRITICAL: Global Memory Cleanup для предотвращения OOM на продакшене
+function performGlobalMemoryCleanup() {
+  try {
+    log('🚨 MEMORY: Запуск глобальной очистки памяти', 'memory-cleanup');
+
+    // Принудительная сборка мусора если доступна
+    if (global.gc) {
+      global.gc();
+      log('🧹 Принудительная сборка мусора выполнена', 'memory-cleanup');
+    }
+
+    const memUsage = process.memoryUsage();
+    const memMB = Math.round(memUsage.heapUsed / 1024 / 1024);
+    log(`💾 Память: ${memMB}MB`, 'memory-cleanup');
+
+    if (memMB > 1024) {
+      log(`⚠️ ВЫСОКОЕ потребление памяти: ${memMB}MB`, 'memory-cleanup');
+    }
+  } catch (error) {
+    log(`Ошибка глобальной очистки памяти: ${error}`, 'memory-cleanup');
+  }
+}
+
+// Запускаем очистку памяти каждые 30 минут
+setInterval(performGlobalMemoryCleanup, 30 * 60 * 1000);
+
+// Graceful shutdown для всех сервисов
+function gracefulShutdown(signal: string) {
+  log(`🔴 Получен сигнал ${signal}, выполняем graceful shutdown`, 'shutdown');
+
+  try {
+    // Останавливаем все сервисы
+    const { getPublishScheduler } = require('./services/publish-scheduler');
+    const scheduler = getPublishScheduler();
+    if (scheduler?.shutdown) scheduler.shutdown();
+
+    performGlobalMemoryCleanup();
+    process.exit(0);
+  } catch (error) {
+    log(`Ошибка при graceful shutdown: ${error}`, 'shutdown');
+    process.exit(1);
+  }
+}
+
+// Обработка сигналов завершения
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+// Глобальный обработчик необработанных исключений
+process.on('uncaughtException', (error) => {
+  log(`Uncaught Exception: ${error.message}`);
+  performGlobalMemoryCleanup(); // Очистка памяти при критических ошибках
+  process.exit(1);
+});
+
+// Глобальный обработчик необработанных отклонений промисов
+process.on('unhandledRejection', (reason) => {
+  log(`Unhandled Promise Rejection: ${reason instanceof Error ? reason.message : 'Unknown reason'}`);
+  performGlobalMemoryCleanup(); // Очистка памяти при отклонении промисов
+  process.exit(1);
+});

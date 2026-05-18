@@ -1,0 +1,67 @@
+# Используем актуальную версию Node.js
+FROM node:18
+
+# Устанавливаем рабочий каталог
+WORKDIR /app
+
+# Устанавливаем системные зависимости через apt
+RUN apt-get update && \
+    apt-get install -y python3 make g++ ffmpeg curl wget && \
+    rm -rf /var/lib/apt/lists/*
+
+# Копируем package.json и package-lock.json
+COPY package*.json ./
+
+# Очищаем существующие node_modules и lock-файлы для чистой установки
+RUN rm -rf node_modules package-lock.json
+
+# Устанавливаем зависимости, но пропускаем AWS SDK (добавим их локально)
+RUN npm install --no-audit --verbose --omit=optional
+
+# Явно устанавливаем react-draggable
+RUN npm install react-draggable@4.4.6 --save --no-audit
+
+# Явно устанавливаем multer
+RUN npm install multer@1.4.5-lts.2 @types/multer@1.4.12 --save --no-audit
+
+# Явно устанавливаем @google/generative-ai для интеграции с Gemini
+RUN npm install @google/generative-ai --save --no-audit
+
+# Проверяем наличие библиотек
+RUN npm ls react-draggable && npm ls multer && npm ls @google/generative-ai
+
+# Проверяем наличие ffmpeg
+RUN ffmpeg -version
+
+# Копируем исходный код
+COPY . .
+
+# Создаем необходимые директории для AWS SDK
+RUN mkdir -p /app/node_modules/@aws-sdk/client-s3 \
+    && mkdir -p /app/node_modules/@aws-sdk/s3-request-presigner \
+    && mkdir -p /app/node_modules/@aws-sdk/lib-storage
+
+# Копируем локальные модули AWS SDK
+COPY ./custom_modules/@aws-sdk/client-s3/ /app/node_modules/@aws-sdk/client-s3/
+COPY ./custom_modules/@aws-sdk/s3-request-presigner/ /app/node_modules/@aws-sdk/s3-request-presigner/
+COPY ./custom_modules/@aws-sdk/lib-storage/ /app/node_modules/@aws-sdk/lib-storage/
+
+# Проверяем структуру локально установленных модулей
+RUN ls -la /app/node_modules/@aws-sdk/client-s3/ \
+    && ls -la /app/node_modules/@aws-sdk/s3-request-presigner/ \
+    && ls -la /app/node_modules/@aws-sdk/lib-storage/
+
+# Проверяем доступность AWS SDK с локальными модулями
+RUN node -e "try { require('@aws-sdk/client-s3'); console.log('AWS SDK client-s3 доступен'); } catch (e) { console.error('Ошибка импорта AWS SDK client-s3:', e); }"
+RUN node -e "try { require('@aws-sdk/s3-request-presigner'); console.log('AWS SDK s3-request-presigner доступен'); } catch (e) { console.error('Ошибка импорта AWS SDK s3-request-presigner:', e); }"
+RUN node -e "try { require('@aws-sdk/lib-storage'); console.log('AWS SDK lib-storage доступен'); } catch (e) { console.error('Ошибка импорта AWS SDK lib-storage:', e); }"
+
+# Запускаем тестовый скрипт для проверки работы AWS SDK
+COPY ./test-local-aws-sdk.js /app/
+RUN node /app/test-local-aws-sdk.js
+
+# Экспортируем порт для приложения
+EXPOSE 5000
+
+# Команда для сборки и запуска приложения
+CMD ["npm", "run", "dev"]

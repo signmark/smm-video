@@ -1,0 +1,99 @@
+[
+  {
+    "name": "_tgstat_csrk",
+    "value": "7f3b70d2bdbbd640831fe164c76ec1d950b6103b86476368cf9ce1ae9b781607a%3A2%3A%7Bi%3A0%3Bs%3A12%3A%22_tgstat_csrk%22%3Bi%3A1%3Bs%3A32%3A%22aCqG4JFDfTkr0quVkhaWFDZhn2VPE8o4%22%3B%7D",
+    "domain": ".tgstat.ru",
+    "path": "/",
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "None"
+  },
+  {
+    "name": "_tgstat_userlang",
+    "value": "a9c55d7d0ccdcd622b74ac6715f1b7fc3c850f3b8cb694e2ce0421457145cd18a%3A2%3A%7Bi%3A0%3Bs%3A16%3A%22_tgstat_userlang%22%3Bi%3A1%3Bs%3A2%3A%22ru%22%3B%7D",
+    "domain": ".tgstat.ru",
+    "path": "/",
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "None"
+  },
+  {
+    "name": "tgstat_idrk",
+    "value": "22099a278b6eab24d178aecd17091aadf8780353f42256ec1f4868b57f11e489a%3A2%3A%7Bi%3A0%3Bs%3A11%3A%22tgstat_idrk%22%3Bi%3A1%3Bs%3A52%3A%22%5B9831852%2C%22NX9AUnJ-hL7u8TOwD_xqArpqpolFccWi%22%2C2592000%5D%22%3B%7D",
+    "domain": ".tgstat.ru",
+    "path": "/",
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "None"
+  },
+  {
+    "name": "tgstat_settings",
+    "value": "1bf313a3ac994708eeff2603244dc95b882cb25a6f1048b318f75d544b84203aa%3A2%3A%7Bi%3A0%3Bs%3A15%3A%22tgstat_settings%22%3Bi%3A1%3Bs%3A19%3A%22%7B%22fp%22%3A%22u_aSo5ipcn%22%7D%22%3B%7D",
+    "domain": ".tgstat.ru",
+    "path": "/",
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "None"
+  },
+  {
+    "name": "tgstat_sirk",
+    "value": "3f7ibovcrtpe8qv7g25quo4gsc",
+    "domain": ".tgstat.ru",
+    "path": "/",
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "None"
+  },
+  {
+    "name": "cf_clearance",
+    "value": "ZoS_TgacdS5h99gD7uWRwBhe_U7XzN9HuGsTF19OhXE-1765866281-1.2.1.1-QltfdBxDUUSXZp3ARQ2aDwE.9GRYZ49UBQfsP6FZ6W4RsYs91LWK4fUJ0VQTUMw6oB4zXXcit.JhuFV1p42arEW5I23aVMTpCZA3Ykhk_C.Ca.tQf3WeTExbfcmiDYFhRPsgj7bkO5jav2bf.lmgl.py8wzbLMKxl_DZK46oB_3Hp090160pvCcHWPvGghdqg7BLG.MXSMptfFEmTTxWXznPIN3c0C1TuYSG2CvNWIc",
+    "domain": ".tgstat.ru",
+    "path": "/",
+    "httpOnly": true,
+    "secure": true,
+    "sameSite": "None"
+  },
+  {
+    "name": "_ym_uid",
+    "value": "175407090234635810",
+    "domain": ".tgstat.ru",
+    "path": "/",
+    "httpOnly": false,
+    "secure": true,
+    "sameSite": "None"
+  },
+  {
+    "name": "_ym_d",
+    "value": "1754070902",
+    "domain": ".tgstat.ru",
+    "path": "/",
+    "httpOnly": false,
+    "secure": true,
+    "sameSite": "None"
+  },
+  {
+    "name": "_ym_isad",
+    "value": "2",
+    "domain": ".tgstat.ru",
+    "path": "/",
+    "httpOnly": false,
+    "secure": true,
+    "sameSite": "None"
+  },
+  {
+    "name": "_ga_ZEKJ7V8PH3",
+    "value": "GS2.1.s1765866276$o17$g1$t1765866278$j58$l0$h0",
+    "domain": ".tgstat.ru",
+    "path": "/",
+    "httpOnly": false,
+    "secure": false
+  },
+  {
+    "name": "_gid",
+    "value": "GA1.2.251840835.1765820624",
+    "domain": ".tgstat.ru",
+    "path": "/",
+    "httpOnly": false,
+    "secure": false
+  }
+]

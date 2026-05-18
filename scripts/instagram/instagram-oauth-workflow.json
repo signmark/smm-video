@@ -1,0 +1,130 @@
+{
+  "name": "Instagram OAuth Token Handler",
+  "nodes": [
+    {
+      "id": "webhook",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "webhook/instagram-auth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "name": "Webhook - Instagram Auth",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [260, 360]
+    },
+    {
+      "id": "function",
+      "parameters": {
+        "functionCode": "// Обрабатываем данные Instagram OAuth\nconst webhookData = $json;\n\nconsole.log('📸 Instagram OAuth webhook получен:', {\n  success: webhookData.success,\n  appId: webhookData.appId,\n  userCount: webhookData.instagramAccounts?.length || 0,\n  timestamp: webhookData.timestamp\n});\n\nif (!webhookData.success) {\n  throw new Error('OAuth завершился с ошибкой: ' + JSON.stringify(webhookData));\n}\n\n// Извлекаем основные данные\nconst {\n  appId,\n  longLivedToken,\n  expiresIn,\n  user,\n  instagramAccounts\n} = webhookData;\n\nif (!instagramAccounts || instagramAccounts.length === 0) {\n  throw new Error('Не найдено Instagram аккаунтов, привязанных к Facebook страницам');\n}\n\n// Берем первый найденный Instagram аккаунт\nconst primaryAccount = instagramAccounts[0];\n\nconsole.log('📸 Основной Instagram аккаунт:', {\n  username: primaryAccount.username,\n  instagramId: primaryAccount.instagramId,\n  pageName: primaryAccount.pageName\n});\n\n// Подготавливаем данные для сохранения в кампанию\nconst instagramSettings = {\n  appId: appId,\n  instagramId: primaryAccount.instagramId,\n  username: primaryAccount.username,\n  name: primaryAccount.name,\n  pageId: primaryAccount.pageId,\n  pageName: primaryAccount.pageName,\n  pageAccessToken: primaryAccount.pageAccessToken,\n  longLivedToken: longLivedToken,\n  expiresIn: expiresIn,\n  tokenExpiresAt: new Date(Date.now() + (expiresIn * 1000)).toISOString(),\n  user: {\n    id: user.id,\n    name: user.name,\n    email: user.email\n  },\n  authTimestamp: webhookData.timestamp,\n  allAccounts: instagramAccounts\n};\n\nconsole.log('📸 Instagram настройки подготовлены для сохранения');\n\nreturn {\n  json: {\n    success: true,\n    instagramSettings: instagramSettings,\n    accountsFound: instagramAccounts.length,\n    primaryAccount: {\n      username: primaryAccount.username,\n      instagramId: primaryAccount.instagramId\n    }\n  }\n};"
+      },
+      "name": "Process OAuth Data",
+      "type": "n8n-nodes-base.function", 
+      "typeVersion": 1,
+      "position": [460, 360]
+    },
+    {
+      "id": "directus_save",
+      "parameters": {
+        "resource": "items",
+        "operation": "create",
+        "collection": "instagram_oauth_tokens",
+        "options": {},
+        "body": {
+          "app_id": "={{ $json.instagramSettings.appId }}",
+          "instagram_id": "={{ $json.instagramSettings.instagramId }}",
+          "username": "={{ $json.instagramSettings.username }}",
+          "settings": "={{ JSON.stringify($json.instagramSettings) }}",
+          "status": "active",
+          "created_at": "{{ $now.toISO() }}"
+        }
+      },
+      "name": "Save to Directus",
+      "type": "n8n-nodes-base.directus",
+      "typeVersion": 1,
+      "position": [660, 360],
+      "credentials": {
+        "directusApi": {
+          "id": "directus_main",
+          "name": "Directus Main API"
+        }
+      }
+    },
+    {
+      "id": "response_success",
+      "parameters": {
+        "options": {},
+        "responseBody": "{\n  \"success\": true,\n  \"message\": \"Instagram OAuth токен успешно сохранен\",\n  \"account\": {\n    \"username\": \"{{ $('Process OAuth Data').item.json.primaryAccount.username }}\",\n    \"instagramId\": \"{{ $('Process OAuth Data').item.json.primaryAccount.instagramId }}\"\n  },\n  \"timestamp\": \"{{ $now.toISO() }}\"\n}",
+        "statusCode": 200,
+        "headers": {
+          "Content-Type": "application/json"
+        }
+      },
+      "name": "Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [860, 280]
+    },
+    {
+      "id": "response_error",
+      "parameters": {
+        "options": {},
+        "responseBody": "{\n  \"success\": false,\n  \"error\": \"{{ $json.error?.message || 'Неизвестная ошибка при обработке Instagram OAuth' }}\",\n  \"timestamp\": \"{{ $now.toISO() }}\"\n}",
+        "statusCode": 400,
+        "headers": {
+          "Content-Type": "application/json"
+        }
+      },
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [860, 440]
+    }
+  ],
+  "connections": {
+    "webhook": {
+      "main": [
+        [
+          {
+            "node": "function",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "function": {
+      "main": [
+        [
+          {
+            "node": "directus_save",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "directus_save": {
+      "main": [
+        [
+          {
+            "node": "response_success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "initial",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "instagram-oauth-handler",
+  "tags": []
+}

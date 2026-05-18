@@ -1,0 +1,310 @@
+[
+  {
+    "id": "54e92f7d-dafa-436b-99ed-d2c4b618a5c2",
+    "title": "Космос",
+    "topic": "топ 3 факта о космосе",
+    "format": "9:16",
+    "duration": 30,
+    "language": "ru",
+    "status": "error",
+    "progress": 5,
+    "progressMessage": "Ошибка: [GoogleGenerativeAI Error]: Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent: [403 Forbidden] Permission denied: Consumer 'api_key:AIzaSyDaYtWfHwI9vq3kTatny217HnbKauAvdxE' has been suspended. [{\"@type\":\"type.googleapis.com/google.rpc.ErrorInfo\",\"reason\":\"CONSUMER_SUSPENDED\",\"domain\":\"googleapis.com\",\"metadata\":{\"consumer\":\"projects/116460909200\",\"containerInfo\":\"api_key:AIzaSyDaYtWfHwI9vq3kTatny217HnbKauAvdxE\",\"service\":\"generativelanguage.googleapis.com\"}},{\"@type\":\"type.googleapis.com/google.rpc.LocalizedMessage\",\"locale\":\"en-US\",\"message\":\"Permission denied: Consumer 'api_key:AIzaSyDaYtWfHwI9vq3kTatny217HnbKauAvdxE' has been suspended.\"}]",
+    "createdAt": "2026-05-10T10:36:32.873Z",
+    "updatedAt": "2026-05-10T10:36:40.850Z",
+    "error": "[GoogleGenerativeAI Error]: Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent: [403 Forbidden] Permission denied: Consumer 'api_key:AIzaSyDaYtWfHwI9vq3kTatny217HnbKauAvdxE' has been suspended. [{\"@type\":\"type.googleapis.com/google.rpc.ErrorInfo\",\"reason\":\"CONSUMER_SUSPENDED\",\"domain\":\"googleapis.com\",\"metadata\":{\"consumer\":\"projects/116460909200\",\"containerInfo\":\"api_key:AIzaSyDaYtWfHwI9vq3kTatny217HnbKauAvdxE\",\"service\":\"generativelanguage.googleapis.com\"}},{\"@type\":\"type.googleapis.com/google.rpc.LocalizedMessage\",\"locale\":\"en-US\",\"message\":\"Permission denied: Consumer 'api_key:AIzaSyDaYtWfHwI9vq3kTatny217HnbKauAvdxE' has been suspended.\"}]"
+  },
+  {
+    "id": "201778a2-b973-43ca-b10b-d2332e0a9659",
+    "title": "Космос тест",
+    "topic": "топ 3 факта о космосе",
+    "format": "9:16",
+    "duration": 15,
+    "language": "ru",
+    "status": "error",
+    "progress": 5,
+    "progressMessage": "Ошибка: [GoogleGenerativeAI Error]: Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent: [403 Forbidden] Permission denied: Consumer 'api_key:AIzaSyDaYtWfHwI9vq3kTatny217HnbKauAvdxE' has been suspended. [{\"@type\":\"type.googleapis.com/google.rpc.ErrorInfo\",\"reason\":\"CONSUMER_SUSPENDED\",\"domain\":\"googleapis.com\",\"metadata\":{\"consumer\":\"projects/116460909200\",\"service\":\"generativelanguage.googleapis.com\",\"containerInfo\":\"api_key:AIzaSyDaYtWfHwI9vq3kTatny217HnbKauAvdxE\"}},{\"@type\":\"type.googleapis.com/google.rpc.LocalizedMessage\",\"locale\":\"en-US\",\"message\":\"Permission denied: Consumer 'api_key:AIzaSyDaYtWfHwI9vq3kTatny217HnbKauAvdxE' has been suspended.\"}]",
+    "createdAt": "2026-05-10T10:39:12.177Z",
+    "updatedAt": "2026-05-10T10:39:27.697Z",
+    "error": "[GoogleGenerativeAI Error]: Error fetching from https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent: [403 Forbidden] Permission denied: Consumer 'api_key:AIzaSyDaYtWfHwI9vq3kTatny217HnbKauAvdxE' has been suspended. [{\"@type\":\"type.googleapis.com/google.rpc.ErrorInfo\",\"reason\":\"CONSUMER_SUSPENDED\",\"domain\":\"googleapis.com\",\"metadata\":{\"consumer\":\"projects/116460909200\",\"service\":\"generativelanguage.googleapis.com\",\"containerInfo\":\"api_key:AIzaSyDaYtWfHwI9vq3kTatny217HnbKauAvdxE\"}},{\"@type\":\"type.googleapis.com/google.rpc.LocalizedMessage\",\"locale\":\"en-US\",\"message\":\"Permission denied: Consumer 'api_key:AIzaSyDaYtWfHwI9vq3kTatny217HnbKauAvdxE' has been suspended.\"}]"
+  },
+  {
+    "id": "446acea2-b1bf-4e98-80fd-c88fe7d17a82",
+    "title": "Тест Claude",
+    "topic": "топ 3 факта о космосе",
+    "format": "9:16",
+    "duration": 15,
+    "language": "ru",
+    "status": "idle",
+    "progress": 0,
+    "progressMessage": "Ожидание запуска",
+    "createdAt": "2026-05-10T10:40:05.973Z",
+    "updatedAt": "2026-05-10T10:40:05.973Z"
+  },
+  {
+    "id": "93802547-e39b-46c7-8fef-b682f2db03a3",
+    "title": "Тест Claude",
+    "topic": "топ 3 факта о космосе",
+    "format": "9:16",
+    "duration": 15,
+    "language": "ru",
+    "status": "error",
+    "progress": 5,
+    "progressMessage": "Ошибка: 401 {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"},\"request_id\":\"req_011CatkE1jEw3hng6wh8yTC9\"}",
+    "createdAt": "2026-05-10T10:40:14.396Z",
+    "updatedAt": "2026-05-10T10:40:15.325Z",
+    "error": "401 {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"},\"request_id\":\"req_011CatkE1jEw3hng6wh8yTC9\"}"
+  },
+  {
+    "id": "289dd8a3-7c49-4bcd-b658-86fc058f6b24",
+    "title": "Тест Claude2",
+    "topic": "топ 3 факта о космосе",
+    "format": "9:16",
+    "duration": 15,
+    "language": "ru",
+    "status": "error",
+    "progress": 5,
+    "progressMessage": "Ошибка: 401 {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"},\"request_id\":\"req_011CatkSHLRuuz8AVvwYQT4r\"}",
+    "createdAt": "2026-05-10T10:43:01.219Z",
+    "updatedAt": "2026-05-10T10:43:01.768Z",
+    "error": "401 {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"},\"request_id\":\"req_011CatkSHLRuuz8AVvwYQT4r\"}"
+  },
+  {
+    "id": "a5ea6bf8-ca2a-4abd-bf69-201a6c19836e",
+    "title": "Тест3",
+    "topic": "топ 3 факта о космосе",
+    "format": "9:16",
+    "duration": 15,
+    "language": "ru",
+    "status": "error",
+    "progress": 5,
+    "progressMessage": "Ошибка: 401 {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"},\"request_id\":\"req_011CatkYotNeBSupCxZ4C2nu\"}",
+    "createdAt": "2026-05-10T10:44:29.483Z",
+    "updatedAt": "2026-05-10T10:44:30.310Z",
+    "error": "401 {\"type\":\"error\",\"error\":{\"type\":\"authentication_error\",\"message\":\"invalid x-api-key\"},\"request_id\":\"req_011CatkYotNeBSupCxZ4C2nu\"}"
+  },
+  {
+    "id": "3a2f24c1-ad91-4505-a6a6-a94682651acc",
+    "title": "Тест4",
+    "topic": "топ 3 факта о космосе",
+    "format": "9:16",
+    "duration": 15,
+    "language": "ru",
+    "status": "assembling",
+    "progress": 97,
+    "progressMessage": "Очистка временных файлов...",
+    "createdAt": "2026-05-10T10:45:34.183Z",
+    "updatedAt": "2026-05-10T10:45:42.529Z",
+    "script": {
+      "title": "Топ 3 Факта о Космосе",
+      "scenes": [
+        {
+          "id": "b3850dec-d9cd-497f-ae1b-554611764474",
+          "text": "Космос огромен! Бесконечность рядом!",
+          "imagePrompt": "A vast, swirling nebula in deep space. Colors of purple, blue, and orange dominate. Stars are scattered throughout. Cinematic lighting, photorealistic, hyper-detailed.",
+          "duration": 4,
+          "imagePath": "/home/runner/workspace/video-app/data/images/3a2f24c1-ad91-4505-a6a6-a94682651acc/scene_0.jpg"
+        },
+        {
+          "id": "dd5cb1b9-b413-4bb3-a62f-709c41c285b1",
+          "text": "Солнце – звезда-гигант!",
+          "imagePrompt": "Extreme close-up shot of the sun's surface. Solar flares erupting. Intense heat and light. Photorealistic, hyper-detailed, scientific visualization.",
+          "duration": 4,
+          "imagePath": "/home/runner/workspace/video-app/data/images/3a2f24c1-ad91-4505-a6a6-a94682651acc/scene_1.jpg"
+        },
+        {
+          "id": "651211f3-7d16-45e2-b682-995f62ca8c52",
+          "text": "Чёрные дыры все поглощают!",
+          "imagePrompt": "A black hole warping spacetime around it. Light bending and distorting. A galaxy being pulled in. Accurate scientific representation, photorealistic, deep space background.",
+          "duration": 4,
+          "imagePath": "/home/runner/workspace/video-app/data/images/3a2f24c1-ad91-4505-a6a6-a94682651acc/scene_2.jpg"
+        },
+        {
+          "id": "72522160-35cf-4c88-b523-d63f66e53061",
+          "text": "Космос: невероятно, не правда ли?",
+          "imagePrompt": "Earth seen from space. City lights visible at night. The moon in the background. A sense of wonder and perspective. Photorealistic, cinematic, detailed.",
+          "duration": 3,
+          "imagePath": "/home/runner/workspace/video-app/data/images/3a2f24c1-ad91-4505-a6a6-a94682651acc/scene_3.jpg"
+        }
+      ]
+    }
+  },
+  {
+    "id": "9d603db4-e8ff-4d5a-9fd1-6f01670be0c4",
+    "title": "FAL тест",
+    "topic": "топ 3 факта о космосе",
+    "format": "9:16",
+    "duration": 15,
+    "language": "ru",
+    "status": "assembling",
+    "progress": 97,
+    "progressMessage": "Очистка временных файлов...",
+    "createdAt": "2026-05-10T10:48:45.456Z",
+    "updatedAt": "2026-05-10T10:49:01.633Z",
+    "script": {
+      "title": "Топ 3 Факта о Космосе!",
+      "scenes": [
+        {
+          "id": "2fbedb3e-6a21-43cb-a615-68884036eb20",
+          "text": "Космос огромен! (№1)",
+          "imagePrompt": "Vast, swirling nebula in deep space. Deep blues, purples, and oranges. Distant galaxies visible. Cinematic, photorealistic, wide angle shot. NO TEXT IN IMAGE.",
+          "duration": 4,
+          "imagePath": "/home/runner/workspace/video-app/data/images/9d603db4-e8ff-4d5a-9fd1-6f01670be0c4/scene_0.jpg"
+        },
+        {
+          "id": "a1109a42-0b5e-4f72-8ef2-b6262fe8d7b3",
+          "text": "Солнце – звезда! (№2)",
+          "imagePrompt": "Extreme close-up of the surface of the Sun, showing solar flares and magnetic activity. Intense orange and yellow colors. Photorealistic, high detail. NO TEXT IN IMAGE.",
+          "duration": 4,
+          "imagePath": "/home/runner/workspace/video-app/data/images/9d603db4-e8ff-4d5a-9fd1-6f01670be0c4/scene_1.jpg"
+        },
+        {
+          "id": "4bf7d96b-2dfd-4025-beb1-654985cf42c8",
+          "text": "Тишина в космосе! (№3)",
+          "imagePrompt": "An astronaut floating in the blackness of space, tethered to the International Space Station. Earth visible in the background. Visor reflecting the cosmos. Photorealistic, wide shot. NO TEXT IN IMAGE.",
+          "duration": 4,
+          "imagePath": "/home/runner/workspace/video-app/data/images/9d603db4-e8ff-4d5a-9fd1-6f01670be0c4/scene_2.jpg"
+        },
+        {
+          "id": "6950bd23-7b3f-4d2b-8823-d5c13fcaaa33",
+          "text": "Узнай больше о звездах!",
+          "imagePrompt": "Telescope pointing towards the night sky, stars twinkling. A person looking through the eyepiece. Silhouetted figure against a starry background. Warm light from inside the observatory. NO TEXT IN IMAGE.",
+          "duration": 3,
+          "imagePath": "/home/runner/workspace/video-app/data/images/9d603db4-e8ff-4d5a-9fd1-6f01670be0c4/scene_3.jpg"
+        }
+      ]
+    }
+  },
+  {
+    "id": "315c1c9d-2985-4f99-bc60-a8b93791a9f2",
+    "title": "FAL key test",
+    "topic": "закат в горах",
+    "format": "16:9",
+    "duration": 12,
+    "language": "ru",
+    "status": "done",
+    "progress": 100,
+    "progressMessage": "Готово!",
+    "createdAt": "2026-05-10T10:50:14.964Z",
+    "updatedAt": "2026-05-10T10:50:37.092Z",
+    "script": {
+      "title": "Закат в горах: Мир в Огне",
+      "scenes": [
+        {
+          "id": "4f01945f-baab-4e9e-a385-ebbb08f82b98",
+          "text": "Солнце тонет за пиками гор",
+          "imagePrompt": "Panoramic view of snow-capped mountains at sunset. The sky is ablaze with fiery oranges, reds, and purples. Wispy clouds catch the last rays of sunlight. A few tall, slender pine trees stand silhouetted in the foreground. Cinematic, photorealistic, 8k resolution, wide angle.",
+          "duration": 4,
+          "imagePath": "/home/runner/workspace/video-app/data/images/315c1c9d-2985-4f99-bc60-a8b93791a9f2/scene_0.jpg"
+        },
+        {
+          "id": "77b7b5fd-1df3-4daf-861c-c527b3643736",
+          "text": "Золотой час в сердце Кавказа",
+          "imagePrompt": "Close-up of a jagged mountain peak illuminated by the golden light of the setting sun. Snow glistens on the ridge. Sharp shadows accentuate the texture of the rock face. A soaring eagle is barely visible against the bright sky. Cinematic, photorealistic, high detail.",
+          "duration": 4,
+          "imagePath": "/home/runner/workspace/video-app/data/images/315c1c9d-2985-4f99-bc60-a8b93791a9f2/scene_1.jpg"
+        },
+        {
+          "id": "f07c760a-4ee3-494f-bcec-f13f49dfab4c",
+          "text": "Вечность в каждом мгновении",
+          "imagePrompt": "Wide shot of a tranquil mountain valley at dusk. A small, winding river reflects the pastel colors of the fading sunset. Distant mountains are shrouded in a soft blue haze. A few scattered wildflowers bloom in the foreground. Serene atmosphere. Cinematic, photorealistic, 8k, dreamy lighting.",
+          "duration": 4,
+          "imagePath": "/home/runner/workspace/video-app/data/images/315c1c9d-2985-4f99-bc60-a8b93791a9f2/scene_2.jpg"
+        }
+      ]
+    },
+    "videoPath": "/home/runner/workspace/video-app/data/videos/315c1c9d-2985-4f99-bc60-a8b93791a9f2.mp4",
+    "videoUrl": "/video-app/api/videos/315c1c9d-2985-4f99-bc60-a8b93791a9f2/download"
+  },
+  {
+    "id": "f1bcf1ed-3bed-4e9f-b8a3-743c143b4505",
+    "title": "Чёрные дыры",
+    "topic": "три факта о чёрных дырах",
+    "format": "9:16",
+    "duration": 15,
+    "language": "ru",
+    "status": "assembling",
+    "progress": 97,
+    "progressMessage": "Очистка временных файлов...",
+    "createdAt": "2026-05-10T10:56:05.159Z",
+    "updatedAt": "2026-05-10T10:56:25.729Z",
+    "script": {
+      "title": "Три Факта о Чёрных Дырах",
+      "scenes": [
+        {
+          "id": "4fc2ec3b-83f6-4034-93f3-4b7ffbb87394",
+          "text": "Чёрные дыры: невидимые монстры.",
+          "imagePrompt": "A photorealistic, swirling vortex of space dust and gas, distorted light bending around an unseen central point, representing a black hole. Use deep blacks, purples, and blues. Cinematic lighting, dramatic shadows.",
+          "duration": 3,
+          "imagePath": "/home/runner/workspace/video-app/data/images/f1bcf1ed-3bed-4e9f-b8a3-743c143b4505/scene_0.jpg"
+        },
+        {
+          "id": "dd2977a7-27a8-4395-94e7-3dab40024aa2",
+          "text": "1. Они пожирают всё!",
+          "imagePrompt": "A visually stunning representation of a black hole's accretion disk, showcasing material being pulled in with incredible speed and force. Rendered with high detail and realistic textures. Focus on the intense gravitational pull. Galactic background with bright stars and nebulous clouds. Photorealistic, cinematic quality.",
+          "duration": 4,
+          "imagePath": "/home/runner/workspace/video-app/data/images/f1bcf1ed-3bed-4e9f-b8a3-743c143b4505/scene_1.jpg"
+        },
+        {
+          "id": "640cbd3e-8078-44c5-9cae-f92ec20c7824",
+          "text": "2. Искривляют время и пространство.",
+          "imagePrompt": "A warped grid representing spacetime, distorted heavily around a central dark sphere (the black hole). Illustrate the bending of light around the object, showing distorted starfields behind it. Use vibrant blues and purples for the grid lines. Cinematic, visually compelling, and scientifically accurate.",
+          "duration": 4,
+          "imagePath": "/home/runner/workspace/video-app/data/images/f1bcf1ed-3bed-4e9f-b8a3-743c143b4505/scene_2.jpg"
+        },
+        {
+          "id": "f82b2856-4f7d-4a99-883a-6340b689999d",
+          "text": "3. Могут быть очень маленькими!",
+          "imagePrompt": "A tiny, almost microscopic black hole hovering in space, still exhibiting a slight distortion of light around it, surrounded by a vast expanse of stars and nebulae. Emphasize the contrast between its size and the scale of the universe. Photorealistic render, high resolution.",
+          "duration": 4,
+          "imagePath": "/home/runner/workspace/video-app/data/images/f1bcf1ed-3bed-4e9f-b8a3-743c143b4505/scene_3.jpg"
+        }
+      ]
+    }
+  },
+  {
+    "id": "23e37845-c8ab-4e63-81ff-13dbb5f97496",
+    "title": "Бабка сидит на лавочке и тростью пытается сбить дрон летающий возле неё и ругается руссским матом.",
+    "topic": "Бабка сидит на лавочке и тростью пытается сбить дрон летающий возле неё и ругается руссским матом.",
+    "format": "9:16",
+    "duration": 15,
+    "language": "ru",
+    "status": "assembling",
+    "progress": 97,
+    "progressMessage": "Очистка временных файлов...",
+    "createdAt": "2026-05-10T11:00:14.460Z",
+    "updatedAt": "2026-05-10T11:01:05.060Z",
+    "script": {
+      "title": "Бабка vs Дрон",
+      "scenes": [
+        {
+          "id": "d6ca5ac3-34f3-4173-8366-b69fc2cc75a0",
+          "text": "Дрон достал!",
+          "imagePrompt": "Close up shot of a very old Russian 'babushka' (grandmother) with a deeply wrinkled face, wearing a floral headscarf and a traditional woolen shawl, sitting on a green park bench. She is glaring intensely upwards.",
+          "duration": 4,
+          "imagePath": "/home/runner/workspace/video-app/data/images/23e37845-c8ab-4e63-81ff-13dbb5f97496/scene_0.jpg"
+        },
+        {
+          "id": "a9878012-f941-4944-8d84-4508efc51c1f",
+          "text": "Трость - оружие!",
+          "imagePrompt": "Medium shot of the babushka as she swings her wooden walking cane wildly upwards at a small, buzzing drone that is just out of reach. The drone is sleek and modern, a stark contrast to the babushka's traditional attire. Park trees are in the blurred background.",
+          "duration": 4,
+          "imagePath": "/home/runner/workspace/video-app/data/images/23e37845-c8ab-4e63-81ff-13dbb5f97496/scene_1.jpg"
+        },
+        {
+          "id": "fb54893c-f35a-4831-9cbd-f881466874f0",
+          "text": "Ах ты, зараза!",
+          "imagePrompt": "Low angle shot looking up at the drone from the babushka's perspective. The drone is slightly blurred due to movement. The babushka's face is visible in the bottom of the frame, distorted with anger and frustration.",
+          "duration": 4,
+          "imagePath": "/home/runner/workspace/video-app/data/images/23e37845-c8ab-4e63-81ff-13dbb5f97496/scene_2.jpg"
+        },
+        {
+          "id": "b35f22d2-44c3-4848-af79-e68908804427",
+          "text": "Вот тебе!",
+          "imagePrompt": "Close up of the wooden cane connecting with the drone. Parts of the drone are breaking apart mid air. Babushka's hand strongly gripping the cane is in focus.",
+          "duration": 3,
+          "imagePath": "/home/runner/workspace/video-app/data/images/23e37845-c8ab-4e63-81ff-13dbb5f97496/scene_3.jpg"
+        }
+      ]
+    }
+  }
+]

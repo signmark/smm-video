@@ -1,0 +1,657 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Убрали агрессивные CSS правила - полагаемся на компонентные стили */
+
+
+/* Общие стили для WYSIWYG контента */
+.prose {
+  color: inherit;
+}
+
+.prose h1, .prose h2, .prose h3, .prose h4, .prose h5, .prose h6 {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.prose h1 {
+  font-size: 1.5em;
+  color: hsl(var(--primary));
+}
+
+.prose h2 {
+  font-size: 1.3em;
+  color: hsl(var(--primary) / 0.9);
+}
+
+.prose h3 {
+  font-size: 1.2em;
+  color: hsl(var(--primary) / 0.8);
+}
+
+.prose p {
+  margin-top: 0.25em;
+  margin-bottom: 0.25em;
+}
+
+.prose ul, .prose ol {
+  padding-left: 1.5em;
+  margin-top: 0.25em;
+  margin-bottom: 0.25em;
+}
+
+.prose li {
+  margin-top: 0.125em;
+  margin-bottom: 0.125em;
+}
+
+.prose img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 0.25rem;
+}
+
+.prose a {
+  color: hsl(var(--primary));
+  text-decoration: underline;
+}
+
+.prose blockquote {
+  border-left: 3px solid hsl(var(--muted-foreground));
+  padding-left: 0.75em;
+  font-style: italic;
+  margin: 0.5em 0;
+}
+
+.prose pre {
+  background-color: hsl(var(--muted));
+  padding: 0.5em;
+  border-radius: 0.25rem;
+  overflow-x: auto;
+}
+
+.prose-sm {
+  font-size: 0.875rem;
+}
+
+.prose-sm h1 {
+  font-size: 1.25em;
+}
+
+.prose-sm h2 {
+  font-size: 1.15em;
+}
+
+.prose-sm h3 {
+  font-size: 1.1em;
+}
+
+/* Специальные стили для компактных карточек */
+.card-content .prose-sm p {
+  margin-top: 0.125em;
+  margin-bottom: 0.125em;
+  line-height: 1.4;
+}
+
+.card-content .prose-sm ul, .card-content .prose-sm ol {
+  padding-left: 1.25em;
+}
+
+.card-content .prose-sm blockquote {
+  margin: 0.25em 0;
+}
+
+/* Принудительные стили для карточек контента в ЛЮБОЙ теме */
+.card-content .prose,
+.card-content .prose *,
+.card-content .prose p,
+.card-content .prose-xs,
+.card-content .prose-xs *,
+.card-content .prose-xs p {
+  color: hsl(var(--foreground)) !important;
+}
+
+/* Принудительные стили для всего текста в карточках */
+.card-content {
+  color: hsl(var(--foreground)) !important;
+}
+
+.card-content * {
+  color: hsl(var(--foreground)) !important;
+}
+
+/* Специальные стили для светлой темы - усиливаем контраст */
+.card-content h1,
+.card-content h2,
+.card-content h3,
+.card-content h4,
+.card-content h5,
+.card-content h6 {
+  color: hsl(var(--primary)) !important;
+  font-weight: 600 !important;
+}
+
+.card-content p,
+.card-content span,
+.card-content div {
+  color: hsl(var(--foreground)) !important;
+}
+
+.card-content .text-muted-foreground {
+  color: hsl(var(--muted-foreground)) !important;
+}
+
+/* Темная тема остается как была */
+.dark .card-content .prose,
+.dark .card-content .prose *,
+.dark .card-content .prose p,
+.dark .card-content .prose-xs,
+.dark .card-content .prose-xs *,
+.dark .card-content .prose-xs p {
+  color: hsl(var(--foreground)) !important;
+}
+
+.dark .card-content {
+  color: hsl(var(--foreground)) !important;
+}
+
+.dark .card-content * {
+  color: inherit !important;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    /* Принудительно разрешаем зум */
+    -webkit-text-size-adjust: 100%;
+    -ms-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    /* Разрешаем зум без блокировки UI */
+    -webkit-text-size-adjust: 100%;
+    -ms-text-size-adjust: 100%;
+  }
+
+  /* Разрешаем зум только на основном контенте */
+  .main-content,
+  .content-area,
+  .dashboard-content {
+    touch-action: manipulation;
+  }
+
+  /* Обеспечиваем корректную работу всех интерактивных элементов */
+  button,
+  select,
+  input,
+  textarea,
+  .select-trigger,
+  [role="button"],
+  [role="combobox"],
+  [role="menu"],
+  [role="menuitem"],
+  [data-radix-select-trigger],
+  [data-radix-select-content],
+  [data-radix-select-item],
+  [data-radix-dropdown-menu-trigger],
+  [data-radix-dropdown-menu-content],
+  [data-radix-dropdown-menu-item],
+  [data-radix-dialog-trigger],
+  [data-radix-dialog-content],
+  [data-radix-popover-trigger],
+  [data-radix-popover-content] {
+    touch-action: auto;
+  }
+
+  /* Современная система дизайн-токенов HSL */
+  :root {
+    /* Базовые цвета - более контрастные */
+    --background: 0 0% 100%;
+    --foreground: 220 13% 18%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 13% 18%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 13% 18%;
+    
+    /* Приглушенные цвета - более темные для лучшей читаемости */
+    --muted: 220 14.3% 90%;
+    --muted-foreground: 220 8.9% 35%;
+    
+    /* Первичные цвета (более яркий синий) */
+    --primary: 220.9 39.3% 25%;
+    --primary-foreground: 210 20% 98%;
+    
+    /* Вторичные цвета */
+    --secondary: 220 14.3% 88%;
+    --secondary-foreground: 220.9 39.3% 15%;
+    
+    /* Акцентные цвета */
+    --accent: 220 14.3% 88%;
+    --accent-foreground: 220.9 39.3% 15%;
+    
+    /* Деструктивные цвета */
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 210 20% 98%;
+    
+    /* Границы и формы - более заметные */
+    --border: 214 32% 80%;
+    --input: 214 32% 85%;
+    --ring: 215 20.2% 50%;
+    
+    /* Специфичные для приложения */
+    --sidebar-bg: 0 0% 100%;
+    --sidebar-fg: 224 71.4% 4.1%;
+    --sidebar-accent: 220.9 39.3% 11%;
+    --sidebar-accent-fg: 210 20% 98%;
+    --sidebar-border: 214 32% 91%;
+    
+    --topbar-bg: 0 0% 100%;
+    --topbar-fg: 224 71.4% 4.1%;
+    --topbar-border: 220 13% 91%;
+    
+    /* Радиус */
+    --radius: 0.5rem;
+  }
+
+  /* Темная тема в стиле Replit/PyCharm Dark */
+  .dark {
+    --background: 220 24% 7.3%;        /* #0e1117 - очень темно-серый */
+    --foreground: 0 0% 100%;           /* #ffffff - белый текст */
+    --card: 215 15% 15.3%;             /* #21262d - темно-серые карточки */
+    --card-foreground: 214 13% 89.6%;  /* #e1e4e8 - светло-серый */
+    --popover: 215 15% 15.3%;          /* #21262d - как карточки */
+    --popover-foreground: 214 13% 89.6%; /* #e1e4e8 - светло-серый */
+    
+    --muted: 210 4% 20%;               /* #313335 - средне-серый */
+    --muted-foreground: 212 9% 58.2%;  /* #8b949e - серый приглушенный */
+    
+    --primary: 217 91% 60%;             /* #2f81f7 - синий в стиле Replit */
+    --primary-foreground: 0 0% 100%;    /* #ffffff - белый текст */
+    
+    --secondary: 210 4% 20%;           /* #313335 - средне-серый */
+    --secondary-foreground: 214 13% 89.6%; /* #e1e4e8 - светло-серый */
+    
+    --accent: 217 84% 41%;             /* #1a5fb4 - темно-синий акцент */
+    --accent-foreground: 0 0% 100%;    /* #ffffff - белый */
+    
+    --destructive: 0 72.2% 50.6%;      /* Оставляем красный как есть */
+    --destructive-foreground: 0 0% 100%; /* #ffffff - белый */
+    
+    --border: 212 12% 21.4%;           /* #30363d - темно-серые границы */
+    --input: 212 12% 21.4%;            /* #30363d - как границы */
+    --ring: 214 20% 69%;               /* #a0aec0 - светло-серый для фокуса */
+    
+    --sidebar-bg: 220 24% 7.3%;        /* #0e1117 - очень темный */
+    --sidebar-fg: 214 13% 89.6%;       /* #e1e4e8 - светло-серый */
+    --sidebar-accent: 212 12% 21.4%;   /* #30363d - темно-серый акцент */
+    --sidebar-accent-fg: 0 0% 100%;    /* #ffffff - белый */
+    --sidebar-border: 215 15% 15.3%;   /* #21262d - темно-серая граница */
+    
+    --topbar-bg: 215 21% 11%;          /* #161b22 - немного светлее сайдбара */
+    --topbar-fg: 214 13% 89.6%;        /* #e1e4e8 - светло-серый */
+    --topbar-border: 212 12% 21.4%;    /* #30363d - темно-серая граница */
+  }
+
+  /* Модернизированные стили компонентов */
+  .sidebar {
+    background-color: hsl(var(--sidebar-bg));
+    color: hsl(var(--sidebar-fg));
+  }
+  
+  .sidebar-title {
+    color: hsl(var(--sidebar-fg));
+  }
+  
+  .sidebar-item {
+    color: hsl(var(--sidebar-fg));
+    transition: all 0.2s ease-in-out;
+  }
+  
+  .sidebar-item:hover, 
+  .sidebar-item.active {
+    background-color: hsl(var(--sidebar-accent) / 0.1);
+    color: hsl(var(--primary));
+  }
+  
+  /* Стилизация верхней панели */
+  .topbar {
+    background-color: hsl(var(--topbar-bg));
+    color: hsl(var(--topbar-fg));
+  }
+  
+  .topbar-title {
+    color: hsl(var(--topbar-fg));
+  }
+
+  /* Агрессивное переопределение стилей для Sheet компонента */
+  [data-radix-dialog-content][data-side="left"],
+  [data-state="open"][data-side="left"],
+  .sheet-content-left {
+    background-color: hsl(var(--sidebar-bg)) !important;
+    color: hsl(var(--sidebar-fg)) !important;
+  }
+
+  /* Переопределяем все возможные селекторы для мобильного сайдбара */
+  [role="dialog"][data-side="left"] *,
+  [data-radix-dialog-content][data-side="left"] *,
+  .sheet-content-left * {
+    color: inherit !important;
+  }
+}
+
+/* Улучшенная мобильная адаптация с safe areas */
+.app-shell {
+  min-height: 100vh;
+  min-height: 100svh; /* Поддержка современных viewport единиц */
+  /* Убираем фиксированную высоту для разрешения зума */
+  /* height: 100dvh; */
+  /* height: 100vh; */
+}
+
+/* Safe area поддержка для iOS */
+.safe-area-top {
+  padding-top: env(safe-area-inset-top);
+}
+
+.safe-area-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.safe-area-left {
+  padding-left: env(safe-area-inset-left);
+}
+
+.safe-area-right {
+  padding-right: env(safe-area-inset-right);
+}
+
+.safe-area-all {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+@media (max-width: 640px) {
+  /* Базовые safe areas для iOS */
+  .mobile-safe-padding {
+    padding-left: max(0.75rem, env(safe-area-inset-left));
+    padding-right: max(0.75rem, env(safe-area-inset-right));
+  }
+  
+  /* Предотвращение горизонтального overflow */
+  .mobile-safe-content {
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: visible;
+  }
+}
+
+@layer components {
+  /* Стили для аккордеонов - непрозрачные с тенью */
+  .accordion-item {
+    @apply bg-background border rounded-md shadow-sm;
+    margin-bottom: 2px; /* Небольшой промежуток между аккордеонами */
+  }
+  
+  /* Стики-хедер для фиксированного первого блока (отключено - больше не прилипает) */
+  .sticky-header {
+    @apply z-10 bg-background pb-6;
+  }
+  
+  /* Обычный заголовок страницы */
+  .page-header {
+    @apply z-10 bg-background pb-6;
+  }
+  
+  /* Упрощенные стили для эмодзи-пикера в Popover */
+  .emoji-picker-container {
+    position: relative;
+    z-index: 50; 
+  }
+  
+  /* Стили для Popover контейнера */
+  .emoji-popover {
+    z-index: 50;
+    max-height: 450px;
+    overflow: visible;
+  }
+  
+  /* Стили для компонента эмодзи-пикера */
+  .emoji-picker-react-component {
+    border: none !important;
+    box-shadow: none !important;
+    --epr-hover-bg-color: hsl(var(--accent)) !important;
+    --epr-focus-bg-color: hsl(var(--accent)) !important;
+    --epr-highlight-color: hsl(var(--primary)) !important;
+    --epr-search-border-color: hsl(var(--border)) !important;
+  }
+  
+  /* Стили для скроллбара эмодзи-пикера - Chrome и Safari */
+  .emoji-picker-container .epr-body::-webkit-scrollbar {
+    width: 6px;
+  }
+  
+  .emoji-picker-container .epr-body::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  
+  .emoji-picker-container .epr-body::-webkit-scrollbar-thumb {
+    background-color: rgba(128, 128, 128, 0.5);
+    border-radius: 6px;
+  }
+  
+  /* Стили скроллбара - для Firefox */
+  .emoji-picker-container .epr-body {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(128, 128, 128, 0.5) transparent;
+    padding-right: 5px; /* Немного места для скроллбара */
+  }
+  
+  /* Переопределяем шаблон событий для перехвата кликов */
+  .emoji-picker-container .EmojiPickerReact {
+    pointer-events: auto !important;
+  }
+  
+  .emoji-picker-container .epr-emoji {
+    pointer-events: auto !important;
+  }
+  
+  .emoji-picker-container .epr-category-nav {
+    pointer-events: auto !important;
+  }
+  
+  .resize-handle {
+    resize: both;
+    overflow: auto;
+  }
+
+  /* Стилизация уголка для изменения размера */
+  .resize-handle::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 15px;
+    height: 15px;
+    cursor: nwse-resize;
+    background: 
+      linear-gradient(135deg, transparent 0%, transparent 50%, rgba(128, 128, 128, 0.3) 50%, rgba(128, 128, 128, 0.3) 100%);
+    border-bottom-right-radius: 4px;
+  }
+
+  /* Кастомные скроллбары */
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: var(--scrollbar-track, rgba(240, 240, 240, 0.5));
+    border-radius: 10px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb, rgba(160, 160, 160, 0.5));
+    border-radius: 10px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: var(--scrollbar-thumb-hover, rgba(140, 140, 140, 0.7));
+  }
+
+  .scrollbar-track-gray-100::-webkit-scrollbar-track {
+    --scrollbar-track: rgba(200, 200, 200, 0.2);
+  }
+
+  .scrollbar-thumb-gray-300::-webkit-scrollbar-thumb {
+    --scrollbar-thumb: rgba(160, 160, 160, 0.5);
+    --scrollbar-thumb-hover: rgba(120, 120, 120, 0.7);
+  }
+  
+  /* Улучшенные стили для скроллбаров на разных элементах */
+  .Dialog-overlay {
+    overflow-y: auto;
+    scrollbar-width: thin;
+  }
+  
+  .Dialog-content {
+    scrollbar-width: thin;
+  }
+  
+  /* Глобальные стили для скроллбаров */
+  html {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(160, 160, 160, 0.5) rgba(240, 240, 240, 0.5);
+  }
+  
+  /* Стили для Firefox */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(160, 160, 160, 0.5) rgba(240, 240, 240, 0.5);
+  }
+
+  /* Стили для AI диалога генерации контента - используем !important для переопределения shadcn */
+  .ai-dialog {
+    background-color: hsl(var(--card)) !important;
+    color: hsl(var(--card-foreground)) !important;
+  }
+
+  .ai-dialog [data-radix-select-trigger] {
+    background-color: hsl(var(--background)) !important;
+    color: hsl(var(--foreground)) !important;
+    border-color: hsl(var(--border)) !important;
+  }
+
+  .ai-dialog [data-radix-select-content] {
+    background-color: hsl(var(--popover)) !important;
+    color: hsl(var(--popover-foreground)) !important;
+    border-color: hsl(var(--border)) !important;
+  }
+
+  .ai-dialog [data-radix-select-item] {
+    color: hsl(var(--popover-foreground)) !important;
+  }
+
+  .ai-dialog [data-radix-select-item]:hover {
+    background-color: hsl(var(--accent)) !important;
+    color: hsl(var(--accent-foreground)) !important;
+  }
+
+  .ai-dialog textarea {
+    background-color: hsl(var(--background)) !important;
+    color: hsl(var(--foreground)) !important;
+    border-color: hsl(var(--border)) !important;
+  }
+
+  .ai-dialog textarea::placeholder {
+    color: hsl(var(--muted-foreground)) !important;
+  }
+
+  .ai-dialog input {
+    background-color: hsl(var(--background)) !important;
+    color: hsl(var(--foreground)) !important;
+    border-color: hsl(var(--border)) !important;
+  }
+
+  .ai-dialog input::placeholder {
+    color: hsl(var(--muted-foreground)) !important;
+  }
+
+  .ai-dialog [data-radix-checkbox-root] {
+    border-color: hsl(var(--border)) !important;
+  }
+
+  .ai-dialog [data-radix-checkbox-root][data-state="checked"] {
+    background-color: hsl(var(--primary)) !important;
+    color: hsl(var(--primary-foreground)) !important;
+  }
+
+  .ai-dialog button[data-variant="outline"] {
+    background-color: hsl(var(--background)) !important;
+    color: hsl(var(--foreground)) !important;
+    border-color: hsl(var(--border)) !important;
+  }
+
+  .ai-dialog button[data-variant="outline"]:hover {
+    background-color: hsl(var(--accent)) !important;
+    color: hsl(var(--accent-foreground)) !important;
+  }
+}
+
+/* Статус классы с токенами для темной темы */
+.status-success {
+  background-color: hsl(var(--muted) / 0.3) !important;
+  color: hsl(var(--foreground)) !important;
+  border: 1px solid hsl(var(--border)) !important;
+}
+
+.status-info {
+  background-color: hsl(var(--muted) / 0.3) !important;
+  color: hsl(var(--foreground)) !important;
+  border: 1px solid hsl(var(--border)) !important;
+}
+
+.status-warning {
+  background-color: hsl(var(--muted) / 0.3) !important;
+  color: hsl(var(--foreground)) !important;
+  border: 1px solid hsl(var(--border)) !important;
+}
+
+.status-neutral {
+  background-color: hsl(var(--muted) / 0.3) !important;
+  color: hsl(var(--foreground)) !important;
+  border: 1px solid hsl(var(--border)) !important;
+}
+
+/* Темная тема - более контрастные версии */
+.dark .status-success {
+  background-color: hsl(142, 76%, 8%) !important;
+  color: hsl(142, 76%, 85%) !important;
+  border-color: hsl(142, 76%, 20%) !important;
+}
+
+.dark .status-info {
+  background-color: hsl(213, 94%, 8%) !important;
+  color: hsl(213, 94%, 85%) !important;
+  border-color: hsl(213, 94%, 20%) !important;
+}
+
+.dark .status-warning {
+  background-color: hsl(38, 92%, 8%) !important;
+  color: hsl(38, 92%, 85%) !important;
+  border-color: hsl(38, 92%, 20%) !important;
+}
+
+.dark .status-neutral {
+  background-color: hsl(var(--muted) / 0.15) !important;
+  color: hsl(var(--muted-foreground)) !important;
+  border-color: hsl(var(--border)) !important;
+}

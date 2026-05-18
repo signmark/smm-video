@@ -1,0 +1,9 @@
+postgres/
+node_modules/
+dist/
+.git/
+*.sql
+*.tar.gz
+.env
+.env.*
+!.env.example

@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ALISA - AI-Led Intelligent Social Automation | Алиса знает, что постить</title>
+    <meta name="description" content="ALISA - умная платформа для автоматизации SMM с помощью искусственного интеллекта. Генерация контента, анализ трендов, планирование публикаций.">
+    <meta name="keywords" content="ALISA, AI, SMM, социальные сети, автоматизация, искусственный интеллект, Instagram, VK, Telegram">
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="config.js"></script>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <nav class="nav">
+            <div class="nav-container">
+                <div class="nav-brand">
+                    <img src="alisa-logo.png" alt="ALISA" class="brand-icon" style="width: 40px; height: 40px; object-fit: contain;">
+                    <span class="brand-text">ALISA</span>
+                </div>
+                <div class="nav-links">
+                    <a href="#features" class="nav-link">Возможности</a>
+                    <a href="#magic" class="nav-link">Магия AI</a>
+                    <a href="#pricing" class="nav-link">Тарифы</a>
+                    <a href="#contact" class="nav-link">Контакты</a>
+                    <a href="#" onclick="window.location.href=getAppUrl(); return false;" class="nav-cta">Войти в систему</a>
+                </div>
+                <button class="mobile-menu-toggle">
+                    <i class="fas fa-bars"></i>
+                </button>
+            </div>
+        </nav>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="hero" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%); padding: 120px 0 80px; position: relative; overflow: hidden;">
+        <div class="hero-pattern" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0.1; background-image: repeating-linear-gradient(45deg, transparent, transparent 35px, rgba(255,255,255,.1) 35px, rgba(255,255,255,.1) 70px);"></div>
+        <div class="container" style="position: relative; z-index: 1;">
+            <div class="hero-content">
+                <div class="hero-text">
+                    <div class="hero-badge" style="background: rgba(255,255,255,0.2); backdrop-filter: blur(10px); color: white; border: 1px solid rgba(255,255,255,0.3);">
+                        <i class="fas fa-rabbit"></i>
+                        <span>Где магия встречается с маркетингом</span>
+                    </div>
+                    <div style="text-align: center; margin: 40px 0;">
+                        <img src="alisa-main-logo.png" alt="ALISA - AI-Led Intelligent Social Automation" style="max-width: 500px; width: 100%; height: auto; filter: drop-shadow(0 10px 30px rgba(0,0,0,0.3));">
+                    </div>
+                    <h1 class="hero-title" style="color: white; font-size: 48px; margin: 30px 0 10px; text-align: center;">
+                        Алиса знает, что постить
+                    </h1>
+                    <p style="color: rgba(255,255,255,0.9); font-size: 28px; text-align: center; margin: 10px 0 30px; font-weight: 600; font-style: italic;">
+                        🐰 Алиса в стране SMM
+                    </p>
+                    <p class="hero-description" style="color: rgba(255,255,255,0.95); font-size: 18px; text-align: center;">
+                        Ваш умный помощник для автоматизации социальных сетей с помощью искусственного интеллекта.<br>
+                        Генерация контента • Анализ трендов • Мультиплатформенная публикация
+                    </p>
+                    <div class="hero-buttons" style="margin-top: 40px;">
+                        <a href="#" onclick="window.location.href=getAppUrl(); return false;" class="btn btn-primary large" style="background: white; color: #667eea; box-shadow: 0 10px 40px rgba(0,0,0,0.2);">
+                            <i class="fas fa-rocket"></i>
+                            Начать волшебство
+                        </a>
+                        <a href="#demo" class="btn btn-secondary" style="background: rgba(255,255,255,0.2); backdrop-filter: blur(10px); color: white; border: 2px solid white;">
+                            <i class="fas fa-play"></i>
+                            Смотреть демо
+                        </a>
+                    </div>
+                </div>
+                <div class="hero-visual">
+                    <div class="dashboard-mockup" style="box-shadow: 0 20px 60px rgba(0,0,0,0.3); border: 2px solid rgba(255,255,255,0.2);">
+                        <div class="mockup-header">
+                            <div class="mockup-tabs">
+                                <div class="tab active">🏠 Главная</div>
+                                <div class="tab">📊 Аналитика</div>
+                                <div class="tab">🤖 AI Алиса</div>
+                            </div>
+                        </div>
+                        <div class="mockup-content">
+                            <div class="mockup-sidebar">
+                                <div class="sidebar-item active">
+                                    <i class="fas fa-sparkles"></i>
+                                    <span>AI Ассистент</span>
+                                </div>
+                                <div class="sidebar-item">
+                                    <i class="fas fa-chart-line"></i>
+                                    <span>Аналитика</span>
+                                </div>
+                                <div class="sidebar-item">
+                                    <i class="fas fa-calendar"></i>
+                                    <span>Планировщик</span>
+                                </div>
+                            </div>
+                            <div class="mockup-main">
+                                <div class="stats-grid">
+                                    <div class="stat-card">
+                                        <div class="stat-value">✨ 2.4K</div>
+                                        <div class="stat-label">Постов создано</div>
+                                    </div>
+                                    <div class="stat-card">
+                                        <div class="stat-value">🚀 85%</div>
+                                        <div class="stat-label">Охват растёт</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Magic Features -->
+    <section id="magic" style="padding: 80px 0; background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">🐰 Алиса в стране SMM</h2>
+                <p class="section-description">
+                    Прыгни в кроличью нору автоматизации — здесь каждый пост становится волшебством
+                </p>
+            </div>
+
+            <div class="features-grid" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 30px; margin-top: 60px;">
+                <div class="feature-card" style="border: 2px solid #667eea;">
+                    <div class="feature-icon" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                        <i class="fas fa-comments"></i>
+                    </div>
+                    <h3 class="feature-title">🎭 AI-ассистент "Алиса"</h3>
+                    <p class="feature-description">
+                        Умный помощник с голосовым вводом понимает контекст и помогает создавать волшебный контент
+                    </p>
+                    <ul class="feature-list">
+                        <li><i class="fas fa-check"></i> Голосовое управление системой</li>
+                        <li><i class="fas fa-check"></i> Автономное планирование задач</li>
+                        <li><i class="fas fa-check"></i> Веб-поиск и исследования</li>
+                        <li><i class="fas fa-check"></i> Генерация контента и изображений</li>
+                    </ul>
+                </div>
+
+                <div class="feature-card" style="border: 2px solid #f093fb;">
+                    <div class="feature-icon" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
+                        <i class="fas fa-brain"></i>
+                    </div>
+                    <h3 class="feature-title">✨ Магия AI-генерации</h3>
+                    <p class="feature-description">
+                        Лучшие AI-модели создают уникальный контент за секунды
+                    </p>
+                    <ul class="feature-list">
+                        <li><i class="fas fa-check"></i> Тексты (Qwen, DeepSeek, Gemini)</li>
+                        <li><i class="fas fa-check"></i> Изображения (FAL.AI, FLUX)</li>
+                        <li><i class="fas fa-check"></i> Stories и видео для Instagram</li>
+                        <li><i class="fas fa-check"></i> Мультиязычность (RU/EN/ES)</li>
+                    </ul>
+                </div>
+
+                <div class="feature-card" style="border: 2px solid #4facfe;">
+                    <div class="feature-icon" style="background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);">
+                        <i class="fas fa-telescope"></i>
+                    </div>
+                    <h3 class="feature-title">🔮 Чеширский анализ трендов</h3>
+                    <p class="feature-description">
+                        24,000+ Telegram каналов и умный AI-поиск актуальных тем
+                    </p>
+                    <ul class="feature-list">
+                        <li><i class="fas fa-check"></i> База Telegram каналов</li>
+                        <li><i class="fas fa-check"></i> Автоматический граббер TGStat</li>
+                        <li><i class="fas fa-check"></i> AI-анализ популярности</li>
+                        <li><i class="fas fa-check"></i> Сбор трендов конкурентов</li>
+                    </ul>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fas fa-share-nodes"></i>
+                    </div>
+                    <h3 class="feature-title">🌈 Мультиплатформенность</h3>
+                    <p class="feature-description">
+                        Публикация в 5+ социальных сетях одновременно
+                    </p>
+                    <ul class="feature-list">
+                        <li><i class="fab fa-instagram"></i> Instagram</li>
+                        <li><i class="fab fa-vk"></i> ВКонтакте</li>
+                        <li><i class="fab fa-telegram"></i> Telegram</li>
+                        <li><i class="fab fa-facebook"></i> Facebook</li>
+                        <li><i class="fab fa-youtube"></i> YouTube</li>
+                    </ul>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fas fa-calendar-check"></i>
+                    </div>
+                    <h3 class="feature-title">⏰ Белый Кролик - планировщик</h3>
+                    <p class="feature-description">
+                        Всегда вовремя! Автопубликация по расписанию
+                    </p>
+                    <ul class="feature-list">
+                        <li><i class="fas fa-check"></i> Календарь контента</li>
+                        <li><i class="fas fa-check"></i> Автопубликация по расписанию</li>
+                        <li><i class="fas fa-check"></i> 6-уровневая защита от дублей</li>
+                        <li><i class="fas fa-check"></i> Снятие с публикации</li>
+                    </ul>
+                </div>
+
+                <div class="feature-card">
+                    <div class="feature-icon">
+                        <i class="fab fa-telegram"></i>
+                    </div>
+                    <h3 class="feature-title">📱 Telegram-бот</h3>
+                    <p class="feature-description">
+                        Алиса всегда с вами - управление через Telegram
+                    </p>
+                    <ul class="feature-list">
+                        <li><i class="fas fa-check"></i> Управление кампаниями</li>
+                        <li><i class="fas fa-check"></i> AI-генерация контента</li>
+                        <li><i class="fas fa-check"></i> Интерактивные кнопки</li>
+                        <li><i class="fas fa-check"></i> Работа из любой точки мира</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features" class="features">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">Полный набор волшебных инструментов</h2>
+                <p class="section-description">
+                    Всё, что нужно для создания, публикации и анализа контента
+                </p>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 30px; margin-top: 60px;">
+                <div style="background: white; padding: 30px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); text-align: center;">
+                    <div style="font-size: 48px; margin-bottom: 20px;">🌐</div>
+                    <h3 style="font-size: 20px; margin-bottom: 15px; color: #2c3e50;">Анализ сайтов с AI</h3>
+                    <p style="color: #6c757d; font-size: 14px;">Автоматическое заполнение бизнес-анкет по URL сайта</p>
+                </div>
+
+                <div style="background: white; padding: 30px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); text-align: center;">
+                    <div style="font-size: 48px; margin-bottom: 20px;">🎨</div>
+                    <h3 style="font-size: 20px; margin-bottom: 15px; color: #2c3e50;">Stories Editor</h3>
+                    <p style="color: #6c757d; font-size: 14px;">Визуальный редактор для Instagram Stories с AI-фонами</p>
+                </div>
+
+                <div style="background: white; padding: 30px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); text-align: center;">
+                    <div style="font-size: 48px; margin-bottom: 20px;">📊</div>
+                    <h3 style="font-size: 20px; margin-bottom: 15px; color: #2c3e50;">Аналитика</h3>
+                    <p style="color: #6c757d; font-size: 14px;">Детальная статистика по всем платформам в одном месте</p>
+                </div>
+
+                <div style="background: white; padding: 30px; border-radius: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); text-align: center;">
+                    <div style="font-size: 48px; margin-bottom: 20px;">🎓</div>
+                    <h3 style="font-size: 20px; margin-bottom: 15px; color: #2c3e50;">Обучение</h3>
+                    <p style="color: #6c757d; font-size: 14px;">Встроенные видеоинструкции для быстрого старта</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Pricing Section -->
+    <section id="pricing" class="pricing">
+        <div class="container">
+            <div class="section-header">
+                <h2 class="section-title">Выберите свой путь в стране чудес</h2>
+                <p class="section-description">
+                    Начните бесплатно или выберите профессиональный план
+                </p>
+            </div>
+
+            <div class="pricing-grid">
+                <div class="pricing-card">
+                    <div class="pricing-header">
+                        <h3 class="pricing-title">🌱 Стартовый</h3>
+                        <div class="pricing-price">
+                            <span class="price-amount">Бесплатно</span>
+                        </div>
+                        <p class="pricing-description">Для знакомства с Алисой</p>
+                    </div>
+                    <ul class="pricing-features">
+                        <li><i class="fas fa-check"></i> 3 социальные сети</li>
+                        <li><i class="fas fa-check"></i> 10 постов в месяц</li>
+                        <li><i class="fas fa-check"></i> Базовая аналитика</li>
+                        <li><i class="fas fa-check"></i> AI-генерация текста</li>
+                        <li><i class="fas fa-times"></i> Планировщик</li>
+                        <li><i class="fas fa-times"></i> AI-изображения</li>
+                    </ul>
+                    <a href="#" onclick="window.location.href=getAppUrl(); return false;" class="pricing-btn">Начать бесплатно</a>
+                </div>
+
+                <div class="pricing-card featured">
+                    <div class="pricing-badge">✨ Популярный</div>
+                    <div class="pricing-header">
+                        <h3 class="pricing-title">🎩 Волшебный</h3>
+                        <div class="pricing-price">
+                            <span class="price-amount">4,990 ₽</span>
+                            <span class="price-period">/месяц</span>
+                        </div>
+                        <p class="pricing-description">Вся магия Алисы</p>
+                    </div>
+                    <ul class="pricing-features">
+                        <li><i class="fas fa-check"></i> Все социальные сети</li>
+                        <li><i class="fas fa-check"></i> Безлимитные посты</li>
+                        <li><i class="fas fa-check"></i> AI-ассистент Алиса</li>
+                        <li><i class="fas fa-check"></i> Веб-краулер</li>
+                        <li><i class="fas fa-check"></i> Анализ трендов</li>
+                        <li><i class="fas fa-check"></i> Stories Editor</li>
+                        <li><i class="fas fa-check"></i> Планировщик</li>
+                        <li><i class="fas fa-check"></i> База Telegram каналов</li>
+                    </ul>
+                    <a href="#" onclick="window.location.href=getAppUrl(); return false;" class="pricing-btn">Начать пробный период</a>
+                </div>
+
+                <div class="pricing-card">
+                    <div class="pricing-header">
+                        <h3 class="pricing-title">👑 Королевский</h3>
+                        <div class="pricing-price">
+                            <span class="price-amount">Договорная</span>
+                        </div>
+                        <p class="pricing-description">Для агентств</p>
+                    </div>
+                    <ul class="pricing-features">
+                        <li><i class="fas fa-check"></i> Всё из плана "Волшебный"</li>
+                        <li><i class="fas fa-check"></i> Белый лейбл</li>
+                        <li><i class="fas fa-check"></i> API-доступ</li>
+                        <li><i class="fas fa-check"></i> Персональный менеджер</li>
+                        <li><i class="fas fa-check"></i> Кастомная интеграция</li>
+                    </ul>
+                    <a href="#contact" class="pricing-btn">Связаться с нами</a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- CTA Section -->
+    <section style="padding: 100px 0; background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%); position: relative; overflow: hidden;">
+        <div class="hero-pattern" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0.1; background-image: repeating-linear-gradient(45deg, transparent, transparent 35px, rgba(255,255,255,.1) 35px, rgba(255,255,255,.1) 70px);"></div>
+        <div class="container" style="text-align: center; position: relative; z-index: 1;">
+            <h2 style="color: white; font-size: 48px; margin-bottom: 20px;">🐰 Прыгни в кроличью нору</h2>
+            <p style="color: rgba(255,255,255,0.9); font-size: 20px; margin-bottom: 40px;">
+                Начните своё путешествие в страну автоматизации SMM вместе с Алисой
+            </p>
+            <a href="#" onclick="window.location.href=getAppUrl(); return false;" class="btn btn-primary large" style="background: white; color: #667eea; box-shadow: 0 10px 40px rgba(0,0,0,0.3); font-size: 18px; padding: 18px 40px;">
+                <i class="fas fa-sparkles"></i>
+                Начать волшебство сейчас
+            </a>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer id="contact" class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-section">
+                    <h3 class="footer-title" style="display: flex; align-items: center; gap: 12px;">
+                        <img src="alisa-logo.png" alt="ALISA" style="width: 36px; height: 36px; object-fit: contain;">
+                        ALISA
+                    </h3>
+                    <p class="footer-description">
+                        AI-Led Intelligent Social Automation<br>
+                        Где магия встречается с маркетингом
+                    </p>
+                </div>
+
+                <div class="footer-section">
+                    <h4 class="footer-heading">Платформа</h4>
+                    <ul class="footer-links">
+                        <li><a href="#features">Возможности</a></li>
+                        <li><a href="#pricing">Тарифы</a></li>
+                        <li><a href="#" onclick="window.location.href=getAppUrl(); return false;">Войти</a></li>
+                    </ul>
+                </div>
+
+                <div class="footer-section">
+                    <h4 class="footer-heading">Контакты</h4>
+                    <ul class="footer-links">
+                        <li>
+                            <i class="fas fa-envelope"></i>
+                            <script>document.write(APP_CONFIG.supportEmail || 'support@alisa.website')</script>
+                        </li>
+                        <li>
+                            <i class="fab fa-telegram"></i>
+                            <a href="https://t.me/SMM_Manager_official_Bot" target="_blank">Telegram-бот</a>
+                        </li>
+                    </ul>
+                </div>
+
+                <div class="footer-section">
+                    <h4 class="footer-heading">Следите за новостями</h4>
+                    <div class="footer-social">
+                        <a href="#" class="social-link"><i class="fab fa-telegram"></i></a>
+                        <a href="#" class="social-link"><i class="fab fa-vk"></i></a>
+                        <a href="#" class="social-link"><i class="fab fa-instagram"></i></a>
+                    </div>
+                </div>
+            </div>
+
+            <div class="footer-bottom">
+                <p>&copy; 2025 ALISA. Все права защищены.</p>
+                <p style="opacity: 0.7; font-size: 14px; margin-top: 10px;">
+                    🐰 "Алиса знает, что постить" — ваш проводник в стране SMM
+                </p>
+            </div>
+        </div>
+    </footer>
+
+    <script src="script.js"></script>
+</body>
+</html>

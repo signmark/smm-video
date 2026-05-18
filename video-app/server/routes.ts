@@ -1,0 +1,1558 @@
+import { Router, Request, Response } from 'express';
+import path from 'path';
+import fs from 'fs/promises';
+import { existsSync } from 'fs';
+import {
+  createProject,
+  getProject,
+  listProjects,
+  updateProject,
+  deleteProject,
+  DATA_PATHS,
+  type VideoFormat,
+  type AnimationModel,
+  type SubtitleStyle,
+  type Script,
+} from './db.js';
+
+// Ждёт пока файл появится на диске с ненулевым размером (до 10с, опрос каждые 300мс)
+async function waitForFile(filePath: string, maxMs = 10000): Promise<void> {
+  const step = 300;
+  for (let elapsed = 0; elapsed < maxMs; elapsed += step) {
+    try {
+      const stat = await fs.stat(filePath);
+      if (stat.size > 0) return;
+    } catch { /* ещё нет */ }
+    await new Promise(r => setTimeout(r, step));
+  }
+}
+
+import { generateScript } from './services/script-generator.js';
+import { generateImage, generateLayeredImage } from './services/image-generator.js';
+import { generateAudio } from './services/tts-generator.js';
+import { assembleVideo, assembleFromClips, extractLastFrame, burnSubtitles, subtitleSizeMultiplier, mixBackgroundMusic } from './services/video-assembler.js';
+import { generateBackgroundMusic, buildMusicPrompt } from './services/music-generator.js';
+
+import { animateFrame, animateText, isT2VModel } from './services/fal-animator.js';
+import { searchAndDownloadStockClip } from './services/stock-video.js';
+import { ensureKeysLoaded } from './load-keys.js';
+
+const VALID_SUBTITLE_STYLES: SubtitleStyle[] = ['none', 'plain', 'fade', 'karaoke', 'tiktok', 'word-by-word', 'cinematic', 'cinematic-full', 'bar'];
+
+const router = Router();
+
+router.get('/health', (_req, res) => {
+  res.json({ status: 'ok', service: 'video-gen', version: '2.0.0' });
+});
+
+router.get('/videos', async (_req, res) => {
+  try {
+    const projects = await listProjects();
+    res.json(projects);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/videos/:id', async (req, res) => {
+  try {
+    const project = await getProject(req.params.id);
+    if (!project) return res.status(404).json({ error: 'Not found' });
+    res.json(project);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+const ALL_MODELS: AnimationModel[] = ['wan', 'kling', 'kling-pro', 'minimax', 'seedance', 'wan-t2v', 'kling-t2v', 'kling-pro-t2v', 'luma', 'chain'];
+
+const VALID_VOICES = new Set(['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer']);
+
+// TTS preview: generate short sample, cache in data/previews/
+router.get('/tts-preview/:voice', async (req, res) => {
+  await ensureKeysLoaded();
+  const voice = req.params.voice;
+  if (!VALID_VOICES.has(voice)) {
+    return res.status(400).json({ error: 'Invalid voice' });
+  }
+  const lang = (req.query.lang === 'en') ? 'en' : 'ru';
+  const cacheDir = path.join(path.dirname(new URL(import.meta.url).pathname), '../data/previews');
+  const cacheFile = path.join(cacheDir, `${voice}_${lang}.mp3`);
+
+  // Serve from cache if exists
+  try {
+    await fs.access(cacheFile);
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    const buf = await fs.readFile(cacheFile);
+    return res.send(buf);
+  } catch {}
+
+  // Generate sample
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return res.status(503).json({ error: 'OpenAI key not available' });
+
+  const sampleText: Record<string, string> = {
+    ru: 'Привет! Это пример голоса для вашего видео. Выберите тот, который вам нравится больше всего.',
+    en: 'Hello! This is a voice sample for your video. Choose the one you like the most.',
+  };
+  const instructions: Record<string, string> = {
+    ru: 'Speak in Russian language only. Natural conversational pace, expressive, clear diction.',
+    en: 'Speak in English. Natural conversational pace, expressive, clear diction.',
+  };
+
+  try {
+    await fs.mkdir(cacheDir, { recursive: true });
+    const ttsRes = await fetch('https://api.openai.com/v1/audio/speech', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: 'gpt-4o-mini-tts', voice, input: sampleText[lang], instructions: instructions[lang], response_format: 'mp3' }),
+      signal: AbortSignal.timeout(30000),
+    });
+    if (!ttsRes.ok) {
+      // Fallback to tts-1
+      const fb = await fetch('https://api.openai.com/v1/audio/speech', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: 'tts-1', voice, input: sampleText[lang], response_format: 'mp3' }),
+        signal: AbortSignal.timeout(20000),
+      });
+      if (!fb.ok) return res.status(502).json({ error: 'TTS unavailable' });
+      const buf = Buffer.from(await fb.arrayBuffer());
+      await fs.writeFile(cacheFile, buf);
+      res.setHeader('Content-Type', 'audio/mpeg');
+      res.setHeader('Cache-Control', 'public, max-age=86400');
+      return res.send(buf);
+    }
+    const buf = Buffer.from(await ttsRes.arrayBuffer());
+    await fs.writeFile(cacheFile, buf);
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    return res.send(buf);
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/videos', async (req, res) => {
+  try {
+    const { title, topic, format, duration, language, animationModel, subtitleStyle, voice, clipDuration, subtitleFont, subtitleSize, subtitleColor, customScenario } = req.body;
+    if (!format || !duration) {
+      return res.status(400).json({ error: 'format and duration are required' });
+    }
+    const hasTopic = topic && String(topic).trim().length > 0;
+    const hasScenario = customScenario && String(customScenario).trim().length > 10;
+    if (!hasTopic && !hasScenario) {
+      return res.status(400).json({ error: 'topic or customScenario is required' });
+    }
+    const validFormats: VideoFormat[] = ['9:16', '16:9', '1:1'];
+    if (!validFormats.includes(format)) {
+      return res.status(400).json({ error: 'format must be one of: 9:16, 16:9, 1:1' });
+    }
+    const effectiveTopic = hasTopic ? String(topic).trim() : 'Пользовательский сценарий';
+    const project = await createProject({
+      title: (title && String(title).trim()) || effectiveTopic,
+      topic: effectiveTopic,
+      format,
+      duration: Number(duration),
+      language: language || 'ru',
+      animationModel: ALL_MODELS.includes(animationModel) ? animationModel : 'wan',
+      subtitleStyle: VALID_SUBTITLE_STYLES.includes(subtitleStyle) ? subtitleStyle : 'karaoke',
+      voice: (voice && VALID_VOICES.has(voice)) ? voice : undefined,
+      clipDuration: (clipDuration === 5 || clipDuration === 10) ? clipDuration : undefined,
+      subtitleFont: subtitleFont ? String(subtitleFont) : undefined,
+      subtitleSize: ['small','medium','large','xlarge'].includes(subtitleSize) ? subtitleSize : undefined,
+      subtitleColor: subtitleColor && /^#[0-9a-fA-F]{6}$/.test(subtitleColor) ? subtitleColor : undefined,
+      customScenario: hasScenario ? String(customScenario).trim() : undefined,
+    });
+    res.status(201).json(project);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/videos/:id', async (req, res) => {
+  try {
+    const ok = await deleteProject(req.params.id);
+    if (!ok) return res.status(404).json({ error: 'Not found' });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.get('/videos/:id/download', async (req, res) => {
+  try {
+    const project = await getProject(req.params.id);
+    if (!project) return res.status(404).json({ error: 'Not found' });
+    if (project.status !== 'done' || !project.videoPath) {
+      return res.status(400).json({ error: 'Video not ready' });
+    }
+    const fsSync = await import('fs');
+    if (!fsSync.existsSync(project.videoPath)) {
+      return res.status(404).json({ error: 'Video file missing', missing: true });
+    }
+    res.download(project.videoPath, `${project.title.replace(/[^a-zA-Z0-9а-яА-Я]/g, '_')}.mp4`);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Serve TTS audio preview for a specific scene (generated alongside script)
+router.get('/videos/:id/audio/:sceneIndex', async (req, res) => {
+  const { id, sceneIndex } = req.params;
+  const idx = parseInt(sceneIndex, 10);
+  if (isNaN(idx) || idx < 0 || idx > 99) return res.status(400).json({ error: 'Invalid index' });
+  const audioPath = path.join(DATA_PATHS.imagesDir(id), 'audio', `scene_${idx}.mp3`);
+  try {
+    await fs.access(audioPath);
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Cache-Control', 'no-cache');
+    const { createReadStream } = await import('fs');
+    createReadStream(audioPath).pipe(res as any);
+  } catch {
+    res.status(404).json({ error: 'Audio not ready' });
+  }
+});
+
+// Reset project to script_ready so video can be regenerated (e.g. file lost after restart)
+router.post('/videos/:id/reset', async (req, res) => {
+  try {
+    const project = await getProject(req.params.id);
+    if (!project) return res.status(404).json({ error: 'Not found' });
+    await updateProject(req.params.id, {
+      status: 'script_ready',
+      progress: 10,
+      progressMessage: 'Сценарий готов — нажмите «Генерировать видео»',
+      videoPath: undefined,
+      videoUrl: undefined,
+      error: undefined,
+    });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Generate only the script (step 1), then pause for user review
+router.post('/videos/:id/generate-script', async (req, res) => {
+  try {
+    const project = await getProject(req.params.id);
+    if (!project) return res.status(404).json({ error: 'Not found' });
+    if (['generating_script', 'generating_images', 'animating', 'assembling'].includes(project.status)) {
+      return res.status(409).json({ error: 'Already generating' });
+    }
+
+    res.json({ success: true, message: 'Script generation started' });
+
+    runScriptOnly(project.id).catch((err) => {
+      console.error('[video-gen] Script generation error:', err);
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Update a single scene's text (for user editing before generation)
+// Retry stock search for one scene (optionally with a new query)
+router.post('/videos/:id/scenes/:sceneIndex/stock-retry', async (req, res) => {
+  try {
+    const project = await getProject(req.params.id);
+    if (!project?.script) return res.status(404).json({ error: 'Not found' });
+
+    const sceneIndex = parseInt(req.params.sceneIndex, 10);
+    const scene = project.script.scenes[sceneIndex];
+    if (!scene) return res.status(404).json({ error: 'Scene not found' });
+
+    const newQuery: string | undefined = typeof req.body.stockQuery === 'string'
+      ? req.body.stockQuery.trim() : undefined;
+
+    const query = newQuery || scene.stockQuery || scene.imagePrompt || scene.text;
+    const clipsDir = path.join(DATA_PATHS.imagesDir(project.id), 'clips');
+    await fs.mkdir(clipsDir, { recursive: true });
+    const clipPath = path.join(clipsDir, `clip_${sceneIndex}.mp4`);
+
+    // Remove stale clip if any
+    await fs.unlink(clipPath).catch(() => {});
+
+    let available = false;
+    try {
+      await searchAndDownloadStockClip({
+        query,
+        outputPath: clipPath,
+        durationSeconds: project.clipDuration ?? scene.duration,
+        format: project.format,
+      });
+      available = true;
+      console.log(`[stock-retry] Scene ${sceneIndex + 1}: ✓ found "${query.slice(0, 50)}"`);
+    } catch (err: any) {
+      console.log(`[stock-retry] Scene ${sceneIndex + 1}: ✗ not found`);
+    }
+
+    const updatedScenes = project.script.scenes.map((s, i) => {
+      if (i !== sceneIndex) return s;
+      return {
+        ...s,
+        stockQuery: newQuery || s.stockQuery,
+        stockAvailable: available,
+        videoSource: available ? 'stock' as const : 'ai' as const,
+      };
+    });
+    await updateProject(project.id, { script: { ...project.script, scenes: updatedScenes } });
+
+    res.json({ available, videoSource: available ? 'stock' : 'ai' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.patch('/videos/:id/scenes/:sceneId', async (req, res) => {
+  try {
+    const project = await getProject(req.params.id);
+    if (!project) return res.status(404).json({ error: 'Not found' });
+    if (!project.script) return res.status(400).json({ error: 'No script' });
+
+    const { text, t2vPrompt, imagePrompt, narration, selectedVariant, videoSource, stockQuery } = req.body;
+
+    const scenes = project.script.scenes.map((s) => {
+      if (s.id !== req.params.sceneId) return s;
+      const updated: any = { ...s };
+      if (typeof text === 'string') updated.text = text.trim();
+      if (typeof t2vPrompt === 'string') updated.t2vPrompt = t2vPrompt.trim();
+      if (typeof imagePrompt === 'string') updated.imagePrompt = imagePrompt.trim();
+      if (typeof narration === 'string') updated.narration = narration.trim();
+      if (typeof selectedVariant === 'number') updated.selectedVariant = selectedVariant;
+      if (videoSource === 'ai' || videoSource === 'stock') updated.videoSource = videoSource;
+      if (typeof stockQuery === 'string') updated.stockQuery = stockQuery.trim();
+      return updated;
+    });
+    const updatedScript = { ...project.script, scenes };
+    await updateProject(req.params.id, { script: updatedScript });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Login via Directus (for cross-domain use when main app token is unavailable)
+router.post('/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) return res.status(400).json({ error: 'email and password required' });
+    const { getDirectusBaseUrl } = await import('./load-keys.js');
+    const directusUrl = getDirectusBaseUrl();
+    const resp = await fetch(`${directusUrl}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+      signal: AbortSignal.timeout(10000),
+    });
+    const data = await resp.json() as any;
+    if (!resp.ok) {
+      return res.status(401).json({ error: data?.errors?.[0]?.message || 'Неверный email или пароль' });
+    }
+    res.json({
+      token: data.data?.access_token,
+      refresh_token: data.data?.refresh_token,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Proxy: fetch user's campaigns from Directus using admin token + user_id filter from JWT
+router.get('/campaigns-proxy', async (req, res) => {
+  try {
+    const { getDirectusBaseUrl, getDirectusToken } = await import('./load-keys.js');
+    const directusUrl = getDirectusBaseUrl();
+    const adminToken = getDirectusToken();
+    if (!adminToken) return res.status(503).json({ error: 'Admin token not configured' });
+
+    // Decode user_id from the user's JWT
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith('Bearer ')) return res.status(401).json({ error: 'Unauthorized' });
+    let userId: string | null = null;
+    try {
+      const payload = JSON.parse(Buffer.from(authHeader.slice(7).split('.')[1], 'base64').toString());
+      userId = payload.id || null;
+    } catch { /* ignore */ }
+    if (!userId) return res.status(401).json({ error: 'Invalid token' });
+
+    const url = `${directusUrl}/items/user_campaigns?filter[user_id][_eq]=${userId}&fields=id,name&limit=100&sort=name`;
+    const resp = await fetch(url, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!resp.ok) {
+      const text = await resp.text();
+      return res.status(resp.status).json({ error: `Directus ${resp.status}: ${text.slice(0, 200)}` });
+    }
+    const data = await resp.json() as any;
+    res.json({ success: true, data: data.data || [] });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Save completed video to a campaign in the main SMM manager (via Directus)
+router.post('/videos/:id/save-to-campaign', async (req, res) => {
+  try {
+    const project = await getProject(req.params.id);
+    if (!project) return res.status(404).json({ error: 'Not found' });
+    if (project.status !== 'done') return res.status(400).json({ error: 'Video not ready' });
+
+    const { campaignId, appUrl, contentType } = req.body;
+    if (!campaignId) return res.status(400).json({ error: 'campaignId required' });
+
+    const { getDirectusBaseUrl, getDirectusToken } = await import('./load-keys.js');
+    const directusUrl = getDirectusBaseUrl();
+    const adminToken = getDirectusToken();
+    if (!adminToken) return res.status(503).json({ error: 'Directus token not available' });
+
+    // Decode user_id from the user's JWT (works even if expired — we only read the payload)
+    let userId: string | null = null;
+    const authHeader = req.headers.authorization;
+    if (authHeader?.startsWith('Bearer ')) {
+      try {
+        const payload = JSON.parse(Buffer.from(authHeader.slice(7).split('.')[1], 'base64').toString());
+        userId = payload.id || null;
+      } catch { /* ignore */ }
+    }
+
+    // Try to upload video to S3 for a permanent URL; fall back to local URL if unavailable
+    let videoUrl: string = appUrl
+      ? `${appUrl}${project.videoUrl}`
+      : (project.videoUrl || '');
+
+    const localVideoPath = DATA_PATHS.videoFile(req.params.id);
+    const fileExists = existsSync(localVideoPath);
+    console.log(`[save-to-campaign] video file exists=${fileExists} path=${localVideoPath}`);
+    console.log(`[save-to-campaign] S3 env: BUCKET=${process.env.BEGET_S3_BUCKET} KEY=${process.env.BEGET_S3_ACCESS_KEY ? 'SET' : 'MISSING'}`);
+    if (fileExists) {
+      try {
+        const { uploadVideoToS3 } = await import('./services/s3-upload.js');
+        const s3Result = await uploadVideoToS3(localVideoPath, req.params.id);
+        videoUrl = s3Result.url;
+        console.log(`[save-to-campaign] Uploaded to S3: ${videoUrl}`);
+      } catch (s3Err: any) {
+        console.error(`[save-to-campaign] S3 upload FAILED: ${s3Err.message}`, s3Err.stack || '');
+      }
+    } else {
+      console.warn(`[save-to-campaign] Video file not found at ${localVideoPath}`);
+    }
+
+    // Build content text from scene narrations/texts + topic prompt
+    let contentText = '';
+    if (project.script?.scenes?.length) {
+      contentText = project.script.scenes
+        .map((s: any, i: number) => {
+          const text = (s.narration || s.text || '').trim();
+          return text ? `${i + 1}. ${text}` : '';
+        })
+        .filter(Boolean)
+        .join('\n\n');
+    }
+    if (!contentText) contentText = project.topic || '';
+
+    const body: Record<string, unknown> = {
+      campaign_id: campaignId,
+      title: project.title || project.topic,
+      content: contentText,
+      prompt: project.topic || '',
+      content_type: contentType === 'video' ? 'video' : 'clip',
+      video_url: videoUrl,
+      status: 'draft',
+    };
+    if (userId) body.user_id = userId;
+
+    const resp = await fetch(`${directusUrl}/items/campaign_content`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${adminToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      return res.status(502).json({ error: `Directus error ${resp.status}: ${text.slice(0, 200)}` });
+    }
+
+    const data = await resp.json() as any;
+    res.json({ success: true, contentId: data.data?.id });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Upload a custom start frame for an I2V scene (saved as variant index 3)
+router.post('/videos/:id/scenes/:sceneIndex/upload-frame', async (req, res) => {
+  try {
+    const { id, sceneIndex } = req.params;
+    const idx = parseInt(sceneIndex, 10);
+    if (isNaN(idx) || idx < 0 || idx > 99) return res.status(400).json({ error: 'Invalid scene index' });
+
+    const { imageBase64 } = req.body;
+    if (!imageBase64 || typeof imageBase64 !== 'string') return res.status(400).json({ error: 'imageBase64 required' });
+
+    const project = await getProject(id);
+    if (!project) return res.status(404).json({ error: 'Not found' });
+
+    // Decode base64 (strip data URI prefix if present)
+    const base64Data = imageBase64.replace(/^data:image\/[a-z]+;base64,/, '');
+    const inputBuf = Buffer.from(base64Data, 'base64');
+
+    const variantsDir = path.join(DATA_PATHS.imagesDir(id), 'variants');
+    await fs.mkdir(variantsDir, { recursive: true });
+    const outputPath = path.join(variantsDir, `scene_${idx}_v3.jpg`);
+
+    // Convert to JPEG via sharp (normalise any format)
+    const { default: sharp } = await import('sharp');
+    await sharp(inputBuf).jpeg({ quality: 92 }).toFile(outputPath);
+
+    // Auto-select variant 3 in the scene
+    if (project.script) {
+      const scenes = project.script.scenes.map((s, i) =>
+        i === idx ? { ...s, selectedVariant: 3 } : s
+      );
+      await updateProject(id, { script: { ...project.script, scenes } });
+    }
+
+    res.json({ success: true, variant: 3 });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Resume pipeline from the furthest completed stage
+router.post('/videos/:id/resume', async (req, res) => {
+  try {
+    const project = await getProject(req.params.id);
+    if (!project) return res.status(404).json({ error: 'Not found' });
+    if (['generating_script', 'generating_images', 'animating', 'assembling'].includes(project.status)) {
+      return res.status(409).json({ error: 'Already generating' });
+    }
+    if (!project.script) return res.status(400).json({ error: 'No script — restart from scratch' });
+
+    res.json({ success: true });
+
+    // Determine resume point asynchronously
+    runResumePipeline(project.id).catch((err) => {
+      console.error('[resume] Pipeline error:', err);
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+async function applyMusic(projectId: string, videoPath: string, topic: string, scenes: { duration: number }[], clipDuration?: number): Promise<void> {
+  const totalDuration = scenes.reduce((s, sc) => s + (clipDuration ?? sc.duration), 0);
+  const musicPath = videoPath.replace(/\.mp4$/, '_bg_music.mp3');
+  const prompt = buildMusicPrompt(topic);
+  const musicFile = await generateBackgroundMusic({ prompt, outputPath: musicPath, targetDurationSec: totalDuration });
+  if (musicFile) {
+    await mixBackgroundMusic({ videoPath, musicPath: musicFile });
+    await fs.unlink(musicPath).catch(() => {});
+  }
+}
+
+async function runResumePipeline(projectId: string) {
+  const project = await getProject(projectId);
+  if (!project?.script) return;
+
+  const imagesDir = DATA_PATHS.imagesDir(projectId);
+  const videoPath = DATA_PATHS.videoFile(projectId);
+  const clipsDir = path.join(imagesDir, 'clips');
+  const audioDir = path.join(imagesDir, 'audio');
+  const tempDir = path.join(imagesDir, '_temp');
+  const script = project.script;
+
+  const update = (p: Partial<typeof project>) => updateProject(projectId, p);
+
+  try {
+    // ── Stage 1: assembled video exists → only re-burn subtitles ────────────
+    let assembledExists = false;
+    try { await fs.access(videoPath); assembledExists = true; } catch {}
+
+    if (assembledExists) {
+      await update({ status: 'assembling', progress: 96, progressMessage: 'Накладываю субтитры (resume)...' });
+      const scenes = script.scenes.map((s) => ({
+        narration: s.narration || s.text,
+        text: s.text,
+        duration: project.clipDuration ?? s.duration,
+      }));
+      await burnSubtitles({
+        videoPath,
+        scenes,
+        format: project.format,
+        style: project.subtitleStyle ?? 'karaoke',
+        options: {
+          font: (project as any).subtitleFont,
+          sizeMultiplier: subtitleSizeMultiplier((project as any).subtitleSize),
+          color: (project as any).subtitleColor,
+        },
+      });
+      await waitForFile(videoPath);
+      await update({
+        status: 'done', progress: 100, progressMessage: 'Готово!',
+        videoPath, videoUrl: `/video-app/api/videos/${projectId}/download`,
+      });
+      console.log(`[resume] Subtitles applied: ${projectId}`);
+      return;
+    }
+
+    // ── Stage 2: clips exist → reconstruct clipsWithAudio, assemble + burn ──
+    // Check ALL clips exist, not just clip_0 (partial downloads cause ffmpeg errors)
+    let clipsExist = false;
+    try {
+      const clipChecks = await Promise.all(
+        script.scenes.map((_, i) => fs.access(path.join(clipsDir, `clip_${i}.mp4`)).then(() => true).catch(() => false))
+      );
+      clipsExist = clipChecks.every(Boolean);
+      if (!clipsExist) {
+        const missing = clipChecks.map((ok, i) => !ok ? i : -1).filter(i => i >= 0);
+        console.warn(`[resume] Missing clips: ${missing.map(i => `clip_${i}.mp4`).join(', ')} — cannot skip to assembly`);
+      }
+    } catch {}
+
+    if (clipsExist) {
+      await update({ status: 'assembling', progress: 78, progressMessage: 'Склеиваю клипы (resume)...' });
+
+      const clipsWithAudio = await Promise.all(
+        script.scenes.map(async (s, i) => {
+          const clipPath = path.join(clipsDir, `clip_${i}.mp4`);
+          const audioPath = path.join(audioDir, `scene_${i}.mp3`);
+          let hasAudio = false;
+          try { await fs.access(audioPath); hasAudio = true; } catch {}
+          return {
+            clipPath,
+            duration: project.clipDuration ?? s.duration,
+            audioPath: hasAudio ? audioPath : undefined,
+            audioDuration: undefined as number | undefined,
+            narration: s.narration || s.text,
+            text: s.text,
+          };
+        })
+      );
+
+      await assembleFromClips({
+        scenes: clipsWithAudio,
+        outputPath: videoPath,
+        tempDir,
+        onProgress: async (pct, msg) => {
+          await updateProject(projectId, { progress: 78 + Math.round(pct * 0.18), progressMessage: msg });
+        },
+      });
+
+      await update({ progress: 96, progressMessage: 'Накладываю субтитры...' });
+      await burnSubtitles({
+        videoPath,
+        scenes: clipsWithAudio,
+        format: project.format,
+        style: project.subtitleStyle ?? 'karaoke',
+        options: {
+          font: (project as any).subtitleFont,
+          sizeMultiplier: subtitleSizeMultiplier((project as any).subtitleSize),
+          color: (project as any).subtitleColor,
+        },
+      });
+
+      await update({ progress: 98, progressMessage: 'Добавляю фоновую музыку...' });
+      await applyMusic(projectId, videoPath, project.topic, script.scenes, project.clipDuration);
+      await waitForFile(videoPath);
+      await update({
+        status: 'done', progress: 100, progressMessage: 'Готово!',
+        videoPath, videoUrl: `/video-app/api/videos/${projectId}/download`,
+      });
+      console.log(`[resume] Assembly+subtitles complete: ${projectId}`);
+      return;
+    }
+
+    // ── No clips found — cannot resume, tell user to restart ────────────────
+    await update({ status: 'error', error: 'Нет готовых клипов для resume — запустите генерацию заново', progressMessage: 'Нет клипов для продолжения' });
+  } catch (err: any) {
+    console.error(`[resume] Failed for ${projectId}:`, err.message);
+    await updateProject(projectId, { status: 'error', error: err.message, progressMessage: `Ошибка resume: ${err.message}` });
+  }
+}
+
+// Fire-and-forget generation pipeline
+router.post('/videos/:id/generate', async (req, res) => {
+  try {
+    const project = await getProject(req.params.id);
+    if (!project) return res.status(404).json({ error: 'Not found' });
+    if (['generating_script', 'generating_images', 'animating', 'assembling'].includes(project.status)) {
+      return res.status(409).json({ error: 'Already generating' });
+    }
+
+    // Allow subtitle style override from request body (fixes pre-existing projects with wrong style)
+    const { subtitleStyle } = req.body || {};
+    if (subtitleStyle && VALID_SUBTITLE_STYLES.includes(subtitleStyle)) {
+      await updateProject(req.params.id, { subtitleStyle });
+    }
+
+    res.json({ success: true, message: 'Generation started' });
+
+    runGenerationPipeline(project.id).catch((err) => {
+      console.error('[video-gen] Pipeline error:', err);
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Serve image variant for a scene
+// Serve stock clip for a scene
+router.get('/videos/:id/clips/:sceneIndex', async (req, res) => {
+  const idx = parseInt(req.params.sceneIndex, 10);
+  if (isNaN(idx)) return res.status(400).json({ error: 'Invalid index' });
+  const clipPath = path.join(DATA_PATHS.imagesDir(req.params.id), 'clips', `clip_${idx}.mp4`);
+  try {
+    await fs.access(clipPath);
+    const stat = await fs.stat(clipPath);
+    res.setHeader('Content-Type', 'video/mp4');
+    res.setHeader('Content-Length', stat.size);
+    res.setHeader('Cache-Control', 'no-cache');
+    const { createReadStream } = await import('fs');
+    createReadStream(clipPath).pipe(res as any);
+  } catch {
+    res.status(404).json({ error: 'Clip not found' });
+  }
+});
+
+router.get('/videos/:id/images/:sceneIndex/:variant', async (req, res) => {
+  const { id, sceneIndex, variant } = req.params;
+  const idx = parseInt(sceneIndex, 10);
+  const vIdx = parseInt(variant, 10);
+  if (isNaN(idx) || isNaN(vIdx) || vIdx < 0 || vIdx > 2) return res.status(400).json({ error: 'Invalid params' });
+  const imagePath = path.join(DATA_PATHS.imagesDir(id), 'variants', `scene_${idx}_v${vIdx}.jpg`);
+  try {
+    await fs.access(imagePath);
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Cache-Control', 'no-cache');
+    const { createReadStream } = await import('fs');
+    createReadStream(imagePath).pipe(res as any);
+  } catch {
+    res.status(404).json({ error: 'Image not found' });
+  }
+});
+
+// Generate 3 image variants for a specific scene (synchronous — waits for all 3)
+router.post('/videos/:id/scenes/:sceneIndex/generate-variants', async (req, res) => {
+  try {
+    const project = await getProject(req.params.id);
+    if (!project) return res.status(404).json({ error: 'Not found' });
+    if (!project.script) return res.status(400).json({ error: 'No script' });
+
+    const sceneIndex = parseInt(req.params.sceneIndex, 10);
+    if (isNaN(sceneIndex) || sceneIndex < 0 || sceneIndex >= project.script.scenes.length) {
+      return res.status(400).json({ error: 'Invalid scene index' });
+    }
+
+    const scene = project.script.scenes[sceneIndex];
+    const variantsDir = path.join(DATA_PATHS.imagesDir(req.params.id), 'variants');
+    await fs.mkdir(variantsDir, { recursive: true });
+
+    console.log(`[variants] Generating 3 variants for scene ${sceneIndex}...`);
+    await Promise.all([0, 1, 2].map(async (v) => {
+      const outputPath = path.join(variantsDir, `scene_${sceneIndex}_v${v}.jpg`);
+      if (scene.backgroundPrompt && scene.subjectPrompt) {
+        await generateLayeredImage({
+          backgroundPrompt: scene.backgroundPrompt,
+          subjectPrompt: scene.subjectPrompt,
+          format: project.format,
+          outputPath,
+          sceneText: scene.text,
+        });
+      } else {
+        await generateImage({
+          prompt: scene.imagePrompt,
+          format: project.format,
+          outputPath,
+          sceneText: scene.text,
+        });
+      }
+    }));
+
+    console.log(`[variants] Scene ${sceneIndex}: 3 variants ready`);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Background TTS preview — runs after script_ready, don't block UI ─────────
+async function generateScriptAudio(projectId: string, script: Script, language: string, voice?: string, clipDuration?: number) {
+  const audioDir = path.join(DATA_PATHS.imagesDir(projectId), 'audio');
+  await fs.mkdir(audioDir, { recursive: true });
+  await Promise.all(
+    script.scenes.map(async (scene, i) => {
+      const audioPath = path.join(audioDir, `scene_${i}.mp3`);
+      try {
+        await generateAudio({
+          text: scene.narration || scene.text,
+          language: language as 'ru' | 'en',
+          outputPath: audioPath,
+          targetDuration: clipDuration ?? scene.duration,
+          voice,
+        });
+        console.log(`[tts] Preview scene ${i} ready`);
+      } catch (err: any) {
+        console.warn(`[tts] Preview scene ${i} failed: ${err.message}`);
+      }
+    })
+  );
+}
+
+// ── Background stock precheck — runs after script_ready, checks Pexels for ALL scenes ──
+// Found → auto-sets videoSource='stock'; not found → keeps videoSource='ai'
+async function runStockPrecheck(projectId: string, script: Script, format: VideoFormat, clipDuration?: number) {
+  const clipsDir = path.join(DATA_PATHS.imagesDir(projectId), 'clips');
+  await fs.mkdir(clipsDir, { recursive: true });
+
+  console.log(`[stock-precheck] Checking all ${script.scenes.length} scene(s) for project ${projectId}`);
+
+  // Run all checks in parallel, collect results
+  const results: { i: number; available: boolean }[] = await Promise.all(
+    script.scenes.map(async (s, i) => {
+      const query = s.stockQuery || s.imagePrompt || s.text;
+      const clipPath = path.join(clipsDir, `clip_${i}.mp4`);
+      try {
+        // If clip already downloaded (e.g. manually tagged stock + cached), reuse it
+        await fs.access(clipPath);
+        console.log(`[stock-precheck] Scene ${i + 1}: ✓ already cached`);
+        return { i, available: true };
+      } catch {}
+      try {
+        await searchAndDownloadStockClip({
+          query,
+          outputPath: clipPath,
+          durationSeconds: clipDuration ?? s.duration,
+          format,
+        });
+        console.log(`[stock-precheck] Scene ${i + 1}: ✓ found "${query.slice(0, 50)}"`);
+        return { i, available: true };
+      } catch (err: any) {
+        console.log(`[stock-precheck] Scene ${i + 1}: ✗ not found`);
+        return { i, available: false };
+      }
+    })
+  );
+
+  // Single DB update: set stockAvailable + auto-switch videoSource based on result
+  const fresh = await getProject(projectId);
+  if (!fresh?.script) return;
+
+  const updatedScenes = fresh.script.scenes.map((s, i) => {
+    const r = results.find((x) => x.i === i);
+    if (!r) return s;
+    // Auto-switch: found → stock, not found → ai
+    const videoSource = r.available ? 'stock' : 'ai';
+    return { ...s, stockAvailable: r.available, videoSource };
+  });
+
+  await updateProject(projectId, {
+    script: { ...fresh.script, scenes: updatedScenes, stockPrechecked: true },
+  });
+
+  const found = results.filter((r) => r.available).length;
+  console.log(`[stock-precheck] Done for ${projectId}: ${found}/${script.scenes.length} scenes → stock, rest → ai`);
+
+  // Auto-generate 3 image variants for every scene that didn't get a stock clip
+  const aiScenes = results.filter((r) => !r.available);
+  if (aiScenes.length > 0) {
+    const freshProject = await getProject(projectId);
+    if (freshProject?.script) {
+      console.log(`[stock-precheck] Auto-generating variants for ${aiScenes.length} AI scene(s)...`);
+      await Promise.all(aiScenes.map(async ({ i }) => {
+        const scene = freshProject.script!.scenes[i];
+        const variantsDir = path.join(DATA_PATHS.imagesDir(projectId), 'variants');
+        await fs.mkdir(variantsDir, { recursive: true });
+        try {
+          await Promise.all([0, 1, 2].map(async (v) => {
+            const outputPath = path.join(variantsDir, `scene_${i}_v${v}.jpg`);
+            if (scene.backgroundPrompt && scene.subjectPrompt) {
+              await generateLayeredImage({ backgroundPrompt: scene.backgroundPrompt, subjectPrompt: scene.subjectPrompt, format: freshProject.format, outputPath, sceneText: scene.text });
+            } else {
+              await generateImage({ prompt: scene.imagePrompt, format: freshProject.format, outputPath, sceneText: scene.text });
+            }
+          }));
+          console.log(`[stock-precheck] Scene ${i + 1}: variants ready`);
+        } catch (err: any) {
+          console.warn(`[stock-precheck] Scene ${i + 1} variants failed: ${err.message}`);
+        }
+      }));
+    }
+  }
+}
+
+// ── Script-only step (for preview before video generation) ────────────────────
+async function runScriptOnly(projectId: string) {
+  try {
+    await ensureKeysLoaded();
+    const project = await getProject(projectId);
+    if (!project) throw new Error('Project not found');
+
+    await updateProject(projectId, { status: 'generating_script', progress: 5, progressMessage: 'Генерирую сценарий...' });
+
+    const useT2V = isT2VModel(project.animationModel);
+    const script = await generateScript({
+      topic: project.topic,
+      format: project.format,
+      duration: project.duration,
+      language: project.language,
+      customScenario: project.customScenario,
+      t2v: useT2V,
+      animationModel: project.animationModel,
+      clipDuration: project.clipDuration,
+    });
+
+    await updateProject(projectId, {
+      script,
+      status: 'script_ready',
+      progress: 20,
+      progressMessage: `Сценарий готов — ${script.scenes.length} сцен. Проверьте и запустите генерацию.`,
+    });
+
+    console.log(`[video-gen] Script ready for ${projectId}: ${script.scenes.length} scenes`);
+
+    // Fire TTS in background so user can preview audio in script review
+    generateScriptAudio(projectId, script, project.language, project.voice, project.clipDuration).catch((err) => {
+      console.warn(`[tts] Background preview failed for ${projectId}: ${err.message}`);
+    });
+
+    // Fire stock precheck in background — checks Pexels availability per scene
+    runStockPrecheck(projectId, script, project.format, project.clipDuration).catch((err) => {
+      console.warn(`[stock-precheck] Failed for ${projectId}: ${err.message}`);
+    });
+  } catch (err: any) {
+    console.error(`[video-gen] Script generation failed for ${projectId}:`, err.message);
+    await updateProject(projectId, {
+      status: 'error',
+      error: err.message,
+      progressMessage: `Ошибка генерации сценария: ${err.message}`,
+    });
+  }
+}
+
+async function runGenerationPipeline(projectId: string) {
+  const update = (updates: Parameters<typeof updateProject>[1]) =>
+    updateProject(projectId, updates);
+
+  try {
+    await ensureKeysLoaded();
+    const project = await getProject(projectId);
+    if (!project) throw new Error('Project not found');
+
+    const useT2V = isT2VModel(project.animationModel);
+
+    // ── Step 1: Generate script (skip if already approved) ───────────────────
+    let script = project.script;
+    if (!script) {
+      await update({ status: 'generating_script', progress: 5, progressMessage: 'Генерирую сценарий...' });
+
+      script = await generateScript({
+        topic: project.topic,
+        format: project.format,
+        duration: project.duration,
+        language: project.language,
+        customScenario: project.customScenario,
+        t2v: useT2V,
+        animationModel: project.animationModel,
+        clipDuration: project.clipDuration,
+      });
+
+      await update({
+        script,
+        progress: 20,
+        progressMessage: `Сценарий готов: ${script.scenes.length} сцен`,
+      });
+    } else {
+      console.log(`[video-gen] Using existing script for ${projectId} (${script.scenes.length} scenes)`);
+      await update({ progress: 20, progressMessage: `Сценарий: ${script.scenes.length} сцен (из предпросмотра)` });
+    }
+
+    const imagesDir = DATA_PATHS.imagesDir(projectId);
+    const audioDir = path.join(imagesDir, 'audio');
+    const videoPath = DATA_PATHS.videoFile(projectId);
+    const tempDir = path.join(imagesDir, '_temp');
+    const clipsDir = path.join(imagesDir, 'clips');
+
+    const falKey = process.env.FAL_AI_API_KEY;
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // CHAIN PIPELINE: scene 0 = Kling T2V, scenes 1+ = Kling I2V (last frame)
+    // ══════════════════════════════════════════════════════════════════════════
+    if (project.animationModel === 'chain' && falKey) {
+      const total = script.scenes.length;
+      await update({ status: 'animating', progress: 22, progressMessage: `Chain: T2V сцена 1/${total}, затем I2V...` });
+
+      await fs.mkdir(clipsDir, { recursive: true });
+      await fs.mkdir(audioDir, { recursive: true });
+
+      // Start TTS for all scenes in parallel immediately
+      const ttsPromises = script.scenes.map(async (scene, i) => {
+        const audioPath = path.join(audioDir, `scene_${i}.mp3`);
+        try {
+          return await generateAudio({ text: scene.narration || scene.text, language: project.language, outputPath: audioPath, targetDuration: project.clipDuration ?? scene.duration, voice: project.voice });
+        } catch (err: any) {
+          console.warn(`[tts] Chain scene ${i} failed: ${err.message}`);
+          return null;
+        }
+      });
+
+      // Sequential chain: T2V for scene 0, I2V for scenes 1+
+      const clips: Array<{ clipPath: string; duration: number }> = [];
+      for (let i = 0; i < script.scenes.length; i++) {
+        const scene = script.scenes[i];
+        const clipPath = path.join(clipsDir, `clip_${i}.mp4`);
+
+        await updateProject(projectId, {
+          progress: 22 + Math.round((i / total) * 50),
+          progressMessage: `Chain: сцена ${i + 1}/${total} (${i === 0 ? 'T2V Kling' : 'I2V от последнего кадра'})...`,
+        });
+
+        if (i === 0) {
+          const prompt = scene.t2vPrompt || scene.imagePrompt;
+          console.log(`[video-gen] Chain scene 1/${total}: T2V Kling, prompt="${prompt.slice(0, 80)}..."`);
+          await animateText({
+            prompt,
+            format: project.format,
+            durationSeconds: scene.duration,
+            outputPath: clipPath,
+            model: 'kling-t2v',
+            clipDuration: project.clipDuration,
+            onWait: async (elapsedMs) => {
+              await updateProject(projectId, {
+                progressMessage: `Chain T2V: сцена 1/${total} ждём ${Math.round(elapsedMs / 1000)}с...`,
+              });
+            },
+          });
+        } else {
+          // Extract last frame of previous clip
+          const prevClip = clips[i - 1].clipPath;
+          const framePath = path.join(clipsDir, `chain_frame_${i - 1}.jpg`);
+          console.log(`[video-gen] Chain scene ${i + 1}/${total}: extracting last frame from clip_${i - 1}.mp4`);
+          const frameBuffer = await extractLastFrame(prevClip, framePath);
+          const prompt = scene.motionPrompt || scene.t2vPrompt || scene.imagePrompt;
+          console.log(`[video-gen] Chain scene ${i + 1}/${total}: I2V Kling, prompt="${prompt.slice(0, 80)}..."`);
+          await animateFrame({
+            imageBuffer: frameBuffer,
+            prompt,
+            format: project.format,
+            durationSeconds: scene.duration,
+            outputPath: clipPath,
+            model: 'kling',
+            clipDuration: project.clipDuration,
+            onWait: async (elapsedMs) => {
+              await updateProject(projectId, {
+                progressMessage: `Chain I2V: сцена ${i + 1}/${total} ждём ${Math.round(elapsedMs / 1000)}с...`,
+              });
+            },
+          });
+        }
+
+        clips.push({ clipPath, duration: scene.duration });
+        await updateProject(projectId, {
+          progress: 22 + Math.round(((i + 1) / total) * 50),
+          progressMessage: `Chain: ${i + 1}/${total} клипов готово`,
+        });
+      }
+
+      // Wait for TTS to complete
+      const audioResults = await Promise.all(ttsPromises);
+
+      const clipsWithAudio = clips.map((clip, i) => ({
+        ...clip,
+        audioPath: audioResults[i]?.path,
+        audioDuration: audioResults[i]?.duration,
+        text: script.scenes[i]?.text,
+        narration: script.scenes[i]?.narration || script.scenes[i]?.text,
+      }));
+
+      await update({ status: 'assembling', progress: 75, progressMessage: 'Chain: склеиваю клипы...' });
+      await assembleFromClips({
+        scenes: clipsWithAudio,
+        outputPath: videoPath,
+        tempDir,
+        onProgress: async (pct, msg) => {
+          await updateProject(projectId, { progress: 75 + Math.round(pct * 0.20), progressMessage: msg });
+        },
+      });
+
+      await update({ progress: 95, progressMessage: 'Chain: накладываю субтитры...' });
+      const latestProject = await getProject(projectId);
+      await burnSubtitles({
+        videoPath,
+        scenes: clipsWithAudio,
+        format: project.format,
+        style: latestProject?.subtitleStyle ?? project.subtitleStyle ?? 'karaoke',
+        options: {
+          font: latestProject?.subtitleFont ?? project.subtitleFont,
+          sizeMultiplier: subtitleSizeMultiplier(latestProject?.subtitleSize ?? project.subtitleSize),
+          color: latestProject?.subtitleColor ?? project.subtitleColor,
+        },
+      });
+
+      await update({ progress: 98, progressMessage: 'Добавляю фоновую музыку...' });
+      await applyMusic(projectId, videoPath, project.topic, script.scenes, project.clipDuration);
+      await waitForFile(videoPath);
+      await update({
+        status: 'done',
+        progress: 100,
+        progressMessage: 'Готово!',
+        videoPath,
+        videoUrl: `/video-app/api/videos/${projectId}/download`,
+      });
+
+      console.log(`[video-gen] Chain project ${projectId} done: ${videoPath}`);
+      return;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // T2V PIPELINE: text → FAL T2V → clips → assemble (no image generation)
+    // ══════════════════════════════════════════════════════════════════════════
+    if (useT2V && falKey) {
+      await update({ status: 'animating', progress: 22, progressMessage: `T2V: генерирую ${script.scenes.length} клипов параллельно...` });
+
+      await fs.mkdir(clipsDir, { recursive: true });
+      await fs.mkdir(audioDir, { recursive: true });
+
+      const total = script.scenes.length;
+      let completedClips = 0;
+
+      const [clips, audioResults] = await Promise.all([
+        // Phase A: T2V clips in parallel
+        Promise.all(
+          script.scenes.map(async (scene, i) => {
+            const clipPath = path.join(clipsDir, `clip_${i}.mp4`);
+            if (scene.videoSource === 'stock') {
+              const query = scene.stockQuery || scene.imagePrompt || scene.text;
+              console.log(`[video-gen] T2V scene ${i + 1}: STOCK "${query.slice(0, 60)}"`);
+              await updateProject(projectId, { progressMessage: `Stock: поиск клипа для сцены ${i + 1}/${total}...` });
+              await searchAndDownloadStockClip({ query, outputPath: clipPath, durationSeconds: project.clipDuration ?? scene.duration, format: project.format });
+            } else {
+              const prompt = scene.t2vPrompt || scene.imagePrompt;
+              console.log(`[video-gen] T2V scene ${i + 1}: prompt="${prompt.slice(0, 80)}..."`);
+              await animateText({
+                prompt,
+                format: project.format,
+                durationSeconds: scene.duration,
+                outputPath: clipPath,
+                model: project.animationModel,
+                clipDuration: project.clipDuration,
+                onWait: async (elapsedMs) => {
+                  await updateProject(projectId, {
+                    progressMessage: `T2V: ${completedClips}/${total} готово, сцена ${i + 1} (${Math.round(elapsedMs / 1000)}с)...`,
+                  });
+                },
+              });
+            }
+            completedClips++;
+            await updateProject(projectId, {
+              progress: 22 + Math.round((completedClips / total) * 50),
+              progressMessage: `T2V: ${completedClips}/${total} клипов готово`,
+            });
+            return { clipPath, duration: scene.duration };
+          })
+        ),
+        // Phase B: TTS in parallel with video generation
+        Promise.all(
+          script.scenes.map(async (scene, i) => {
+            const audioPath = path.join(audioDir, `scene_${i}.mp3`);
+            try {
+              return await generateAudio({ text: scene.narration || scene.text, language: project.language, outputPath: audioPath, targetDuration: project.clipDuration ?? scene.duration, voice: project.voice });
+            } catch (err: any) {
+              console.warn(`[tts] Scene ${i} failed: ${err.message}`);
+              return null;
+            }
+          })
+        ),
+      ]);
+
+      const clipsWithAudio = clips.map((clip, i) => ({
+        ...clip,
+        audioPath: audioResults[i]?.path,
+        audioDuration: audioResults[i]?.duration,
+        text: script.scenes[i]?.text,
+        narration: script.scenes[i]?.narration || script.scenes[i]?.text,
+      }));
+
+      await update({ status: 'assembling', progress: 75, progressMessage: 'Склеиваю клипы...' });
+
+      await assembleFromClips({
+        scenes: clipsWithAudio,
+        outputPath: videoPath,
+        tempDir,
+        onProgress: async (pct, msg) => {
+          await updateProject(projectId, { progress: 75 + Math.round(pct * 0.20), progressMessage: msg });
+        },
+      });
+
+      await update({ progress: 95, progressMessage: 'Накладываю субтитры...' });
+      await burnSubtitles({
+        videoPath,
+        scenes: clipsWithAudio,
+        format: project.format,
+        style: project.subtitleStyle ?? 'karaoke',
+        options: {
+          font: project.subtitleFont,
+          sizeMultiplier: subtitleSizeMultiplier(project.subtitleSize),
+          color: project.subtitleColor,
+        },
+      });
+
+      await update({ progress: 98, progressMessage: 'Добавляю фоновую музыку...' });
+      await applyMusic(projectId, videoPath, project.topic, script.scenes, project.clipDuration);
+      await waitForFile(videoPath);
+      await update({
+        status: 'done',
+        progress: 100,
+        progressMessage: 'Готово!',
+        videoPath,
+        videoUrl: `/video-app/api/videos/${projectId}/download`,
+      });
+
+      console.log(`[video-gen] T2V project ${projectId} done: ${videoPath}`);
+      return;
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // I2V PIPELINE: image generation → FAL I2V → clips → assemble
+    // ══════════════════════════════════════════════════════════════════════════
+    let chainSucceeded = false;
+
+    if (falKey) {
+      try {
+        const framesDir = path.join(imagesDir, 'frames');
+        await fs.mkdir(framesDir, { recursive: true });
+        await fs.mkdir(clipsDir, { recursive: true });
+
+        const total = script.scenes.length;
+
+        // ── Phase 0: pre-check stock scenes — download clips, switch failures to AI ──
+        const stockScenesExist = script.scenes.some(s => s.videoSource === 'stock');
+        if (stockScenesExist) {
+          await update({ status: 'generating_images', progress: 10, progressMessage: `Проверяю stock-клипы...` });
+          await Promise.all(
+            script.scenes.map(async (scene, i) => {
+              if (scene.videoSource !== 'stock') return;
+              const query = scene.stockQuery || scene.imagePrompt || scene.text;
+              const clipPath = path.join(clipsDir, `clip_${i}.mp4`);
+              try {
+                await searchAndDownloadStockClip({ query, outputPath: clipPath, durationSeconds: project.clipDuration ?? scene.duration, format: project.format });
+                console.log(`[video-gen] Phase0: stock clip_${i} ready`);
+              } catch (stockErr: any) {
+                console.warn(`[video-gen] Phase0: stock scene ${i + 1} not found — switching to AI`);
+                // Persist videoSource='ai' to DB
+                const fresh = await getProject(projectId);
+                if (fresh?.script) {
+                  const updatedScenes = fresh.script.scenes.map((s, si) =>
+                    si === i ? { ...s, videoSource: 'ai' as const } : s
+                  );
+                  await updateProject(projectId, { script: { ...fresh.script, scenes: updatedScenes } });
+                  script.scenes[i] = { ...script.scenes[i], videoSource: 'ai' };
+                }
+              }
+            })
+          );
+
+          // Reload script after Phase 0 (videoSource may have changed)
+          const refreshed = await getProject(projectId);
+          if (refreshed?.script) {
+            script.scenes = refreshed.script.scenes as typeof script.scenes;
+          }
+
+          // Pause if any stock scenes were switched to AI and have no selected variant
+          const stockFailedScenes = script.scenes
+            .map((s, i) => ({ s, i }))
+            .filter(({ s, i }) => {
+              const wasStock = project.script?.scenes[i]?.videoSource === 'stock';
+              return wasStock && s.videoSource !== 'stock';
+            });
+
+          if (stockFailedScenes.length > 0) {
+            const needVariants = stockFailedScenes.filter(
+              ({ s }) => typeof (s as any).selectedVariant !== 'number'
+            );
+            if (needVariants.length > 0) {
+              const sceneNums = needVariants.map(({ i }) => i + 1).join(', ');
+              await update({
+                status: 'script_ready',
+                progress: 0,
+                progressMessage: `Сцены ${sceneNums} не найдены в Pexels — сгенерируйте изображения и выберите лучшее, затем нажмите «Генерировать видео»`,
+              });
+              console.log(`[video-gen] Phase0: paused — scenes ${sceneNums} need image variants`);
+              chainSucceeded = true; // prevent static fallback from running
+              return; // exit pipeline, user will restart after picking images
+            }
+          }
+        }
+
+        // Phase A: generate all frames in parallel
+        await update({ status: 'generating_images', progress: 22, progressMessage: `Генерирую ${total} кадров параллельно...` });
+
+        const frameBuffers = await Promise.all(
+          script.scenes.map(async (scene, i) => {
+            if (scene.videoSource === 'stock') return null; // skip image gen for stock scenes
+
+            const framePath = path.join(framesDir, `frame_${i}.jpg`);
+
+            // Use selected image variant if available
+            if (typeof (scene as any).selectedVariant === 'number') {
+              const variantPath = path.join(DATA_PATHS.imagesDir(projectId), 'variants', `scene_${i}_v${(scene as any).selectedVariant}.jpg`);
+              try {
+                await fs.access(variantPath);
+                await fs.copyFile(variantPath, framePath);
+                console.log(`[video-gen] Scene ${i}: using selected variant ${(scene as any).selectedVariant}`);
+                return fs.readFile(framePath);
+              } catch {
+                console.warn(`[video-gen] Scene ${i}: variant file not found, generating fresh`);
+              }
+            }
+
+            if (scene.backgroundPrompt && scene.subjectPrompt) {
+              await generateLayeredImage({
+                backgroundPrompt: scene.backgroundPrompt,
+                subjectPrompt: scene.subjectPrompt,
+                format: project.format,
+                outputPath: framePath,
+                sceneText: scene.text,
+              });
+            } else {
+              await generateImage({
+                prompt: scene.imagePrompt,
+                format: project.format,
+                outputPath: framePath,
+                sceneText: scene.text,
+              });
+            }
+            return fs.readFile(framePath);
+          })
+        );
+
+        await update({ progress: 35, progressMessage: `Анимирую ${total} сцен параллельно...` });
+
+        // Phase B: animate all frames + TTS in parallel
+        let completedClips = 0;
+        const ttsPromises = Promise.all(
+          script.scenes.map(async (scene, i) => {
+            const audioPath = path.join(audioDir, `scene_${i}.mp3`);
+            try {
+              return await generateAudio({ text: scene.narration || scene.text, language: project.language, outputPath: audioPath, targetDuration: project.clipDuration ?? scene.duration, voice: project.voice });
+            } catch (err: any) {
+              console.warn(`[tts] Scene ${i} failed: ${err.message}`);
+              return null;
+            }
+          })
+        );
+        // Cap TTS wait to 2 minutes — if slower, proceed with silence for failed scenes
+        const ttsWithCap = Promise.race([
+          ttsPromises,
+          new Promise<null[]>(resolve => setTimeout(() => {
+            console.warn(`[tts] Overall timeout reached — proceeding with available audio`);
+            resolve(new Array(script.scenes.length).fill(null));
+          }, 120000)),
+        ]);
+
+        const clips = await Promise.all(
+          script.scenes.map(async (scene, i) => {
+            const clipPath = path.join(clipsDir, `clip_${i}.mp4`);
+            if (scene.videoSource === 'stock') {
+              // Phase 0 already downloaded this clip — just log and continue
+              let clipReady = false;
+              try { await fs.access(clipPath); clipReady = true; } catch {}
+              if (clipReady) {
+                console.log(`[video-gen] I2V scene ${i + 1}: STOCK clip already ready (Phase 0)`);
+              } else {
+                // Safety net: Phase 0 didn't run or clip was deleted — try again
+                const query = scene.stockQuery || scene.imagePrompt || scene.text;
+                console.log(`[video-gen] I2V scene ${i + 1}: STOCK re-downloading "${query.slice(0, 60)}"`);
+                await searchAndDownloadStockClip({ query, outputPath: clipPath, durationSeconds: project.clipDuration ?? scene.duration, format: project.format });
+              }
+            } else {
+              await animateFrame({
+                imageBuffer: frameBuffers[i]!,
+                prompt: scene.motionPrompt || scene.imagePrompt,
+                format: project.format,
+                durationSeconds: scene.duration,
+                outputPath: clipPath,
+                model: project.animationModel,
+                clipDuration: project.clipDuration,
+                onWait: async (elapsedMs) => {
+                  await updateProject(projectId, {
+                    progressMessage: `Анимация: ${completedClips}/${total} готово, сцена ${i + 1} (${Math.round(elapsedMs / 1000)}с)...`,
+                  });
+                },
+                onFallback: async (fromModel, toModel, reason) => {
+                  console.warn(`[video-gen] Scene ${i + 1}: ${fromModel} failed (${reason.slice(0, 120)}), switching to ${toModel}`);
+                  await updateProject(projectId, {
+                    progressMessage: `⚠️ Сцена ${i + 1}: ${fromModel} недоступен → переключаюсь на ${toModel}...`,
+                  });
+                },
+              });
+            }
+            completedClips++;
+            await updateProject(projectId, {
+              progress: 35 + Math.round((completedClips / total) * 40),
+              progressMessage: `Анимация: ${completedClips}/${total} сцен готово`,
+            });
+            return { clipPath, duration: scene.duration };
+          })
+        );
+        const audioResults = await ttsWithCap;
+
+        const clipsWithAudio = clips.map((clip, i) => ({
+          ...clip,
+          audioPath: audioResults[i]?.path,
+          audioDuration: audioResults[i]?.duration,
+          text: script.scenes[i]?.text,
+          narration: script.scenes[i]?.narration || script.scenes[i]?.text,
+        }));
+
+        await update({ status: 'assembling', progress: 78, progressMessage: 'Склеиваю клипы...' });
+
+        await assembleFromClips({
+          scenes: clipsWithAudio,
+          outputPath: videoPath,
+          tempDir,
+          onProgress: async (pct, msg) => {
+            await updateProject(projectId, { progress: 78 + Math.round(pct * 0.18), progressMessage: msg });
+          },
+        });
+
+        await update({ progress: 96, progressMessage: 'Накладываю субтитры...' });
+        await burnSubtitles({
+          videoPath,
+          scenes: clipsWithAudio,
+          format: project.format,
+          style: project.subtitleStyle ?? 'karaoke',
+          options: {
+            font: project.subtitleFont,
+            sizeMultiplier: subtitleSizeMultiplier(project.subtitleSize),
+            color: project.subtitleColor,
+          },
+        });
+
+        chainSucceeded = true;
+        console.log(`[video-gen] I2V parallel pipeline complete for ${projectId}`);
+      } catch (chainErr: any) {
+        console.warn(`[video-gen] I2V animation failed: ${chainErr.message} — falling back to static image pipeline`);
+        await update({ progress: 22, progressMessage: 'Переключаюсь на статичные изображения...' });
+      }
+    }
+
+    // ── Fallback: static image pipeline (no FAL) ──────────────────────────────
+    if (!chainSucceeded) {
+      await update({ status: 'generating_images', progress: 25, progressMessage: 'Генерирую изображения (Imagen 4)...' });
+
+      const updatedScenes = [...script.scenes];
+
+      for (let i = 0; i < script.scenes.length; i++) {
+        const scene = script.scenes[i];
+        const imagePath = path.join(imagesDir, `scene_${i}.jpg`);
+        const pct = 25 + Math.round(((i + 1) / script.scenes.length) * 45);
+
+        await updateProject(projectId, {
+          progress: pct,
+          progressMessage: `Изображение ${i + 1}/${script.scenes.length}...`,
+        });
+
+        if (scene.backgroundPrompt && scene.subjectPrompt) {
+          await generateLayeredImage({
+            backgroundPrompt: scene.backgroundPrompt,
+            subjectPrompt: scene.subjectPrompt,
+            format: project.format,
+            outputPath: imagePath,
+            sceneText: scene.text,
+          });
+        } else {
+          await generateImage({
+            prompt: scene.imagePrompt,
+            format: project.format,
+            outputPath: imagePath,
+            sceneText: scene.text,
+          });
+        }
+
+        updatedScenes[i] = { ...scene, imagePath };
+      }
+
+      const updatedScript = { ...script, scenes: updatedScenes };
+      await update({ script: updatedScript, progress: 70, progressMessage: 'Генерирую озвучку...' });
+
+      type SceneWithAudio = typeof updatedScenes[0] & { audioPath?: string; audioDuration?: number };
+      const scenesWithAudio = await Promise.all(
+        updatedScenes.map(async (scene, i): Promise<SceneWithAudio> => {
+          const audioPath = path.join(audioDir, `scene_${i}.mp3`);
+          try {
+            const audio = await generateAudio({ text: scene.narration || scene.text, language: project.language, outputPath: audioPath, targetDuration: project.clipDuration ?? scene.duration, voice: project.voice });
+            return { ...scene, audioPath: audio?.path, audioDuration: audio?.duration };
+          } catch (err: any) {
+            console.warn(`[tts] Scene ${i} failed: ${err.message}`);
+            return scene;
+          }
+        })
+      );
+
+      await update({ status: 'assembling', progress: 78, progressMessage: 'Рендеринг...' });
+
+      const assemblerScenes = scenesWithAudio.map((s) => ({
+        imagePath: s.imagePath!,
+        text: s.text,
+        narration: s.narration || s.text,
+        duration: s.duration,
+        audioPath: s.audioPath,
+        audioDuration: s.audioDuration,
+      }));
+
+      await assembleVideo({
+        scenes: assemblerScenes,
+        format: project.format,
+        outputPath: videoPath,
+        tempDir,
+        onProgress: async (pct, msg) => {
+          await updateProject(projectId, { progress: 78 + Math.round(pct * 0.18), progressMessage: msg });
+        },
+      });
+
+      await update({ progress: 96, progressMessage: 'Накладываю субтитры...' });
+      await burnSubtitles({
+        videoPath,
+        scenes: assemblerScenes,
+        format: project.format,
+        style: project.subtitleStyle ?? 'karaoke',
+        options: {
+          font: project.subtitleFont,
+          sizeMultiplier: subtitleSizeMultiplier(project.subtitleSize),
+          color: project.subtitleColor,
+        },
+      });
+    }
+
+    // ── Done ─────────────────────────────────────────────────────────────────
+    await update({ progress: 98, progressMessage: 'Добавляю фоновую музыку...' });
+    await applyMusic(projectId, videoPath, project.topic, script.scenes, project.clipDuration);
+    await waitForFile(videoPath);
+    await update({
+      status: 'done',
+      progress: 100,
+      progressMessage: 'Готово!',
+      videoPath,
+      videoUrl: `/video-app/api/videos/${projectId}/download`,
+    });
+
+    console.log(`[video-gen] Project ${projectId} done: ${videoPath}`);
+  } catch (err: any) {
+    console.error(`[video-gen] Pipeline failed for ${projectId}:`, err.message);
+    await updateProject(projectId, {
+      status: 'error',
+      error: err.message,
+      progressMessage: `Ошибка: ${err.message}`,
+    });
+  }
+}
+
+export default router;

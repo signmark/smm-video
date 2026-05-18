@@ -1,0 +1,33 @@
+{
+  "name": "Fetch Campaign Settings",
+  "type": "n8n-nodes-base.httpRequest",
+  "typeVersion": 4.2,
+  "position": [100, 300],
+  "parameters": {
+    "url": "={{ $env.DIRECTUS_URL }}/items/user_campaigns/{{ $('Fetch Content Data').item.json.data.campaign_id }}",
+    "authentication": "genericCredentialType", 
+    "genericAuthType": "httpHeaderAuth",
+    "httpHeaderAuth": {
+      "name": "Authorization",
+      "value": "Bearer {{ $env.DIRECTUS_TOKEN }}"
+    },
+    "sendQuery": true,
+    "queryParameters": {
+      "parameters": [
+        {
+          "name": "fields",
+          "value": "id,name,description,social_media_settings,global_api_keys,user_id,status,created_at"
+        }
+      ]
+    },
+    "options": {
+      "response": {
+        "response": {
+          "neverError": true,
+          "responseFormat": "json"
+        }
+      }
+    }
+  },
+  "description": "Загружает настройки кампании включая social_media_settings с токенами для всех платформ"
+}

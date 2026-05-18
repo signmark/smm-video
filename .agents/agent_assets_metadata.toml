@@ -1,0 +1,50 @@
+uploads = []
+generated = []
+
+[[outputs]]
+id = "7QdJlG2npaHp_nFJWzzl3"
+uri = "file://nano_banana_test.jpg"
+type = "image"
+title = "Nano Banana 2 — тестовая генерация"
+
+[[outputs]]
+id = "GmGm5lhDl9grrQ3UJSOXr"
+uri = "file://video-app/data/videos/315c1c9d-2985-4f99-bc60-a8b93791a9f2.mp4"
+type = "video"
+title = "Закат в горах — тестовое видео"
+
+[[outputs]]
+id = "3z8I-OvILzl2FEcufrWrG"
+uri = "file://video-app/data/videos/f1bcf1ed-3bed-4e9f-b8a3-743c143b4505.mp4"
+type = "video"
+title = "Чёрные дыры — со звуком"
+
+[[outputs]]
+id = "Ep00m1CWipVKznxI-mUFw"
+uri = "file://docker-compose.yml"
+type = "unspecified"
+title = "docker-compose.yml (с video-app сервисом)"
+
+[[outputs]]
+id = "pDpmeoRh9-zEPyqo8rPt5"
+uri = "file://video-app/TECHNICAL_SPEC.md"
+type = "text"
+title = "Video App — Техническое задание"
+
+[[outputs]]
+id = "fumx-HkAOFWkfkn1GgD5v"
+uri = "file://video-app/TECHNICAL_SPEC.docx"
+type = "word_document"
+title = "Video App — Техническое задание (.docx)"
+
+[[outputs]]
+id = "h9vgIp0KmeY7wn0hcnoCB"
+uri = "file://video-app/TECHNICAL_SPEC.zip"
+type = "unspecified"
+title = "Video App — ТЗ (TECHNICAL_SPEC.docx внутри архива)"
+
+[[outputs]]
+id = "siK9PhFkQGPa5fXpLhuW-"
+uri = "file://video-app/data/videos/83.mp4"
+type = "video"
+title = "Неоновый дождь в Токио — Cinematic субтитры"

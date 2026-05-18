@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Тест воспроизведения Instagram видео</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .video-container {
+            margin-bottom: 30px;
+        }
+        h2 {
+            margin-top: 40px;
+        }
+        video {
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #ddd;
+        }
+        button {
+            padding: 10px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            margin-bottom: 10px;
+        }
+        .log {
+            background-color: #f5f5f5;
+            padding: 10px;
+            border: 1px solid #ddd;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Тест воспроизведения Instagram видео</h1>
+
+    <h2>Видео через прокси-API</h2>
+    <div class="video-container">
+        <button id="loadThroughProxy">Загрузить через прокси</button>
+        <video id="proxyVideo" controls></video>
+        <div>
+            <input type="checkbox" id="useOriginalUrl" checked>
+            <label for="useOriginalUrl">Использовать оригинальный URL</label>
+        </div>
+    </div>
+
+    <h2>Видео напрямую через iframe (для сравнения)</h2>
+    <div class="video-container">
+        <iframe width="560" height="315" 
+                src="https://scontent.cdninstagram.com/o1/v/t16/f2/m86/AQMYw3YYy5jRZktJ0Q6TPdmeuqk_fjjZF89xC2wLoDPMZ63Y2Nbwb_IfqhQjiPJDGP5p2C4QawRSenSVqaoyoBsB308iW4B-b-11TXk.mp4?stp=dst-mp4&efg=eyJxZV9ncm91cHMiOiJbXCJpZ193ZWJfZGVsaXZlcnlfdnRzX290ZlwiXSIsInZlbmNvZGVfdGFnIjoidnRzX3ZvZF91cmxnZW4uY2xpcHMuYzIuNzIwLmJhc2VsaW5lIn0&_nc_cat=110&vs=1514365472612991_2650520503&_nc_vs=HBksFQIYUmlnX3hwdl9yZWVsc19wZXJtYW5lbnRfc3JfcHJvZC80QzQ2QTA4NDQwNzgzRjNGRTgxMjA5QUQ3MDQ4NUZCMV92aWRlb19kYXNoaW5pdC5tcDQVAALIAQAVAhg6cGFzc3Rocm91Z2hfZXZlcnN0b3JlL0dLV1RBQnhUc2dROEk4TUZBQV8tQ3N5M2NWUVVicV9FQUFBRhUCAsgBACgAGAAbABUAACbK6MbEo5LwQBUCKAJDMywXQEfu2RaHKwIYEmRhc2hfYmFzZWxpbmVfMV92MREAdf4HAA==&_nc_rid=f0796ab560&ccb=9-4&oh=00_AYEpFb1Gm4xfKfXaPtuQNPBJyBpG8lbo1b2wc2m7pOWSwg&oe=67D37B89&_nc_sid=10d13b" 
+                frameborder="0" allowfullscreen></iframe>
+    </div>
+
+    <div class="log" id="log"></div>
+
+    <script>
+        const instagramVideoUrl = 'https://scontent.cdninstagram.com/o1/v/t16/f2/m86/AQMYw3YYy5jRZktJ0Q6TPdmeuqk_fjjZF89xC2wLoDPMZ63Y2Nbwb_IfqhQjiPJDGP5p2C4QawRSenSVqaoyoBsB308iW4B-b-11TXk.mp4?stp=dst-mp4&efg=eyJxZV9ncm91cHMiOiJbXCJpZ193ZWJfZGVsaXZlcnlfdnRzX290ZlwiXSIsInZlbmNvZGVfdGFnIjoidnRzX3ZvZF91cmxnZW4uY2xpcHMuYzIuNzIwLmJhc2VsaW5lIn0&_nc_cat=110&vs=1514365472612991_2650520503&_nc_vs=HBksFQIYUmlnX3hwdl9yZWVsc19wZXJtYW5lbnRfc3JfcHJvZC80QzQ2QTA4NDQwNzgzRjNGRTgxMjA5QUQ3MDQ4NUZCMV92aWRlb19kYXNoaW5pdC5tcDQVAALIAQAVAhg6cGFzc3Rocm91Z2hfZXZlcnN0b3JlL0dLV1RBQnhUc2dROEk4TUZBQV8tQ3N5M2NWUVVicV9FQUFBRhUCAsgBACgAGAAbABUAACbK6MbEo5LwQBUCKAJDMywXQEfu2RaHKwIYEmRhc2hfYmFzZWxpbmVfMV92MREAdf4HAA==&_nc_rid=f0796ab560&ccb=9-4&oh=00_AYEpFb1Gm4xfKfXaPtuQNPBJyBpG8lbo1b2wc2m7pOWSwg&oe=67D37B89&_nc_sid=10d13b';
+        
+        const logElement = document.getElementById('log');
+        
+        function log(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            logElement.innerHTML += `<div>[${timestamp}] ${message}</div>`;
+            logElement.scrollTop = logElement.scrollHeight;
+        }
+        
+        document.getElementById('loadThroughProxy').addEventListener('click', function() {
+            const videoElement = document.getElementById('proxyVideo');
+            const useOriginalUrl = document.getElementById('useOriginalUrl').checked;
+            
+            // Очистка предыдущих событий
+            videoElement.onloadstart = null;
+            videoElement.onloadeddata = null;
+            videoElement.onerror = null;
+            
+            let videoUrl;
+            if (useOriginalUrl) {
+                // Используем наш серверный прокси для проксирования Instagram-видео
+                videoUrl = `/api/stream-video?url=${encodeURIComponent(instagramVideoUrl)}&forceType=instagram&_t=${Date.now()}&itemId=test`;
+            } else {
+                // Используем тестовый файл MP4 с сервера
+                videoUrl = '/test-video.mp4';
+            }
+            
+            log(`Загрузка видео через URL: ${videoUrl}`);
+            
+            videoElement.onloadstart = function() {
+                log('Начало загрузки видео...');
+            };
+            
+            videoElement.onloadeddata = function() {
+                log('Видео успешно загружено и готово к воспроизведению');
+            };
+            
+            videoElement.onerror = function(e) {
+                log(`Ошибка загрузки видео: ${videoElement.error ? videoElement.error.message : 'Неизвестная ошибка'}`);
+                console.error('Ошибка видео:', videoElement.error);
+            };
+            
+            // Устанавливаем источник видео
+            videoElement.src = videoUrl;
+            videoElement.load();
+        });
+    </script>
+</body>
+</html>

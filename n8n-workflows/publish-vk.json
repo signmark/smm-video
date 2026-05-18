@@ -1,0 +1,492 @@
+{
+  "name": "Publish → VK",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "publish-vk",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"contentId\": \"{{ $json.body.contentId }}\",\n  \"token\": \"{{ $json.body.settings.vk.token }}\",\n  \"groupId\": \"{{ $json.body.settings.vk.groupId }}\",\n  \"groupIdPositive\": \"{{ $json.body.settings.vk.groupId.replace('-', '') }}\",\n  \"content\": {{ JSON.stringify(($json.body.content || '').replace(/\\*\\*(.+?)\\*\\*/gs, '$1').replace(/__(.+?)__/gs, '$1').replace(/~~(.+?)~~/gs, '$1').replace(/(?<!_)_(?!_)(.+?)(?<!_)_(?!_)/gs, '$1')) }},\n  \"image_url\": \"{{ $json.body.image_url || '' }}\",\n  \"hasImage\": {{ !!($json.body.image_url) }}\n}",
+        "options": {}
+      },
+      "id": "prepare-data",
+      "name": "Prepare Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.hasImage }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "has-image",
+      "name": "Has Image?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.vk.com/method/photos.getWallUploadServer",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "owner_id",
+              "value": "={{ $node['Prepare Data'].json.groupId }}"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $node['Prepare Data'].json.token }}"
+            },
+            {
+              "name": "v",
+              "value": "5.199"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "get-wall-upload-server",
+      "name": "Get Wall Upload Server",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 160]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $node['Prepare Data'].json.image_url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "download-image",
+      "name": "Download Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 380]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $node['Get Wall Upload Server'].json.response.upload_url }}",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "photo",
+              "parameterType": "formBinaryData",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "upload-image-to-vk",
+      "name": "Upload Image to VK",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 260]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.vk.com/method/photos.saveWallPhoto",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "owner_id",
+              "value": "={{ $node['Prepare Data'].json.groupId }}"
+            },
+            {
+              "name": "server",
+              "value": "={{ $json.server }}"
+            },
+            {
+              "name": "photo",
+              "value": "={{ $json.photo }}"
+            },
+            {
+              "name": "hash",
+              "value": "={{ $json.hash }}"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $node['Prepare Data'].json.token }}"
+            },
+            {
+              "name": "v",
+              "value": "5.199"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "save-wall-photo",
+      "name": "VK photos.saveWallPhoto",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, 260]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.vk.com/method/wall.post",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "owner_id",
+              "value": "={{ $node['Prepare Data'].json.groupId }}"
+            },
+            {
+              "name": "message",
+              "value": "={{ $node['Prepare Data'].json.content }}"
+            },
+            {
+              "name": "attachments",
+              "value": "=photo{{ $json.response[0].owner_id }}_{{ $json.response[0].id }}"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $node['Prepare Data'].json.token }}"
+            },
+            {
+              "name": "v",
+              "value": "5.199"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "wall-post-with-photo",
+      "name": "VK wall.post (Photo)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1540, 260]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.vk.com/method/wall.post",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "owner_id",
+              "value": "={{ $node['Prepare Data'].json.groupId }}"
+            },
+            {
+              "name": "message",
+              "value": "={{ $node['Prepare Data'].json.content }}"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $node['Prepare Data'].json.token }}"
+            },
+            {
+              "name": "v",
+              "value": "5.199"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "wall-post-text",
+      "name": "VK wall.post (Text)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 520]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.DIRECTUS_URL }}/items/campaign_content/{{ $node['Prepare Data'].json.contentId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "status",
+              "value": "published"
+            },
+            {
+              "name": "published_at",
+              "value": "={{ $now.toISO() }}"
+            },
+            {
+              "name": "post_url",
+              "value": "=https://vk.com/wall{{ $node['Prepare Data'].json.groupId }}_{{ $json.response.post_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-directus-photo",
+      "name": "Update Directus (Photo)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1760, 260],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "directus-auth",
+          "name": "Directus Auth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.DIRECTUS_URL }}/items/campaign_content/{{ $node['Prepare Data'].json.contentId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "status",
+              "value": "published"
+            },
+            {
+              "name": "published_at",
+              "value": "={{ $now.toISO() }}"
+            },
+            {
+              "name": "post_url",
+              "value": "=https://vk.com/wall{{ $node['Prepare Data'].json.groupId }}_{{ $json.response.post_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-directus-text",
+      "name": "Update Directus (Text)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 520],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "directus-auth",
+          "name": "Directus Auth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"platform\": \"vk\",\n  \"postId\": {{ $json.data ? $json.data.id : 0 }},\n  \"postUrl\": \"https://vk.com/wall{{ $node['Prepare Data'].json.groupId }}_{{ $node['VK wall.post (Photo)'].json.response ? $node['VK wall.post (Photo)'].json.response.post_id : 0 }}\"\n}",
+        "options": {}
+      },
+      "id": "respond-success-photo",
+      "name": "Respond Success (Photo)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1980, 260]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"platform\": \"vk\",\n  \"postId\": {{ $node['VK wall.post (Text)'].json.response ? $node['VK wall.post (Text)'].json.response.post_id : 0 }},\n  \"postUrl\": \"https://vk.com/wall{{ $node['Prepare Data'].json.groupId }}_{{ $node['VK wall.post (Text)'].json.response ? $node['VK wall.post (Text)'].json.response.post_id : 0 }}\"\n}",
+        "options": {}
+      },
+      "id": "respond-success-text",
+      "name": "Respond Success (Text)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1320, 520]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": false,\n  \"platform\": \"vk\",\n  \"error\": \"{{ $json.error ? $json.error.error_msg : 'VK API error' }}\"\n}",
+        "options": {
+          "responseCode": 500
+        }
+      },
+      "id": "respond-error",
+      "name": "Respond Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1320, 700]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Prepare Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Data": {
+      "main": [
+        [
+          {
+            "node": "Has Image?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Image?": {
+      "main": [
+        [
+          {
+            "node": "Get Wall Upload Server",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Download Image",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "VK wall.post (Text)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Wall Upload Server": {
+      "main": [
+        [
+          {
+            "node": "Upload Image to VK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Image": {
+      "main": [
+        [
+          {
+            "node": "Upload Image to VK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Image to VK": {
+      "main": [
+        [
+          {
+            "node": "VK photos.saveWallPhoto",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "VK photos.saveWallPhoto": {
+      "main": [
+        [
+          {
+            "node": "VK wall.post (Photo)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "VK wall.post (Photo)": {
+      "main": [
+        [
+          {
+            "node": "Update Directus (Photo)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "VK wall.post (Text)": {
+      "main": [
+        [
+          {
+            "node": "Update Directus (Text)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Directus (Photo)": {
+      "main": [
+        [
+          {
+            "node": "Respond Success (Photo)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Directus (Text)": {
+      "main": [
+        [
+          {
+            "node": "Respond Success (Text)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": ""
+  },
+  "tags": [
+    {
+      "name": "VK",
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    }
+  ],
+  "triggerCount": 1,
+  "pinData": {}
+}

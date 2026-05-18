@@ -1,0 +1,267 @@
+{
+  "name": "YouTube Token Refresh with Global API Keys",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "youtube-refresh-token",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-start",
+      "name": "YouTube Token Refresh Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "youtube-refresh-token"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Логирование входящих данных\nconsole.log('YouTube Token Refresh - Input data:', JSON.stringify($input.all(), null, 2));\nreturn $input.all();"
+      },
+      "id": "debug-log",
+      "name": "Debug Log",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [360, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('YouTube Token Refresh Webhook').item.json.directus_url || $env.DIRECTUS_URL }}/items/global_api_keys",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $('YouTube Token Refresh Webhook').item.json.directus_token || $env.DIRECTUS_TOKEN }}"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "filter[service_name][_eq]",
+              "value": "YouTube"
+            },
+            {
+              "name": "fields",
+              "value": "api_key,api_secret,additional_settings"
+            }
+          ]
+        }
+      },
+      "id": "get-youtube-credentials",
+      "name": "Get YouTube Credentials",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://oauth2.googleapis.com/token",
+        "options": {
+          "bodyContentType": "form-urlencoded"
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "client_id",
+              "value": "={{ $('Get YouTube Credentials').item.json.data[0].api_key }}"
+            },
+            {
+              "name": "client_secret",
+              "value": "={{ $('Get YouTube Credentials').item.json.data[0].api_secret }}"
+            },
+            {
+              "name": "refresh_token",
+              "value": "={{ $('YouTube Token Refresh Webhook').item.json.refresh_token }}"
+            },
+            {
+              "name": "grant_type",
+              "value": "refresh_token"
+            }
+          ]
+        }
+      },
+      "id": "google-oauth-refresh",
+      "name": "Google OAuth Token Refresh",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [600, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "success-condition",
+              "leftValue": "={{ $json.access_token }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-token-success",
+      "name": "Check Token Success",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [720, 300]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $('YouTube Token Refresh Webhook').item.json.directus_url || $env.DIRECTUS_URL }}/items/user_campaigns/{{ $('YouTube Token Refresh Webhook').item.json.campaign_id }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $('YouTube Token Refresh Webhook').item.json.directus_token || $env.DIRECTUS_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "social_media_settings",
+              "value": "={{ JSON.stringify(Object.assign($('YouTube Token Refresh Webhook').item.json.current_settings || {}, { youtube: Object.assign($('YouTube Token Refresh Webhook').item.json.current_settings?.youtube || {}, { access_token: $('Google OAuth Token Refresh').item.json.access_token, refresh_token: $('Google OAuth Token Refresh').item.json.refresh_token || $('YouTube Token Refresh Webhook').item.json.refresh_token, token_expires_at: new Date(Date.now() + ($('Google OAuth Token Refresh').item.json.expires_in * 1000)).toISOString(), last_token_refresh: new Date().toISOString() }) })) }}"
+            }
+          ]
+        },
+        "options": {
+          "bodyContentType": "json"
+        }
+      },
+      "id": "update-campaign-tokens",
+      "name": "Update Campaign Tokens",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [840, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: true, message: 'YouTube tokens updated successfully', access_token: $('Google OAuth Token Refresh').item.json.access_token, expires_in: $('Google OAuth Token Refresh').item.json.expires_in, token_type: $('Google OAuth Token Refresh').item.json.token_type, client_id: $('Get YouTube Credentials').item.json.data[0].api_key } }}"
+      },
+      "id": "success-response",
+      "name": "Success Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [960, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: false, error: 'Token refresh failed', details: $('Google OAuth Token Refresh').item.json, credentials_found: $('Get YouTube Credentials').item.json.data ? $('Get YouTube Credentials').item.json.data.length : 0 } }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "error-response",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [840, 400]
+    }
+  ],
+  "connections": {
+    "YouTube Token Refresh Webhook": {
+      "main": [
+        [
+          {
+            "node": "Debug Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Debug Log": {
+      "main": [
+        [
+          {
+            "node": "Get YouTube Credentials",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get YouTube Credentials": {
+      "main": [
+        [
+          {
+            "node": "Google OAuth Token Refresh",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google OAuth Token Refresh": {
+      "main": [
+        [
+          {
+            "node": "Check Token Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Token Success": {
+      "main": [
+        [
+          {
+            "node": "Update Campaign Tokens",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Campaign Tokens": {
+      "main": [
+        [
+          {
+            "node": "Success Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["youtube", "oauth", "token-refresh", "global-api-keys"],
+  "triggerCount": 0,
+  "updatedAt": "2025-07-10T07:10:00.000Z",
+  "versionId": "1"
+}

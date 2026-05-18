@@ -1,0 +1,288 @@
+{
+  "name": "Publish → Telegram",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "publish-telegram",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "mode": "raw",
+        "jsonOutput": "={\n  \"contentId\": \"{{ $json.body.contentId }}\",\n  \"token\": \"{{ $json.body.settings.telegram.token }}\",\n  \"chatId\": \"{{ $json.body.settings.telegram.chatId }}\",\n  \"content\": {{ JSON.stringify(($json.body.content || '').replace(/\\*\\*(.+?)\\*\\*/gs, '<b>$1</b>').replace(/__(.+?)__/gs, '<u>$1</u>').replace(/~~(.+?)~~/gs, '<s>$1</s>').replace(/(?<!_)_(?!_)(.+?)(?<!_)_(?!_)/gs, '<i>$1</i>')) }},\n  \"image_url\": \"{{ $json.body.image_url || '' }}\",\n  \"hasImage\": {{ !!($json.body.image_url) }}\n}",
+        "options": {}
+      },
+      "id": "prepare-data",
+      "name": "Prepare Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.hasImage }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "has-image",
+      "name": "Has Image?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://api.telegram.org/bot' + $node['Prepare Data'].json.token + '/sendPhoto' }}",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={\n  \"chat_id\": \"{{ $node['Prepare Data'].json.chatId }}\",\n  \"photo\": \"{{ $node['Prepare Data'].json.image_url }}\",\n  \"caption\": {{ JSON.stringify(($node['Prepare Data'].json.content || '').substring(0, 1024)) }},\n  \"parse_mode\": \"HTML\"\n}",
+        "options": {}
+      },
+      "id": "send-photo",
+      "name": "Send Photo",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 180]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://api.telegram.org/bot' + $node['Prepare Data'].json.token + '/sendMessage' }}",
+        "sendBody": true,
+        "contentType": "json",
+        "body": "={\n  \"chat_id\": \"{{ $node['Prepare Data'].json.chatId }}\",\n  \"text\": {{ JSON.stringify(($node['Prepare Data'].json.content || '').substring(0, 4096)) }},\n  \"parse_mode\": \"HTML\"\n}",
+        "options": {}
+      },
+      "id": "send-message",
+      "name": "Send Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 420]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.DIRECTUS_URL }}/items/campaign_content/{{ $node['Prepare Data'].json.contentId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "status",
+              "value": "published"
+            },
+            {
+              "name": "published_at",
+              "value": "={{ $now.toISO() }}"
+            },
+            {
+              "name": "post_url",
+              "value": "=https://t.me/{{ $node['Prepare Data'].json.chatId.replace('@', '') }}/{{ $json.result.message_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-directus-photo",
+      "name": "Update Directus (Photo)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 180],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "directus-auth",
+          "name": "Directus Auth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.DIRECTUS_URL }}/items/campaign_content/{{ $node['Prepare Data'].json.contentId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "status",
+              "value": "published"
+            },
+            {
+              "name": "published_at",
+              "value": "={{ $now.toISO() }}"
+            },
+            {
+              "name": "post_url",
+              "value": "=https://t.me/{{ $node['Prepare Data'].json.chatId.replace('@', '') }}/{{ $json.result.message_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-directus-text",
+      "name": "Update Directus (Text)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1100, 420],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "directus-auth",
+          "name": "Directus Auth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"platform\": \"telegram\",\n  \"messageId\": {{ $json.result ? $json.result.message_id : 0 }},\n  \"postUrl\": \"https://t.me/{{ $node['Prepare Data'].json.chatId.replace('@', '') }}/{{ $json.result ? $json.result.message_id : 0 }}\"\n}",
+        "options": {}
+      },
+      "id": "respond-success-photo",
+      "name": "Respond Success (Photo)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1320, 180]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"platform\": \"telegram\",\n  \"messageId\": {{ $json.result ? $json.result.message_id : 0 }},\n  \"postUrl\": \"https://t.me/{{ $node['Prepare Data'].json.chatId.replace('@', '') }}/{{ $json.result ? $json.result.message_id : 0 }}\"\n}",
+        "options": {}
+      },
+      "id": "respond-success-text",
+      "name": "Respond Success (Text)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1320, 420]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": false,\n  \"platform\": \"telegram\",\n  \"error\": \"{{ $json.description || 'Telegram API error' }}\"\n}",
+        "options": {
+          "responseCode": 500
+        }
+      },
+      "id": "respond-error",
+      "name": "Respond Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1100, 600]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Prepare Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Data": {
+      "main": [
+        [
+          {
+            "node": "Has Image?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Image?": {
+      "main": [
+        [
+          {
+            "node": "Send Photo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Photo": {
+      "main": [
+        [
+          {
+            "node": "Update Directus (Photo)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Message": {
+      "main": [
+        [
+          {
+            "node": "Update Directus (Text)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Directus (Photo)": {
+      "main": [
+        [
+          {
+            "node": "Respond Success (Photo)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Directus (Text)": {
+      "main": [
+        [
+          {
+            "node": "Respond Success (Text)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "errorWorkflow": ""
+  },
+  "tags": [
+    {
+      "name": "Telegram",
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    }
+  ],
+  "triggerCount": 1,
+  "pinData": {}
+}

@@ -301,7 +301,7 @@ router.patch('/videos/:id/scenes/:sceneId', async (req, res) => {
       if (typeof imagePrompt === 'string') updated.imagePrompt = imagePrompt.trim();
       if (typeof narration === 'string') updated.narration = narration.trim();
       if (typeof selectedVariant === 'number') updated.selectedVariant = selectedVariant;
-      if (videoSource === 'ai' || videoSource === 'stock') updated.videoSource = videoSource;
+      if (videoSource === 'ai' || videoSource === 'stock' || videoSource === 'stock-animated') updated.videoSource = videoSource;
       if (typeof stockQuery === 'string') updated.stockQuery = stockQuery.trim();
       return updated;
     });

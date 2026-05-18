@@ -702,15 +702,21 @@ export default function VideoDetail({ id }: { id: string }) {
     setRetryingStock((s) => { const n = new Set(s); n.delete(sceneId); return n; });
   }
 
-  async function handleSetVideoSource(sceneId: string, videoSource: 'ai' | 'stock') {
+  async function handleSetVideoSource(sceneId: string, videoSource: 'ai' | 'stock' | 'stock-animated') {
+    const body: Record<string, any> = { videoSource };
+    if (videoSource === 'stock-animated') body.selectedVariant = 0;
     await fetch(`${API}/videos/${id}/scenes/${sceneId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ videoSource }),
+      body: JSON.stringify(body),
     });
     setProject((p) => {
       if (!p?.script) return p;
-      const scenes = p.script.scenes.map((s) => s.id === sceneId ? { ...s, videoSource } : s);
+      const scenes = p.script.scenes.map((s) =>
+        s.id === sceneId
+          ? { ...s, videoSource, ...(videoSource === 'stock-animated' ? { selectedVariant: 0 } : {}) }
+          : s
+      );
       return { ...p, script: { ...p.script, scenes } };
     });
   }
@@ -1006,8 +1012,10 @@ export default function VideoDetail({ id }: { id: string }) {
                             : available === false
                               ? 'Клип не найден в Pexels — переключитесь на AI'
                               : 'Стоковое видео (Pexels)';
+                        const photoAvailable = (scene as any).stockPhotoAvailable as boolean | undefined;
+                        const isAnimated = scene.videoSource === 'stock-animated';
                         return (
-                          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                          <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
                             <button
                               onClick={() => handleSetVideoSource(scene.id, 'ai')}
                               title="Генерировать через AI (FAL/Imagen)"
@@ -1028,10 +1036,35 @@ export default function VideoDetail({ id }: { id: string }) {
                                 border: scene.videoSource === 'stock' ? 'none' : available === true ? '1px solid #38bdf8' : available === false ? '1px solid #fca5a5' : '1px solid var(--border)',
                               }}
                             >{stockLabel}</button>
+                            {photoAvailable && (
+                              <button
+                                onClick={() => handleSetVideoSource(scene.id, 'stock-animated')}
+                                title="Стоковое фото → анимировать через FAL.AI (I2V)"
+                                style={{
+                                  padding: '3px 10px', fontSize: 11, borderRadius: 4, cursor: 'pointer', fontWeight: 600,
+                                  background: isAnimated ? '#0f766e' : 'transparent',
+                                  color: isAnimated ? 'white' : '#34d399',
+                                  border: isAnimated ? 'none' : '1px solid #34d399',
+                                }}
+                              >🎞️ Анимировать фото</button>
+                            )}
                           </div>
                         );
                       })()}
                     </div>
+                    {scene.videoSource === 'stock-animated' && (scene as any).stockPhotoAvailable && (
+                      <div style={{ marginTop: 6 }}>
+                        <img
+                          src={`${API}/videos/${id}/images/${i}/0`}
+                          alt=""
+                          style={{ width: '100%', borderRadius: 6, maxHeight: 180, objectFit: 'cover', display: 'block' }}
+                          onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                        />
+                        <div style={{ marginTop: 4, fontSize: 11, color: '#34d399', opacity: 0.85 }}>
+                          🎞️ Pexels фото → будет анимировано через FAL.AI: <em>{((scene as any).stockQuery || scene.imagePrompt || '').slice(0, 70)}</em>
+                        </div>
+                      </div>
+                    )}
                     {(scene.videoSource === 'stock' || (scene as any).stockAvailable === false) && (() => {
                       const available = (scene as any).stockAvailable as boolean | undefined;
                       if (available === false) {

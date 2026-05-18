@@ -31,7 +31,7 @@ import { generateScript } from './services/script-generator.js';
 import { generateImage, generateLayeredImage } from './services/image-generator.js';
 import { generateAudio } from './services/tts-generator.js';
 import { assembleVideo, assembleFromClips, extractLastFrame, burnSubtitles, subtitleSizeMultiplier, mixBackgroundMusic } from './services/video-assembler.js';
-import { generateBackgroundMusic, buildMusicPrompt } from './services/music-generator.js';
+import { generateBackgroundMusic } from './services/music-generator.js';
 
 import { animateFrame, animateText, isT2VModel } from './services/fal-animator.js';
 import { searchAndDownloadStockClip, searchAndDownloadStockPhoto } from './services/stock-video.js';
@@ -114,7 +114,7 @@ router.get('/tts-preview/:voice', async (req, res) => {
 
 router.post('/videos', async (req, res) => {
   try {
-    const { title, topic, format, duration, language, animationModel, subtitleStyle, voice, clipDuration, subtitleFont, subtitleSize, subtitleColor, customScenario } = req.body;
+    const { title, topic, format, duration, language, animationModel, subtitleStyle, voice, clipDuration, subtitleFont, subtitleSize, subtitleColor, musicStyle, customScenario } = req.body;
     if (!format || !duration) {
       return res.status(400).json({ error: 'format and duration are required' });
     }
@@ -141,6 +141,7 @@ router.post('/videos', async (req, res) => {
       subtitleFont: subtitleFont ? String(subtitleFont) : undefined,
       subtitleSize: ['small','medium','large','xlarge'].includes(subtitleSize) ? subtitleSize : undefined,
       subtitleColor: subtitleColor && /^#[0-9a-fA-F]{6}$/.test(subtitleColor) ? subtitleColor : undefined,
+      musicStyle: typeof musicStyle === 'string' ? musicStyle : undefined,
       customScenario: hasScenario ? String(customScenario).trim() : undefined,
     });
     res.status(201).json(project);
@@ -525,11 +526,10 @@ router.post('/videos/:id/resume', async (req, res) => {
   }
 });
 
-async function applyMusic(projectId: string, videoPath: string, topic: string, scenes: { duration: number }[], clipDuration?: number): Promise<void> {
+async function applyMusic(projectId: string, videoPath: string, topic: string, scenes: { duration: number }[], clipDuration?: number, musicStyle?: string): Promise<void> {
   const totalDuration = scenes.reduce((s, sc) => s + (clipDuration ?? sc.duration), 0);
   const musicPath = videoPath.replace(/\.mp4$/, '_bg_music.mp3');
-  const prompt = buildMusicPrompt(topic);
-  const musicFile = await generateBackgroundMusic({ prompt, outputPath: musicPath, targetDurationSec: totalDuration });
+  const musicFile = await generateBackgroundMusic({ style: musicStyle, outputPath: musicPath, targetDurationSec: totalDuration });
   if (musicFile) {
     await mixBackgroundMusic({ videoPath, musicPath: musicFile });
     await fs.unlink(musicPath).catch(() => {});
@@ -638,7 +638,7 @@ async function runResumePipeline(projectId: string) {
       });
 
       await update({ progress: 98, progressMessage: 'Добавляю фоновую музыку...' });
-      await applyMusic(projectId, videoPath, project.topic, script.scenes, project.clipDuration);
+      await applyMusic(projectId, videoPath, project.topic, script.scenes, project.clipDuration, project.musicStyle);
       await waitForFile(videoPath);
       await update({
         status: 'done', progress: 100, progressMessage: 'Готово!',
@@ -1204,7 +1204,7 @@ async function runGenerationPipeline(projectId: string) {
       });
 
       await update({ progress: 98, progressMessage: 'Добавляю фоновую музыку...' });
-      await applyMusic(projectId, videoPath, project.topic, script.scenes, project.clipDuration);
+      await applyMusic(projectId, videoPath, project.topic, script.scenes, project.clipDuration, project.musicStyle);
       await waitForFile(videoPath);
       await update({
         status: 'done',
@@ -1533,7 +1533,7 @@ async function runGenerationPipeline(projectId: string) {
 
     // ── Done ─────────────────────────────────────────────────────────────────
     await update({ progress: 98, progressMessage: 'Добавляю фоновую музыку...' });
-    await applyMusic(projectId, videoPath, project.topic, script.scenes, project.clipDuration);
+    await applyMusic(projectId, videoPath, project.topic, script.scenes, project.clipDuration, project.musicStyle);
     await waitForFile(videoPath);
     await update({
       status: 'done',

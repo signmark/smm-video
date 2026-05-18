@@ -38,14 +38,16 @@ async function trimAndScale(
   height: number,
 ): Promise<void> {
   return new Promise((resolve, reject) => {
+    // -stream_loop -1 loops the clip if it is shorter than durationSeconds,
+    // guaranteeing the output is exactly durationSeconds regardless of source length.
     ffmpeg(inputPath)
-      .inputOptions(['-t', String(durationSeconds)])
+      .inputOptions(['-stream_loop', '-1', '-t', String(durationSeconds)])
       .videoFilters([
         `scale=${width}:${height}:force_original_aspect_ratio=decrease`,
         `pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2`,
         'setsar=1',
       ])
-      .outputOptions(['-an', '-c:v', 'libx264', '-preset', 'fast', '-crf', '23'])
+      .outputOptions(['-t', String(durationSeconds), '-an', '-c:v', 'libx264', '-preset', 'fast', '-crf', '23'])
       .output(outputPath)
       .on('end', () => resolve())
       .on('error', (err: Error) => reject(err))

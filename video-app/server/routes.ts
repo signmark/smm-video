@@ -88,48 +88,26 @@ router.get('/tts-preview/:voice', async (req, res) => {
     return res.send(buf);
   } catch {}
 
-  // Generate sample
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return res.status(503).json({ error: 'OpenAI key not available' });
-
   const sampleText: Record<string, string> = {
     ru: 'Привет! Это пример голоса для вашего видео. Выберите тот, который вам нравится больше всего.',
     en: 'Hello! This is a voice sample for your video. Choose the one you like the most.',
   };
-  const instructions: Record<string, string> = {
-    ru: 'Speak in Russian language only. Natural conversational pace, expressive, clear diction.',
-    en: 'Speak in English. Natural conversational pace, expressive, clear diction.',
-  };
 
   try {
     await fs.mkdir(cacheDir, { recursive: true });
-    const ttsRes = await fetch('https://api.openai.com/v1/audio/speech', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: 'gpt-4o-mini-tts', voice, input: sampleText[lang], instructions: instructions[lang], response_format: 'mp3' }),
-      signal: AbortSignal.timeout(30000),
+    const result = await generateAudio({
+      text: sampleText[lang],
+      language: lang as 'ru' | 'en',
+      outputPath: cacheFile,
+      voice,
     });
-    if (!ttsRes.ok) {
-      // Fallback to tts-1
-      const fb = await fetch('https://api.openai.com/v1/audio/speech', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: 'tts-1', voice, input: sampleText[lang], response_format: 'mp3' }),
-        signal: AbortSignal.timeout(20000),
-      });
-      if (!fb.ok) return res.status(502).json({ error: 'TTS unavailable' });
-      const buf = Buffer.from(await fb.arrayBuffer());
-      await fs.writeFile(cacheFile, buf);
-      res.setHeader('Content-Type', 'audio/mpeg');
-      res.setHeader('Cache-Control', 'public, max-age=86400');
-      return res.send(buf);
-    }
-    const buf = Buffer.from(await ttsRes.arrayBuffer());
-    await fs.writeFile(cacheFile, buf);
+    if (!result) return res.status(502).json({ error: 'TTS unavailable' });
     res.setHeader('Content-Type', 'audio/mpeg');
     res.setHeader('Cache-Control', 'public, max-age=86400');
+    const buf = await fs.readFile(cacheFile);
     return res.send(buf);
   } catch (err: any) {
+    console.error(`[tts-preview] ${voice}/${lang} failed: ${err.message}`);
     return res.status(500).json({ error: err.message });
   }
 });

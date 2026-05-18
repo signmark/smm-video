@@ -695,6 +695,9 @@ export default function Create() {
               );
             })}
           </div>
+          <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5, padding: '6px 10px', borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}>
+            ⚠️ Голоса работают через OpenAI TTS. При проблемах с ключом или исчерпанном лимите будет использован стандартный голос (Edge TTS).
+          </div>
         </Field>
 
         <Field label="Субтитры" hint="Как текст будет появляться на видео">

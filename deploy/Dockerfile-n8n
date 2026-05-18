@@ -1,0 +1,44 @@
+# Используем официальный образ n8n
+FROM n8nio/n8n:latest
+
+# Копируем настраиваемые скрипты или пакеты (если есть)
+COPY ./n8n-custom-scripts /home/node/.n8n/custom-scripts
+
+# Устанавливаем дополнительные зависимости (Alpine)
+USER root
+RUN apk add --no-cache \
+    python3 \
+    py3-pip \
+    ffmpeg \
+    chromium \
+    nss \
+    freetype \
+    harfbuzz \
+    ca-certificates \
+    git \
+    curl \
+    && curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp && \
+    chmod a+rx /usr/local/bin/yt-dlp
+
+# Устанавливаем дополнительные пакеты Node.js
+RUN npm install -g \
+    n8n-nodes-telegram \
+    n8n-nodes-mysql \
+    n8n-nodes-text-manipulation
+
+# Возвращаемся к непривилегированному пользователю node
+USER node
+
+# Компоненты для работы с SMM Manager
+RUN mkdir -p /home/node/.n8n/nodes/local
+COPY ./n8n-custom-nodes /home/node/.n8n/nodes/local
+
+# Установка переменных среды
+ENV N8N_HOST=n8n.nplanner.ru
+ENV N8N_PROTOCOL=https
+ENV NODE_ENV=production
+ENV N8N_DIAGNOSTICS_ENABLED=false
+ENV N8N_USER_MANAGEMENT_DISABLED=false
+
+# Команда запуска n8n в режиме сервера
+CMD ["n8n", "start"]

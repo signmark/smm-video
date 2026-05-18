@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1200, initial-scale=0.35, user-scalable=yes, viewport-fit=cover, minimum-scale=0.1, maximum-scale=5.0" />
+
+    <!-- DEV: Отключение кеша для Telegram WebView -->
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+
+    <title>SMM Manager — ИИ-автоматизация социальных сетей</title>
+
+    <!-- Primary SEO -->
+    <meta name="description" content="SMM Manager — платформа для автоматического создания, планирования и публикации контента в Instagram, VK, Telegram, YouTube, TikTok и Facebook с помощью ИИ. Экономьте часы работы каждый день." />
+    <meta name="keywords" content="SMM, социальные сети, автоматизация, ИИ контент, постинг, планировщик, Instagram, VK, Telegram, YouTube, TikTok, Facebook, контент-план, аналитика" />
+    <meta name="author" content="SMM Manager" />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://smm.omemo.tech" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="SMM Manager" />
+    <meta property="og:title" content="SMM Manager — ИИ-автоматизация социальных сетей" />
+    <meta property="og:description" content="Создавайте, планируйте и публикуйте контент во все соцсети одновременно. ИИ пишет тексты, генерирует изображения и анализирует тренды за вас." />
+    <meta property="og:image" content="https://smm.omemo.tech/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:url" content="https://smm.omemo.tech" />
+    <meta property="og:locale" content="ru_RU" />
+
+    <!-- Twitter Card -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="SMM Manager — ИИ-автоматизация социальных сетей" />
+    <meta name="twitter:description" content="Создавайте и публикуйте контент во все соцсети с помощью ИИ. Instagram, VK, Telegram, YouTube, TikTok, Facebook." />
+    <meta name="twitter:image" content="https://smm.omemo.tech/og-image.png" />
+
+    <!-- PWA Manifest -->
+    <link rel="manifest" href="/manifest.json">
+    <meta name="theme-color" content="#3b82f6">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="SMM Manager">
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon.png">
+    <link rel="shortcut icon" href="/favicon.ico">
+    <link rel="apple-touch-icon" href="/favicon.png">
+
+    <!-- Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "SMM Manager",
+      "applicationCategory": "BusinessApplication",
+      "operatingSystem": "Web",
+      "url": "https://smm.omemo.tech",
+      "description": "Платформа для автоматического управления социальными сетями с ИИ-генерацией контента",
+      "offers": {
+        "@type": "Offer",
+        "price": "990",
+        "priceCurrency": "RUB"
+      },
+      "featureList": [
+        "ИИ-генерация текста и изображений",
+        "Публикация в Instagram, VK, Telegram, YouTube, TikTok, Facebook",
+        "Планировщик публикаций",
+        "Аналитика и отчёты",
+        "Управление кампаниями"
+      ]
+    }
+    </script>
+
+
+    <!-- Google tag (gtag.js) -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-GQY7EFXNSB"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-GQY7EFXNSB');
+    </script>
+
+    <!-- Font Awesome (иконки соцсетей и UI) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />
+
+    <!-- Telegram WebApp API -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx?v=1761736200"></script>
+  </body>
+</html>

@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Тестирование API Claude</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            color: #2a6bc9;
+        }
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        input[type="text"], textarea {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #2a6bc9;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #1d5ab3;
+        }
+        .result {
+            margin-top: 15px;
+            padding: 15px;
+            background-color: #f5f5f5;
+            border-radius: 4px;
+            min-height: 100px;
+            white-space: pre-wrap;
+        }
+        .error {
+            color: #d9534f;
+            font-weight: bold;
+        }
+        .success {
+            color: #5cb85c;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>Тестирование API Claude</h1>
+    
+    <div class="section">
+        <h2>1. Проверка API ключа</h2>
+        <input type="text" id="apiKey" placeholder="Введите ваш API ключ Claude" />
+        <button onclick="testApiKey()">Проверить ключ</button>
+        <div class="result" id="apiKeyResult">Результат будет отображен здесь</div>
+    </div>
+
+    <div class="section">
+        <h2>2. Сохранение API ключа</h2>
+        <input type="text" id="saveApiKey" placeholder="Введите ваш API ключ Claude для сохранения" />
+        <button onclick="saveApiKey()">Сохранить ключ</button>
+        <div class="result" id="saveApiKeyResult">Результат будет отображен здесь</div>
+    </div>
+
+    <div class="section">
+        <h2>3. Улучшение текста</h2>
+        <textarea id="textToImprove" rows="5" placeholder="Введите текст для улучшения"></textarea>
+        <textarea id="textPrompt" rows="3" placeholder="Введите инструкции для улучшения (например: 'Сделай текст более формальным и исправь ошибки')"></textarea>
+        <select id="modelSelect">
+            <option value="claude-3-sonnet-20240229">Claude 3 Sonnet (рекомендуется)</option>
+            <option value="claude-3-haiku-20240307">Claude 3 Haiku (быстрее)</option>
+            <option value="claude-3-opus-20240229">Claude 3 Opus (мощнее)</option>
+        </select>
+        <button onclick="improveText()">Улучшить текст</button>
+        <div class="result" id="improveTextResult">Результат будет отображен здесь</div>
+    </div>
+
+    <div class="section">
+        <h2>4. Генерация контента</h2>
+        <textarea id="generatePrompt" rows="5" placeholder="Введите промпт для генерации контента"></textarea>
+        <select id="generateModelSelect">
+            <option value="claude-3-sonnet-20240229">Claude 3 Sonnet (рекомендуется)</option>
+            <option value="claude-3-haiku-20240307">Claude 3 Haiku (быстрее)</option>
+            <option value="claude-3-opus-20240229">Claude 3 Opus (мощнее)</option>
+        </select>
+        <button onclick="generateContent()">Сгенерировать контент</button>
+        <div class="result" id="generateContentResult">Результат будет отображен здесь</div>
+    </div>
+
+    <div class="section">
+        <h2>5. Проверка статуса сервера</h2>
+        <button onclick="checkServerStatus()">Проверить статус</button>
+        <div class="result" id="serverStatusResult">Результат будет отображен здесь</div>
+    </div>
+
+    <script>
+        // Функция для отображения ошибки
+        function showError(elementId, message) {
+            document.getElementById(elementId).innerHTML = `<span class="error">Ошибка: ${message}</span>`;
+        }
+
+        // Функция для отображения успеха
+        function showSuccess(elementId, message) {
+            document.getElementById(elementId).innerHTML = `<span class="success">Успешно: ${message}</span>`;
+        }
+
+        // Функция для отображения JSON результата
+        function showResult(elementId, data) {
+            document.getElementById(elementId).textContent = JSON.stringify(data, null, 2);
+        }
+
+        // Проверка API ключа
+        async function testApiKey() {
+            const apiKey = document.getElementById('apiKey').value;
+            if (!apiKey) {
+                showError('apiKeyResult', 'API ключ не указан');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/claude/test-api-key', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ apiKey })
+                });
+
+                const data = await response.json();
+                
+                if (data.success && data.isValid) {
+                    showSuccess('apiKeyResult', 'API ключ действителен');
+                } else {
+                    showError('apiKeyResult', 'API ключ недействителен');
+                }
+                
+                showResult('apiKeyResult', data);
+            } catch (error) {
+                showError('apiKeyResult', `Ошибка запроса: ${error.message}`);
+            }
+        }
+
+        // Сохранение API ключа
+        async function saveApiKey() {
+            const apiKey = document.getElementById('saveApiKey').value;
+            if (!apiKey) {
+                showError('saveApiKeyResult', 'API ключ не указан');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/claude/save-api-key', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ apiKey })
+                });
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    showSuccess('saveApiKeyResult', 'API ключ успешно сохранен');
+                } else {
+                    showError('saveApiKeyResult', data.error || 'Не удалось сохранить API ключ');
+                }
+                
+                showResult('saveApiKeyResult', data);
+            } catch (error) {
+                showError('saveApiKeyResult', `Ошибка запроса: ${error.message}`);
+            }
+        }
+
+        // Улучшение текста
+        async function improveText() {
+            const text = document.getElementById('textToImprove').value;
+            const prompt = document.getElementById('textPrompt').value;
+            const model = document.getElementById('modelSelect').value;
+            
+            if (!text) {
+                showError('improveTextResult', 'Текст для улучшения не указан');
+                return;
+            }
+            
+            if (!prompt) {
+                showError('improveTextResult', 'Инструкции не указаны');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/claude/improve-text', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ text, prompt, model })
+                });
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    showSuccess('improveTextResult', 'Текст успешно улучшен');
+                    document.getElementById('improveTextResult').textContent = data.text;
+                } else {
+                    showError('improveTextResult', data.error || 'Не удалось улучшить текст');
+                    showResult('improveTextResult', data);
+                }
+            } catch (error) {
+                showError('improveTextResult', `Ошибка запроса: ${error.message}`);
+            }
+        }
+
+        // Генерация контента
+        async function generateContent() {
+            const prompt = document.getElementById('generatePrompt').value;
+            const model = document.getElementById('generateModelSelect').value;
+            
+            if (!prompt) {
+                showError('generateContentResult', 'Промпт не указан');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/claude/generate-content', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ prompt, model })
+                });
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    showSuccess('generateContentResult', 'Контент успешно сгенерирован');
+                    document.getElementById('generateContentResult').textContent = data.text;
+                } else {
+                    showError('generateContentResult', data.error || 'Не удалось сгенерировать контент');
+                    showResult('generateContentResult', data);
+                }
+            } catch (error) {
+                showError('generateContentResult', `Ошибка запроса: ${error.message}`);
+            }
+        }
+
+        // Проверка статуса сервера
+        async function checkServerStatus() {
+            try {
+                const response = await fetch('/api/status-check');
+                const data = await response.json();
+                
+                showSuccess('serverStatusResult', 'Сервер работает');
+                showResult('serverStatusResult', data);
+            } catch (error) {
+                showError('serverStatusResult', `Ошибка запроса: ${error.message}`);
+            }
+        }
+    </script>
+</body>
+</html>

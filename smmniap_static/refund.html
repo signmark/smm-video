@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Условия возврата средств - SMM Manager</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .policy-content {
+            max-width: 800px;
+            margin: 2rem auto;
+            padding: 2rem;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+        .policy-content h1 { color: #6366f1; margin-bottom: 1rem; }
+        .policy-content h2 { color: #374151; margin-top: 2rem; margin-bottom: 1rem; }
+        .policy-content p, .policy-content li { line-height: 1.6; margin-bottom: 1rem; }
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: #6366f1;
+            text-decoration: none;
+            margin-bottom: 2rem;
+            font-weight: 500;
+        }
+        .back-link:hover { text-decoration: underline; }
+        .highlight-block {
+            background: #eff6ff;
+            border-left: 4px solid #6366f1;
+            border-radius: 4px;
+            padding: 1rem 1.5rem;
+            margin: 1.5rem 0;
+        }
+        .requisites-block {
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 1rem 1.5rem;
+            margin-top: 1rem;
+        }
+        .requisites-block p { margin-bottom: 0.4rem; }
+        .steps { counter-reset: step; }
+        .step { display: flex; gap: 1rem; margin-bottom: 1.5rem; align-items: flex-start; }
+        .step-num {
+            min-width: 2rem;
+            height: 2rem;
+            background: #6366f1;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="policy-content">
+            <a href="index.html" class="back-link">
+                <i class="fas fa-arrow-left"></i>
+                Вернуться на главную
+            </a>
+
+            <h1>Условия возврата денежных средств</h1>
+            <p><strong>Дата последнего обновления: 31 марта 2026 года</strong></p>
+
+            <div class="highlight-block">
+                <p><strong>Срок возврата: до 10 рабочих дней</strong> с момента одобрения заявки. Возврат осуществляется тем же способом, которым была произведена оплата.</p>
+            </div>
+
+            <h2>1. Общие положения</h2>
+            <p>Настоящие Условия возврата определяют порядок возврата денежных средств за услуги платформы SMM Manager (smm.omemo.tech), предоставляемой ИП Балуровым Иваном Викторовичем (далее — «Исполнитель»).</p>
+            <p>Отношения между Исполнителем и Пользователем регулируются Гражданским кодексом Российской Федерации, Законом РФ «О защите прав потребителей» от 07.02.1992 № 2300-1 и настоящими Условиями.</p>
+
+            <h2>2. Случаи, при которых возврат производится</h2>
+            <p>Пользователь вправе потребовать возврат денежных средств в следующих случаях:</p>
+            <ul>
+                <li><strong>Технический сбой при оплате:</strong> деньги были списаны, но доступ к тарифу не активирован</li>
+                <li><strong>Двойное списание:</strong> за один и тот же период была произведена оплата более одного раза</li>
+                <li><strong>Недоступность сервиса:</strong> платформа была недоступна более 72 часов подряд в оплаченный период по вине Исполнителя</li>
+                <li><strong>Отказ от сервиса в течение 3 дней:</strong> Пользователь впервые подключает платный тариф и отказывается от него в течение 3 (трёх) календарных дней с момента первой оплаты, при условии что сервисом фактически не пользовался</li>
+                <li><strong>Прекращение сервиса:</strong> Исполнитель прекращает оказание услуг досрочно — возвращается пропорциональная часть за неиспользованный период</li>
+            </ul>
+
+            <h2>3. Случаи, при которых возврат не производится</h2>
+            <ul>
+                <li>Пользователь активно использовал сервис в оплаченном периоде</li>
+                <li>Прошло более 3 (трёх) дней с момента оплаты (кроме случаев технических сбоев и недоступности сервиса)</li>
+                <li>Блокировка аккаунта за нарушение <a href="terms.html">Условий использования</a></li>
+                <li>Пользователь сам удалил аккаунт до истечения оплаченного периода</li>
+                <li>Изменения в API социальных сетей, независящие от Исполнителя, повлекли ограничение функциональности</li>
+            </ul>
+
+            <h2>4. Порядок подачи заявки на возврат</h2>
+            <div class="steps">
+                <div class="step">
+                    <div class="step-num">1</div>
+                    <div>
+                        <p><strong>Направьте заявку</strong> на email <a href="mailto:support@omemo.tech">support@omemo.tech</a> с темой письма «Возврат средств».</p>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-num">2</div>
+                    <div>
+                        <p><strong>Укажите в заявке:</strong> ваш email от аккаунта, дату и сумму платежа, причину возврата и номер транзакции (если есть).</p>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-num">3</div>
+                    <div>
+                        <p><strong>Ожидайте ответа.</strong> Мы рассмотрим заявку в течение 2 (двух) рабочих дней и сообщим о решении.</p>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-num">4</div>
+                    <div>
+                        <p><strong>Возврат средств</strong> будет произведён в течение 10 (десяти) рабочих дней после одобрения заявки на банковскую карту или иным способом, которым производилась оплата.</p>
+                    </div>
+                </div>
+            </div>
+
+            <h2>5. Сроки возврата</h2>
+            <ul>
+                <li><strong>Рассмотрение заявки:</strong> до 2 рабочих дней</li>
+                <li><strong>Возврат на карту:</strong> до 10 рабочих дней с момента одобрения</li>
+                <li><strong>Срок для подачи заявки:</strong> в течение 30 дней с даты оплаты (кроме случаев технических сбоев — без ограничения срока)</li>
+            </ul>
+
+            <h2>6. Частичный возврат</h2>
+            <p>При прекращении сервиса по инициативе Исполнителя возврат производится пропорционально неиспользованному периоду. Расчёт: сумма оплаты × (количество неиспользованных дней / общее количество дней в периоде).</p>
+
+            <h2>7. Обработка платежей</h2>
+            <p>Платежи и возвраты обрабатываются через платёжный сервис ЮKassa (ООО НКО «ЮМани», лицензия Банка России № 3510-К от 27.07.2012). Данные банковских карт не хранятся Исполнителем — они обрабатываются непосредственно ЮKassa в соответствии со стандартом PCI DSS.</p>
+
+            <h2>8. Контактная информация</h2>
+            <p>По вопросам возврата средств:</p>
+            <div class="requisites-block">
+                <p>Email: <a href="mailto:support@omemo.tech">support@omemo.tech</a></p>
+                <p>Telegram: <a href="https://t.me/smm_manager_support">@smm_manager_support</a></p>
+                <p>Телефон: <a href="tel:+78126037674">+7 (812) 603-76-74</a></p>
+                <p>Режим работы поддержки: 24/7</p>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,281 @@
+{
+  "name": "YouTube Auto Token Refresh",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "cronExpression": "0 */2 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Every 2 Hours",
+      "type": "n8n-nodes-base.cron",
+      "typeVersion": 1,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.DIRECTUS_URL }}/items/user_campaigns",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.DIRECTUS_TOKEN }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "get-campaigns",
+      "name": "Get All Campaigns",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Фильтруем кампании с YouTube настройками и действующими refresh токенами\nconst campaigns = $input.first().json.data || [];\nconst now = new Date();\n\nconst youtuberCampaigns = campaigns.filter(campaign => {\n  const youtube = campaign.social_media_settings?.youtube;\n  \n  if (!youtube?.refresh_token) {\n    return false;\n  }\n  \n  // Проверяем, нужно ли обновлять токен (истекает в течение часа)\n  if (youtube.token_expires_at) {\n    const expiresAt = new Date(youtube.token_expires_at);\n    const oneHourFromNow = new Date(now.getTime() + 60 * 60 * 1000);\n    \n    if (expiresAt > oneHourFromNow) {\n      console.log(`Campaign ${campaign.id}: token still valid until ${expiresAt}`);\n      return false;\n    }\n  }\n  \n  console.log(`Campaign ${campaign.id}: token needs refresh`);\n  return true;\n});\n\nconsole.log(`Found ${youtuberCampaigns.length} campaigns needing token refresh`);\n\nreturn youtuberCampaigns.map(campaign => ({\n  json: {\n    campaign_id: campaign.id,\n    refresh_token: campaign.social_media_settings.youtube.refresh_token,\n    current_settings: campaign.social_media_settings,\n    campaign_name: campaign.name || 'Unnamed Campaign'\n  }\n}));"
+      },
+      "id": "filter-campaigns",
+      "name": "Filter YouTube Campaigns",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://oauth2.googleapis.com/token",
+        "options": {
+          "bodyContentType": "form-urlencoded"
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "client_id",
+              "value": "={{ $env.YOUTUBE_CLIENT_ID }}"
+            },
+            {
+              "name": "client_secret",
+              "value": "={{ $env.YOUTUBE_CLIENT_SECRET }}"
+            },
+            {
+              "name": "refresh_token",
+              "value": "={{ $json.refresh_token }}"
+            },
+            {
+              "name": "grant_type",
+              "value": "refresh_token"
+            }
+          ]
+        }
+      },
+      "id": "refresh-token",
+      "name": "Refresh YouTube Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-access-token",
+              "leftValue": "={{ $json.access_token }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-success",
+      "name": "Check If Success",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $env.DIRECTUS_URL }}/items/user_campaigns/{{ $('Filter YouTube Campaigns').item.json.campaign_id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer {{ $env.DIRECTUS_TOKEN }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "social_media_settings",
+              "value": "={{ JSON.stringify(Object.assign($('Filter YouTube Campaigns').item.json.current_settings || {}, { youtube: Object.assign($('Filter YouTube Campaigns').item.json.current_settings?.youtube || {}, { access_token: $json.access_token, refresh_token: $json.refresh_token || $('Filter YouTube Campaigns').item.json.refresh_token, token_expires_at: new Date(Date.now() + ($json.expires_in * 1000)).toISOString(), last_token_refresh: new Date().toISOString() }) })) }}"
+            }
+          ]
+        },
+        "options": {
+          "bodyContentType": "json"
+        }
+      },
+      "id": "update-campaign",
+      "name": "Update Campaign Settings",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1340,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Логируем успешное обновление\nconst campaignData = $('Filter YouTube Campaigns').item.json;\nconst tokenData = $('Refresh YouTube Token').item.json;\n\nconsole.log(`✅ Successfully refreshed token for campaign: ${campaignData.campaign_name} (${campaignData.campaign_id})`);\nconsole.log(`🔑 New token expires at: ${new Date(Date.now() + (tokenData.expires_in * 1000)).toISOString()}`);\n\nreturn [{ json: { \n  success: true, \n  campaign_id: campaignData.campaign_id,\n  campaign_name: campaignData.campaign_name,\n  token_expires_at: new Date(Date.now() + (tokenData.expires_in * 1000)).toISOString()\n}}];"
+      },
+      "id": "log-success",
+      "name": "Log Success",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1560,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Логируем ошибку обновления\nconst campaignData = $('Filter YouTube Campaigns').item.json;\nconst errorData = $('Refresh YouTube Token').item.json;\n\nconsole.error(`❌ Failed to refresh token for campaign: ${campaignData.campaign_name} (${campaignData.campaign_id})`);\nconsole.error(`🔍 Error details:`, errorData);\n\nreturn [{ json: { \n  success: false, \n  campaign_id: campaignData.campaign_id,\n  campaign_name: campaignData.campaign_name,\n  error: errorData\n}}];"
+      },
+      "id": "log-error",
+      "name": "Log Error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1340,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "Every 2 Hours": {
+      "main": [
+        [
+          {
+            "node": "Get All Campaigns",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get All Campaigns": {
+      "main": [
+        [
+          {
+            "node": "Filter YouTube Campaigns",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter YouTube Campaigns": {
+      "main": [
+        [
+          {
+            "node": "Refresh YouTube Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Refresh YouTube Token": {
+      "main": [
+        [
+          {
+            "node": "Check If Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check If Success": {
+      "main": [
+        [
+          {
+            "node": "Update Campaign Settings",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Campaign Settings": {
+      "main": [
+        [
+          {
+            "node": "Log Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["youtube", "automation", "token-refresh"],
+  "triggerCount": 0,
+  "updatedAt": "2025-07-08T16:50:00.000Z",
+  "versionId": "1"
+}

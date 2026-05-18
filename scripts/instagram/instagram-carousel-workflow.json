@@ -1,0 +1,663 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "publish-instagram-carousel",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "f2a07c49-523e-4e51-94d0-1697db5d6890",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -2920,
+        300
+      ],
+      "webhookId": "publish-instagram-carousel"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Подготовка параметров\nreturn {\n  contentId: $input.item.json.body.contentId,\n  campaignId: $input.item.json.body.campaignId\n};"
+      },
+      "id": "dbd26bff-5782-40f4-b42d-b403c52f0618",
+      "name": "Подготовка параметров",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        -2740,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "schema": "public",
+        "table": "campaign_content",
+        "where": {
+          "values": [
+            {
+              "column": "id",
+              "value": "={{ $json.contentId }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ce8bb11e-3338-42ac-b305-a39692b5d9ef",
+      "name": "Получение контента",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -2520,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "lO4gl1E2I2lsrRce",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.id }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "2a7d5ab1-c8cb-45b0-98ce-e32d231ca59a",
+      "name": "Контент найден?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        -2260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "schema": "public",
+        "table": "user_campaigns",
+        "where": {
+          "values": [
+            {
+              "column": "id",
+              "value": "={{ $json.campaign_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "87680bc7-6bba-4db9-b3ce-c399757714f7",
+      "name": "Получение настроек кампании",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -2000,
+        160
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "lO4gl1E2I2lsrRce",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем данные из предыдущих нод\nconst content = $node[\"Получение контента\"].json || {};\nconst campaign = $node[\"Получение настроек кампании\"].json || {};\n\n// Получаем настройки Instagram из кампании\nlet instagramAccessToken, instagramAccountId;\n\n// Проверяем наличие структуры social_media_settings\nif (campaign.social_media_settings && \n    campaign.social_media_settings.instagram && \n    campaign.social_media_settings.instagram.token && \n    campaign.social_media_settings.instagram.businessAccountId) {\n  \n  instagramAccessToken = campaign.social_media_settings.instagram.token;\n  instagramAccountId = campaign.social_media_settings.instagram.businessAccountId;\n} else {\n  return { error: \"Настройки Instagram не найдены\" };\n}\n\n// Проверка на наличие основного изображения\nconst imageUrl = content.image_url;\nif (!imageUrl) {\n  return { error: \"Основное изображение не найдено\" };\n}\n\n// Подготовка массива изображений для карусели\nlet images = [imageUrl]; // Добавляем основное изображение\n\n// Проверяем наличие дополнительных изображений\nlet additionalImages = [];\nif (content.additional_images) {\n  try {\n    // Проверяем, является ли значение строкой JSON\n    if (typeof content.additional_images === 'string') {\n      additionalImages = JSON.parse(content.additional_images);\n    } \n    // Если это уже массив, используем его напрямую\n    else if (Array.isArray(content.additional_images)) {\n      additionalImages = content.additional_images;\n    }\n  } catch (error) {\n    console.error('Ошибка при парсинге additional_images:', error.message);\n  }\n}\n\n// Добавляем дополнительные изображения, если они есть\nif (Array.isArray(additionalImages) && additionalImages.length > 0) {\n  images = images.concat(additionalImages);\n}\n\n// Проверяем количество изображений для карусели (должно быть не менее 2)\nif (images.length < 2) {\n  return { \n    error: \"Недостаточно изображений для карусели\", \n    imagesCount: images.length \n  };\n}\n\n// Проверяем, не превышает ли количество изображений максимальное (10 для Instagram)\nif (images.length > 10) {\n  images = images.slice(0, 10); // Ограничиваем до 10 изображений\n  console.log(`Превышено максимальное количество изображений для карусели. Использовано первые 10.`);\n}\n\n// Подготовка текста для Instagram\nconst message = content.content || '';\n\n// Статус обработки карусели (для хранения и мониторинга)\nconst carouselState = {\n  attemptCount: 0,         // Счетчик попыток публикации\n  status: 'pending',       // Статус обработки: pending, containers_created, carousel_created, published, failed\n  containerIds: [],        // ID созданных контейнеров изображений\n  carouselContainerId: null, // ID контейнера карусели\n  error: null,             // Информация об ошибке\n  publishedId: null,       // ID опубликованного поста\n  permalink: null,         // Ссылка на опубликованный пост\n  lastAttemptAt: new Date().toISOString() // Время последней попытки\n};\n\n// Формируем объект с данными для публикации\nreturn {\n  content_id: content.id,\n  campaign_id: content.campaign_id,\n  message: message,\n  image_url: imageUrl,\n  images: images,          // Массив всех изображений для карусели\n  instagramToken: instagramAccessToken,\n  instagramAccountId: instagramAccountId,\n  content_type: content.content_type || \"image\",\n  // Информация для мониторинга и повторных попыток\n  carouselState: carouselState,\n  totalImageCount: images.length\n};"
+      },
+      "id": "7fc15eea-dda2-4918-b206-50fda665bca6",
+      "name": "Подготовка данных для карусели",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1800,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ffdaee59-acb6-427e-94f0-639509de990f",
+              "leftValue": "={{ $json.error }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "5b3a1cd1-e3f2-4f30-953b-0cbf73c91c5c",
+      "name": "Есть ошибка?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1580,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Функция задержки\nfunction sleep(ms) {\n  return new Promise(resolve => setTimeout(resolve, ms));\n}\n\n// Получаем данные из входящего потока\nconst images = $json.images || [];\nconst instagramAccountId = $json.instagramAccountId;\nconst accessToken = $json.instagramToken;\nconst message = $json.message || '';\nconst contentId = $json.content_id;\nconst campaignId = $json.campaign_id;\n\n// Получаем текущее состояние карусели\nlet carouselState = $json.carouselState || {\n  attemptCount: 0,\n  status: 'pending',\n  containerIds: [],\n  carouselContainerId: null,\n  error: null,\n  publishedId: null,\n  permalink: null,\n  lastAttemptAt: new Date().toISOString()\n};\n\n// Увеличиваем счетчик попыток\ncarouselState.attemptCount++;\ncarouselState.lastAttemptAt = new Date().toISOString();\n\nconsole.log(`Попытка №${carouselState.attemptCount} публикации карусели с ${images.length} изображениями`);\n\n// Создаем массив для хранения ID контейнеров, если они еще не созданы\nlet containerIds = carouselState.containerIds || [];\n\n// Если контейнеры еще не созданы, создаем их\nif (containerIds.length === 0 && carouselState.status === 'pending') {\n  console.log('Начинаем создание контейнеров для изображений...');\n  \n  // Последовательно создаем контейнеры для всех изображений с большими задержками\n  for (let i = 0; i < images.length; i++) {\n    const imageUrl = images[i];\n    console.log(`Создаем контейнер для изображения ${i + 1}/${images.length}`);\n    \n    try {\n      // Создаем контейнер для изображения\n      const response = await $http.post(\n        `https://graph.facebook.com/v16.0/${instagramAccountId}/media`,\n        {\n          image_url: imageUrl,\n          is_carousel_item: true,\n          access_token: accessToken\n        }\n      );\n      \n      console.log(`Ответ API при создании контейнера для изображения ${i + 1}:`, response.data);\n      \n      if (response.data && response.data.id) {\n        containerIds.push(response.data.id);\n        console.log(`Контейнер ${i + 1} создан, ID:`, response.data.id);\n        \n        // Сохраняем текущее состояние после создания каждого контейнера\n        carouselState.containerIds = containerIds;\n        \n        // Делаем большую задержку между созданием контейнеров (8 секунд)\n        console.log(`Задержка 8 секунд перед созданием следующего контейнера...`);\n        await sleep(8000);\n      } else {\n        console.error(`Ошибка при создании контейнера ${i + 1}: ответ без ID`);\n      }\n    } catch (error) {\n      console.error(`Ошибка при создании контейнера ${i + 1}:`, error.message);\n      if (error.response) {\n        console.error('Детали ошибки:', JSON.stringify(error.response.data));\n      }\n    }\n  }\n  \n  console.log(`Создано ${containerIds.length} контейнеров для изображений`);\n  carouselState.containerIds = containerIds;\n  \n  // Проверка наличия созданных контейнеров\n  if (containerIds.length === 0) {\n    console.error('Не удалось создать ни одного контейнера для изображений');\n    \n    carouselState.status = 'failed';\n    carouselState.error = \"Не удалось создать контейнеры для изображений\";\n    \n    // Возвращаем информацию об ошибке\n    return {\n      content_id: contentId,\n      campaign_id: campaignId,\n      carouselState: carouselState,\n      social_platforms: JSON.stringify({\n        instagram: {\n          status: \"failed\",\n          error: \"Не удалось создать контейнеры для изображений\",\n          platform: \"instagram\",\n          updatedAt: new Date().toISOString()\n        }\n      })\n    };\n  }\n  \n  // Обновляем статус\n  carouselState.status = 'containers_created';\n  console.log('Контейнеры для изображений созданы успешно');\n  \n  // Большая задержка перед созданием контейнера карусели (15 секунд)\n  console.log('Задержка 15 секунд перед созданием контейнера карусели...');\n  await sleep(15000);\n}\n\n// Создаем контейнер карусели, если контейнеры уже созданы, но карусель еще нет\nlet carouselContainerId = carouselState.carouselContainerId;\n\nif (!carouselContainerId && carouselState.status === 'containers_created') {\n  try {\n    console.log('Создаем контейнер карусели...');\n    console.log('Используем ID контейнеров:', containerIds.join(', '));\n    \n    const carouselResponse = await $http.post(\n      `https://graph.facebook.com/v16.0/${instagramAccountId}/media`,\n      {\n        media_type: 'CAROUSEL',\n        children: containerIds.join(','),\n        caption: message,\n        access_token: accessToken\n      }\n    );\n    \n    console.log('Ответ API при создании контейнера карусели:', carouselResponse.data);\n    \n    if (carouselResponse.data && carouselResponse.data.id) {\n      carouselContainerId = carouselResponse.data.id;\n      carouselState.carouselContainerId = carouselContainerId;\n      carouselState.status = 'carousel_created';\n      console.log('Контейнер карусели создан успешно, ID:', carouselContainerId);\n      \n      // Большая задержка перед публикацией карусели (20 секунд)\n      console.log('Задержка 20 секунд перед публикацией карусели...');\n      await sleep(20000);\n    } else {\n      throw new Error('Не удалось создать контейнер карусели: ответ без ID');\n    }\n  } catch (error) {\n    console.error('Ошибка при создании контейнера карусели:', error.message);\n    if (error.response) {\n      console.error('Детали ошибки:', JSON.stringify(error.response.data));\n    }\n    \n    carouselState.error = `Ошибка при создании контейнера карусели: ${error.message}`;\n    \n    // Если это первая попытка, не отмечаем как ошибку, попробуем еще раз\n    if (carouselState.attemptCount >= 3) {\n      carouselState.status = 'failed';\n      \n      // Возвращаем информацию об ошибке\n      return {\n        content_id: contentId,\n        campaign_id: campaignId,\n        carouselState: carouselState,\n        social_platforms: JSON.stringify({\n          instagram: {\n            status: \"failed\",\n            error: `Ошибка при создании контейнера карусели: ${error.message}`,\n            platform: \"instagram\",\n            updatedAt: new Date().toISOString()\n          }\n        })\n      };\n    } else {\n      // Просто возвращаем текущее состояние для повторной попытки\n      return {\n        content_id: contentId,\n        campaign_id: campaignId,\n        images: images,\n        instagramToken: accessToken,\n        instagramAccountId: instagramAccountId,\n        message: message,\n        carouselState: carouselState,\n        retry: true,\n        retryAfter: 30 // секунд до следующей попытки\n      };\n    }\n  }\n}\n\n// Публикуем карусель, если контейнер карусели создан, но публикация еще не произошла\nlet publishResult;\n\nif (carouselState.status === 'carousel_created' && !carouselState.publishedId) {\n  try {\n    console.log('Публикуем карусель...');\n    console.log('Используем ID контейнера карусели:', carouselContainerId);\n    \n    const publishResponse = await $http.post(\n      `https://graph.facebook.com/v16.0/${instagramAccountId}/media_publish`,\n      {\n        creation_id: carouselContainerId,\n        access_token: accessToken\n      }\n    );\n    \n    console.log('Ответ API при публикации карусели:', publishResponse.data);\n    \n    publishResult = publishResponse.data;\n    \n    if (!publishResult || !publishResult.id) {\n      throw new Error('Не удалось опубликовать карусель: ответ без ID');\n    }\n    \n    carouselState.publishedId = publishResult.id;\n    carouselState.status = 'published';\n    console.log('Карусель опубликована успешно, ID:', publishResult.id);\n    \n    // Задержка перед получением permalink (5 секунд)\n    console.log('Задержка 5 секунд перед получением постоянной ссылки...');\n    await sleep(5000);\n  } catch (error) {\n    console.error('Ошибка при публикации карусели:', error.message);\n    if (error.response) {\n      console.error('Детали ошибки:', JSON.stringify(error.response.data));\n    }\n    \n    carouselState.error = `Ошибка при публикации карусели: ${error.message}`;\n    \n    // Если это последняя попытка, отмечаем как ошибку\n    if (carouselState.attemptCount >= 3) {\n      carouselState.status = 'failed';\n      \n      // Возвращаем информацию об ошибке\n      return {\n        content_id: contentId,\n        campaign_id: campaignId,\n        carouselState: carouselState,\n        social_platforms: JSON.stringify({\n          instagram: {\n            status: \"failed\",\n            error: `Ошибка при публикации карусели: ${error.message}`,\n            platform: \"instagram\",\n            updatedAt: new Date().toISOString()\n          }\n        })\n      };\n    } else {\n      // Просто возвращаем текущее состояние для повторной попытки\n      return {\n        content_id: contentId,\n        campaign_id: campaignId,\n        images: images,\n        instagramToken: accessToken,\n        instagramAccountId: instagramAccountId,\n        message: message,\n        carouselState: carouselState,\n        retry: true,\n        retryAfter: 60 // секунд до следующей попытки\n      };\n    }\n  }\n}\n\n// Если у нас есть ID опубликованной карусели, но нет ссылки, пытаемся получить permalink\nif (carouselState.status === 'published' && carouselState.publishedId && !carouselState.permalink) {\n  try {\n    console.log('Получаем permalink публикации...');\n    const permalinkResponse = await $http.get(\n      `https://graph.facebook.com/v16.0/${carouselState.publishedId}?fields=permalink,shortcode&access_token=${accessToken}`\n    );\n    \n    console.log('Ответ API при получении permalink:', permalinkResponse.data);\n    \n    if (permalinkResponse.data && permalinkResponse.data.permalink) {\n      carouselState.permalink = permalinkResponse.data.permalink;\n      console.log('Получен permalink:', carouselState.permalink);\n    }\n  } catch (error) {\n    console.log('Ошибка при получении permalink:', error.message);\n    // Продолжаем выполнение, даже если не удалось получить permalink\n  }\n}\n\n// Подготавливаем данные о социальных платформах\nlet socialPlatforms = {};\n\n// Получаем текущие данные о социальных платформах\nif ($node[\"Получение контента\"].json.social_platforms) {\n  try {\n    // Пытаемся распарсить JSON строку, если это строка\n    if (typeof $node[\"Получение контента\"].json.social_platforms === 'string') {\n      socialPlatforms = JSON.parse($node[\"Получение контента\"].json.social_platforms);\n    } else {\n      // Если это уже объект, просто копируем\n      socialPlatforms = { ...$node[\"Получение контента\"].json.social_platforms };\n    }\n  } catch (error) {\n    // В случае ошибки парсинга, начинаем с пустого объекта\n    socialPlatforms = {};\n  }\n}\n\n// Обновляем информацию о платформе Instagram для карусели, только если публикация успешна\nif (carouselState.status === 'published' && carouselState.publishedId) {\n  socialPlatforms.instagram = {\n    postId: carouselState.publishedId,\n    status: \"published\",\n    postUrl: carouselState.permalink || '',\n    platform: \"instagram\",\n    publishedAt: new Date().toISOString(),\n    isCarousel: true,\n    itemsCount: containerIds.length,\n    attemptsCount: carouselState.attemptCount\n  };\n  \n  console.log('Карусель успешно опубликована. Возвращаем результат.');\n  \n  // Возвращаем информацию об успешной публикации\n  return {\n    content_id: contentId,\n    campaign_id: campaignId,\n    social_platforms: JSON.stringify(socialPlatforms),\n    carouselState: carouselState,\n    success: true\n  };\n} else if (carouselState.status === 'failed') {\n  // Если публикация не удалась, но мы исчерпали все попытки\n  socialPlatforms.instagram = {\n    status: \"failed\",\n    error: carouselState.error || \"Не удалось опубликовать карусель после нескольких попыток\",\n    platform: \"instagram\",\n    updatedAt: new Date().toISOString(),\n    attemptsCount: carouselState.attemptCount\n  };\n  \n  return {\n    content_id: contentId,\n    campaign_id: campaignId,\n    social_platforms: JSON.stringify(socialPlatforms),\n    carouselState: carouselState,\n    success: false\n  };\n} else {\n  // Если публикация не завершена и требуется повторная попытка\n  return {\n    content_id: contentId,\n    campaign_id: campaignId,\n    images: images,\n    instagramToken: accessToken,\n    instagramAccountId: instagramAccountId,\n    message: message,\n    carouselState: carouselState,\n    retry: true,\n    retryAfter: 30 // секунд до следующей попытки\n  };\n}"
+      },
+      "id": "9bc1fc1d-1d6e-4e68-914f-72c3975a56fb",
+      "name": "Публикация карусели",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1360,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Ошибка в настройках Instagram\n\nПри обработке карусели возникла ошибка:",
+        "additionalInformation": "={{ $json.error }}",
+        "options": {}
+      },
+      "id": "4f710604-35b6-4f89-a8cd-8cd6c4128641",
+      "name": "Информация об ошибке",
+      "type": "n8n-nodes-base.markdown",
+      "typeVersion": 1,
+      "position": [
+        -1360,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "instagram-carousel-status/{{ $json.content_id }}",
+        "responseCode": 200,
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "27eef7aa-0fb0-4116-a53e-bbda82eab00d",
+      "name": "Эндпоинт статуса карусели",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -1100,
+        40
+      ],
+      "webhookId": "instagram-carousel-status-{{ $json.content_id }}"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ffdaee59-acb6-427e-94f0-639509de990f",
+              "leftValue": "={{ $json.retry }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f27478a9-6cb3-4484-9d5e-98781afa2bd4",
+      "name": "Нужна повторная попытка?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -820,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "unit": "seconds",
+        "value": "={{ $json.retryAfter || 30 }}"
+      },
+      "id": "cb8bb11e-3338-42ac-b305-a39692b5d9ef",
+      "name": "Задержка перед повторной попыткой",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [
+        -580,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "workflowId": "={{ $workflow.id }}",
+        "executeReceive": "newWorkflowMessage"
+      },
+      "id": "87680bc7-6bba-4db9-b3ce-c399757714f7",
+      "name": "Повторная попытка",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1,
+      "position": [
+        -360,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ffdaee59-acb6-427e-94f0-639509de990f",
+              "leftValue": "={{ $json.success }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a3cbc41c-e832-4e54-986b-72b78d85a43b",
+      "name": "Успешная публикация?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -580,
+        120
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": "public",
+        "table": "campaign_content",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "social_platforms": "={{ $json.social_platforms }}"
+          }
+        },
+        "where": {
+          "mode": "custom",
+          "customQuery": "id = '{{ $json.content_id }}'",
+          "values": {}
+        },
+        "options": {}
+      },
+      "id": "d9a4b0b9-d5b9-4d7c-af7d-dda61105df5c",
+      "name": "Обновление контента (Успех)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -360,
+        40
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "lO4gl1E2I2lsrRce",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": "public",
+        "table": "campaign_content",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "social_platforms": "={{ $json.social_platforms }}"
+          }
+        },
+        "where": {
+          "mode": "custom",
+          "customQuery": "id = '{{ $json.content_id }}'",
+          "values": {}
+        },
+        "options": {}
+      },
+      "id": "e9a4b0b9-d5b9-4d7c-af7d-dda61105df5c",
+      "name": "Обновление контента (Ошибка)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -360,
+        200
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "lO4gl1E2I2lsrRce",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "content": "## Публикация карусели завершена успешно\n\nОбработка карусели Instagram для контента с ID {{ $json.content_id }} завершена успешно.\n\n**Детали публикации:**\n- ID публикации: {{ $json.carouselState.publishedId }}\n- Количество изображений: {{ $json.carouselState.containerIds.length }}\n- Попыток публикации: {{ $json.carouselState.attemptCount }}\n- Ссылка на публикацию: [Instagram]({{ $json.carouselState.permalink }})",
+        "options": {}
+      },
+      "id": "f9a4b0b9-d5b9-4d7c-af7d-dda61105df5c",
+      "name": "Информация об успешной публикации",
+      "type": "n8n-nodes-base.markdown",
+      "typeVersion": 1,
+      "position": [
+        -100,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Ошибка публикации карусели\n\nОбработка карусели Instagram для контента с ID {{ $json.content_id }} завершилась с ошибкой после {{ $json.carouselState.attemptCount }} попыток.\n\n**Детали ошибки:**\n{{ $json.carouselState.error }}\n\n**Текущий статус:** {{ $json.carouselState.status }}",
+        "options": {}
+      },
+      "id": "g9a4b0b9-d5b9-4d7c-af7d-dda61105df5c",
+      "name": "Информация об ошибке публикации",
+      "type": "n8n-nodes-base.markdown",
+      "typeVersion": 1,
+      "position": [
+        -100,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "respondWithJson": true,
+        "responseBody": "={{ JSON.stringify({status: 'success', message: 'Карусель Instagram опубликована успешно', data: {postId: $json.carouselState.publishedId, permalink: $json.carouselState.permalink}}) }}",
+        "options": {}
+      },
+      "id": "1d1d14b7-6eba-437e-a0e7-da4df6a00fbc",
+      "name": "Успешный ответ",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "respondWithJson": true,
+        "responseBody": "={{ JSON.stringify({status: 'error', message: 'Ошибка при публикации карусели Instagram', error: $json.carouselState.error, attempts: $json.carouselState.attemptCount}) }}",
+        "options": {}
+      },
+      "id": "2d1d14b7-6eba-437e-a0e7-da4df6a00fbc",
+      "name": "Ответ с ошибкой",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        100,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "respondWithJson": true,
+        "responseBody": "={{ JSON.stringify({status: 'error', message: 'Контент не найден'}) }}",
+        "options": {}
+      },
+      "id": "3d1d14b7-6eba-437e-a0e7-da4df6a00fbc",
+      "name": "Ответ с ошибкой контента",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        -2000,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "respondWithJson": true,
+        "responseBody": "={{ JSON.stringify({status: 'processing', message: 'Публикация карусели в процессе', data: {currentStatus: $json.carouselState.status, attempt: $json.carouselState.attemptCount, containersCreated: $json.carouselState.containerIds.length}}) }}",
+        "options": {}
+      },
+      "id": "4d1d14b7-6eba-437e-a0e7-da4df6a00fbc",
+      "name": "Ответ со статусом",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        -840,
+        40
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Подготовка параметров",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Подготовка параметров": {
+      "main": [
+        [
+          {
+            "node": "Получение контента",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Получение контента": {
+      "main": [
+        [
+          {
+            "node": "Контент найден?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Контент найден?": {
+      "main": [
+        [
+          {
+            "node": "Получение настроек кампании",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ответ с ошибкой контента",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Получение настроек кампании": {
+      "main": [
+        [
+          {
+            "node": "Подготовка данных для карусели",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Подготовка данных для карусели": {
+      "main": [
+        [
+          {
+            "node": "Есть ошибка?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Есть ошибка?": {
+      "main": [
+        [
+          {
+            "node": "Информация об ошибке",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Публикация карусели",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Публикация карусели": {
+      "main": [
+        [
+          {
+            "node": "Эндпоинт статуса карусели",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Эндпоинт статуса карусели": {
+      "main": [
+        [
+          {
+            "node": "Нужна повторная попытка?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Нужна повторная попытка?": {
+      "main": [
+        [
+          {
+            "node": "Задержка перед повторной попыткой",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Успешная публикация?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Задержка перед повторной попыткой": {
+      "main": [
+        [
+          {
+            "node": "Повторная попытка",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Успешная публикация?": {
+      "main": [
+        [
+          {
+            "node": "Обновление контента (Успех)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Обновление контента (Ошибка)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Обновление контента (Успех)": {
+      "main": [
+        [
+          {
+            "node": "Информация об успешной публикации",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Обновление контента (Ошибка)": {
+      "main": [
+        [
+          {
+            "node": "Информация об ошибке публикации",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Информация об успешной публикации": {
+      "main": [
+        [
+          {
+            "node": "Успешный ответ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Информация об ошибке публикации": {
+      "main": [
+        [
+          {
+            "node": "Ответ с ошибкой",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

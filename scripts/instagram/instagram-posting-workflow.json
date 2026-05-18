@@ -1,0 +1,203 @@
+{
+  "name": "Instagram Posting Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "publish-instagram",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-start",
+      "name": "Instagram Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "instagram-posting"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем данные из webhook\nconst webhookData = $input.first().json;\n\n// Проверяем обязательные поля\nif (!webhookData.content || !webhookData.imageUrl) {\n  throw new Error('Отсутствует контент или изображение');\n}\n\n// Формируем данные для публикации\nconst postData = {\n  content: webhookData.content,\n  imageUrl: webhookData.imageUrl,\n  contentId: webhookData.contentId,\n  campaignId: webhookData.campaignId,\n  username: webhookData.settings?.username,\n  password: webhookData.settings?.password,\n  \n  // Дополнительные настройки\n  hashtags: webhookData.hashtags || [],\n  location: webhookData.location || null,\n  caption: webhookData.caption || webhookData.content\n};\n\n// Проверяем учетные данные\nif (!postData.username || !postData.password) {\n  throw new Error('Отсутствуют учетные данные Instagram');\n}\n\nconsole.log('Подготовка данных для Instagram:', {\n  contentId: postData.contentId,\n  hasImage: !!postData.imageUrl,\n  hasCredentials: !!(postData.username && postData.password)\n});\n\nreturn { postData };"
+      },
+      "id": "prepare-data",
+      "name": "Prepare Instagram Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "command": "node",
+        "arguments": "-e",
+        "code": "const puppeteer = require('puppeteer');\nconst fs = require('fs');\nconst path = require('path');\nconst https = require('https');\n\n// Получаем данные из N8N\nconst postData = JSON.parse(process.argv[2]);\n\nasync function downloadImage(url, filepath) {\n  return new Promise((resolve, reject) => {\n    const file = fs.createWriteStream(filepath);\n    https.get(url, (response) => {\n      response.pipe(file);\n      file.on('finish', () => {\n        file.close();\n        resolve(filepath);\n      });\n    }).on('error', reject);\n  });\n}\n\nasync function publishToInstagram() {\n  const browser = await puppeteer.launch({\n    headless: true,\n    args: ['--no-sandbox', '--disable-setuid-sandbox']\n  });\n  \n  const page = await browser.newPage();\n  \n  try {\n    // Переходим на Instagram\n    await page.goto('https://www.instagram.com/', { waitUntil: 'networkidle2' });\n    \n    // Авторизация\n    await page.waitForSelector('input[name=\"username\"]', { timeout: 10000 });\n    await page.type('input[name=\"username\"]', postData.username);\n    await page.type('input[name=\"password\"]', postData.password);\n    \n    await page.click('button[type=\"submit\"]');\n    await page.waitForNavigation({ waitUntil: 'networkidle2' });\n    \n    // Проверяем успешную авторизацию\n    const isLoggedIn = await page.url().includes('/accounts/login/') === false;\n    if (!isLoggedIn) {\n      throw new Error('Ошибка авторизации в Instagram');\n    }\n    \n    // Скачиваем изображение\n    const tempDir = '/tmp';\n    const imageFileName = `instagram_${Date.now()}.jpg`;\n    const localImagePath = path.join(tempDir, imageFileName);\n    \n    await downloadImage(postData.imageUrl, localImagePath);\n    \n    // Нажимаем \"Создать\"\n    await page.click('svg[aria-label=\"Новая публикация\"]');\n    await page.waitForSelector('input[type=\"file\"]', { timeout: 5000 });\n    \n    // Загружаем изображение\n    const fileInput = await page.$('input[type=\"file\"]');\n    await fileInput.uploadFile(localImagePath);\n    \n    // Ждем загрузки и нажимаем \"Далее\"\n    await page.waitForSelector('button:has-text(\"Далее\")', { timeout: 10000 });\n    await page.click('button:has-text(\"Далее\")');\n    \n    // Еще раз \"Далее\" (пропустить редактирование)\n    await page.waitForSelector('button:has-text(\"Далее\")', { timeout: 5000 });\n    await page.click('button:has-text(\"Далее\")');\n    \n    // Добавляем подпись\n    await page.waitForSelector('textarea[aria-label=\"Добавьте подпись...\"]', { timeout: 5000 });\n    await page.type('textarea[aria-label=\"Добавьте подпись...\"]', postData.caption);\n    \n    // Публикуем\n    await page.click('button:has-text(\"Поделиться\")');\n    \n    // Ждем завершения публикации\n    await page.waitForSelector('img[alt=\"Анимированный значок успешно\"]', { timeout: 15000 });\n    \n    // Получаем URL поста (приблизительно)\n    await page.waitForTimeout(2000);\n    const currentUrl = page.url();\n    \n    // Очищаем временный файл\n    fs.unlinkSync(localImagePath);\n    \n    console.log(JSON.stringify({\n      success: true,\n      postUrl: currentUrl,\n      message: 'Пост успешно опубликован в Instagram'\n    }));\n    \n  } catch (error) {\n    console.log(JSON.stringify({\n      success: false,\n      error: error.message,\n      message: 'Ошибка публикации в Instagram'\n    }));\n  } finally {\n    await browser.close();\n  }\n}\n\npublishToInstagram();"
+      },
+      "id": "instagram-publish",
+      "name": "Instagram Publish",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Парсим результат выполнения\nconst result = JSON.parse($input.first().json.stdout || '{}');\n\n// Формируем ответ для обновления статуса\nconst response = {\n  success: result.success || false,\n  platform: 'instagram',\n  contentId: $node['prepare-data'].json.postData.contentId,\n  campaignId: $node['prepare-data'].json.postData.campaignId,\n  status: result.success ? 'published' : 'failed',\n  postUrl: result.postUrl || null,\n  error: result.error || null,\n  message: result.message || 'Публикация завершена',\n  publishedAt: result.success ? new Date().toISOString() : null\n};\n\nconsole.log('Instagram публикация результат:', response);\n\nreturn response;"
+      },
+      "id": "process-result",
+      "name": "Process Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "url": "https://directus.roboflow.tech/items/campaign_content/{{ $node['process-result'].json.contentId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "httpHeaderAuth": {
+          "name": "Authorization",
+          "value": "Bearer {{ $env.DIRECTUS_TOKEN }}"
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "social_platforms",
+              "value": "={{ JSON.stringify(Object.assign(JSON.parse($node['process-result'].json.contentId), { instagram: { status: $node['process-result'].json.status, postUrl: $node['process-result'].json.postUrl, publishedAt: $node['process-result'].json.publishedAt, error: $node['process-result'].json.error } })) }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "update-directus",
+      "name": "Update Directus Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $node['process-result'].json }}"
+      },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Обработка ошибок\nconst error = $input.first().json.error || 'Неизвестная ошибка';\n\nconst errorResponse = {\n  success: false,\n  platform: 'instagram',\n  contentId: $node['prepare-data'].json.postData.contentId,\n  campaignId: $node['prepare-data'].json.postData.campaignId,\n  status: 'failed',\n  postUrl: null,\n  error: error,\n  message: 'Ошибка публикации в Instagram',\n  publishedAt: null\n};\n\nconsole.log('Instagram ошибка:', errorResponse);\n\nreturn errorResponse;"
+      },
+      "id": "error-handler",
+      "name": "Error Handler",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 500]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $node['error-handler'].json }}"
+      },
+      "id": "error-response",
+      "name": "Error Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1120, 500]
+    }
+  ],
+  "connections": {
+    "webhook-start": {
+      "main": [
+        [
+          {
+            "node": "prepare-data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "prepare-data": {
+      "main": [
+        [
+          {
+            "node": "instagram-publish",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "instagram-publish": {
+      "main": [
+        [
+          {
+            "node": "process-result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "process-result": {
+      "main": [
+        [
+          {
+            "node": "update-directus",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "update-directus": {
+      "main": [
+        [
+          {
+            "node": "webhook-response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "error-handler": {
+      "main": [
+        [
+          {
+            "node": "error-response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "createdAt": "2025-01-08T12:00:00.000Z",
+      "updatedAt": "2025-01-08T12:00:00.000Z",
+      "id": "instagram-posting",
+      "name": "Instagram Posting"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2025-01-08T12:00:00.000Z",
+  "versionId": "1"
+}

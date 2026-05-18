@@ -1,0 +1,818 @@
+import { useState, useRef, FormEvent } from 'react';
+import { navigate } from '../App';
+import { API } from '../api';
+
+function SubtitleStylePreview({ style, color = '#ffffff' }: { style: string; color?: string }) {
+  const frame: React.CSSProperties = {
+    width: 52, height: 92, borderRadius: 4, background: 'linear-gradient(160deg,#1a1a2e 0%,#16213e 60%,#0f3460 100%)',
+    position: 'relative', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(255,255,255,0.08)',
+  };
+  const sample = 'Ключевой момент';
+  const words = sample.split(' ');
+
+  const bottomBase: React.CSSProperties = {
+    position: 'absolute', left: 0, right: 0, textAlign: 'center', padding: '0 4px',
+    fontWeight: 700, lineHeight: 1.2, wordBreak: 'break-word',
+  };
+
+  if (style === 'none') return (
+    <div style={frame}>
+      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <span style={{ fontSize: 18, opacity: 0.3 }}>🚫</span>
+      </div>
+    </div>
+  );
+
+  if (style === 'plain') return (
+    <div style={frame}>
+      <div style={{ ...bottomBase, bottom: 10, fontSize: 6, color, background: 'rgba(0,0,0,0.65)', borderRadius: 2, padding: '3px 4px' }}>
+        {sample}
+      </div>
+    </div>
+  );
+
+  if (style === 'fade') return (
+    <div style={frame}>
+      <div style={{ ...bottomBase, bottom: 10, fontSize: 6, color, background: 'rgba(0,0,0,0.65)', borderRadius: 2, padding: '3px 4px', opacity: 0.75 }}>
+        {sample}
+      </div>
+    </div>
+  );
+
+  if (style === 'karaoke') return (
+    <div style={frame}>
+      <div style={{ ...bottomBase, bottom: 10, fontSize: 6, color: 'rgba(255,255,255,0.9)', background: 'rgba(0,0,0,0.7)', borderRadius: 2, padding: '3px 4px' }}>
+        <span style={{ color: 'rgba(255,255,255,0.65)' }}>{words[0]} </span>
+        <span style={{ color: '#facc15', textShadow: '0 0 6px rgba(250,204,21,0.6)' }}>{words[1]}</span>
+      </div>
+    </div>
+  );
+
+  if (style === 'tiktok') return (
+    <div style={frame}>
+      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <span style={{ fontSize: 11, fontWeight: 900, color, textTransform: 'uppercase', letterSpacing: 0.5, textShadow: '0 2px 8px rgba(0,0,0,0.8)', textAlign: 'center' }}>
+          {words[1]}
+        </span>
+      </div>
+    </div>
+  );
+
+  if (style === 'word-by-word') return (
+    <div style={frame}>
+      <div style={{ ...bottomBase, bottom: 10, fontSize: 6, color: 'rgba(255,255,255,0.85)', background: 'rgba(0,0,0,0.65)', borderRadius: 2, padding: '3px 4px' }}>
+        <span>{words[0]} </span>
+        <span style={{ color: '#facc15' }}>{words[1]}</span>
+      </div>
+    </div>
+  );
+
+  if (style === 'cinematic') return (
+    <div style={frame}>
+      <div style={{ position: 'absolute', top: '35%', left: 0, right: 0, textAlign: 'center', padding: '0 4px' }}>
+        <span style={{ fontSize: 7, fontWeight: 900, color, textTransform: 'uppercase', letterSpacing: 1, textShadow: '0 2px 12px rgba(0,0,0,0.9)' }}>
+          {words[0].toUpperCase()}
+          <br />
+          {words[1].toUpperCase()}
+        </span>
+      </div>
+    </div>
+  );
+
+  if (style === 'cinematic-full') return (
+    <div style={frame}>
+      <div style={{ position: 'absolute', top: '30%', left: 0, right: 0, textAlign: 'center', padding: '0 5px' }}>
+        <span style={{ fontSize: 6, fontWeight: 700, color, textTransform: 'uppercase', letterSpacing: 0.5, textShadow: '0 2px 12px rgba(0,0,0,0.9)', filter: 'blur(0.3px)', lineHeight: 1.4 }}>
+          {sample}
+        </span>
+      </div>
+    </div>
+  );
+
+  if (style === 'bar') return (
+    <div style={frame}>
+      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, background: 'rgba(0,0,0,0.78)', padding: '5px 4px', textAlign: 'center' }}>
+        <span style={{ fontSize: 6, fontWeight: 600, color }}>{sample}</span>
+      </div>
+    </div>
+  );
+
+  return <div style={frame} />;
+}
+
+const FORMATS = [
+  { value: '9:16', label: '9:16 — Shorts / Reels / TikTok', emoji: '📱' },
+  { value: '16:9', label: '16:9 — YouTube / Горизонтальное', emoji: '🖥️' },
+  { value: '1:1', label: '1:1 — Квадрат / Instagram', emoji: '⬜' },
+];
+
+const DURATIONS = [
+  { value: 15, label: '15 сек — Stories' },
+  { value: 30, label: '30 сек — короткое' },
+  { value: 60, label: '60 сек — Shorts/Reels' },
+  { value: 90, label: '90 сек — расширенное' },
+];
+
+// I2V = Image-to-Video (existing pipeline: frame → animate)
+// T2V = Text-to-Video (new pipeline: text → video directly)
+const I2V_MODELS = [
+  {
+    value: 'wan',
+    label: 'Wan 2.7',
+    speed: '~30-60с',
+    quality: '★★★★☆',
+    desc: 'Быстро, хорошее качество',
+    clip: '~6 с/клип',
+    color: '#0ea5e9',
+    frames: 1 as 1 | 2,
+  },
+  {
+    value: 'minimax',
+    label: 'MiniMax Video-01',
+    speed: '~40-80с',
+    quality: '★★★★☆',
+    desc: 'Плавная анимация',
+    clip: '~6 с/клип',
+    color: '#8b5cf6',
+    frames: 1 as 1 | 2,
+  },
+  {
+    value: 'kling',
+    label: 'Kling v1.6 Standard',
+    speed: '~90-150с',
+    quality: '★★★★★',
+    desc: 'Высокое качество',
+    clip: '5 или 10 с/клип',
+    color: '#f59e0b',
+    frames: 2 as 1 | 2,
+  },
+  {
+    value: 'kling-pro',
+    label: 'Kling v1.6 Pro',
+    speed: '~120-180с',
+    quality: '★★★★★',
+    desc: 'Максимальное качество',
+    clip: '5 или 10 с/клип',
+    color: '#ef4444',
+    frames: 2 as 1 | 2,
+  },
+  {
+    value: 'seedance',
+    label: 'Seedance v1 Lite',
+    speed: '~60-90с',
+    quality: '★★★☆☆',
+    desc: 'Средняя скорость',
+    clip: '5 или 10 с/клип',
+    color: '#10b981',
+    frames: 1 as 1 | 2,
+  },
+];
+
+const T2V_MODELS = [
+  {
+    value: 'kling-t2v',
+    label: 'Kling v3 Standard',
+    speed: '~90-150с',
+    quality: '★★★★☆',
+    desc: 'Высокое качество, реалистичное движение',
+    clip: '5 или 10 с/клип',
+    color: '#f59e0b',
+  },
+  {
+    value: 'kling-pro-t2v',
+    label: 'Kling v3 Pro',
+    speed: '~120-180с',
+    quality: '★★★★★',
+    desc: 'Максимальное качество T2V',
+    clip: '5 или 10 с/клип',
+    color: '#f59e0b',
+  },
+  {
+    value: 'luma',
+    label: 'Luma Ray 2 Flash',
+    speed: '~30-45с',
+    quality: '★★★★☆',
+    desc: 'Динамичная камера, яркие цвета. Быстро.',
+    clip: '5 или 9 с/клип',
+    color: '#06b6d4',
+  },
+  {
+    value: 'seedance-t2v',
+    label: 'Seedance 1 Lite T2V',
+    speed: '~20-40с',
+    quality: '★★★★☆',
+    desc: 'ByteDance T2V: динамичные сцены, хорошая детализация',
+    clip: '5 или 10 с/клип',
+    color: '#10b981',
+  },
+  {
+    value: 'wan-t2v',
+    label: 'Wan T2V 1.3B',
+    speed: '~20-40с',
+    quality: '★★★☆☆',
+    desc: 'Быстрая лёгкая модель без опорного кадра',
+    clip: '~6 с/клип',
+    color: '#0ea5e9',
+  },
+  {
+    value: 'chain',
+    label: 'Chain T2V→I2V',
+    speed: '~5-10 мин',
+    quality: '★★★★★',
+    desc: 'Kling T2V для сцены 1, затем I2V с последнего кадра — связное повествование',
+    clip: '5 или 10 с/клип',
+    color: '#a855f7',
+  },
+];
+
+const SCENARIO_PLACEHOLDER = `Опишите сценарий по сценам. Например:
+
+Сцена 1: Бабушка сидит у окна сельского дома, смотрит на небо. Над деревней появляется дрон.
+
+Сцена 2: Дрон зависает перед окном, мигает огнями. Бабушка удивлённо смотрит.
+
+Сцена 3: Бабушка выходит на крыльцо с метлой. Дрон отступает.
+
+AI сам разобьёт ваш сценарий на нужное количество сцен, придумает визуальные описания и субтитры.`;
+
+const SUBTITLE_STYLES = [
+  {
+    value: 'none',
+    label: 'Без субтитров',
+    desc: 'Только видео и звук',
+    icon: '🚫',
+  },
+  {
+    value: 'plain',
+    label: 'Статичный',
+    desc: 'Текст просто стоит — без анимации и эффектов',
+    icon: '💬',
+  },
+  {
+    value: 'fade',
+    label: 'Плавное появление',
+    desc: 'Вся фраза плавно проявляется и гаснет',
+    icon: '🌅',
+  },
+  {
+    value: 'karaoke',
+    label: 'Karaoke',
+    desc: 'Каждое слово подсвечивается по мере произнесения',
+    icon: '🎤',
+  },
+  {
+    value: 'tiktok',
+    label: 'TikTok',
+    desc: 'Одно крупное слово в центре — как авто-субтитры Reels',
+    icon: '⚡',
+  },
+  {
+    value: 'word-by-word',
+    label: 'Построчный',
+    desc: 'Слова накапливаются одно за другим (текущее — жёлтым)',
+    icon: '📝',
+  },
+  {
+    value: 'cinematic',
+    label: 'Кино — титры',
+    desc: 'Короткая ключевая фраза сцены: blur-reveal, крупно, по центру — как трейлер',
+    icon: '🎬',
+  },
+  {
+    value: 'cinematic-full',
+    label: 'Кино — полный текст',
+    desc: 'Весь произносимый нарратив с blur-reveal — как в документальных фильмах',
+    icon: '🎞️',
+  },
+  {
+    value: 'bar',
+    label: 'Плашка',
+    desc: 'Белый текст на тёмной полупрозрачной подложке — как в новостях',
+    icon: '📰',
+  },
+] as const;
+
+type SubtitleStyleValue = typeof SUBTITLE_STYLES[number]['value'];
+
+const CLIP_DURATION_MODELS = new Set(['kling', 'kling-pro', 'seedance', 'kling-t2v', 'kling-pro-t2v', 'luma', 'seedance-t2v']);
+
+const SUBTITLE_FONTS = [
+  { value: 'DejaVu Sans',      label: 'Стандартный', desc: 'Округлый sans-serif' },
+  { value: 'DejaVu Serif',     label: 'С засечками',  desc: 'Классический serif' },
+  { value: 'DejaVu Sans Mono', label: 'Моно',         desc: 'Моноширинный' },
+  { value: 'Impact',           label: 'Impact',       desc: 'Жирный ударный' },
+] as const;
+
+const SUBTITLE_SIZES = [
+  { value: 'small',  label: 'S', hint: 'Маленький' },
+  { value: 'medium', label: 'M', hint: 'Средний' },
+  { value: 'large',  label: 'L', hint: 'Крупный' },
+  { value: 'xlarge', label: 'XL', hint: 'Огромный' },
+] as const;
+
+const SUBTITLE_COLOR_PRESETS = [
+  { value: '#ffffff', label: 'Белый' },
+  { value: '#ffff00', label: 'Жёлтый' },
+  { value: '#00ffff', label: 'Голубой' },
+  { value: '#ff8800', label: 'Оранжевый' },
+  { value: '#ff69b4', label: 'Розовый' },
+  { value: '#00ff88', label: 'Зелёный' },
+] as const;
+
+const VOICES = [
+  { value: 'alloy',   label: 'Alloy',   desc: 'Нейтральный, универсальный',   emoji: '⚪' },
+  { value: 'nova',    label: 'Nova',    desc: 'Женский, тёплый и живой',       emoji: '🔴' },
+  { value: 'shimmer', label: 'Shimmer', desc: 'Женский, мягкий и чёткий',      emoji: '🟣' },
+  { value: 'echo',    label: 'Echo',    desc: 'Мужской, приятный и уверенный', emoji: '🔵' },
+  { value: 'onyx',    label: 'Onyx',    desc: 'Мужской, глубокий и серьёзный', emoji: '⚫' },
+  { value: 'fable',   label: 'Fable',   desc: 'Выразительный, повествовательный', emoji: '🟤' },
+  { value: 'ash',     label: 'Ash',     desc: 'Мужской, спокойный и чёткий',   emoji: '🟢' },
+  { value: 'coral',   label: 'Coral',   desc: 'Женский, дружелюбный и живой',  emoji: '🟠' },
+  { value: 'sage',    label: 'Sage',    desc: 'Женский, умеренный и деловой',  emoji: '🟡' },
+] as const;
+
+export default function Create() {
+  const [useCustomScenario, setUseCustomScenario] = useState(false);
+  const [topic, setTopic] = useState('');
+  const [customScenario, setCustomScenario] = useState('');
+  const [title, setTitle] = useState('');
+  const [format, setFormat] = useState('9:16');
+  const [duration, setDuration] = useState(30);
+  const [language, setLanguage] = useState<'ru' | 'en'>('ru');
+  const [pipelineMode, setPipelineMode] = useState<'i2v' | 't2v'>('i2v');
+  const [animationModel, setAnimationModel] = useState('wan');
+  const [subtitleStyle, setSubtitleStyle] = useState<SubtitleStyleValue>('karaoke');
+  const [clipDuration, setClipDuration] = useState<5 | 10>(10);
+  const [subtitleFont, setSubtitleFont] = useState('DejaVu Sans');
+  const [subtitleSize, setSubtitleSize] = useState('medium');
+  const [subtitleColor, setSubtitleColor] = useState('#ffffff');
+  const [voice, setVoice] = useState('alloy');
+  const [playingVoice, setPlayingVoice] = useState<string | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  function playVoicePreview(v: string) {
+    // Stop current audio if any
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    if (playingVoice === v) {
+      setPlayingVoice(null);
+      return;
+    }
+    setPlayingVoice(v);
+    const audio = new Audio(`${API}/tts-preview/${v}?lang=${language}`);
+    audioRef.current = audio;
+    audio.play().catch(() => {});
+    audio.onended = () => { setPlayingVoice(null); audioRef.current = null; };
+    audio.onerror = () => { setPlayingVoice(null); audioRef.current = null; };
+  }
+
+  function handlePipelineSwitch(mode: 'i2v' | 't2v') {
+    setPipelineMode(mode);
+    setAnimationModel(mode === 't2v' ? 'kling-t2v' : 'wan');
+  }
+
+  async function handleSubmit(e: FormEvent) {
+    e.preventDefault();
+
+    if (useCustomScenario) {
+      if (!customScenario.trim() || customScenario.trim().length < 10) {
+        setError('Введите подробный сценарий (минимум 10 символов)');
+        return;
+      }
+    } else {
+      if (!topic.trim()) {
+        setError('Введите тему видео');
+        return;
+      }
+    }
+
+    setLoading(true);
+    setError('');
+    try {
+      const body: Record<string, any> = {
+        title: title.trim() || (useCustomScenario ? 'Пользовательский сценарий' : topic.trim()),
+        format,
+        duration,
+        language,
+        animationModel,
+        subtitleStyle,
+        voice,
+        clipDuration: CLIP_DURATION_MODELS.has(animationModel) ? clipDuration : undefined,
+        subtitleFont: subtitleStyle !== 'none' ? subtitleFont : undefined,
+        subtitleSize: subtitleStyle !== 'none' ? subtitleSize : undefined,
+        subtitleColor: subtitleStyle !== 'none' ? subtitleColor : undefined,
+      };
+
+      if (useCustomScenario) {
+        body.customScenario = customScenario.trim();
+        body.topic = title.trim() || 'Пользовательский сценарий';
+      } else {
+        body.topic = topic.trim();
+      }
+
+      // Step 1: create project
+      const res = await fetch(`${API}/videos`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        let errMsg = 'Ошибка создания';
+        try { errMsg = (await res.json()).error || errMsg; } catch {}
+        throw new Error(errMsg);
+      }
+      const project = await res.json();
+
+      // Step 2: generate script only (will pause for review)
+      const scriptRes = await fetch(`${API}/videos/${project.id}/generate-script`, { method: 'POST' });
+      if (!scriptRes.ok) {
+        let errMsg = 'Ошибка генерации сценария';
+        try { errMsg = (await scriptRes.json()).error || errMsg; } catch {}
+        throw new Error(errMsg);
+      }
+
+      // Navigate to detail page — user will see the script and click "Generate Video"
+      navigate(`/video/${project.id}`);
+    } catch (err: any) {
+      setError(err.message);
+      setLoading(false);
+    }
+  }
+
+  const currentModels = pipelineMode === 't2v' ? T2V_MODELS : I2V_MODELS;
+
+  return (
+    <div style={{ maxWidth: 640, margin: '0 auto' }}>
+      <h1 style={{ fontSize: 26, fontWeight: 700, marginBottom: 8 }}>Новое видео</h1>
+      <p style={{ color: 'var(--text-muted)', marginBottom: 32 }}>
+        AI сгенерирует скрипт и соберёт видео
+      </p>
+
+      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+        {/* Content mode toggle */}
+        <div style={{ display: 'flex', gap: 0, borderRadius: 'var(--radius-sm)', overflow: 'hidden', border: '1.5px solid var(--border)' }}>
+          <button
+            type="button"
+            data-testid="mode-topic"
+            onClick={() => setUseCustomScenario(false)}
+            style={{ flex: 1, padding: '10px 0', fontSize: 14, fontWeight: 600, border: 'none', cursor: 'pointer', background: !useCustomScenario ? 'var(--accent)' : 'var(--bg-card2)', color: !useCustomScenario ? 'white' : 'var(--text-muted)', transition: 'all 0.15s' }}
+          >
+            💡 По теме
+          </button>
+          <button
+            type="button"
+            data-testid="mode-scenario"
+            onClick={() => setUseCustomScenario(true)}
+            style={{ flex: 1, padding: '10px 0', fontSize: 14, fontWeight: 600, border: 'none', borderLeft: '1.5px solid var(--border)', cursor: 'pointer', background: useCustomScenario ? 'var(--accent)' : 'var(--bg-card2)', color: useCustomScenario ? 'white' : 'var(--text-muted)', transition: 'all 0.15s' }}
+          >
+            📝 Свой сценарий
+          </button>
+        </div>
+
+        {/* Topic OR Custom scenario */}
+        {!useCustomScenario ? (
+          <Field label="Тема видео *" hint="Что должно быть в видео? Опишите кратко.">
+            <textarea
+              value={topic}
+              onChange={(e) => setTopic(e.target.value)}
+              placeholder="Например: топ 5 советов по продуктивности"
+              rows={3}
+              data-testid="input-topic"
+              style={inputStyle}
+            />
+          </Field>
+        ) : (
+          <Field label="Подробный сценарий *" hint="Опишите сцены своими словами — AI разберёт и создаст визуализацию">
+            <textarea
+              value={customScenario}
+              onChange={(e) => setCustomScenario(e.target.value)}
+              placeholder={SCENARIO_PLACEHOLDER}
+              rows={10}
+              data-testid="input-custom-scenario"
+              style={{ ...inputStyle, fontFamily: 'inherit', lineHeight: 1.6 }}
+            />
+            <div style={{ marginTop: 6, padding: '10px 14px', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.25)', borderRadius: 'var(--radius-sm)', fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+              💡 AI разобьёт на {Math.round(duration / 10)} сцен по ~10 сек, придумает субтитры и промпты.
+            </div>
+          </Field>
+        )}
+
+        <Field label="Название (необязательно)" hint="Отображается в списке проектов">
+          <input
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            placeholder={useCustomScenario ? 'Бабушка vs Дрон' : 'Мой крутой Reels'}
+            data-testid="input-title"
+            style={inputStyle}
+          />
+        </Field>
+
+        <Field label="Формат">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {FORMATS.map((f) => (
+              <label
+                key={f.value}
+                data-testid={`format-${f.value}`}
+                style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', borderRadius: 'var(--radius-sm)', border: `1.5px solid ${format === f.value ? 'var(--accent)' : 'var(--border)'}`, background: format === f.value ? '#1e1040' : 'var(--bg-card2)', cursor: 'pointer', transition: 'all 0.15s' }}
+              >
+                <input type="radio" name="format" value={f.value} checked={format === f.value} onChange={() => setFormat(f.value)} style={{ display: 'none' }} />
+                <span style={{ fontSize: 22 }}>{f.emoji}</span>
+                <span style={{ fontSize: 14, fontWeight: 500 }}>{f.label}</span>
+              </label>
+            ))}
+          </div>
+        </Field>
+
+        <Field label="Длительность">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            {DURATIONS.map((d) => (
+              <button
+                key={d.value}
+                type="button"
+                data-testid={`duration-${d.value}`}
+                onClick={() => setDuration(d.value)}
+                style={{ padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: `1.5px solid ${duration === d.value ? 'var(--accent)' : 'var(--border)'}`, background: duration === d.value ? '#1e1040' : 'var(--bg-card2)', color: 'var(--text)', fontSize: 14, fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s' }}
+              >
+                {d.label}
+              </button>
+            ))}
+          </div>
+        </Field>
+
+        {/* Pipeline mode: I2V vs T2V */}
+        <Field label="Метод генерации" hint="Image-to-Video: картинка → анимация. Text-to-Video: текст → видео напрямую.">
+          <div style={{ display: 'flex', gap: 0, borderRadius: 'var(--radius-sm)', overflow: 'hidden', border: '1.5px solid var(--border)' }}>
+            <button
+              type="button"
+              data-testid="pipeline-i2v"
+              onClick={() => handlePipelineSwitch('i2v')}
+              style={{ flex: 1, padding: '10px 0', fontSize: 13, fontWeight: 600, border: 'none', cursor: 'pointer', background: pipelineMode === 'i2v' ? '#1e3a5f' : 'var(--bg-card2)', color: pipelineMode === 'i2v' ? '#60a5fa' : 'var(--text-muted)', transition: 'all 0.15s' }}
+            >
+              🖼️ Image-to-Video
+              <div style={{ fontSize: 11, fontWeight: 400, marginTop: 2, color: pipelineMode === 'i2v' ? '#93c5fd' : 'var(--text-muted)' }}>Imagen4 → FAL I2V</div>
+            </button>
+            <button
+              type="button"
+              data-testid="pipeline-t2v"
+              onClick={() => handlePipelineSwitch('t2v')}
+              style={{ flex: 1, padding: '10px 0', fontSize: 13, fontWeight: 600, border: 'none', borderLeft: '1.5px solid var(--border)', cursor: 'pointer', background: pipelineMode === 't2v' ? '#1a3a2a' : 'var(--bg-card2)', color: pipelineMode === 't2v' ? '#4ade80' : 'var(--text-muted)', transition: 'all 0.15s' }}
+            >
+              ✨ Text-to-Video
+              <div style={{ fontSize: 11, fontWeight: 400, marginTop: 2, color: pipelineMode === 't2v' ? '#86efac' : 'var(--text-muted)' }}>Текст → видео напрямую</div>
+            </button>
+          </div>
+
+          {/* Pipeline description */}
+          <div style={{ marginTop: 8, padding: '10px 14px', background: pipelineMode === 't2v' ? 'rgba(74,222,128,0.07)' : 'rgba(96,165,250,0.07)', border: `1px solid ${pipelineMode === 't2v' ? 'rgba(74,222,128,0.2)' : 'rgba(96,165,250,0.2)'}`, borderRadius: 'var(--radius-sm)', fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+            {pipelineMode === 'i2v' ? (
+              <>🖼️ <strong style={{ color: 'var(--text)' }}>Image-to-Video:</strong> AI генерирует опорные кадры (Imagen4), затем оживляет их в видеоклипы. Лучше для видео с конкретным персонажем — первый кадр задаёт «ДНК» внешности.</>
+            ) : (
+              <>✨ <strong style={{ color: 'var(--text)' }}>Text-to-Video:</strong> AI пишет T2V-промпт с <em>consistency_block</em> и генерирует видео напрямую без картинки. Быстрее, меньше артефактов склейки. Лучше для абстрактного/атмосферного контента.</>
+            )}
+          </div>
+        </Field>
+
+        {/* Model selection */}
+        <Field label={`Модель ${pipelineMode === 't2v' ? 'T2V' : 'I2V'}`} hint="Время ожидания — сколько FAL.AI обрабатывает запрос. Длина клипа указана отдельно.">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {currentModels.map((m) => {
+              const hasFrames = 'frames' in m;
+              const isMultiFrame = hasFrames && (m as any).frames === 2;
+              return (
+                <label
+                  key={m.value}
+                  data-testid={`model-${m.value}`}
+                  style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 16px', borderRadius: 'var(--radius-sm)', border: `1.5px solid ${animationModel === m.value ? m.color : 'var(--border)'}`, background: animationModel === m.value ? 'rgba(255,255,255,0.04)' : 'var(--bg-card2)', cursor: 'pointer', transition: 'all 0.15s' }}
+                >
+                  <input type="radio" name="animationModel" value={m.value} checked={animationModel === m.value} onChange={() => setAnimationModel(m.value)} style={{ display: 'none' }} />
+                  <span style={{ width: 10, height: 10, borderRadius: '50%', background: m.color, flexShrink: 0 }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {m.label}
+                      {hasFrames && (
+                        <span style={{
+                          fontSize: 10,
+                          fontWeight: 700,
+                          padding: '2px 6px',
+                          borderRadius: 4,
+                          background: isMultiFrame ? 'rgba(251,191,36,0.15)' : 'rgba(148,163,184,0.12)',
+                          color: isMultiFrame ? '#fbbf24' : '#94a3b8',
+                          border: `1px solid ${isMultiFrame ? 'rgba(251,191,36,0.3)' : 'rgba(148,163,184,0.2)'}`,
+                          letterSpacing: '0.02em',
+                          whiteSpace: 'nowrap',
+                        }}>
+                          {isMultiFrame ? '🖼️🖼️ 2 кадра' : '🖼️ 1 кадр'}
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                      {m.desc}
+                      {isMultiFrame && (
+                        <span style={{ color: '#fbbf24', marginLeft: 6 }}>· старт + финиш</span>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <div style={{ fontSize: 12, color: m.color, fontWeight: 600 }}>{m.speed} ожид.</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{(m as any).clip}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{m.quality}</div>
+                  </div>
+                </label>
+              );
+            })}
+          </div>
+        </Field>
+
+        <Field label="Язык контента">
+          <div style={{ display: 'flex', gap: 10 }}>
+            {(['ru', 'en'] as const).map((l) => (
+              <button
+                key={l}
+                type="button"
+                data-testid={`lang-${l}`}
+                onClick={() => setLanguage(l)}
+                style={{ padding: '9px 24px', borderRadius: 'var(--radius-sm)', border: `1.5px solid ${language === l ? 'var(--accent)' : 'var(--border)'}`, background: language === l ? '#1e1040' : 'var(--bg-card2)', color: 'var(--text)', fontSize: 14, fontWeight: 600, cursor: 'pointer' }}
+              >
+                {l === 'ru' ? '🇷🇺 Русский' : '🇬🇧 English'}
+              </button>
+            ))}
+          </div>
+        </Field>
+
+        {CLIP_DURATION_MODELS.has(animationModel) && (
+          <Field label="Длина клипа" hint="Длина каждой сцены видео">
+            <div style={{ display: 'flex', gap: 8 }}>
+              {([5, 10] as const).map((d) => (
+                <button
+                  key={d}
+                  type="button"
+                  data-testid={`clip-duration-${d}`}
+                  onClick={() => setClipDuration(d)}
+                  style={{ flex: 1, padding: '10px 0', borderRadius: 'var(--radius-sm)', border: `1.5px solid ${clipDuration === d ? 'var(--accent)' : 'var(--border)'}`, background: clipDuration === d ? '#1e1040' : 'var(--bg-card2)', color: clipDuration === d ? 'var(--accent)' : 'var(--text)', fontSize: 15, fontWeight: 700, cursor: 'pointer', transition: 'all 0.15s' }}
+                >
+                  {d}с {animationModel === 'luma' && d === 10 ? '(9с)' : ''}
+                </button>
+              ))}
+            </div>
+          </Field>
+        )}
+
+        <Field label="Голос озвучки" hint="Выберите голос и нажмите ▶ чтобы послушать пример">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+            {VOICES.map((v) => {
+              const active = voice === v.value;
+              const isPlaying = playingVoice === v.value;
+              return (
+                <div
+                  key={v.value}
+                  data-testid={`voice-${v.value}`}
+                  onClick={() => setVoice(v.value)}
+                  style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '10px 12px', borderRadius: 'var(--radius-sm)', border: `1.5px solid ${active ? 'var(--accent)' : 'var(--border)'}`, background: active ? '#1e1040' : 'var(--bg-card2)', cursor: 'pointer', transition: 'all 0.15s', position: 'relative' }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 14 }}>{v.emoji}</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: active ? 'var(--accent)' : 'var(--text)' }}>{v.label}</span>
+                    </div>
+                    <button
+                      type="button"
+                      data-testid={`voice-preview-${v.value}`}
+                      onClick={(e) => { e.stopPropagation(); playVoicePreview(v.value); }}
+                      title="Прослушать"
+                      style={{ width: 26, height: 26, borderRadius: '50%', border: `1px solid ${isPlaying ? 'var(--accent)' : 'var(--border)'}`, background: isPlaying ? 'var(--accent)' : 'transparent', color: isPlaying ? 'white' : 'var(--text-muted)', fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all 0.15s' }}
+                    >
+                      {isPlaying ? '■' : '▶'}
+                    </button>
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.4 }}>{v.desc}</div>
+                  {active && <div style={{ position: 'absolute', top: 6, right: 6, width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)' }} />}
+                </div>
+              );
+            })}
+          </div>
+        </Field>
+
+        <Field label="Субтитры" hint="Как текст будет появляться на видео">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {SUBTITLE_STYLES.map((s) => {
+              const active = subtitleStyle === s.value;
+              return (
+                <label
+                  key={s.value}
+                  data-testid={`subtitle-${s.value}`}
+                  style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: `1.5px solid ${active ? 'var(--accent)' : 'var(--border)'}`, background: active ? '#1e1040' : 'var(--bg-card2)', cursor: 'pointer', transition: 'all 0.15s' }}
+                >
+                  <input type="radio" name="subtitleStyle" value={s.value} checked={active} onChange={() => setSubtitleStyle(s.value)} style={{ display: 'none' }} />
+                  <SubtitleStylePreview style={s.value} color={subtitleColor} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600 }}>{s.label}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{s.desc}</div>
+                  </div>
+                  {active && <span style={{ fontSize: 16, color: 'var(--accent)', flexShrink: 0 }}>✓</span>}
+                </label>
+              );
+            })}
+          </div>
+        </Field>
+
+        {subtitleStyle !== 'none' && (
+          <>
+            <Field label="Шрифт субтитров">
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                {SUBTITLE_FONTS.map((f) => {
+                  const active = subtitleFont === f.value;
+                  return (
+                    <button key={f.value} type="button" data-testid={`subtitle-font-${f.value}`}
+                      onClick={() => setSubtitleFont(f.value)}
+                      style={{ padding: '10px 12px', borderRadius: 'var(--radius-sm)', border: `1.5px solid ${active ? 'var(--accent)' : 'var(--border)'}`, background: active ? '#1e1040' : 'var(--bg-card2)', color: active ? 'var(--accent)' : 'var(--text)', textAlign: 'left', cursor: 'pointer', transition: 'all 0.15s' }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, fontFamily: f.value }}>{f.label}</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{f.desc}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </Field>
+
+            <Field label="Размер субтитров">
+              <div style={{ display: 'flex', gap: 8 }}>
+                {SUBTITLE_SIZES.map((s) => {
+                  const active = subtitleSize === s.value;
+                  return (
+                    <button key={s.value} type="button" data-testid={`subtitle-size-${s.value}`}
+                      onClick={() => setSubtitleSize(s.value)}
+                      title={s.hint}
+                      style={{ flex: 1, padding: '10px 0', borderRadius: 'var(--radius-sm)', border: `1.5px solid ${active ? 'var(--accent)' : 'var(--border)'}`, background: active ? '#1e1040' : 'var(--bg-card2)', color: active ? 'var(--accent)' : 'var(--text)', fontSize: 14, fontWeight: 700, cursor: 'pointer', transition: 'all 0.15s' }}>
+                      {s.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </Field>
+
+            <Field label="Цвет текста">
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                {SUBTITLE_COLOR_PRESETS.map((c) => {
+                  const active = subtitleColor === c.value;
+                  return (
+                    <button key={c.value} type="button" data-testid={`subtitle-color-${c.value.replace('#','')}`}
+                      onClick={() => setSubtitleColor(c.value)}
+                      title={c.label}
+                      style={{ width: 32, height: 32, borderRadius: '50%', border: `2.5px solid ${active ? 'var(--accent)' : 'rgba(255,255,255,0.15)'}`, background: c.value, cursor: 'pointer', transition: 'all 0.15s', flexShrink: 0, boxShadow: active ? '0 0 0 2px var(--accent)' : 'none' }} />
+                  );
+                })}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 4 }}>
+                  <input type="color" value={subtitleColor} onChange={(e) => setSubtitleColor(e.target.value)}
+                    data-testid="subtitle-color-custom"
+                    style={{ width: 32, height: 32, border: 'none', borderRadius: '50%', padding: 0, cursor: 'pointer', background: 'none' }} />
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{subtitleColor}</span>
+                </div>
+              </div>
+            </Field>
+          </>
+        )}
+
+        {error && (
+          <div style={{ padding: '12px 16px', borderRadius: 'var(--radius-sm)', background: '#2d0a0a', border: '1px solid #7f1d1d', color: '#fca5a5', fontSize: 14 }}>
+            {error}
+          </div>
+        )}
+
+        <button
+          type="submit"
+          disabled={loading}
+          data-testid="button-submit"
+          style={{ padding: '14px', borderRadius: 'var(--radius)', border: 'none', background: loading ? '#4c1d95' : 'var(--accent)', color: 'white', fontSize: 16, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1, transition: 'all 0.15s' }}
+        >
+          {loading ? '⏳ Генерирую сценарий...' : '✨ Сгенерировать сценарий'}
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      <label style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{label}</label>
+      {hint && <span style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: -4 }}>{hint}</span>}
+      {children}
+    </div>
+  );
+}
+
+const inputStyle: React.CSSProperties = {
+  background: 'var(--bg-card2)',
+  border: '1.5px solid var(--border)',
+  borderRadius: 'var(--radius-sm)',
+  color: 'var(--text)',
+  padding: '10px 14px',
+  fontSize: 14,
+  width: '100%',
+  outline: 'none',
+  resize: 'vertical' as const,
+};

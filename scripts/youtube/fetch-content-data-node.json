@@ -1,0 +1,33 @@
+{
+  "name": "Fetch Content Data",
+  "type": "n8n-nodes-base.httpRequest",
+  "typeVersion": 4.2,
+  "position": [100, 200],
+  "parameters": {
+    "url": "={{ $env.DIRECTUS_URL }}/items/campaign_content/{{ $json.contentId }}",
+    "authentication": "genericCredentialType",
+    "genericAuthType": "httpHeaderAuth",
+    "httpHeaderAuth": {
+      "name": "Authorization",
+      "value": "Bearer {{ $env.DIRECTUS_TOKEN }}"
+    },
+    "sendQuery": true,
+    "queryParameters": {
+      "parameters": [
+        {
+          "name": "fields",
+          "value": "id,title,content,keywords,video_url,image_url,additional_images,video_thumbnail,campaign_id,content_type,scheduled_date,social_platforms,status,created_at,updated_at"
+        }
+      ]
+    },
+    "options": {
+      "response": {
+        "response": {
+          "neverError": true,
+          "responseFormat": "json"
+        }
+      }
+    }
+  },
+  "description": "Загружает все данные контента из Directus включая медиа файлы, метаданные и настройки"
+}

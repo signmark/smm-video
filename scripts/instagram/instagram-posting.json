@@ -1,0 +1,792 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "publish-instagram",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "f2a07c49-523e-4e51-94d0-1697db5d6890",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        -2920,
+        300
+      ],
+      "webhookId": "publish-instagram"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Подготовка параметров\nreturn {\n  contentId: $input.item.json.body.contentId,\n  campaignId: $input.item.json.body.campaignId\n};"
+      },
+      "id": "dbd26bff-5782-40f4-b42d-b403c52f0618",
+      "name": "Подготовка параметров",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 1,
+      "position": [
+        -2740,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "schema": "public",
+        "table": "campaign_content",
+        "where": {
+          "values": [
+            {
+              "column": "id",
+              "value": "={{ $json.contentId }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "ce8bb11e-3338-42ac-b305-a39692b5d9ef",
+      "name": "Получение контента",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -2520,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "lO4gl1E2I2lsrRce",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.id }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "2a7d5ab1-c8cb-45b0-98ce-e32d231ca59a",
+      "name": "Контент найден?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        -2260,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "schema": "public",
+        "table": "user_campaigns",
+        "where": {
+          "values": [
+            {
+              "column": "id",
+              "value": "={{ $json.campaign_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "87680bc7-6bba-4db9-b3ce-c399757714f7",
+      "name": "Получение настроек кампании",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        -2000,
+        160
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "lO4gl1E2I2lsrRce",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем данные из предыдущих нод\nconst content = $node[\"Получение контента\"].json || {};\nconst campaign = $node[\"Получение настроек кампании\"].json || {};\n\n// Получаем настройки Instagram из кампании\nlet instagramAccessToken, instagramAccountId;\n\n// Проверяем наличие структуры social_media_settings\nif (campaign.social_media_settings && \n    campaign.social_media_settings.instagram && \n    campaign.social_media_settings.instagram.token && \n    campaign.social_media_settings.instagram.businessAccountId) {\n  \n  instagramAccessToken = campaign.social_media_settings.instagram.token;\n  instagramAccountId = campaign.social_media_settings.instagram.businessAccountId;\n} else {\n  return { error: \"Настройки Instagram не найдены\" };\n}\n\n// Проверка на наличие основного изображения\nconst imageUrl = content.image_url;\nif (!imageUrl) {\n  return { error: \"Основное изображение не найдено\" };\n}\n\n// Подготовка массива изображений для карусели\nlet images = [imageUrl]; // Добавляем основное изображение\n\n// Проверяем наличие дополнительных изображений\nif (content.additional_images && Array.isArray(content.additional_images) && content.additional_images.length > 0) {\n  // Добавляем дополнительные изображения в массив\n  images = images.concat(content.additional_images);\n}\n\n// Подготовка текста для Instagram\nconst message = content.content || '';\n\n// Формируем объект с данными для публикации\nreturn {\n  content_id: content.id,\n  campaign_id: content.campaign_id,\n  message: message,\n  image_url: imageUrl,\n  images: images, // Массив всех изображений для карусели\n  instagramToken: instagramAccessToken,\n  instagramAccountId: instagramAccountId,\n  content_type: content.content_type || \"image\",\n  // Определяем тип публикации\n  is_carousel: images.length > 1 // Флаг, указывающий, что это карусель\n};"
+      },
+      "id": "7fc15eea-dda2-4918-b206-50fda665bca6",
+      "name": "Подготовка данных для Instagram",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1800,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "b23d8f01-4c2d-4a3c-b0b8-97d942e9ef7e",
+              "leftValue": "={{ $json.is_carousel }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "5b3a1cd1-e3f2-4f30-953b-0cbf73c91c5c",
+      "name": "Карусель?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -1580,
+        160
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.content_type }}",
+              "value2": "image"
+            }
+          ],
+          "boolean": [
+            {
+              "value1": "={{ $json.content_type === \"video\" }}\n",
+              "value2": "={{ true }}"
+            }
+          ]
+        },
+        "combineOperation": "any"
+      },
+      "id": "4f710604-35b6-4f89-a8cd-8cd6c4128641",
+      "name": "Проверка типа контента",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        -1360,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем данные из входящего потока\nconst images = $json.images || [];\nconst instagramAccountId = $json.instagramAccountId;\nconst accessToken = $json.instagramToken;\nconst message = $json.message || '';\nconst contentId = $json.content_id;\nconst campaignId = $json.campaign_id;\n\n// Создаем массив для хранения ID контейнеров\nconst containerIds = [];\n\nconsole.log('Обрабатываем карусель с изображениями - количество:', images.length);\n\n// Простая версия кода без вложенных функций\n// Последовательно создаем контейнеры для всех изображений\nfor (let i = 0; i < images.length; i++) {\n  const imageUrl = images[i];\n  console.log(`Создаем контейнер для изображения ${i + 1}/${images.length}`);\n  \n  try {\n    // Создаем контейнер для изображения\n    const response = await $http.post(\n      `https://graph.facebook.com/v20.0/${instagramAccountId}/media`,\n      {\n        image_url: imageUrl,\n        is_carousel_item: true,\n        access_token: accessToken\n      }\n    );\n    \n    console.log(`Ответ API при создании контейнера для изображения ${i + 1}:`, response.data);\n    \n    if (response.data && response.data.id) {\n      containerIds.push(response.data.id);\n      console.log(`Контейнер ${i + 1} создан, ID:`, response.data.id);\n    } else {\n      console.error(`Ошибка при создании контейнера ${i + 1}: ответ без ID`);\n    }\n  } catch (error) {\n    console.error(`Ошибка при создании контейнера ${i + 1}:`, error.message);\n    if (error.response) {\n      console.error('Детали ошибки:', JSON.stringify(error.response.data));\n    }\n  }\n}\n\nconsole.log(`Создано ${containerIds.length} контейнеров для изображений`);\n\n// Проверка наличия созданных контейнеров\nif (containerIds.length === 0) {\n  console.error('Не удалось создать ни одного контейнера для изображений');\n  \n  // Возвращаем информацию об ошибке\n  return {\n    content_id: contentId,\n    campaign_id: campaignId,\n    social_platforms: JSON.stringify({\n      instagram: {\n        status: \"failed\",\n        error: \"Не удалось создать контейнеры для изображений\",\n        platform: \"instagram\",\n        updatedAt: new Date().toISOString()\n      }\n    })\n  };\n}\n\n// Создаем контейнер карусели\nlet carouselContainerId;\ntry {\n  console.log('Создаем контейнер карусели...');\n  const carouselResponse = await $http.post(\n    `https://graph.facebook.com/v20.0/${instagramAccountId}/media`,\n    {\n      media_type: 'CAROUSEL',\n      children: containerIds.join(','),\n      caption: message,\n      access_token: accessToken\n    }\n  );\n  \n  console.log('Ответ API при создании контейнера карусели:', carouselResponse.data);\n  \n  if (carouselResponse.data && carouselResponse.data.id) {\n    carouselContainerId = carouselResponse.data.id;\n    console.log('Контейнер карусели создан успешно, ID:', carouselContainerId);\n  } else {\n    throw new Error('Не удалось создать контейнер карусели: ответ без ID');\n  }\n} catch (error) {\n  console.error('Ошибка при создании контейнера карусели:', error.message);\n  if (error.response) {\n    console.error('Детали ошибки:', JSON.stringify(error.response.data));\n  }\n  \n  // Возвращаем информацию об ошибке\n  return {\n    content_id: contentId,\n    campaign_id: campaignId,\n    social_platforms: JSON.stringify({\n      instagram: {\n        status: \"failed\",\n        error: `Ошибка при создании контейнера карусели: ${error.message}`,\n        platform: \"instagram\",\n        updatedAt: new Date().toISOString()\n      }\n    })\n  };\n}\n\n// Публикуем карусель\nlet publishResult;\ntry {\n  console.log('Публикуем карусель...');\n  const publishResponse = await $http.post(\n    `https://graph.facebook.com/v19.0/${instagramAccountId}/media_publish`,\n    {\n      creation_id: carouselContainerId,\n      access_token: accessToken\n    }\n  );\n  \n  console.log('Ответ API при публикации карусели:', publishResponse.data);\n  \n  publishResult = publishResponse.data;\n  \n  if (!publishResult || !publishResult.id) {\n    throw new Error('Не удалось опубликовать карусель: ответ без ID');\n  }\n  \n  console.log('Карусель опубликована успешно, ID:', publishResult.id);\n} catch (error) {\n  console.error('Ошибка при публикации карусели:', error.message);\n  if (error.response) {\n    console.error('Детали ошибки:', JSON.stringify(error.response.data));\n  }\n  \n  // Возвращаем информацию об ошибке\n  return {\n    content_id: contentId,\n    campaign_id: campaignId,\n    social_platforms: JSON.stringify({\n      instagram: {\n        status: \"failed\",\n        error: `Ошибка при публикации карусели: ${error.message}`,\n        platform: \"instagram\",\n        updatedAt: new Date().toISOString()\n      }\n    })\n  };\n}\n\n// Получаем permalink публикации\nlet permalink = '';\ntry {\n  console.log('Получаем permalink публикации...');\n  const permalinkResponse = await $http.get(\n    `https://graph.facebook.com/v18.0/${publishResult.id}?fields=permalink,shortcode&access_token=${accessToken}`\n  );\n  \n  console.log('Ответ API при получении permalink:', permalinkResponse.data);\n  \n  if (permalinkResponse.data && permalinkResponse.data.permalink) {\n    permalink = permalinkResponse.data.permalink;\n    console.log('Получен permalink:', permalink);\n  }\n} catch (error) {\n  console.log('Ошибка при получении permalink:', error.message);\n  // Продолжаем выполнение, даже если не удалось получить permalink\n}\n\n// Подготавливаем данные о социальных платформах\nlet socialPlatforms = {};\n\n// Получаем текущие данные о социальных платформах\nif ($node[\"Получение контента\"].json.social_platforms) {\n  try {\n    // Пытаемся распарсить JSON строку, если это строка\n    if (typeof $node[\"Получение контента\"].json.social_platforms === 'string') {\n      socialPlatforms = JSON.parse($node[\"Получение контента\"].json.social_platforms);\n    } else {\n      // Если это уже объект, просто копируем\n      socialPlatforms = { ...$node[\"Получение контента\"].json.social_platforms };\n    }\n  } catch (error) {\n    // В случае ошибки парсинга, начинаем с пустого объекта\n    socialPlatforms = {};\n  }\n}\n\n// Обновляем информацию о платформе Instagram для карусели\nsocialPlatforms.instagram = {\n  postId: publishResult.id,\n  status: \"published\",\n  postUrl: permalink,\n  platform: \"instagram\",\n  publishedAt: new Date().toISOString(),\n  isCarousel: true,\n  itemsCount: containerIds.length\n};\n\nconsole.log('Карусель успешно опубликована. Возвращаем результат.');\n\n// Возвращаем информацию об успешной публикации\nreturn {\n  content_id: contentId,\n  campaign_id: campaignId,\n  social_platforms: JSON.stringify(socialPlatforms),\n  carouselInfo: {\n    containerIds: containerIds,\n    carouselContainerId: carouselContainerId,\n    publishedId: publishResult.id,\n    permalink: permalink\n  }\n};"
+      },
+      "id": "9bc1fc1d-1d6e-4e68-914f-72c3975a56fb",
+      "name": "Обработка карусели",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -1360,
+        40
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ffdaee59-acb6-427e-94f0-639509de990f",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f27478a9-6cb3-4484-9d5e-98781afa2bd4",
+      "name": "Успешное создание медиа?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        120,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Получаем данные\nconst instagramData = $node[\"Подготовка данных для Instagram\"].json;\nconst publishResponse = $node[\"Публикация media\"].json || {};\n\n// Подготавливаем данные для social_platforms\nlet socialPlatforms = {};\n\n// Получаем текущие данные о социальных платформах\nif ($node[\"Получение контента\"].json.social_platforms) {\n  try {\n    // Пытаемся распарсить JSON строку, если это строка\n    if (typeof $node[\"Получение контента\"].json.social_platforms === 'string') {\n      socialPlatforms = JSON.parse($node[\"Получение контента\"].json.social_platforms);\n    } else {\n      // Если это уже объект, просто копируем\n      socialPlatforms = { ...$node[\"Получение контента\"].json.social_platforms };\n    }\n  } catch (error) {\n    // В случае ошибки парсинга, начинаем с пустого объекта\n    socialPlatforms = {};\n  }\n}\n\n// Обновляем информацию о платформе Instagram\nsocialPlatforms.instagram = {\n  postId: publishResponse.id,\n  status: \"published\",\n  postUrl: $node[\"Получение permalink\"].json.permalink || \"\",\n  platform: \"instagram\",\n  publishedAt: new Date().toISOString()\n};\n\nreturn {\n  content_id: instagramData.content_id,\n  campaign_id: instagramData.campaign_id,\n  social_platforms: JSON.stringify(socialPlatforms)\n};"
+      },
+      "id": "27eef7aa-0fb0-4116-a53e-bbda82eab00d",
+      "name": "Подготовка данных обновления",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "schema": "public",
+        "table": "campaign_content",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.content_id }}",
+            "campaign_id": "={{ $json.campaign_id }}",
+            "published_at": "={{ $now }}",
+            "social_platforms": "={{ $json.social_platforms }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "campaign_id",
+              "displayName": "campaign_id",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "user_id",
+              "displayName": "user_id",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "content",
+              "displayName": "content",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "content_type",
+              "displayName": "content_type",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "image_url",
+              "displayName": "image_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "video_url",
+              "displayName": "video_url",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "prompt",
+              "displayName": "prompt",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "keywords",
+              "displayName": "keywords",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "scheduled_at",
+              "displayName": "scheduled_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "published_at",
+              "displayName": "published_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "social_platforms",
+              "displayName": "social_platforms",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "object",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "title",
+              "displayName": "title",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "additional_images",
+              "displayName": "additional_images",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "object",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "additional_media",
+              "displayName": "additional_media",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "object",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "id": "e839aaa6-0579-4b45-802e-e8d579d293a9",
+      "name": "Обновление статуса",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.6,
+      "position": [
+        940,
+        260
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "lO4gl1E2I2lsrRce",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "33a4796e-1b16-4ffe-9160-d99027f37788",
+      "name": "Завершение",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1240,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "return {\n  social_platforms: JSON.stringify({\n    instagram: {\n      status: \"failed\",\n      error: \"Контент не найден или отсутствует изображение\",\n      platform: \"instagram\",\n      updatedAt: new Date().toISOString()\n    }\n  })\n};"
+      },
+      "id": "4f82476b-fdc7-4fd1-a4b9-fe249a5b712c",
+      "name": "Ошибка контента",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -840,
+        420
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v20.0/{{ $('Получение настроек кампании').item.json.social_media_settings.instagram.businessAccountId }}/media",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "image_url",
+              "value": "={{ $json.image_url }}"
+            },
+            {
+              "name": "caption",
+              "value": "={{ $json.message }}"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $('Получение настроек кампании').item.json.social_media_settings.instagram.token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1060,
+        280
+      ],
+      "id": "0b24892c-d05d-4967-9004-efcbbe118e51",
+      "name": "Создание media",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "creation_id",
+              "value": "={{ $json.id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        -840,
+        280
+      ],
+      "name": "Сохранить creation_id",
+      "id": "0c6aea3f-49ba-4577-8d48-c5d058edbb22"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v19.0/{{ $('Получение настроек кампании').item.json.social_media_settings.instagram.businessAccountId }}/media_publish",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "creation_id",
+              "value": "={{ $('Сохранить creation_id').item.json.creation_id }}"
+            },
+            {
+              "name": "access_token",
+              "value": "={{ $('Получение настроек кампании').item.json.social_media_settings.instagram.token }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -80,
+        280
+      ],
+      "name": "Публикация media",
+      "id": "c7fce5c5-da1d-4982-8ccd-f366384c7827"
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/v18.0/{{ $json.id }}?fields=permalink,shortcode&access_token={{ $('Получение настроек кампании').item.json.social_media_settings.instagram.token }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        280
+      ],
+      "id": "dc0932c6-cf00-491e-921f-ce84cbf51c61",
+      "name": "Получение permalink"
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Подготовка параметров",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Подготовка параметров": {
+      "main": [
+        [
+          {
+            "node": "Получение контента",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Получение контента": {
+      "main": [
+        [
+          {
+            "node": "Контент найден?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Контент найден?": {
+      "main": [
+        [
+          {
+            "node": "Получение настроек кампании",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ошибка контента",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Получение настроек кампании": {
+      "main": [
+        [
+          {
+            "node": "Подготовка данных для Instagram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Подготовка данных для Instagram": {
+      "main": [
+        [
+          {
+            "node": "Карусель?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Карусель?": {
+      "main": [
+        [
+          {
+            "node": "Обработка карусели",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Проверка типа контента",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Проверка типа контента": {
+      "main": [
+        [
+          {
+            "node": "Создание media",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ошибка контента",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Успешное создание медиа?": {
+      "main": [
+        [
+          {
+            "node": "Получение permalink",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Подготовка данных обновления": {
+      "main": [
+        [
+          {
+            "node": "Обновление статуса",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Обработка карусели": {
+      "main": [
+        [
+          {
+            "node": "Обновление статуса",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Обновление статуса": {
+      "main": [
+        [
+          {
+            "node": "Завершение",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ошибка контента": {
+      "main": [
+        [
+          {
+            "node": "Обновление статуса",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Создание media": {
+      "main": [
+        [
+          {
+            "node": "Сохранить creation_id",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Ошибка контента",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Сохранить creation_id": {
+      "main": [
+        [
+          {
+            "node": "Публикация media",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Публикация media": {
+      "main": [
+        [
+          {
+            "node": "Успешное создание медиа?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Получение permalink": {
+      "main": [
+        [
+          {
+            "node": "Подготовка данных обновления",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.googleapis.com/upload/youtube/v3/videos",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $json.access_token }}"
+            },
+            {
+              "name": "uploadType",
+              "value": "multipart"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "snippet",
+              "value": "={{ JSON.stringify({ title: $('Prepare YouTube Data').item.json.title, description: $('Prepare YouTube Data').item.json.description, tags: $('Prepare YouTube Data').item.json.tags, categoryId: '22', defaultLanguage: 'ru' }) }}"
+            },
+            {
+              "parameterType": "formBinaryData",
+              "name": "media",
+              "inputDataFieldName": "data"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "20884943-af71-4dfe-92d8-524c05a6d0bb",
+      "name": "Upload Video to YouTube",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        240,
+        140
+      ],
+      "retryOnFail": true
+    }
+  ],
+  "connections": {
+    "Upload Video to YouTube": {
+      "main": [
+        [],
+        []
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "48b343d4f21061cd3a73b34f5a2564ef792ed905f0d50c185e3671d2882f3122"
+  }
+}

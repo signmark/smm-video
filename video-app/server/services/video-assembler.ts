@@ -566,10 +566,10 @@ export async function assembleFromClips(params: {
     onProgress?.(Math.round((i / scenes.length) * 80), `Микширование сцены ${i + 1}/${scenes.length}...`);
 
     if (scene.audioPath) {
-      // Overlay TTS audio onto Veo clip; pad audio/video to longest
-      const clipDur = scene.audioDuration
-        ? Math.max(scene.duration, scene.audioDuration + 0.3)
-        : scene.duration;
+      // Clip video to exactly scene.duration — TTS is already sped-up to fit.
+      // Do NOT extend beyond scene.duration: stock clips are trimmed to that length,
+      // and extending would freeze on the last frame AND break subtitle timing.
+      const clipDur = scene.duration;
 
       const args = [
         '-i', scene.clipPath,

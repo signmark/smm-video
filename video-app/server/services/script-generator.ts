@@ -39,6 +39,7 @@ Return ONLY valid JSON, no markdown, no explanation:
     {
       "text": "Short punchy subtitle in ${langName} (max 6 words, shown on screen as caption)",
       "narration": "Voiceover text in ${langName}. MUST be exactly ~${narrationWords} words so it fills ${sceneDuration} seconds when read aloud at natural pace. Use complete sentences. DO NOT write less than ${narrationWords - 2} words.",
+      "stockQuery": "2-4 simple English keywords for Pexels stock footage search. Generic visual terms ONLY — no brand names, no product names. Focus on the general visual concept. Examples: 'woman taking supplements', 'laboratory test tubes', 'healthy liver organ', 'scientist microscope', 'person smiling outdoors'",
       "imagePrompt": "Detailed English visual description combining background and subject together. Cinematic quality, photorealistic, specific details, NO TEXT IN IMAGE.",
       "motionPrompt": "English description of MOVEMENT only for this ${sceneDuration}s clip. Describe: [what moves] + [how it moves] + [camera movement]. Be specific and cinematic. Examples: 'Product slowly rotates 90 degrees clockwise, camera gently zooms in, soft studio light shifts from left to right' / 'Person walks toward camera, background blurs, slow dolly forward movement' / 'Camera pans smoothly left revealing the full product, object stays still, dramatic lighting sweep'",
       "backgroundPrompt": "Background/environment only in English. Describe the setting, lighting, atmosphere, colors — NO people, NO products, NO subjects. Example: 'Clean minimal white studio with soft gradient lighting, subtle shadow on floor, professional photography setup'",
@@ -51,6 +52,7 @@ Return ONLY valid JSON, no markdown, no explanation:
 Rules:
 - "text" must be in ${langName}, max 6 words, punchy caption shown on screen
 - "narration" must be in ${langName}, EXACTLY ~${narrationWords} words (${sceneDuration}s at natural speech pace), informative complete sentences
+- "stockQuery" always in English, 2-4 generic keywords for Pexels stock search — NO brand names, NO product names, use common visual concepts a stock library would have
 - "imagePrompt" always in English, vivid and specific (full scene, used as fallback for image gen)
 - "motionPrompt" always in English, describes ONLY movement/animation — not what is in the scene, but HOW it moves. This is passed directly to the video AI model.
 - "backgroundPrompt" always in English, environment only — no subjects
@@ -199,6 +201,7 @@ function parseScriptJson(text: string, sceneCount: number, isT2V: boolean): Scri
       id: uuidv4(),
       text: String(s.text || ''),
       narration: s.narration ? String(s.narration) : undefined,
+      stockQuery: s.stockQuery || s.stock_query || undefined,
       imagePrompt: String(s.imagePrompt || s.image_prompt || ''),
       motionPrompt: s.motionPrompt || s.motion_prompt || undefined,
       backgroundPrompt: s.backgroundPrompt || s.background_prompt || undefined,

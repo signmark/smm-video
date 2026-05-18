@@ -24,6 +24,7 @@ export interface Scene {
   videoSource?: 'ai' | 'stock'; // 'ai' = generate via FAL/Imagen (default), 'stock' = Pexels stock clip
   stockQuery?: string;          // custom search query for Pexels (defaults to imagePrompt)
   stockAvailable?: boolean;     // set by precheck: true = clip found & downloaded, false = not found
+  stockPhotoAvailable?: boolean; // set by precheck: true = Pexels photo found, saved as variant 0
 }
 
 export interface Script {

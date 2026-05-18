@@ -2,6 +2,7 @@ import ffmpeg from 'fluent-ffmpeg';
 import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 import fs from 'fs/promises';
 import { execFileSync } from 'child_process';
+import sharp from 'sharp';
 import type { VideoFormat } from '../db.js';
 
 function resolveFfmpegPath(): string {
@@ -124,6 +125,57 @@ async function findPexelsVideo(
     throw new Error(`No Pexels videos found for: "${query}"`);
   }
   return data2.videos[0];
+}
+
+// ── Stock photo search (Pexels Photos API) ───────────────────────────────────
+// Downloads a stock photo and resizes it to target format dimensions.
+// Saved as JPEG — can be used directly as I2V source image (variant 0).
+
+export async function searchAndDownloadStockPhoto(options: {
+  query: string;
+  outputPath: string;
+  format: VideoFormat;
+}): Promise<void> {
+  const { query, outputPath, format } = options;
+  const apiKey = process.env.PEXELS_API_KEY;
+  if (!apiKey) throw new Error('PEXELS_API_KEY not set');
+
+  const orientation = getOrientation(format);
+  const { width, height } = getTargetSize(format);
+
+  console.log(`[stock-photo] Searching Pexels Photos: "${query.slice(0, 60)}" orientation=${orientation}`);
+
+  async function fetchPhotos(q: string): Promise<any[]> {
+    const url = `https://api.pexels.com/v1/search?query=${encodeURIComponent(q)}&orientation=${orientation}&per_page=5`;
+    const resp = await fetch(url, { headers: { Authorization: apiKey }, signal: AbortSignal.timeout(15000) });
+    if (!resp.ok) throw new Error(`Pexels Photos API error: ${resp.status}`);
+    const data = await resp.json() as any;
+    return data.photos || [];
+  }
+
+  let photos = await fetchPhotos(query);
+  if (!photos.length) {
+    const words = query.split(' ').slice(0, 3).join(' ');
+    if (words !== query) photos = await fetchPhotos(words);
+  }
+  if (!photos.length) throw new Error(`No Pexels photos found for: "${query}"`);
+
+  const photo = photos[0];
+  const photoUrl = photo.src?.large2x || photo.src?.large || photo.src?.original;
+  if (!photoUrl) throw new Error('No photo URL in Pexels response');
+
+  console.log(`[stock-photo] Downloading photo id=${photo.id}`);
+  const resp = await fetch(photoUrl, { signal: AbortSignal.timeout(60000) });
+  if (!resp.ok) throw new Error(`Photo download failed: ${resp.status}`);
+
+  const buffer = Buffer.from(await resp.arrayBuffer());
+  await fs.mkdir(outputPath.replace(/\/[^/]+$/, ''), { recursive: true });
+  await sharp(buffer)
+    .resize(width, height, { fit: 'cover', position: 'center' })
+    .jpeg({ quality: 90 })
+    .toFile(outputPath);
+
+  console.log(`[stock-photo] Photo ready: ${outputPath}`);
 }
 
 export async function searchStockVideos(query: string, format: VideoFormat, limit = 6): Promise<Array<{

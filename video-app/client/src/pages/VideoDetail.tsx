@@ -565,6 +565,7 @@ export default function VideoDetail({ id }: { id: string }) {
   const [resuming, setResuming] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [fileMissing, setFileMissing] = useState(false);
+  const [topicExpanded, setTopicExpanded] = useState(false);
   const [editingScene, setEditingScene] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
   const [editingPrompt, setEditingPrompt] = useState<string | null>(null);
@@ -784,8 +785,28 @@ export default function VideoDetail({ id }: { id: string }) {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 24 }}>
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 700 }}>{project.title}</h1>
-          <p style={{ color: 'var(--text-muted)', fontSize: 14, marginTop: 4 }}>
-            {project.topic} · {project.format} · {project.duration}с · {project.language === 'ru' ? 'Русский' : 'English'}
+          <p style={{ color: 'var(--text-muted)', fontSize: 14, marginTop: 4, lineHeight: 1.5 }}>
+            {(() => {
+              const TRUNC = 120;
+              const topic = project.topic || '';
+              const needsTrunc = topic.length > TRUNC;
+              return (
+                <>
+                  {topicExpanded || !needsTrunc ? topic : topic.slice(0, TRUNC)}
+                  {needsTrunc && !topicExpanded && (
+                    <button onClick={() => setTopicExpanded(true)} style={{ background: 'none', border: 'none', color: '#a78bfa', fontSize: 13, cursor: 'pointer', padding: '0 3px' }}>
+                      ...ещё
+                    </button>
+                  )}
+                  {needsTrunc && topicExpanded && (
+                    <button onClick={() => setTopicExpanded(false)} style={{ background: 'none', border: 'none', color: '#a78bfa', fontSize: 13, cursor: 'pointer', padding: '0 3px' }}>
+                      {' '}скрыть
+                    </button>
+                  )}
+                </>
+              );
+            })()}
+            {' '}· {project.format} · {project.duration}с · {project.language === 'ru' ? 'Русский' : 'English'}
             {project.animationModel === 'chain' ? ' · Chain' : isT2V ? ' · T2V' : ' · I2V'}
           </p>
         </div>

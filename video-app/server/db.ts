@@ -76,6 +76,7 @@ export interface VideoProject {
   subtitleFont?: string;
   subtitleSize?: string;
   subtitleColor?: string;
+  musicStyle?: string;
   status: VideoStatus;
   progress: number;
   progressMessage: string;
@@ -144,6 +145,7 @@ function projectToDirectus(p: Partial<VideoProject>): Record<string, any> {
   if (p.subtitleFont !== undefined) d.subtitle_font = p.subtitleFont;
   if (p.subtitleSize !== undefined) d.subtitle_size = p.subtitleSize;
   if (p.subtitleColor !== undefined) d.subtitle_color = p.subtitleColor;
+  if (p.musicStyle !== undefined) d.music_style = p.musicStyle;
   if (p.status !== undefined) d.status = p.status;
   if (p.progress !== undefined) d.progress = p.progress;
   if (p.progressMessage !== undefined) d.progress_message = p.progressMessage;
@@ -170,6 +172,7 @@ function directusToProject(row: any): VideoProject {
     subtitleFont: row.subtitle_font ?? undefined,
     subtitleSize: row.subtitle_size ?? undefined,
     subtitleColor: row.subtitle_color ?? undefined,
+    musicStyle: row.music_style ?? undefined,
     status: (row.status ?? 'idle') as VideoStatus,
     progress: row.progress ?? 0,
     progressMessage: row.progress_message ?? '',
@@ -253,6 +256,7 @@ async function ensureTable(): Promise<void> {
   await p.query(`ALTER TABLE video_projects ADD COLUMN IF NOT EXISTS subtitle_font TEXT`);
   await p.query(`ALTER TABLE video_projects ADD COLUMN IF NOT EXISTS subtitle_size TEXT`);
   await p.query(`ALTER TABLE video_projects ADD COLUMN IF NOT EXISTS subtitle_color TEXT`);
+  await p.query(`ALTER TABLE video_projects ADD COLUMN IF NOT EXISTS music_style TEXT`);
 }
 
 let tableReady = false;
@@ -278,6 +282,7 @@ function rowToProject(row: any): VideoProject {
     subtitleFont: row.subtitle_font ?? undefined,
     subtitleSize: row.subtitle_size ?? undefined,
     subtitleColor: row.subtitle_color ?? undefined,
+    musicStyle: row.music_style ?? undefined,
     status: row.status as VideoStatus,
     progress: row.progress,
     progressMessage: row.progress_message,
@@ -330,6 +335,7 @@ export async function createProject(data: {
   subtitleFont?: string;
   subtitleSize?: string;
   subtitleColor?: string;
+  musicStyle?: string;
   customScenario?: string;
 }): Promise<VideoProject> {
   const id = uuidv4();
@@ -463,7 +469,8 @@ export async function updateProject(
       title: 'title', topic: 'topic', format: 'format', duration: 'duration',
       language: 'language', animationModel: 'animation_model',
       subtitleStyle: 'subtitle_style', voice: 'voice', clipDuration: 'clip_duration',
-      subtitleFont: 'subtitle_font', subtitleSize: 'subtitle_size', subtitleColor: 'subtitle_color', status: 'status',
+      subtitleFont: 'subtitle_font', subtitleSize: 'subtitle_size', subtitleColor: 'subtitle_color',
+      musicStyle: 'music_style', status: 'status',
       progress: 'progress', progressMessage: 'progress_message', script: 'script',
       customScenario: 'custom_scenario', videoPath: 'video_path',
       videoUrl: 'video_url', error: 'error',

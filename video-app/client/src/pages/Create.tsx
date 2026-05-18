@@ -319,6 +319,18 @@ const SUBTITLE_COLOR_PRESETS = [
   { value: '#00ff88', label: 'Зелёный' },
 ] as const;
 
+const MUSIC_STYLES = [
+  { value: 'none',       label: 'Без музыки',          emoji: '🔇', desc: 'Только голос, без фона' },
+  { value: 'ambient',    label: 'Эмбиент',              emoji: '🌊', desc: 'Спокойный атмосферный фон' },
+  { value: 'cinematic',  label: 'Кинематографическая',  emoji: '🎬', desc: 'Эпическая оркестровая' },
+  { value: 'corporate',  label: 'Корпоративная',        emoji: '💼', desc: 'Мотивирующая деловая' },
+  { value: 'electronic', label: 'Электронная',          emoji: '⚡', desc: 'Современная динамичная' },
+  { value: 'acoustic',   label: 'Акустическая',         emoji: '🎸', desc: 'Лёгкая гитарная' },
+  { value: 'jazz',       label: 'Джаз',                 emoji: '🎷', desc: 'Расслабленный джазовый фон' },
+] as const;
+
+type MusicStyleValue = typeof MUSIC_STYLES[number]['value'];
+
 const VOICES = [
   { value: 'alloy',   label: 'Alloy',   desc: 'Нейтральный, универсальный',   emoji: '⚪' },
   { value: 'nova',    label: 'Nova',    desc: 'Женский, тёплый и живой',       emoji: '🔴' },
@@ -347,6 +359,7 @@ export default function Create() {
   const [subtitleSize, setSubtitleSize] = useState('medium');
   const [subtitleColor, setSubtitleColor] = useState('#ffffff');
   const [voice, setVoice] = useState('alloy');
+  const [musicStyle, setMusicStyle] = useState<MusicStyleValue>('ambient');
   const [playingVoice, setPlayingVoice] = useState<string | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [loading, setLoading] = useState(false);
@@ -405,6 +418,7 @@ export default function Create() {
         subtitleFont: subtitleStyle !== 'none' ? subtitleFont : undefined,
         subtitleSize: subtitleStyle !== 'none' ? subtitleSize : undefined,
         subtitleColor: subtitleStyle !== 'none' ? subtitleColor : undefined,
+        musicStyle,
       };
 
       if (useCustomScenario) {
@@ -698,6 +712,42 @@ export default function Create() {
           <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5, padding: '6px 10px', borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}>
             ⚠️ Голоса работают через OpenAI TTS. При проблемах с ключом или исчерпанном лимите будет использован стандартный голос (Edge TTS).
           </div>
+        </Field>
+
+        <Field label="Фоновая музыка" hint="Стиль музыки, которая будет подмешана под озвучку. Ищется в Jamendo (бесплатный сток) или генерируется AI.">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            {MUSIC_STYLES.map((m) => {
+              const active = musicStyle === m.value;
+              return (
+                <button
+                  key={m.value}
+                  type="button"
+                  data-testid={`music-style-${m.value}`}
+                  onClick={() => setMusicStyle(m.value)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '10px 12px', borderRadius: 'var(--radius-sm)',
+                    border: `1.5px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+                    background: active ? '#1e1040' : 'var(--bg-card2)',
+                    color: 'var(--text)', textAlign: 'left', cursor: 'pointer', transition: 'all 0.15s',
+                    opacity: m.value === 'none' ? 0.7 : 1,
+                  }}
+                >
+                  <span style={{ fontSize: 20, flexShrink: 0 }}>{m.emoji}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: active ? 700 : 500, color: active ? 'var(--accent)' : 'var(--text)' }}>{m.label}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{m.desc}</div>
+                  </div>
+                  {active && <span style={{ fontSize: 14, color: 'var(--accent)', flexShrink: 0 }}>✓</span>}
+                </button>
+              );
+            })}
+          </div>
+          {musicStyle !== 'none' && (
+            <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5, padding: '6px 10px', borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}>
+              🎵 Громкость фоновой музыки составляет ~18% — голос всегда преобладает. Треки из Jamendo распространяются под лицензией CC (атрибуция при публикации).
+            </div>
+          )}
         </Field>
 
         <Field label="Субтитры" hint="Как текст будет появляться на видео">

@@ -1,6 +1,7 @@
 import axios from 'axios';
 import crypto from 'crypto';
 import { log } from '../utils/logger';
+import { sendEmail } from './email';
 
 /**
  * Выставляет authExpired=true для VK в настройках кампании.
@@ -15,7 +16,8 @@ export async function markVkAuthExpired(campaignId: string): Promise<void> {
     const resp = await axios.get(`${directusUrl}/items/user_campaigns/${campaignId}`, {
       headers: { Authorization: `Bearer ${adminToken}` }
     });
-    const existing = resp.data.data.social_media_settings || {};
+    const campaignData = resp.data.data;
+    const existing = campaignData.social_media_settings || {};
     const existingVk = existing.vk || {};
 
     await axios.patch(`${directusUrl}/items/user_campaigns/${campaignId}`, {
@@ -26,9 +28,156 @@ export async function markVkAuthExpired(campaignId: string): Promise<void> {
     }, { headers: { Authorization: `Bearer ${adminToken}` } });
 
     log(`[VK-REFRESH] authExpired=true выставлен для кампании ${campaignId}`, 'vk-refresh');
+
+    // Уведомляем владельца кампании (не блокируем основной поток)
+    sendVkExpiredNotification(campaignId, campaignData, adminToken, directusUrl).catch(err => {
+      log(`[VK-REFRESH] Ошибка отправки уведомления для кампании ${campaignId}: ${err.message}`, 'vk-refresh', 'warn');
+    });
   } catch (err: any) {
     log(`[VK-REFRESH] Ошибка при выставлении authExpired для кампании ${campaignId}: ${err.message}`, 'vk-refresh', 'warn');
   }
+}
+
+/**
+ * Отправляет уведомление владельцу кампании о том, что VK-подключение устарело.
+ * Сначала пытается отправить через Telegram (если у кампании настроен Telegram
+ * или у пользователя есть бот-сессия), иначе — на email.
+ */
+async function sendVkExpiredNotification(
+  campaignId: string,
+  campaignData: Record<string, any>,
+  adminToken: string,
+  directusUrl: string
+): Promise<void> {
+  const userId: string | undefined = campaignData.user_id;
+  if (!userId) {
+    log(`[VK-NOTIFY] Нет user_id в кампании ${campaignId}, уведомление не отправлено`, 'vk-refresh', 'warn');
+    return;
+  }
+
+  const campaignName: string = campaignData.title || campaignData.name || campaignId;
+  const appUrl = (process.env.APP_URL || process.env.PUBLIC_URL || 'https://smm.omemo.tech').replace(/\/$/, '');
+  const reconnectUrl = `${appUrl}/campaigns/${campaignId}/settings`;
+
+  // Проверяем настройки Telegram кампании (наличие канала/бота в social_media_settings)
+  const hasCampaignTelegram = !!(campaignData.social_media_settings?.telegram?.chatId ||
+    campaignData.social_media_settings?.telegram?.token);
+
+  const telegramSent = await tryNotifyViaTelegram(
+    userId, campaignName, reconnectUrl, adminToken, directusUrl, hasCampaignTelegram
+  );
+  if (telegramSent) return;
+
+  await tryNotifyViaEmail(userId, campaignName, reconnectUrl, adminToken, directusUrl);
+}
+
+async function tryNotifyViaTelegram(
+  userId: string,
+  campaignName: string,
+  reconnectUrl: string,
+  adminToken: string,
+  directusUrl: string,
+  hasCampaignTelegram: boolean = false
+): Promise<boolean> {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  if (!botToken) return false;
+
+  try {
+    const sessResp = await axios.get(`${directusUrl}/items/telegram_sessions`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+      params: { 'filter[user_id][_eq]': userId, limit: 10 }
+    });
+    const sessions: Array<{ chat_id: number }> = sessResp.data.data || [];
+    // Отправляем только если у кампании есть Telegram-настройки
+    // или пользователь зарегистрирован в боте (есть сессия)
+    if (sessions.length === 0 && !hasCampaignTelegram) return false;
+    if (sessions.length === 0) return false;
+
+    const text =
+      `⚠️ <b>VK-подключение устарело</b>\n\n` +
+      `Токен VK для кампании <b>${escapeHtml(campaignName)}</b> стал недействительным. ` +
+      `Запланированные публикации во ВКонтакте не будут выходить до переподключения.\n\n` +
+      `<a href="${reconnectUrl}">🔗 Переподключить VK</a>`;
+
+    const apiBase = `https://api.telegram.org/bot${botToken}`;
+    let sent = false;
+    for (const session of sessions) {
+      try {
+        await axios.post(`${apiBase}/sendMessage`, {
+          chat_id: session.chat_id,
+          text,
+          parse_mode: 'HTML',
+          disable_web_page_preview: true,
+        });
+        log(`[VK-NOTIFY] Telegram-уведомление отправлено chat_id=${session.chat_id}`, 'vk-refresh');
+        sent = true;
+      } catch (e: any) {
+        log(`[VK-NOTIFY] Ошибка Telegram sendMessage chat_id=${session.chat_id}: ${e.message}`, 'vk-refresh', 'warn');
+      }
+    }
+    return sent;
+  } catch (err: any) {
+    log(`[VK-NOTIFY] Ошибка запроса telegram_sessions: ${err.message}`, 'vk-refresh', 'warn');
+    return false;
+  }
+}
+
+async function tryNotifyViaEmail(
+  userId: string,
+  campaignName: string,
+  reconnectUrl: string,
+  adminToken: string,
+  directusUrl: string
+): Promise<void> {
+  try {
+    const userResp = await axios.get(`${directusUrl}/users/${userId}`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+      params: { fields: 'email,first_name' }
+    });
+    const userData = userResp.data.data;
+    const email: string | undefined = userData?.email;
+    if (!email) {
+      log(`[VK-NOTIFY] Email пользователя ${userId} не найден`, 'vk-refresh', 'warn');
+      return;
+    }
+
+    const firstName: string = userData.first_name || '';
+    const greeting = firstName ? `Привет, ${firstName}!` : 'Привет!';
+
+    const result = await sendEmail({
+      to: email,
+      subject: 'Требуется переподключение VK — SMM Manager',
+      html: `
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:24px">
+          <h2 style="color:#e53e3e">⚠️ VK-подключение устарело</h2>
+          <p>${greeting}</p>
+          <p>Токен ВКонтакте для кампании <strong>${escapeHtml(campaignName)}</strong> стал недействительным.
+          Запланированные публикации во ВКонтакте не будут выходить до тех пор, пока вы не переподключите аккаунт.</p>
+          <p style="margin-top:24px">
+            <a href="${reconnectUrl}"
+               style="display:inline-block;padding:12px 28px;background:#0077ff;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;font-size:15px">
+              🔗 Переподключить VK
+            </a>
+          </p>
+          <p style="margin-top:24px;color:#666;font-size:13px">
+            Или перейдите по ссылке: <a href="${reconnectUrl}">${reconnectUrl}</a>
+          </p>
+        </div>
+      `,
+      text: `VK-подключение для кампании "${campaignName}" устарело. Переподключите аккаунт: ${reconnectUrl}`,
+    });
+    if (result.ok) {
+      log(`[VK-NOTIFY] Email-уведомление отправлено на ${email}`, 'vk-refresh');
+    } else {
+      log(`[VK-NOTIFY] Не удалось отправить email на ${email}: ${result.error}`, 'vk-refresh', 'warn');
+    }
+  } catch (err: any) {
+    log(`[VK-NOTIFY] Ошибка отправки email: ${err.message}`, 'vk-refresh', 'warn');
+  }
+}
+
+function escapeHtml(str: string): string {
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 /**

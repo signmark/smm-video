@@ -368,15 +368,24 @@ export default function Create() {
   const [musicTrackIdx, setMusicTrackIdx] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const musicAudioRef = useRef<HTMLAudioElement | null>(null);
+  const musicAbortRef = useRef<AbortController | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
   function stopMusicPreview() {
+    // Cancel any in-progress metadata fetch
+    if (musicAbortRef.current) {
+      musicAbortRef.current.abort();
+      musicAbortRef.current = null;
+    }
+    // Stop and discard the audio element
     if (musicAudioRef.current) {
       musicAudioRef.current.pause();
+      musicAudioRef.current.src = '';
       musicAudioRef.current = null;
     }
     setPlayingMusic(false);
+    setLoadingMusicPreview(false);
   }
 
   function playVoicePreview(v: string) {
@@ -399,30 +408,55 @@ export default function Create() {
 
   async function playMusicPreview(idx?: number) {
     const trackIdx = idx ?? musicTrackIdx;
-    if (playingMusic && idx === undefined) {
+
+    // Toggle off if same button pressed while playing/loading
+    if (idx === undefined && (playingMusic || loadingMusicPreview)) {
       stopMusicPreview();
       return;
     }
+
+    // Always stop whatever is currently playing/loading first
     stopMusicPreview();
     if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; setPlayingVoice(null); }
+
+    // Create abort controller for this load session
+    const abortCtrl = new AbortController();
+    musicAbortRef.current = abortCtrl;
+
     setLoadingMusicPreview(true);
     setMusicPreviewInfo(null);
     try {
       // Fetch metadata first (fast, no audio download)
-      const metaResp = await fetch(`${API}/music/preview?style=${musicStyle}&idx=${trackIdx}&meta=1`);
+      const metaResp = await fetch(
+        `${API}/music/preview?style=${musicStyle}&idx=${trackIdx}&meta=1`,
+        { signal: abortCtrl.signal },
+      );
       if (!metaResp.ok) {
         const err = await metaResp.json().catch(() => ({ error: 'Ошибка запроса' }));
         throw new Error(err.error || 'Ошибка');
       }
       const { trackName, artistName } = await metaResp.json();
+
+      // Bail out if another call has already taken over (abort was triggered)
+      if (abortCtrl.signal.aborted) return;
+
       setMusicPreviewInfo({ trackName, artistName });
 
-      // Audio proxied through backend — no CORS, fresh token every request
+      // Create audio element — stop any audio that snuck in during the await
+      if (musicAudioRef.current) {
+        musicAudioRef.current.pause();
+        musicAudioRef.current.src = '';
+        musicAudioRef.current = null;
+      }
+
       const audio = new Audio(`${API}/music/preview?style=${musicStyle}&idx=${trackIdx}&t=${Date.now()}`);
       musicAudioRef.current = audio;
-      setPlayingMusic(true);
+      musicAbortRef.current = null;
       setLoadingMusicPreview(false);
+      setPlayingMusic(true);
+
       audio.play().catch((e) => {
+        if (e.name === 'AbortError') return;
         setMusicPreviewInfo({ trackName: 'Ошибка воспроизведения: ' + e.message, artistName: '' });
         setPlayingMusic(false);
         musicAudioRef.current = null;
@@ -430,6 +464,7 @@ export default function Create() {
       audio.onended = () => { setPlayingMusic(false); musicAudioRef.current = null; };
       audio.onerror = () => { setPlayingMusic(false); musicAudioRef.current = null; };
     } catch (err: any) {
+      if (err.name === 'AbortError') return;
       setMusicPreviewInfo({ trackName: 'Ошибка: ' + err.message, artistName: '' });
       setLoadingMusicPreview(false);
     }

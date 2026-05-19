@@ -11,7 +11,7 @@ import {
   Loader2, Plus, Pencil, Calendar, Send, SendHorizontal, Trash2, FileText,
   ImageIcon, Video, FilePlus2, CheckCircle2, Clock, RefreshCw, Play,
   Wand2, Share, Sparkles, CalendarDays, ChevronDown, ChevronRight,
-  CalendarIcon, XCircle, Filter, Ban, CheckCircle, Upload, AlertCircle, Layers, ArchiveRestore, Copy
+  CalendarIcon, XCircle, Filter, Ban, CheckCircle, Upload, AlertCircle, Layers, ArchiveRestore, Copy, Lock, Zap
 } from "lucide-react";
 import {
   AlertDialog,
@@ -162,7 +162,7 @@ const cleanAiText = (text: string): string => {
 
 export default function ContentPage() {
   const { t } = useTranslation();
-  const { limits, effectivePlan } = usePlan();
+  const { limits, effectivePlan, isExpired } = usePlan();
 
   const { data: imageGenUsage } = useQuery<{
     count: number; limit: number | null; remaining: number | null; month: string;
@@ -1592,6 +1592,18 @@ export default function ContentPage() {
 
   return (
     <div className="space-y-4 md:space-y-6 p-3 md:p-6 max-w-full mobile-safe-padding mobile-safe-content">
+      {isExpired && (
+        <div className="flex items-center gap-3 p-4 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg">
+          <Lock className="h-5 w-5 text-orange-500 flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-orange-800 dark:text-orange-200">Подписка истекла</p>
+            <p className="text-xs text-orange-700 dark:text-orange-300">Генерация контента и публикация в социальные сети недоступны.</p>
+          </div>
+          <Button variant="default" size="sm" asChild className="flex-shrink-0 gap-1.5">
+            <a href="/pricing"><Zap className="h-3.5 w-3.5" />Выбрать тариф</a>
+          </Button>
+        </div>
+      )}
       <div className="flex flex-col gap-3 sm:flex-row sm:justify-between sm:items-start">
         <div className="flex flex-col">
           <h1 className="text-lg md:text-2xl font-bold">{t('content.title')}</h1>
@@ -2254,8 +2266,10 @@ export default function ContentPage() {
                         onClick={() => setShowAiPanel(p => !p)}
                         className="flex items-center gap-1.5 text-indigo-600 border-indigo-200 hover:bg-indigo-50 dark:text-indigo-400 dark:border-indigo-700 dark:hover:bg-indigo-900/20"
                         data-testid="button-ai-generate-text"
+                        disabled={isExpired}
+                        title={isExpired ? 'Выберите тариф для использования ИИ' : undefined}
                       >
-                        <Wand2 className="h-3.5 w-3.5" />
+                        {isExpired ? <Lock className="h-3.5 w-3.5" /> : <Wand2 className="h-3.5 w-3.5" />}
                         Сгенерировать ИИ
                       </Button>
                     </div>
@@ -2344,8 +2358,10 @@ export default function ContentPage() {
                       size="sm"
                       onClick={() => setShowAiPanel(p => !p)}
                       className="flex items-center gap-1.5 text-indigo-600 border-indigo-200 hover:bg-indigo-50 dark:text-indigo-400 dark:border-indigo-700 dark:hover:bg-indigo-900/20"
+                      disabled={isExpired}
+                      title={isExpired ? 'Выберите тариф для использования ИИ' : undefined}
                     >
-                      <Wand2 className="h-3.5 w-3.5" />
+                      {isExpired ? <Lock className="h-3.5 w-3.5" /> : <Wand2 className="h-3.5 w-3.5" />}
                       Сгенерировать ИИ
                     </Button>
                   </div>
@@ -2409,8 +2425,10 @@ export default function ContentPage() {
                       size="sm"
                       onClick={() => setShowAiPanel(p => !p)}
                       className="flex items-center gap-1.5 text-indigo-600 border-indigo-200 hover:bg-indigo-50 dark:text-indigo-400 dark:border-indigo-700 dark:hover:bg-indigo-900/20"
+                      disabled={isExpired}
+                      title={isExpired ? 'Выберите тариф для использования ИИ' : undefined}
                     >
-                      <Wand2 className="h-3.5 w-3.5" />
+                      {isExpired ? <Lock className="h-3.5 w-3.5" /> : <Wand2 className="h-3.5 w-3.5" />}
                       Сгенерировать ИИ
                     </Button>
                   </div>
@@ -3478,10 +3496,13 @@ export default function ContentPage() {
                 }}
                 disabled={
                   publishContentMutation.isPending ||
-                  !Object.values(selectedPlatforms).some(Boolean)
+                  !Object.values(selectedPlatforms).some(Boolean) ||
+                  isExpired
                 }
+                title={isExpired ? 'Выберите тариф для публикации' : undefined}
               >
                 {publishContentMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {isExpired && <Lock className="mr-2 h-4 w-4" />}
                 Опубликовать сразу
               </Button>
               <Button
@@ -3491,10 +3512,13 @@ export default function ContentPage() {
                 disabled={
                   scheduleContentMutation.isPending ||
                   !scheduleDate ||
-                  !Object.values(selectedPlatforms).some(Boolean)
+                  !Object.values(selectedPlatforms).some(Boolean) ||
+                  isExpired
                 }
+                title={isExpired ? 'Выберите тариф для планирования' : undefined}
               >
                 {scheduleContentMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {isExpired && <Lock className="mr-2 h-4 w-4" />}
                 Запланировать
               </Button>
             </div>

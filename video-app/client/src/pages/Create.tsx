@@ -405,22 +405,29 @@ export default function Create() {
     setLoadingMusicPreview(true);
     setMusicPreviewInfo(null);
     try {
-      const resp = await fetch(`${API}/music/preview?style=${musicStyle}`);
-      if (!resp.ok) {
-        const err = await resp.json().catch(() => ({ error: 'Ошибка запроса' }));
+      // Fetch metadata first (fast)
+      const metaResp = await fetch(`${API}/music/preview?style=${musicStyle}&meta=1`);
+      if (!metaResp.ok) {
+        const err = await metaResp.json().catch(() => ({ error: 'Ошибка запроса' }));
         throw new Error(err.error || 'Ошибка');
       }
-      const { previewUrl, trackName, artistName } = await resp.json();
+      const { trackName, artistName } = await metaResp.json();
       setMusicPreviewInfo({ trackName, artistName });
-      const audio = new Audio(previewUrl);
+
+      // Audio proxied through backend — no CORS issues
+      const audio = new Audio(`${API}/music/preview?style=${musicStyle}&t=${Date.now()}`);
       musicAudioRef.current = audio;
       setPlayingMusic(true);
-      audio.play().catch(() => {});
+      setLoadingMusicPreview(false);
+      audio.play().catch((e) => {
+        setMusicPreviewInfo({ trackName: 'Ошибка воспроизведения: ' + e.message, artistName: '' });
+        setPlayingMusic(false);
+        musicAudioRef.current = null;
+      });
       audio.onended = () => { setPlayingMusic(false); musicAudioRef.current = null; };
       audio.onerror = () => { setPlayingMusic(false); musicAudioRef.current = null; };
     } catch (err: any) {
       setMusicPreviewInfo({ trackName: 'Ошибка: ' + err.message, artistName: '' });
-    } finally {
       setLoadingMusicPreview(false);
     }
   }

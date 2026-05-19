@@ -57,7 +57,7 @@ async function sendVkExpiredNotification(
 
   const campaignName: string = campaignData.title || campaignData.name || campaignId;
   const appUrl = (process.env.APP_URL || process.env.PUBLIC_URL || 'https://smm.omemo.tech').replace(/\/$/, '');
-  const reconnectUrl = `${appUrl}/campaigns/${campaignId}/settings`;
+  const reconnectUrl = `${appUrl}/campaigns/${campaignId}/`;
 
   // Проверяем настройки Telegram кампании (наличие канала/бота в social_media_settings)
   const hasCampaignTelegram = !!(campaignData.social_media_settings?.telegram?.chatId ||

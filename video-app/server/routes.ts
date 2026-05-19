@@ -133,7 +133,6 @@ router.get('/music/preview', async (req, res) => {
     url.searchParams.set('format', 'json');
     url.searchParams.set('limit', '10');
     url.searchParams.set('fuzzytags', styleDef.jamendoTags);
-    url.searchParams.set('audiodlformat', 'mp32');
     url.searchParams.set('boost', 'popularity_total');
     url.searchParams.set('order', 'popularity_total_desc');
 
@@ -144,39 +143,72 @@ router.get('/music/preview', async (req, res) => {
     const tracks: any[] = data.results ?? [];
     if (!tracks.length) return res.status(404).json({ error: 'No tracks found for this style' });
 
-    // Pick first track that has a valid download URL
-    let track: any = null;
-    let audioUrl = '';
-    for (const t of tracks) {
-      const dl = t.audiodownload || t.audio;
-      if (dl && dl.startsWith('http')) { track = t; audioUrl = dl; break; }
-    }
-    if (!track) return res.status(404).json({ error: 'No playable track found' });
+    // idx param allows cycling through tracks (0-9)
+    const idxParam = Math.min(Math.max(parseInt(String(req.query.idx || '0'), 10) || 0, 0), tracks.length - 1);
 
-    // If meta=only query param, return metadata without proxying audio
+    // For meta request: pick first track with an audio URL starting at idxParam
     if (req.query.meta === '1') {
-      return res.json({ trackName: track.name, artistName: track.artist_name });
+      const metaTrack = tracks.slice(idxParam).find((t: any) => t.audio?.startsWith('http')) ?? tracks[idxParam];
+      return res.json({ trackName: metaTrack?.name ?? '', artistName: metaTrack?.artist_name ?? '' });
     }
 
-    // Proxy audio stream — avoids CORS and stale-token issues in the browser
-    const audioResp = await fetch(audioUrl, {
-      signal: AbortSignal.timeout(30_000),
-      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; VideoBot/1.0)' },
-    });
-    if (!audioResp.ok) return res.status(502).json({ error: `Audio fetch failed: ${audioResp.status}` });
+    // For audio proxy: stream the first working track starting at idxParam
+    // Try both mp31 and mp32 formats for each track
+    const candidates = [...tracks.slice(idxParam), ...tracks.slice(0, idxParam)];
+    for (const t of candidates) {
+      if (!t.audio?.startsWith('http')) continue;
 
-    res.setHeader('Content-Type', audioResp.headers.get('content-type') || 'audio/mpeg');
-    res.setHeader('X-Track-Name', encodeURIComponent(track.name));
-    res.setHeader('X-Artist-Name', encodeURIComponent(track.artist_name));
-    res.setHeader('Cache-Control', 'public, max-age=300');
+      // Build candidate URLs: try mp32 first (more available), fallback to mp31
+      const baseAudio: string = t.audio;
+      const audioUrls = [
+        baseAudio.replace('format=mp31', 'format=mp32'),
+        baseAudio,
+      ].filter((u, i, a) => a.indexOf(u) === i); // deduplicate
 
-    const reader = audioResp.body as any;
-    if (reader?.pipe) {
-      reader.pipe(res);
-    } else {
-      const buf = Buffer.from(await audioResp.arrayBuffer());
-      res.send(buf);
+      let audioFetch: Response | null = null;
+      let usedUrl = '';
+      for (const audioUrl of audioUrls) {
+        try {
+          const r = await fetch(audioUrl, {
+            signal: AbortSignal.timeout(20_000),
+            headers: { 'User-Agent': 'Mozilla/5.0 (compatible; VideoBot/1.0)' },
+          });
+          const ct = r.headers.get('content-type') || '';
+          if (r.ok && ct.startsWith('audio')) {
+            audioFetch = r; usedUrl = audioUrl; break;
+          }
+          console.log(`[music-preview] Track ${t.id} url ${audioUrl.slice(-20)} — HTTP ${r.status} ${ct}`);
+          await r.body?.cancel();
+        } catch (e: any) {
+          console.log(`[music-preview] Track ${t.id} — ${e.message}`);
+        }
+      }
+
+      if (!audioFetch) continue;
+
+      // Found a working track — stream it back
+      res.setHeader('Content-Type', 'audio/mpeg');
+      res.setHeader('X-Track-Name', encodeURIComponent(t.name));
+      res.setHeader('X-Artist-Name', encodeURIComponent(t.artist_name));
+      res.setHeader('Cache-Control', 'public, max-age=300');
+
+      const reader = audioFetch.body!.getReader();
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (!res.write(value)) {
+            await new Promise<void>((r) => res.once('drain', r));
+          }
+        }
+        res.end();
+      } catch (e: any) {
+        reader.cancel().catch(() => {});
+      }
+      return;
     }
+
+    return res.status(404).json({ error: 'No playable track found in this style' });
   } catch (err: any) {
     if (!res.headersSent) res.status(500).json({ error: err.message });
   }

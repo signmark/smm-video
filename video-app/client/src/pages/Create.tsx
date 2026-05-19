@@ -365,6 +365,7 @@ export default function Create() {
   const [playingMusic, setPlayingMusic] = useState(false);
   const [loadingMusicPreview, setLoadingMusicPreview] = useState(false);
   const [musicPreviewInfo, setMusicPreviewInfo] = useState<{ trackName: string; artistName: string } | null>(null);
+  const [musicTrackIdx, setMusicTrackIdx] = useState(0);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const musicAudioRef = useRef<HTMLAudioElement | null>(null);
   const [loading, setLoading] = useState(false);
@@ -396,17 +397,19 @@ export default function Create() {
     audio.onerror = () => { setPlayingVoice(null); audioRef.current = null; };
   }
 
-  async function playMusicPreview() {
-    if (playingMusic) {
+  async function playMusicPreview(idx?: number) {
+    const trackIdx = idx ?? musicTrackIdx;
+    if (playingMusic && idx === undefined) {
       stopMusicPreview();
       return;
     }
+    stopMusicPreview();
     if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; setPlayingVoice(null); }
     setLoadingMusicPreview(true);
     setMusicPreviewInfo(null);
     try {
-      // Fetch metadata first (fast)
-      const metaResp = await fetch(`${API}/music/preview?style=${musicStyle}&meta=1`);
+      // Fetch metadata first (fast, no audio download)
+      const metaResp = await fetch(`${API}/music/preview?style=${musicStyle}&idx=${trackIdx}&meta=1`);
       if (!metaResp.ok) {
         const err = await metaResp.json().catch(() => ({ error: 'Ошибка запроса' }));
         throw new Error(err.error || 'Ошибка');
@@ -414,8 +417,8 @@ export default function Create() {
       const { trackName, artistName } = await metaResp.json();
       setMusicPreviewInfo({ trackName, artistName });
 
-      // Audio proxied through backend — no CORS issues
-      const audio = new Audio(`${API}/music/preview?style=${musicStyle}&t=${Date.now()}`);
+      // Audio proxied through backend — no CORS, fresh token every request
+      const audio = new Audio(`${API}/music/preview?style=${musicStyle}&idx=${trackIdx}&t=${Date.now()}`);
       musicAudioRef.current = audio;
       setPlayingMusic(true);
       setLoadingMusicPreview(false);
@@ -430,6 +433,12 @@ export default function Create() {
       setMusicPreviewInfo({ trackName: 'Ошибка: ' + err.message, artistName: '' });
       setLoadingMusicPreview(false);
     }
+  }
+
+  async function nextMusicTrack() {
+    const next = (musicTrackIdx + 1) % 10;
+    setMusicTrackIdx(next);
+    await playMusicPreview(next);
   }
 
   function handlePipelineSwitch(mode: 'i2v' | 't2v') {
@@ -833,31 +842,51 @@ export default function Create() {
           </div>
           {musicStyle !== 'none' && (
             <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <button
-                type="button"
-                data-testid="music-preview-btn"
-                onClick={playMusicPreview}
-                disabled={loadingMusicPreview}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 8,
-                  padding: '7px 14px', borderRadius: 'var(--radius-sm)',
-                  border: `1.5px solid ${playingMusic ? 'var(--accent)' : 'var(--border)'}`,
-                  background: playingMusic ? 'rgba(139,92,246,0.15)' : 'var(--bg-card2)',
-                  color: playingMusic ? 'var(--accent)' : 'var(--text)',
-                  cursor: loadingMusicPreview ? 'wait' : 'pointer',
-                  fontSize: 13, fontWeight: 500, transition: 'all 0.15s',
-                  alignSelf: 'flex-start',
-                }}
-              >
-                <span style={{ fontSize: 16 }}>
-                  {loadingMusicPreview ? '⏳' : playingMusic ? '⏹' : '▶'}
-                </span>
-                {loadingMusicPreview ? 'Загрузка...' : playingMusic ? 'Остановить' : 'Прослушать стиль'}
-              </button>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                <button
+                  type="button"
+                  data-testid="music-preview-btn"
+                  onClick={() => playMusicPreview()}
+                  disabled={loadingMusicPreview}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '7px 14px', borderRadius: 'var(--radius-sm)',
+                    border: `1.5px solid ${playingMusic ? 'var(--accent)' : 'var(--border)'}`,
+                    background: playingMusic ? 'rgba(139,92,246,0.15)' : 'var(--bg-card2)',
+                    color: playingMusic ? 'var(--accent)' : 'var(--text)',
+                    cursor: loadingMusicPreview ? 'wait' : 'pointer',
+                    fontSize: 13, fontWeight: 500, transition: 'all 0.15s',
+                  }}
+                >
+                  <span style={{ fontSize: 16 }}>
+                    {loadingMusicPreview ? '⏳' : playingMusic ? '⏹' : '▶'}
+                  </span>
+                  {loadingMusicPreview ? 'Загрузка...' : playingMusic ? 'Остановить' : 'Прослушать'}
+                </button>
+                <button
+                  type="button"
+                  data-testid="music-next-btn"
+                  onClick={nextMusicTrack}
+                  disabled={loadingMusicPreview}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    padding: '7px 12px', borderRadius: 'var(--radius-sm)',
+                    border: '1.5px solid var(--border)',
+                    background: 'var(--bg-card2)', color: 'var(--text-muted)',
+                    cursor: loadingMusicPreview ? 'wait' : 'pointer',
+                    fontSize: 13, fontWeight: 500, transition: 'all 0.15s',
+                  }}
+                  title="Следующий трек"
+                >
+                  🔀 Другой трек
+                </button>
+              </div>
               {musicPreviewInfo && (
                 <div style={{ fontSize: 11, color: playingMusic ? 'var(--accent)' : 'var(--text-muted)', padding: '4px 8px', borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
-                  {playingMusic ? '🎵 ' : ''}<strong>{musicPreviewInfo.trackName}</strong>
+                  {playingMusic ? '🎵 ' : ''}
+                  <strong>{musicPreviewInfo.trackName}</strong>
                   {musicPreviewInfo.artistName ? ` — ${musicPreviewInfo.artistName}` : ''}
+                  <span style={{ color: 'var(--text-muted)', marginLeft: 6 }}>#{musicTrackIdx + 1}</span>
                 </div>
               )}
               <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5, padding: '6px 10px', borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}>

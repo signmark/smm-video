@@ -1651,13 +1651,35 @@ export function SocialMediaSettings({
             <AccordionTrigger className="py-2">
               <div className="flex items-center space-x-2">
                 <span>ВКонтакте</span>
-                {isConfigured('vk') && <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">Настроено</Badge>}
+                {vkSettings?.authExpired
+                  ? <Badge variant="secondary" className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100">Требует переподключения</Badge>
+                  : isConfigured('vk') && <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">Настроено</Badge>
+                }
                 <ValidationBadge status={vkStatus} />
               </div>
             </AccordionTrigger>
             <AccordionContent className="space-y-4 pt-2">
+              {/* Баннер: соединение разорвано, нужно переподключить */}
+              {vkSettings?.authExpired && (
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/40 px-4 py-3">
+                  <div className="flex items-start gap-2 text-sm text-red-800 dark:text-red-200">
+                    <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0 text-red-500" />
+                    <span><span className="font-medium">ВКонтакте отключился.</span> Соединение разорвалось — нужно переподключить аккаунт, чтобы публикации продолжали работать.</span>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="destructive"
+                    className="shrink-0"
+                    onClick={() => setShowVkWizard(true)}
+                    data-testid="button-vk-reconnect"
+                  >
+                    Переподключить
+                  </Button>
+                </div>
+              )}
               {/* Предупреждение о невалидном токене */}
-              {vkStatus.isValid === false && (
+              {vkStatus.isValid === false && !vkSettings?.authExpired && (
                 <div className="flex items-start gap-2 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-3 py-2.5 text-sm text-amber-800 dark:text-amber-200">
                   <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0 text-amber-600 dark:text-amber-400" />
                   <span><span className="font-medium">Токен недействителен.</span> {vkStatus.message || "Обновите токен, чтобы публикации в VK работали."}</span>

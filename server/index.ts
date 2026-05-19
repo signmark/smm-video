@@ -1291,6 +1291,26 @@ async function refreshAllVkTokens() {
         if (newToken) {
           refreshed++;
           log(`[VK-CRON] Токен обновлён для кампании ${campaign.id}`, 'vk-cron');
+        } else {
+          // Рефреш не удался — помечаем кампанию как требующую переподключения
+          log(`[VK-CRON] Рефреш не удался для кампании ${campaign.id} — ставим authExpired=true`, 'vk-cron', 'error');
+          try {
+            const axiosInst2 = (await import('axios')).default;
+            const adminToken2 = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+            const directusUrl2 = process.env.DIRECTUS_URL;
+            const existing2Resp = await axiosInst2.get(`${directusUrl2}/items/user_campaigns/${campaign.id}`, {
+              headers: { Authorization: `Bearer ${adminToken2}` }
+            });
+            const existing2 = existing2Resp.data?.data?.social_media_settings || {};
+            await axiosInst2.patch(`${directusUrl2}/items/user_campaigns/${campaign.id}`, {
+              social_media_settings: {
+                ...existing2,
+                vk: { ...(existing2.vk || {}), authExpired: true }
+              }
+            }, { headers: { Authorization: `Bearer ${adminToken2}` } });
+          } catch (flagErr: any) {
+            log(`[VK-CRON] Не удалось сохранить authExpired: ${flagErr.message}`, 'vk-cron', 'warn');
+          }
         }
       } catch (e: any) {
         log(`[VK-CRON] Ошибка для кампании ${campaign.id}: ${e.message}`, 'vk-cron', 'error');

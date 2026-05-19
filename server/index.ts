@@ -1183,24 +1183,7 @@ app.use('/video-app', (req, res, next) => {
         log('✅ Планировщик публикаций успешно запущен', 'scheduler');
       }, 35000); // Задержка 35 секунд для завершения инициализации всех сервисов
 
-      // Фоновый job обновления VK токенов: первый запуск через 1 минуту, затем каждые 6 часов
-      setTimeout(async () => {
-        try {
-          const { refreshAllExpiringVkTokens } = await import('./services/vk-token-refresh');
-          log('[VK-CRON] Первый запуск фонового обновления VK токенов', 'vk-refresh');
-          await refreshAllExpiringVkTokens();
-        } catch (e: any) {
-          log(`[VK-CRON] Ошибка первого запуска: ${e.message}`, 'vk-refresh', 'warn');
-        }
-        setInterval(async () => {
-          try {
-            const { refreshAllExpiringVkTokens } = await import('./services/vk-token-refresh');
-            await refreshAllExpiringVkTokens();
-          } catch (e: any) {
-            log(`[VK-CRON] Ошибка планового обновления VK токенов: ${e.message}`, 'vk-refresh', 'warn');
-          }
-        }, 6 * 60 * 60 * 1000); // каждые 6 часов
-      }, 60 * 1000); // первый запуск через 1 минуту
+      // Авторефреш VK токенов отключён — обновление происходит только при публикации
 
       // Запускаем Telegram бота
       setTimeout(async () => {
@@ -1259,10 +1242,9 @@ function performGlobalMemoryCleanup() {
 setInterval(performGlobalMemoryCleanup, 30 * 60 * 1000);
 
 // ======================================================
-// Фоновое авто-обновление VK токенов (каждые 30 минут)
-// Обновляет токены всех кампаний у которых есть refreshToken + clientId
-// ======================================================
-async function refreshAllVkTokens() {
+// Фоновая проверка VK токенов (каждые 30 минут) — только мониторинг, без авторефреша
+// Обновление токена происходит только при реальной публикации в VK
+async function checkVkTokensStatus() {
   try {
     const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
     const directusUrl = process.env.DIRECTUS_URL;
@@ -1271,89 +1253,39 @@ async function refreshAllVkTokens() {
     const { default: axiosInst } = await import('axios');
     const resp = await axiosInst.get(`${directusUrl}/items/user_campaigns`, {
       headers: { Authorization: `Bearer ${adminToken}` },
-      params: { limit: -1, fields: 'id,social_media_settings' }
+      params: { limit: -1, fields: 'id,title,social_media_settings' }
     });
 
     const campaigns: any[] = resp.data?.data || [];
-    let refreshed = 0, skipped = 0;
-
-    const VK_DEFAULT_APP_ID = '6121396';
+    let active = 0, expired = 0, noToken = 0;
 
     for (const campaign of campaigns) {
       const vk = campaign.social_media_settings?.vk;
-      if (!vk?.refreshToken) { skipped++; continue; }
-      if (vk.authExpired) { skipped++; continue; } // уже требует переподключения — не трогаем
-      // clientId берём из настроек кампании или fallback на дефолтный app id
-      if (!vk.clientId) vk.clientId = process.env.VK_APP_ID || VK_DEFAULT_APP_ID;
-
-      // Обновляем токен если:
-      // 1. С последнего обновления прошло >8 часов (проактивно, независимо от tokenExpiresAt)
-      // 2. ИЛИ токен истекает менее чем через 2 часа / уже истёк / дата неизвестна
-      const eightHoursMs = 8 * 60 * 60 * 1000;
-      const twoHoursMs = 2 * 60 * 60 * 1000;
-      const lastRefreshed = vk.tokenRefreshedAt ? new Date(vk.tokenRefreshedAt).getTime() : 0;
+      if (!vk?.accessToken && !vk?.token) { noToken++; continue; }
+      if (vk.authExpired) {
+        expired++;
+        log(`[VK-CHECK] Кампания ${campaign.id} (${campaign.title || ''}): authExpired=true, требует переподключения`, 'vk-cron', 'warn');
+        continue;
+      }
       const expiresAt = vk.tokenExpiresAt ? new Date(vk.tokenExpiresAt).getTime() : 0;
-      const ageMs = Date.now() - lastRefreshed;
-      const needsByAge = ageMs > eightHoursMs;
-      const needsByExpiry = !expiresAt || (expiresAt - Date.now() < twoHoursMs);
-      if (!needsByAge && !needsByExpiry) { skipped++; continue; }
-      if (needsByAge) {
-        const hoursAgo = Math.round(ageMs / 3600000 * 10) / 10;
-        log(`[VK-CRON] Кампания ${campaign.id}: последний рефреш ${hoursAgo}ч назад — проактивно обновляю`, 'vk-cron');
-      } else {
-        const minsLeft = expiresAt ? Math.round((expiresAt - Date.now()) / 60000) : -1;
-        log(`[VK-CRON] Кампания ${campaign.id}: истекает через ${minsLeft} мин — обновляю`, 'vk-cron');
+      const minsLeft = expiresAt ? Math.round((expiresAt - Date.now()) / 60000) : null;
+      if (minsLeft !== null && minsLeft < 30) {
+        log(`[VK-CHECK] Кампания ${campaign.id}: токен истекает через ${minsLeft} мин`, 'vk-cron', 'warn');
       }
-
-      try {
-        const { refreshAndSaveVkToken } = await import('./services/vk-token-refresh');
-        const newToken = await refreshAndSaveVkToken(campaign.id, vk);
-        if (newToken) {
-          refreshed++;
-          log(`[VK-CRON] Токен обновлён для кампании ${campaign.id}`, 'vk-cron');
-        } else {
-          // null = временная ошибка (сеть/сервер VK). Просто логируем, не трогаем authExpired.
-          log(`[VK-CRON] Временная ошибка рефреша для кампании ${campaign.id} — попробуем в следующий раз`, 'vk-cron', 'warn');
-        }
-      } catch (e: any) {
-        if ((e as any).permanentFailure) {
-          // Постоянная OAuth-ошибка: refresh_token точно невалиден → сообщаем пользователю
-          log(`[VK-CRON] Постоянная OAuth-ошибка для кампании ${campaign.id}: ${e.message} — ставим authExpired=true`, 'vk-cron', 'error');
-          try {
-            const axiosInst2 = (await import('axios')).default;
-            const adminToken2 = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
-            const directusUrl2 = process.env.DIRECTUS_URL;
-            const existing2Resp = await axiosInst2.get(`${directusUrl2}/items/user_campaigns/${campaign.id}`, {
-              headers: { Authorization: `Bearer ${adminToken2}` }
-            });
-            const existing2 = existing2Resp.data?.data?.social_media_settings || {};
-            await axiosInst2.patch(`${directusUrl2}/items/user_campaigns/${campaign.id}`, {
-              social_media_settings: {
-                ...existing2,
-                vk: { ...(existing2.vk || {}), authExpired: true }
-              }
-            }, { headers: { Authorization: `Bearer ${adminToken2}` } });
-          } catch (flagErr: any) {
-            log(`[VK-CRON] Не удалось сохранить authExpired: ${flagErr.message}`, 'vk-cron', 'warn');
-          }
-        } else {
-          log(`[VK-CRON] Ошибка для кампании ${campaign.id}: ${e.message}`, 'vk-cron', 'error');
-        }
-      }
+      active++;
     }
 
-    log(`[VK-CRON] Завершено: обновлено=${refreshed}, пропущено=${skipped}`, 'vk-cron');
+    log(`[VK-CHECK] Статус: активных=${active}, истёкших=${expired}, без токена=${noToken}`, 'vk-cron');
   } catch (e: any) {
-    log(`[VK-CRON] Ошибка: ${e.message}`, 'vk-cron', 'error');
+    log(`[VK-CHECK] Ошибка: ${e.message}`, 'vk-cron', 'error');
   }
 }
 
-// Первый запуск через 1 минуту после старта, затем каждые 30 минут
-// VK токены живут 3600с (1 час) — проверяем часто, обновляем за 10 минут до истечения
+// Первая проверка через 5 минут после старта, затем каждые 30 минут
 setTimeout(() => {
-  refreshAllVkTokens();
-  setInterval(refreshAllVkTokens, 30 * 60 * 1000);
-}, 60 * 1000);
+  checkVkTokensStatus();
+  setInterval(checkVkTokensStatus, 30 * 60 * 1000);
+}, 5 * 60 * 1000);
 
 // Graceful shutdown для всех сервисов
 function gracefulShutdown(signal: string) {

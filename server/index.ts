@@ -1292,8 +1292,13 @@ async function refreshAllVkTokens() {
           refreshed++;
           log(`[VK-CRON] Токен обновлён для кампании ${campaign.id}`, 'vk-cron');
         } else {
-          // Рефреш не удался — помечаем кампанию как требующую переподключения
-          log(`[VK-CRON] Рефреш не удался для кампании ${campaign.id} — ставим authExpired=true`, 'vk-cron', 'error');
+          // null = временная ошибка (сеть/сервер VK). Просто логируем, не трогаем authExpired.
+          log(`[VK-CRON] Временная ошибка рефреша для кампании ${campaign.id} — попробуем в следующий раз`, 'vk-cron', 'warn');
+        }
+      } catch (e: any) {
+        if ((e as any).permanentFailure) {
+          // Постоянная OAuth-ошибка: refresh_token точно невалиден → сообщаем пользователю
+          log(`[VK-CRON] Постоянная OAuth-ошибка для кампании ${campaign.id}: ${e.message} — ставим authExpired=true`, 'vk-cron', 'error');
           try {
             const axiosInst2 = (await import('axios')).default;
             const adminToken2 = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
@@ -1311,9 +1316,9 @@ async function refreshAllVkTokens() {
           } catch (flagErr: any) {
             log(`[VK-CRON] Не удалось сохранить authExpired: ${flagErr.message}`, 'vk-cron', 'warn');
           }
+        } else {
+          log(`[VK-CRON] Ошибка для кампании ${campaign.id}: ${e.message}`, 'vk-cron', 'error');
         }
-      } catch (e: any) {
-        log(`[VK-CRON] Ошибка для кампании ${campaign.id}: ${e.message}`, 'vk-cron', 'error');
       }
     }
 

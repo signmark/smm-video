@@ -12,8 +12,8 @@ import { test, expect, Page } from './fixtures';
 
 // Учётные данные для тестов (.env: DIRECTUS_ADMIN_EMAIL, DIRECTUS_ADMIN_PASSWORD)
 const TEST_CREDENTIALS = {
-  email: process.env.TEST_EMAIL || process.env.ADMIN_EMAIL || process.env.DIRECTUS_ADMIN_EMAIL || 'lbrspb@gmail.com',
-  password: process.env.TEST_PASSWORD || process.env.ADMIN_PASSWORD || process.env.DIRECTUS_ADMIN_PASSWORD || 'QtpZ3dh7',
+  email: process.env.TEST_EMAIL || process.env.ADMIN_EMAIL || process.env.DIRECTUS_ADMIN_EMAIL || '',
+  password: process.env.TEST_PASSWORD || process.env.ADMIN_PASSWORD || process.env.DIRECTUS_ADMIN_PASSWORD || '',
 };
 
 // Основные навигационные ссылки (data-testid из Sidebar)

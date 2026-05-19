@@ -19,8 +19,8 @@ async function loginIfNeeded(page: Page) {
 
   if (page.url().includes('/auth/login') || page.url().includes('/login')) {
     console.log('[Auth] Выполняем ручной вход...');
-    await page.fill('input[name="email"]', 'lbrspb@gmail.com');
-    await page.fill('input[name="password"]', 'QtpZ3dh7');
+    await page.fill('input[name="email"]', process.env.TEST_EMAIL || process.env.DIRECTUS_ADMIN_EMAIL || '');
+    await page.fill('input[name="password"]', process.env.TEST_PASSWORD || process.env.DIRECTUS_ADMIN_PASSWORD || '');
     await page.click('button[type="submit"]');
     await page.waitForURL('**/campaigns', { timeout: 30000 });
   }

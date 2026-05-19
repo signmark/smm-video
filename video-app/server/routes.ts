@@ -893,20 +893,39 @@ async function scrapeLandingPage(url: string): Promise<string> {
   console.log(`[scraper] Fetching: ${url}`);
   const resp = await fetch(url, {
     signal: AbortSignal.timeout(15_000),
-    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; VideoBot/1.0; +https://omemo.tech)' },
+    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; VideoBot/1.0)' },
   });
   if (!resp.ok) throw new Error(`Failed to fetch landing page ${url}: HTTP ${resp.status}`);
   const html = await resp.text();
-  const text = html
+
+  // Extract <title> and first <h1> before stripping tags — use as product name
+  const titleMatch = html.match(/<title[^>]*>([^<]{3,120})<\/title>/i);
+  const h1Match = html.match(/<h1[^>]*>([^<]{3,120})<\/h1>/i);
+  // Prefer <title> (has brand name like "SMM Manager - tagline"), fallback to <h1>
+  const rawProductName = (titleMatch?.[1] ?? h1Match?.[1] ?? '').replace(/\s+/g, ' ').trim();
+
+  // Extract hostname to sanitize from content (e.g. "omemo.tech")
+  let hostname = '';
+  try { hostname = new URL(url).hostname.replace(/^www\./, ''); } catch {}
+
+  // Strip HTML
+  let text = html
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
     .replace(/<!--[\s\S]*?-->/g, ' ')
     .replace(/<[^>]+>/g, ' ')
     .replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"')
     .replace(/\s+/g, ' ')
-    .trim()
-    .slice(0, 8000);
-  console.log(`[scraper] Extracted ${text.length} chars from ${url}`);
+    .trim();
+
+  // Replace domain name occurrences with product name so AI doesn't rely on prior domain knowledge
+  if (hostname && rawProductName) {
+    const domainRe = new RegExp(hostname.replace('.', '\\.'), 'gi');
+    text = text.replace(domainRe, rawProductName);
+  }
+
+  text = text.slice(0, 8000);
+  console.log(`[scraper] Extracted ${text.length} chars, product="${rawProductName}", domain="${hostname}" replaced`);
   return text;
 }
 

@@ -82,11 +82,11 @@ function SidebarContent({ location, onNavigate, onLogout, userIsAdmin, isCollaps
       </div>
 
       {/* Navigation */}
-      <div className="flex-1 flex flex-col p-2 space-y-3 overflow-y-auto min-h-0 scrollbar-thin scrollbar-thumb-sidebar-border/50">
+      <div className="flex-1 flex flex-col p-2 space-y-1 overflow-y-auto min-h-0 scrollbar-thin scrollbar-thumb-sidebar-border/50">
         <div className="space-y-0.5">
           {/* Main Navigation */}
           {!isCollapsed && (
-            <div className="px-3 py-1 text-[10px] font-semibold text-sidebar-foreground/50 uppercase tracking-wider">
+            <div className="px-3 py-0.5 text-[10px] font-semibold text-sidebar-foreground/50 uppercase tracking-wider">
               {t('nav.home')}
             </div>
           )}
@@ -139,9 +139,9 @@ function SidebarContent({ location, onNavigate, onLogout, userIsAdmin, isCollaps
         {/* Admin Section */}
         {userIsAdmin && (
           <div className="space-y-0.5">
-            <div className="border-t border-sidebar-border/30 pt-2" />
+            <div className="border-t border-sidebar-border/30 pt-1" />
             {!isCollapsed && (
-              <div className="px-3 py-1 text-[10px] font-semibold text-sidebar-foreground/50 uppercase tracking-wider">
+              <div className="px-3 py-0.5 text-[10px] font-semibold text-sidebar-foreground/50 uppercase tracking-wider">
                 {t('admin.title')}
               </div>
             )}

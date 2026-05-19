@@ -9,9 +9,16 @@ export interface VkRefreshResult {
   expiresIn?: number;
 }
 
+// Коды ошибок OAuth2, при которых refresh_token точно невалиден
+// и переподключение обязательно (не временный сбой).
+const PERMANENT_OAUTH_ERRORS = ['invalid_grant', 'invalid_token', 'unauthorized', 'access_denied'];
+
 /**
  * Обновляет VK ID OAuth2 v2 токен через refresh_token.
- * Возвращает null при любой ошибке (в т.ч. если refresh_token тоже протух).
+ * Возвращает:
+ *   - VkRefreshResult при успехе
+ *   - null — временная ошибка (сеть, таймаут, сервер VK недоступен) — можно ретраить
+ *   - throws Error с .permanentFailure=true — токен точно невалиден, нужно переподключение
  */
 export async function refreshVkToken(settings: {
   refreshToken: string;
@@ -33,12 +40,25 @@ export async function refreshVkToken(settings: {
     });
 
     const d = resp.data;
+
+    // VK вернул OAuth-ошибку в теле с HTTP 200 (бывает)
+    if (d.error && PERMANENT_OAUTH_ERRORS.includes(d.error)) {
+      log(`[VK-REFRESH] Постоянная OAuth-ошибка: ${d.error} — ${d.error_description || ''}`, 'vk-refresh', 'error');
+      const err = new Error(`VK OAuth error: ${d.error} — ${d.error_description || ''}`);
+      (err as any).permanentFailure = true;
+      throw err;
+    }
+
     if (!d.access_token) {
       log(`[VK-REFRESH] Нет access_token в ответе: ${JSON.stringify(d)}`, 'vk-refresh', 'error');
       return null;
     }
 
-    log(`[VK-REFRESH] Токен успешно обновлён. Новый refresh_token получен: ${!!d.refresh_token}, expires_in=${d.expires_in}`, 'vk-refresh');
+    if (!d.refresh_token) {
+      log(`[VK-REFRESH] ⚠️ VK не вернул новый refresh_token — сохраняем старый. Это нормально, но следите за этим.`, 'vk-refresh', 'warn');
+    }
+
+    log(`[VK-REFRESH] Токен успешно обновлён. refresh_token обновлён: ${!!d.refresh_token}, expires_in=${d.expires_in}`, 'vk-refresh');
     return {
       accessToken: d.access_token,
       refreshToken: d.refresh_token || settings.refreshToken,
@@ -46,8 +66,20 @@ export async function refreshVkToken(settings: {
       expiresIn: d.expires_in
     };
   } catch (err: any) {
-    const msg = err.response?.data ? JSON.stringify(err.response.data) : err.message;
-    log(`[VK-REFRESH] Ошибка обновления токена: ${msg}`, 'vk-refresh', 'error');
+    // Перебрасываем постоянные ошибки наверх
+    if (err.permanentFailure) throw err;
+
+    // HTTP 400/401 с OAuth-ошибкой в теле — тоже постоянная
+    const errData = err.response?.data;
+    if (errData?.error && PERMANENT_OAUTH_ERRORS.includes(errData.error)) {
+      log(`[VK-REFRESH] Постоянная OAuth-ошибка (HTTP ${err.response?.status}): ${errData.error} — ${errData.error_description || ''}`, 'vk-refresh', 'error');
+      const permanent = new Error(`VK OAuth error: ${errData.error} — ${errData.error_description || ''}`);
+      (permanent as any).permanentFailure = true;
+      throw permanent;
+    }
+
+    const msg = errData ? JSON.stringify(errData) : err.message;
+    log(`[VK-REFRESH] Временная ошибка (retry возможен): ${msg}`, 'vk-refresh', 'warn');
     return null;
   }
 }
@@ -71,6 +103,8 @@ export async function refreshAndSaveVkToken(
     return null;
   }
 
+  // Пробрасываем permanentFailure наверх — вызывающий код решит ставить ли authExpired.
+  // Временные ошибки (null) просто возвращаем — можно ретраить.
   const result = await refreshVkToken({ refreshToken, clientId, deviceId });
   if (!result) return null;
 

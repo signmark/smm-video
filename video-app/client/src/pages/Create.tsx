@@ -510,7 +510,7 @@ export default function Create() {
     try {
       const defaultTitle =
         inputMode === 'custom' ? 'Пользовательский сценарий'
-        : inputMode === 'url' ? (landingUrl.trim().replace(/^https?:\/\//, '').split('/')[0] || 'Промо-видео')
+        : inputMode === 'url' ? 'Промо-видео'
         : topic.trim();
 
       const body: Record<string, any> = {

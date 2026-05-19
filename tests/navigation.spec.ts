@@ -11,8 +11,8 @@ async function login(page: Page) {
   await page.goto('/campaigns', { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(1500);
   if (page.url().includes('/auth/login') || page.url().includes('/login')) {
-    await page.fill('input[type="email"]', process.env.TEST_EMAIL || 'lbrspb@gmail.com');
-    await page.fill('input[type="password"]', process.env.TEST_PASSWORD || 'QtpZ3dh7');
+    await page.fill('input[type="email"]', process.env.TEST_EMAIL || process.env.DIRECTUS_ADMIN_EMAIL || '');
+    await page.fill('input[type="password"]', process.env.TEST_PASSWORD || process.env.DIRECTUS_ADMIN_PASSWORD || '');
     await page.getByRole('button', { name: /войти/i }).first().click();
     await page.waitForURL(/\/(campaigns|dashboard)/, { timeout: 30000 });
     await page.waitForTimeout(1000);

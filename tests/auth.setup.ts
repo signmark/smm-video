@@ -62,8 +62,11 @@ setup('authenticate', async ({ page }) => {
     fs.mkdirSync(authDir, { recursive: true });
   }
 
-  const email = process.env.TEST_EMAIL || process.env.ADMIN_EMAIL || process.env.DIRECTUS_ADMIN_EMAIL || 'lbrspb@gmail.com';
-  const password = process.env.TEST_PASSWORD || process.env.ADMIN_PASSWORD || process.env.DIRECTUS_ADMIN_PASSWORD || 'QtpZ3dh7';
+  const email = process.env.TEST_EMAIL || process.env.ADMIN_EMAIL || process.env.DIRECTUS_ADMIN_EMAIL;
+  const password = process.env.TEST_PASSWORD || process.env.ADMIN_PASSWORD || process.env.DIRECTUS_ADMIN_PASSWORD;
+  if (!email || !password) {
+    throw new Error('E2E auth: задайте TEST_EMAIL и TEST_PASSWORD (или DIRECTUS_ADMIN_EMAIL / DIRECTUS_ADMIN_PASSWORD) в переменных окружения');
+  }
 
   console.log(`Authenticating with ${email}...`);
 

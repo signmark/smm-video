@@ -2,8 +2,8 @@ import { test, expect } from './fixtures';
 import { dismissCookieBanner } from './helpers/dismiss-cookie-banner';
 
 const TEST_CREDENTIALS = {
-  email: process.env.TEST_EMAIL || process.env.DIRECTUS_ADMIN_EMAIL || 'lbrspb@gmail.com',
-  password: process.env.TEST_PASSWORD || process.env.DIRECTUS_ADMIN_PASSWORD || 'QtpZ3dh7',
+  email: process.env.TEST_EMAIL || process.env.DIRECTUS_ADMIN_EMAIL || '',
+  password: process.env.TEST_PASSWORD || process.env.DIRECTUS_ADMIN_PASSWORD || '',
 };
 
 // Russian site accessible from production server, no bot protection, rich content

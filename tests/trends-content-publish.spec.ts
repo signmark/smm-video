@@ -9,8 +9,8 @@
 import { test, expect, Page } from './fixtures';
 
 const CREDENTIALS = {
-  email: process.env.TEST_EMAIL || process.env.DIRECTUS_ADMIN_EMAIL || 'lbrspb@gmail.com',
-  password: process.env.TEST_PASSWORD || process.env.DIRECTUS_ADMIN_PASSWORD || 'QtpZ3dh7',
+  email: process.env.TEST_EMAIL || process.env.DIRECTUS_ADMIN_EMAIL || '',
+  password: process.env.TEST_PASSWORD || process.env.DIRECTUS_ADMIN_PASSWORD || '',
 };
 
 // ---------------------------------------------------------------------------

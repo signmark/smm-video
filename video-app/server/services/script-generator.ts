@@ -343,17 +343,22 @@ function getGeminiBase(): string {
   return 'https://generativelanguage.googleapis.com';
 }
 
-async function generateWithGemini(prompt: string, apiKey: string): Promise<string> {
+async function generateWithGemini(prompt: string, apiKey: string, systemInstruction?: string): Promise<string> {
   const base = getGeminiBase();
   const url = `${base}/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+  const body: any = {
+    contents: [{ role: 'user', parts: [{ text: prompt }] }],
+    generationConfig: { temperature: 0.7, topP: 0.95, maxOutputTokens: 4096 },
+  };
+  if (systemInstruction) {
+    body.systemInstruction = { parts: [{ text: systemInstruction }] };
+  }
 
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ role: 'user', parts: [{ text: prompt }] }],
-      generationConfig: { temperature: 0.7, topP: 0.95, maxOutputTokens: 4096 },
-    }),
+    body: JSON.stringify(body),
     signal: AbortSignal.timeout(60_000),
   });
 
@@ -369,15 +374,14 @@ async function generateWithGemini(prompt: string, apiKey: string): Promise<strin
   return text;
 }
 
-async function generateWithOpenAI(prompt: string, apiKey: string): Promise<string> {
+async function generateWithOpenAI(prompt: string, apiKey: string, systemInstruction?: string): Promise<string> {
+  const messages: any[] = [];
+  if (systemInstruction) messages.push({ role: 'system', content: systemInstruction });
+  messages.push({ role: 'user', content: prompt });
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
-    body: JSON.stringify({
-      model: 'gpt-4o-mini',
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 2048,
-    }),
+    body: JSON.stringify({ model: 'gpt-4o-mini', messages, max_tokens: 2048 }),
   });
   if (!res.ok) {
     const err = await res.text();
@@ -387,11 +391,12 @@ async function generateWithOpenAI(prompt: string, apiKey: string): Promise<strin
   return data.choices[0].message.content.trim();
 }
 
-async function generateWithClaude(prompt: string, apiKey: string): Promise<string> {
+async function generateWithClaude(prompt: string, apiKey: string, systemInstruction?: string): Promise<string> {
   const client = new Anthropic({ apiKey });
   const message = await client.messages.create({
     model: 'claude-3-5-haiku-20241022',
     max_tokens: 2048,
+    system: systemInstruction,
     messages: [{ role: 'user', content: prompt }],
   });
   const block = message.content[0];
@@ -434,6 +439,21 @@ export async function generateScript(params: {
       : buildI2VPrompt(safeParams, sceneCount, sceneDuration);
   }
 
+  // When generating from a landing page, extract the product name for a hard system instruction
+  // This prevents models (especially Gemini) from overriding content with training knowledge about the domain
+  let systemInstruction: string | undefined;
+  if (hasLanding) {
+    const firstLine = safeParams.landingPageContent!.split(/[.!?\n]/).find(l => l.trim().length > 10)?.trim() ?? '';
+    systemInstruction =
+      `You are a professional marketing video scriptwriter. ` +
+      `Your ONLY task is to write a promo video script based on the landing page content provided by the user. ` +
+      `CRITICAL: Completely ignore any prior knowledge you have about the domain name, URL, or brand. ` +
+      `The product being promoted is: "${firstLine}". ` +
+      `Do not mention encryption, security protocols, or cybersecurity unless the landing page content explicitly describes those as the product's features. ` +
+      `Return only valid JSON as instructed in the user message.`;
+    console.log(`[script-gen] Landing mode — systemInstruction set, product hint: "${firstLine.slice(0, 80)}"`);
+  }
+
   console.log(`[script-gen] Mode: ${isT2V ? 'T2V' : 'I2V'}, lang: ${safeParams.language}, scenes: ${sceneCount}×${sceneDuration}s`);
 
   const geminiKey = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY;
@@ -449,7 +469,7 @@ export async function generateScript(params: {
   if (geminiKey) {
     try {
       console.log(`[script-gen] Using Gemini${process.env.GEMINI_PROXY_URL ? ' via proxy' : ' direct'}...`);
-      const text = await generateWithGemini(prompt, geminiKey);
+      const text = await generateWithGemini(prompt, geminiKey, systemInstruction);
       return parseScriptJson(text, sceneCount, isT2V);
     } catch (err: any) {
       const msg = `Gemini: ${err.message}`;
@@ -461,7 +481,7 @@ export async function generateScript(params: {
   if (openaiKey) {
     try {
       console.log('[script-gen] Using OpenAI...');
-      const text = await generateWithOpenAI(prompt, openaiKey);
+      const text = await generateWithOpenAI(prompt, openaiKey, systemInstruction);
       return parseScriptJson(text, sceneCount, isT2V);
     } catch (err: any) {
       const msg = `OpenAI: ${err.message}`;
@@ -473,7 +493,7 @@ export async function generateScript(params: {
   if (claudeKey) {
     try {
       console.log('[script-gen] Using Claude...');
-      const text = await generateWithClaude(prompt, claudeKey);
+      const text = await generateWithClaude(prompt, claudeKey, systemInstruction);
       return parseScriptJson(text, sceneCount, isT2V);
     } catch (err: any) {
       const msg = `Claude: ${err.message}`;

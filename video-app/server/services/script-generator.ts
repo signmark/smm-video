@@ -113,17 +113,26 @@ function buildLandingI2VPrompt(params: { landingPageContent: string; topic: stri
     : 'square (Instagram/VK)';
   const wordsPerSec = params.language === 'ru' ? 1.8 : 2.3;
   const narrationWords = Math.round(sceneDuration * wordsPerSec);
+  // Extract first meaningful line as a strong product hint
+  const firstLine = params.landingPageContent.split(/[.!?\n]/).find(l => l.trim().length > 10)?.trim() ?? '';
 
-  return `You are a top-tier product marketing expert and video scriptwriter. Analyze the following landing page content and create a compelling product promotion reel script.
+  return `You are a top-tier product marketing expert and video scriptwriter.
 
-LANDING PAGE CONTENT:
+⚠️ CRITICAL INSTRUCTION: You MUST base this script EXCLUSIVELY on the landing page content provided below.
+Do NOT use any prior training knowledge about the domain name, URL, or company name.
+The landing page content is the ONLY source of truth. If your prior knowledge contradicts this content — IGNORE your prior knowledge.
+
+PRODUCT SUMMARY (extracted from page title/header):
+"${firstLine}"
+
+FULL LANDING PAGE CONTENT:
 """
 ${params.landingPageContent.slice(0, 6000)}
 """
 
 Create a ${params.duration}-second ${formatDesc} PRODUCT PROMOTION video script with EXACTLY ${sceneCount} scenes (~${sceneDuration} seconds each).
 
-The video must: hook viewers in the first 3 seconds, clearly communicate the product's core value, highlight 2-3 key benefits, and end with a strong call-to-action. Use the product's actual name, features, and benefits from the landing page.
+The video must: hook viewers in the first 3 seconds, clearly communicate the product's core value, highlight 2-3 key benefits, and end with a strong call-to-action. Use the product's actual name, features, and benefits FROM THE LANDING PAGE CONTENT ABOVE — not from any other source.
 
 Return ONLY valid JSON, no markdown, no explanation:
 {
@@ -165,9 +174,19 @@ function buildLandingT2VPrompt(params: { landingPageContent: string; topic: stri
   const wordsPerSec = params.language === 'ru' ? 1.8 : 2.3;
   const narrationWords = Math.round(sceneDuration * wordsPerSec);
 
-  return `You are a top-tier product marketing expert and video scriptwriter. Analyze the following landing page and create a compelling Text-to-Video product promotion reel script.
+  // Extract first meaningful line as a strong product hint
+  const firstLine = params.landingPageContent.split(/[.!?\n]/).find(l => l.trim().length > 10)?.trim() ?? '';
 
-LANDING PAGE CONTENT:
+  return `You are a top-tier product marketing expert and video scriptwriter.
+
+⚠️ CRITICAL INSTRUCTION: You MUST base this script EXCLUSIVELY on the landing page content provided below.
+Do NOT use any prior training knowledge about the domain name, URL, or company name.
+The landing page content is the ONLY source of truth. If your prior knowledge contradicts this content — IGNORE your prior knowledge.
+
+PRODUCT SUMMARY (extracted from page title/header):
+"${firstLine}"
+
+FULL LANDING PAGE CONTENT:
 """
 ${params.landingPageContent.slice(0, 6000)}
 """

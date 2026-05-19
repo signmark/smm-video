@@ -15,7 +15,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, CheckCircle, XCircle, AlertCircle, AlertTriangle, Youtube } from "lucide-react";
+import { Loader2, CheckCircle, XCircle, AlertCircle, AlertTriangle, Youtube, RefreshCw } from "lucide-react";
 import { directusApi } from "@/lib/directus";
 import { api } from "@/lib/api";
 import { apiRequest } from "@/lib/queryClient";
@@ -213,6 +213,11 @@ export function SocialMediaSettings({
   const [vkWebhookCopied, setVkWebhookCopied] = useState(false);
   const [vkShowManual, setVkShowManual] = useState(false);
   const vkPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  // Состояние для инлайн-переподключения VK (PKCE popup)
+  const [isVkReconnecting, setIsVkReconnecting] = useState(false);
+  const vkReconnectListenerRef = useRef<((e: MessageEvent) => void) | null>(null);
+  const vkReconnectCheckRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Функция проверки статуса настройки платформ
   const isConfigured = (platform: 'instagram' | 'youtube' | 'facebook' | 'vk' | 'telegram' | 'threads' | 'tiktok') => {
@@ -610,6 +615,52 @@ export function SocialMediaSettings({
     }
   };
 
+  // Инлайн-переподключение VK через PKCE popup (без открытия мастера настройки)
+  const startVkReconnect = () => {
+    const popup = window.open(
+      `/api/vk/oauth2/start?campaign_id=${campaignId}`,
+      "vk-oauth2-reconnect",
+      "width=600,height=700,scrollbars=yes"
+    );
+    if (!popup) {
+      toast({ title: "Ошибка", description: "Не удалось открыть окно авторизации VK. Разрешите всплывающие окна.", variant: "destructive" });
+      return;
+    }
+    setIsVkReconnecting(true);
+
+    const listener = (e: MessageEvent) => {
+      if (e.origin !== window.location.origin) return;
+      if (e.data?.type === "VK_OAUTH2_SUCCESS") {
+        cleanupVkReconnect();
+        loadVkSettings();
+        toast({ title: "VK переподключён", description: "Токен обновлён — публикации возобновятся." });
+      } else if (e.data?.type === "VK_OAUTH_ERROR") {
+        cleanupVkReconnect();
+        toast({ title: "Ошибка авторизации VK", description: e.data.error || "Попробуйте ещё раз.", variant: "destructive" });
+      }
+    };
+    vkReconnectListenerRef.current = listener;
+    window.addEventListener("message", listener);
+
+    vkReconnectCheckRef.current = setInterval(() => {
+      if (popup.closed) {
+        cleanupVkReconnect();
+      }
+    }, 1000);
+  };
+
+  const cleanupVkReconnect = () => {
+    if (vkReconnectListenerRef.current) {
+      window.removeEventListener("message", vkReconnectListenerRef.current);
+      vkReconnectListenerRef.current = null;
+    }
+    if (vkReconnectCheckRef.current) {
+      clearInterval(vkReconnectCheckRef.current);
+      vkReconnectCheckRef.current = null;
+    }
+    setIsVkReconnecting(false);
+  };
+
   // Функция загрузки Instagram настроек из базы данных
   // Функция для переключения Instagram аккаунтов
   const handleSwitchInstagramAccount = async () => {
@@ -927,6 +978,14 @@ export function SocialMediaSettings({
       window.removeEventListener('message', handleOAuthSuccess);
     };
   }, [campaignId, loadInstagramSettings, loadVkSettings, toast]);
+
+  // Очищаем ресурсы инлайн-переподключения VK при размонтировании
+  useEffect(() => {
+    return () => {
+      if (vkReconnectListenerRef.current) window.removeEventListener("message", vkReconnectListenerRef.current);
+      if (vkReconnectCheckRef.current) clearInterval(vkReconnectCheckRef.current);
+    };
+  }, []);
 
   // Обновляем форму когда Instagram настройки загружены
   useEffect(() => {
@@ -1671,10 +1730,14 @@ export function SocialMediaSettings({
                     size="sm"
                     variant="destructive"
                     className="shrink-0"
-                    onClick={() => setShowVkWizard(true)}
+                    onClick={startVkReconnect}
+                    disabled={isVkReconnecting}
                     data-testid="button-vk-reconnect"
                   >
-                    Переподключить
+                    {isVkReconnecting
+                      ? <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Подключение...</>
+                      : <><RefreshCw className="mr-1.5 h-3.5 w-3.5" />Переподключить VK</>
+                    }
                   </Button>
                 </div>
               )}

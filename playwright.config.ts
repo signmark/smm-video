@@ -1,50 +1,45 @@
 import { defineConfig, devices } from '@playwright/test';
+import fs from 'fs';
 
-/**
- * See https://playwright.dev/docs/test-configuration.
- */
+const NIX_CHROMIUM = '/nix/store/qa9cnw4v5xkxyip6mb9kxqfq1z4x2dx1-chromium-138.0.7204.100/bin/chromium';
+const systemChromium = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
+  || (fs.existsSync(NIX_CHROMIUM) ? NIX_CHROMIUM : undefined);
+
 export default defineConfig({
   testDir: './tests',
-  /* Run tests in files in parallel */
   fullyParallel: true,
-  /* Fail the build on CI if you accidentally left test.only in the source code. */
   forbidOnly: !!process.env.CI,
-  /* Retry on CI only */
   retries: process.env.CI ? 2 : 0,
-  /* Opt out of parallel tests on CI. */
   workers: process.env.CI ? 1 : (process.env.PLAYWRIGHT_WORKERS ? parseInt(process.env.PLAYWRIGHT_WORKERS) : 3),
-  /* Reporter to use. See https://playwright.dev/docs/test-reporters */
   reporter: 'html',
   timeout: process.env.PLAYWRIGHT_TIMEOUT ? parseInt(process.env.PLAYWRIGHT_TIMEOUT) : 30000,
-  /* Shared settings for all the projects below. See https://playwright.dev/docs/api/class-testoptions. */
   use: {
-    /* Base URL — задать PLAYWRIGHT_BASE_URL для своего порта (например http://localhost:9323) */
     baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5000',
-
-    /* Collect trace when retrying the failed test. See https://playwright.dev/docs/trace-viewer */
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     actionTimeout: 10000,
     navigationTimeout: 30000,
   },
 
-  /* Configure projects for major browsers */
   projects: [
     {
       name: 'setup',
       testMatch: /.*\.setup\.ts/,
+      use: {
+        ...(systemChromium ? { launchOptions: { executablePath: systemChromium } } : {}),
+      },
     },
     {
       name: 'chromium',
       use: {
         ...devices['Desktop Chrome'],
         storageState: 'playwright/.auth/user.json',
+        ...(systemChromium ? { launchOptions: { executablePath: systemChromium } } : {}),
       },
       dependencies: ['setup'],
     },
   ],
 
-  /* Run your local dev server before starting the tests (не запускается, если задан PLAYWRIGHT_BASE_URL) */
   webServer: process.env.PLAYWRIGHT_BASE_URL
     ? undefined
     : {

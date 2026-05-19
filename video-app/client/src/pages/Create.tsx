@@ -1,4 +1,4 @@
-import { useState, useRef, FormEvent } from 'react';
+import { useState, useRef, useEffect, FormEvent } from 'react';
 import { navigate } from '../App';
 import { API } from '../api';
 
@@ -371,6 +371,15 @@ export default function Create() {
   const musicAbortRef = useRef<AbortController | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  // Stop all audio when navigating away from the page
+  useEffect(() => {
+    return () => {
+      if (musicAbortRef.current) { musicAbortRef.current.abort(); musicAbortRef.current = null; }
+      if (musicAudioRef.current) { musicAudioRef.current.pause(); musicAudioRef.current.src = ''; musicAudioRef.current = null; }
+      if (audioRef.current) { audioRef.current.pause(); audioRef.current.src = ''; audioRef.current = null; }
+    };
+  }, []);
 
   function stopMusicPreview() {
     // Cancel any in-progress metadata fetch

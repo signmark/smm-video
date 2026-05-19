@@ -103,6 +103,100 @@ Rules:
 - Exactly ${sceneCount} scenes total`;
 }
 
+// ── Landing page product promo prompts ───────────────────────────────────────
+
+function buildLandingI2VPrompt(params: { landingPageContent: string; topic: string; format: VideoFormat; duration: number; language: 'ru' | 'en' }, sceneCount: number, sceneDuration: number): string {
+  const langName = params.language === 'ru' ? 'Russian' : 'English';
+  const formatDesc =
+    params.format === '9:16' ? 'vertical portrait (Shorts/Reels/TikTok)'
+    : params.format === '16:9' ? 'horizontal landscape (YouTube)'
+    : 'square (Instagram/VK)';
+  const wordsPerSec = params.language === 'ru' ? 1.8 : 2.3;
+  const narrationWords = Math.round(sceneDuration * wordsPerSec);
+
+  return `You are a top-tier product marketing expert and video scriptwriter. Analyze the following landing page content and create a compelling product promotion reel script.
+
+LANDING PAGE CONTENT:
+"""
+${params.landingPageContent.slice(0, 6000)}
+"""
+
+Create a ${params.duration}-second ${formatDesc} PRODUCT PROMOTION video script with EXACTLY ${sceneCount} scenes (~${sceneDuration} seconds each).
+
+The video must: hook viewers in the first 3 seconds, clearly communicate the product's core value, highlight 2-3 key benefits, and end with a strong call-to-action. Use the product's actual name, features, and benefits from the landing page.
+
+Return ONLY valid JSON, no markdown, no explanation:
+{
+  "title": "catchy video title in ${langName}",
+  "scenes": [
+    {
+      "text": "Short punchy subtitle in ${langName} (max 6 words, shown on screen as caption)",
+      "narration": "Voiceover in ${langName}. EXACTLY ~${narrationWords} words. Natural spoken language, persuasive but not pushy. Hook, benefit, or CTA depending on scene position.",
+      "stockQuery": "2-4 simple English keywords for Pexels stock footage. Generic visual terms: 'person using laptop', 'team collaboration office', 'smartphone app interface', 'happy customer smiling'. NO brand names.",
+      "imagePrompt": "Detailed English visual for this scene. Cinematic, photorealistic, NO TEXT IN IMAGE.",
+      "motionPrompt": "English description of camera/subject movement for this ${sceneDuration}s clip.",
+      "backgroundPrompt": "Background/environment only in English. Setting, lighting, atmosphere — NO people, NO products.",
+      "subjectPrompt": "Main subject only in English on pure white background. Product/person with precise visual details.",
+      "duration": ${sceneDuration}
+    }
+  ]
+}
+
+Scene structure for a promo reel:
+- Scene 1: HOOK — grab attention, tease the problem or transformation (don't name the product yet)
+- Scene 2: PROBLEM/PAIN — relatable pain point the product solves
+- Scenes 3+: SOLUTION/BENEFITS — show product solving the problem, key features
+- Last scene: CTA — clear call-to-action (visit site, try free, get started)
+
+Rules:
+- "text" in ${langName}, max 6 words, punchy subtitle shown on screen
+- "narration" in ${langName}, EXACTLY ~${narrationWords} words, conversational tone
+- "stockQuery" always in English, generic visual keywords (no brand/product names)
+- "imagePrompt" always in English, vivid and specific
+- Exactly ${sceneCount} scenes`;
+}
+
+function buildLandingT2VPrompt(params: { landingPageContent: string; topic: string; format: VideoFormat; duration: number; language: 'ru' | 'en' }, sceneCount: number, sceneDuration: number): string {
+  const langName = params.language === 'ru' ? 'Russian' : 'English';
+  const formatDesc =
+    params.format === '9:16' ? 'vertical portrait 9:16, mobile-optimized'
+    : params.format === '16:9' ? 'horizontal landscape 16:9, widescreen cinematic'
+    : 'square 1:1';
+  const wordsPerSec = params.language === 'ru' ? 1.8 : 2.3;
+  const narrationWords = Math.round(sceneDuration * wordsPerSec);
+
+  return `You are a top-tier product marketing expert and video scriptwriter. Analyze the following landing page and create a compelling Text-to-Video product promotion reel script.
+
+LANDING PAGE CONTENT:
+"""
+${params.landingPageContent.slice(0, 6000)}
+"""
+
+Create a ${params.duration}-second ${formatDesc} PRODUCT PROMOTION script with EXACTLY ${sceneCount} scenes (~${sceneDuration} seconds each).
+
+CRITICAL RULE FOR t2vPrompt: Each ${sceneDuration}-second clip is generated INDEPENDENTLY with zero context from other clips. Describe EVERYTHING in every t2vPrompt. Each scene MUST be visually DISTINCT.
+
+Return ONLY valid JSON, no markdown:
+{
+  "title": "catchy video title in ${langName}",
+  "style_anchor": "3-5 words: visual style for the whole promo, e.g. 'clean modern bright professional' or 'dark moody cinematic product'",
+  "scenes": [
+    {
+      "text": "Short punchy subtitle in ${langName} (max 8 words)",
+      "narration": "Voiceover in ${langName}. ~${narrationWords} words. Hook, benefit, or CTA depending on scene.",
+      "imagePrompt": "Detailed English visual description (fallback). NO text in image.",
+      "t2vPrompt": "ULTRA-DETAILED cinematic T2V prompt in English. [STYLE: style_anchor + color grade]. [ENVIRONMENT: exact location, materials, textures, colors]. [LIGHTING: source, direction, temperature, shadows]. [SUBJECT: every object/person — colors, materials, position]. [ACTION: precise movement]. [CAMERA: shot type + movement]. [ATMOSPHERE: bokeh/depth/grain]. 5-8 dense sentences.",
+      "duration": ${sceneDuration}
+    }
+  ]
+}
+
+Scene structure: Hook → Pain Point → Solution/Benefits → CTA
+- narration always in ${langName}, ~${narrationWords} words
+- t2vPrompt always in English, exhaustively detailed
+- Exactly ${sceneCount} scenes`;
+}
+
 // ── Custom scenario prompts ───────────────────────────────────────────────────
 
 function buildCustomI2VPrompt(params: { customScenario: string; format: VideoFormat; duration: number; language: 'ru' | 'en' }, sceneCount: number, sceneDuration: number): string {
@@ -294,6 +388,7 @@ export async function generateScript(params: {
   duration: number;
   language: 'ru' | 'en';
   customScenario?: string;
+  landingPageContent?: string;
   t2v?: boolean;
   animationModel?: string;
   clipDuration?: number;
@@ -303,9 +398,14 @@ export async function generateScript(params: {
   const { sceneCount, sceneDuration } = getSceneLayout(safeParams.duration, safeParams.animationModel ?? 'wan', safeParams.clipDuration);
   const isT2V = safeParams.t2v === true;
   const hasCustom = safeParams.customScenario && safeParams.customScenario.trim().length > 10;
+  const hasLanding = safeParams.landingPageContent && safeParams.landingPageContent.trim().length > 50;
 
   let prompt: string;
-  if (hasCustom) {
+  if (hasLanding) {
+    prompt = isT2V
+      ? buildLandingT2VPrompt({ ...safeParams, landingPageContent: safeParams.landingPageContent! }, sceneCount, sceneDuration)
+      : buildLandingI2VPrompt({ ...safeParams, landingPageContent: safeParams.landingPageContent! }, sceneCount, sceneDuration);
+  } else if (hasCustom) {
     prompt = isT2V
       ? buildCustomT2VPrompt({ ...safeParams, customScenario: safeParams.customScenario! }, sceneCount, sceneDuration)
       : buildCustomI2VPrompt({ ...safeParams, customScenario: safeParams.customScenario! }, sceneCount, sceneDuration);

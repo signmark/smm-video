@@ -82,6 +82,7 @@ export interface VideoProject {
   progressMessage: string;
   script?: Script;
   customScenario?: string;
+  landingUrl?: string;
   videoPath?: string;
   videoUrl?: string;
   error?: string;
@@ -135,6 +136,7 @@ function projectToDirectus(p: Partial<VideoProject>): Record<string, any> {
   if (p.title !== undefined) d.title = p.title;
   if (p.topic !== undefined) d.topic = p.topic;
   if (p.customScenario !== undefined) d.custom_scenario = p.customScenario;
+  if (p.landingUrl !== undefined) d.landing_url = p.landingUrl;
   if (p.format !== undefined) d.format = p.format;
   if (p.duration !== undefined) d.duration = p.duration;
   if (p.language !== undefined) d.language = p.language;
@@ -162,6 +164,7 @@ function directusToProject(row: any): VideoProject {
     title: row.title,
     topic: row.topic ?? '',
     customScenario: row.custom_scenario ?? undefined,
+    landingUrl: row.landing_url ?? undefined,
     format: row.format as VideoFormat,
     duration: row.duration,
     language: row.language ?? 'ru',
@@ -257,6 +260,7 @@ async function ensureTable(): Promise<void> {
   await p.query(`ALTER TABLE video_projects ADD COLUMN IF NOT EXISTS subtitle_size TEXT`);
   await p.query(`ALTER TABLE video_projects ADD COLUMN IF NOT EXISTS subtitle_color TEXT`);
   await p.query(`ALTER TABLE video_projects ADD COLUMN IF NOT EXISTS music_style TEXT`);
+  await p.query(`ALTER TABLE video_projects ADD COLUMN IF NOT EXISTS landing_url TEXT`);
 }
 
 let tableReady = false;
@@ -288,6 +292,7 @@ function rowToProject(row: any): VideoProject {
     progressMessage: row.progress_message,
     script: row.script ?? undefined,
     customScenario: row.custom_scenario ?? undefined,
+    landingUrl: row.landing_url ?? undefined,
     videoPath: row.video_path ?? undefined,
     videoUrl: row.video_url ?? undefined,
     error: row.error ?? undefined,
@@ -337,6 +342,7 @@ export async function createProject(data: {
   subtitleColor?: string;
   musicStyle?: string;
   customScenario?: string;
+  landingUrl?: string;
 }): Promise<VideoProject> {
   const id = uuidv4();
   const now = new Date().toISOString();
@@ -382,15 +388,15 @@ export async function createProject(data: {
       `INSERT INTO video_projects
         (id, title, topic, format, duration, language, animation_model, subtitle_style, voice, clip_duration,
          subtitle_font, subtitle_size, subtitle_color,
-         status, progress, progress_message, custom_scenario, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
+         status, progress, progress_message, custom_scenario, landing_url, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
       [
         project.id, project.title, project.topic, project.format,
         project.duration, project.language, project.animationModel, project.subtitleStyle,
         project.voice ?? null, project.clipDuration ?? null,
         project.subtitleFont ?? null, project.subtitleSize ?? null, project.subtitleColor ?? null,
         project.status, project.progress, project.progressMessage,
-        project.customScenario ?? null,
+        project.customScenario ?? null, project.landingUrl ?? null,
         project.createdAt, project.updatedAt,
       ]
     );
@@ -472,7 +478,7 @@ export async function updateProject(
       subtitleFont: 'subtitle_font', subtitleSize: 'subtitle_size', subtitleColor: 'subtitle_color',
       musicStyle: 'music_style', status: 'status',
       progress: 'progress', progressMessage: 'progress_message', script: 'script',
-      customScenario: 'custom_scenario', videoPath: 'video_path',
+      customScenario: 'custom_scenario', landingUrl: 'landing_url', videoPath: 'video_path',
       videoUrl: 'video_url', error: 'error',
     };
 

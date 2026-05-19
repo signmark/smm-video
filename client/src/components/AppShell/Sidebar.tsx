@@ -82,7 +82,7 @@ function SidebarContent({ location, onNavigate, onLogout, userIsAdmin, isCollaps
       </div>
 
       {/* Navigation */}
-      <div className="flex-1 flex flex-col p-2 space-y-1 overflow-y-auto min-h-0 scrollbar-thin scrollbar-thumb-sidebar-border/50">
+      <div className="flex-1 flex flex-col p-2 space-y-1">
         <div className="space-y-0.5">
           {/* Main Navigation */}
           {!isCollapsed && (

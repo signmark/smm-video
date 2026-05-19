@@ -100,6 +100,7 @@ export async function refreshAndSaveVkToken(
       clientId: clientId,                         // явно сохраняем clientId
       tokenExpiresAt,
       tokenRefreshedAt: new Date().toISOString(), // маркер последнего успешного рефреша
+      authExpired: false,                         // сбрасываем флаг "требует переподключения"
     };
 
     await axios2.patch(`${directusUrl}/items/user_campaigns/${campaignId}`, {

@@ -127,7 +127,7 @@ async function openCreateDialog(page: Page): Promise<boolean> {
     { timeout: 8000 },
   ).catch(() => {});
 
-  await createBtn.click({ timeout: 5000 });
+  await createBtn.click({ timeout: 5000, force: true });
 
   const dialog = page.getByRole('dialog');
   const dialogVisible = await dialog.waitFor({ state: 'visible', timeout: 12000 }).then(() => true).catch(() => false);

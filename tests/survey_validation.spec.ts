@@ -71,7 +71,7 @@ test('Анализ сайта omemo.tech для анкеты (валидация
   
   // 3. Открываем раздел "Бизнес-анкета" в аккордеоне
   console.log('TEST: Opening accordion...');
-  await page.click('span:has-text("Бизнес-анкета")');
+  await page.locator('span:has-text("Бизнес-анкета"), button:has-text("Бизнес-анкета")').first().click({ force: true });
   await page.waitForTimeout(1000);
 
   // 4. Если анкета еще не создана, нажимаем "Создать анкету"

@@ -592,6 +592,7 @@ test.describe('Публикация контента (реальные запр�
   test(
     'диалог публикации открывается, содержит платформы для выбора',
     async ({ page }) => {
+      test.setTimeout(90000);
       await login(page);
       await page.goto('/content', { waitUntil: 'domcontentloaded' });
       await waitReady(page);

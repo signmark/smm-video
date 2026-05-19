@@ -1712,7 +1712,11 @@ export function SocialMediaSettings({
                 <span>ВКонтакте</span>
                 {vkSettings?.authExpired
                   ? <Badge variant="secondary" className="bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-100">Требует переподключения</Badge>
-                  : isConfigured('vk') && <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">Настроено</Badge>
+                  : isConfigured('vk') && (
+                    <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">
+                      {vkSettings?.groupName ? `Настроено · Группа: ${vkSettings.groupName}` : 'Настроено'}
+                    </Badge>
+                  )
                 }
                 <ValidationBadge status={vkStatus} />
               </div>

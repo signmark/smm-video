@@ -1266,17 +1266,23 @@ async function refreshAllVkTokens() {
       // clientId берём из настроек кампании или fallback на дефолтный app id
       if (!vk.clientId) vk.clientId = process.env.VK_APP_ID || VK_DEFAULT_APP_ID;
 
-      // Обновляем токен если до истечения менее 60 минут, уже истёк, или дата неизвестна.
-      // VK PKCE токены живут 24 часа — обновляем за час до истечения,
-      // чтобы при разовом сбое оставались ещё 2 попытки (cron каждые 30 мин).
+      // Обновляем токен если:
+      // 1. С последнего обновления прошло >8 часов (проактивно, независимо от tokenExpiresAt)
+      // 2. ИЛИ токен истекает менее чем через 2 часа / уже истёк / дата неизвестна
+      const eightHoursMs = 8 * 60 * 60 * 1000;
+      const twoHoursMs = 2 * 60 * 60 * 1000;
+      const lastRefreshed = vk.tokenRefreshedAt ? new Date(vk.tokenRefreshedAt).getTime() : 0;
       const expiresAt = vk.tokenExpiresAt ? new Date(vk.tokenExpiresAt).getTime() : 0;
-      const sixtyMinutesMs = 60 * 60 * 1000;
-      if (expiresAt && expiresAt - Date.now() > sixtyMinutesMs) { skipped++; continue; }
-      if (expiresAt) {
-        const minsLeft = Math.round((expiresAt - Date.now()) / 60000);
-        log(`[VK-CRON] Кампания ${campaign.id}: истекает через ${minsLeft} мин — обновляю`, 'vk-cron');
+      const ageMs = Date.now() - lastRefreshed;
+      const needsByAge = ageMs > eightHoursMs;
+      const needsByExpiry = !expiresAt || (expiresAt - Date.now() < twoHoursMs);
+      if (!needsByAge && !needsByExpiry) { skipped++; continue; }
+      if (needsByAge) {
+        const hoursAgo = Math.round(ageMs / 3600000 * 10) / 10;
+        log(`[VK-CRON] Кампания ${campaign.id}: последний рефреш ${hoursAgo}ч назад — проактивно обновляю`, 'vk-cron');
       } else {
-        log(`[VK-CRON] Кампания ${campaign.id}: tokenExpiresAt не задан — обновляю`, 'vk-cron');
+        const minsLeft = expiresAt ? Math.round((expiresAt - Date.now()) / 60000) : -1;
+        log(`[VK-CRON] Кампания ${campaign.id}: истекает через ${minsLeft} мин — обновляю`, 'vk-cron');
       }
 
       try {

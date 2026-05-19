@@ -350,6 +350,8 @@ export class InstagramReelsService {
             this.lastContainerError = 'Неподдерживаемый формат видео. Требуется MP4 с кодеком H.264/HEVC и AAC аудио.';
           } else if (status?.includes('2207052')) {
             this.lastContainerError = 'Проблема с форматом видео. Проверьте разрешение (макс. 1920px), кодек (H.264) и цветовое пространство (yuv420p).';
+          } else if (status?.includes('2207076')) {
+            this.lastContainerError = 'Instagram не смог загрузить видео (2207076). Видео недоступно с серверов Meta или неправильный формат. Требования Reels: MP4, H.264, AAC, 9:16, 3–90 сек, мин. 500px шириной.';
           } else if (status?.includes('2207077')) {
             this.lastContainerError = 'Instagram не смог загрузить видео. Возможные причины: видео недоступно для серверов Meta, HDR формат, или проблемы с хостингом.';
           } else if (status?.includes('2207001')) {

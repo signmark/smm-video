@@ -755,8 +755,13 @@ describe('PublishScheduler — publishToThreadsDirect', () => {
       .mockResolvedValueOnce({ data: { id: 'c-ok' } })
       .mockResolvedValueOnce({ data: { id: 'p-ok' } });
 
+    const mockSave = vi.fn(async (platform: string, data: any) => {
+      const merged = { ...content.social_platforms, [platform]: data };
+      await directusCrud.update('content', content.id, { social_platforms: merged });
+    });
+
     // @ts-ignore
-    await scheduler.publishToThreadsDirect(content);
+    await (scheduler as any).publishToThreadsDirect(content, mockSave);
 
     const updateCall = vi.mocked(directusCrud.update).mock.calls[0];
     const socialPlatforms = (updateCall[2] as any).social_platforms;
@@ -981,8 +986,8 @@ describe('PublishScheduler — publishContentToPlatforms', () => {
     // @ts-ignore
     await scheduler.publishContentToPlatforms(baseContent, ['threads', 'vk']);
 
-    expect(spyThreads).toHaveBeenCalledWith(baseContent);
-    expect(spyVk).toHaveBeenCalledWith(baseContent);
+    expect(spyThreads).toHaveBeenCalledWith(baseContent, expect.any(Function));
+    expect(spyVk).toHaveBeenCalledWith(baseContent, expect.any(Function));
   });
 
   it('Threads падает — другие платформы всё равно вызываются', async () => {
@@ -1000,7 +1005,7 @@ describe('PublishScheduler — publishContentToPlatforms', () => {
       scheduler.publishContentToPlatforms(baseContent, ['threads', 'vk'])
     ).resolves.not.toThrow();
 
-    expect(spyVk).toHaveBeenCalledWith(baseContent);
+    expect(spyVk).toHaveBeenCalledWith(baseContent, expect.any(Function));
   });
 
   it('все платформы (VK, Telegram, Facebook) вызываются напрямую параллельно', async () => {
@@ -1019,9 +1024,9 @@ describe('PublishScheduler — publishContentToPlatforms', () => {
     // @ts-ignore
     await scheduler.publishContentToPlatforms(baseContent, ['vk', 'telegram', 'facebook']);
 
-    expect(spyVk).toHaveBeenCalledWith(baseContent);
-    expect(spyTelegram).toHaveBeenCalledWith(baseContent);
-    expect(spyFacebook).toHaveBeenCalledWith(baseContent);
+    expect(spyVk).toHaveBeenCalledWith(baseContent, expect.any(Function));
+    expect(spyTelegram).toHaveBeenCalledWith(baseContent, expect.any(Function));
+    expect(spyFacebook).toHaveBeenCalledWith(baseContent, expect.any(Function));
   });
 
   it('после публикации вызывается updateContentStatus', async () => {

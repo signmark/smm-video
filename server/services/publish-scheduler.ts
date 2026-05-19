@@ -723,7 +723,7 @@ export class PublishScheduler {
   /**
    * Публикует контент в Threads напрямую через API (без N8N)
    */
-  private async publishToThreadsDirect(content: any, save: (p: string, d: Record<string, any>) => Promise<void>): Promise<{ platform: string; success: boolean; error?: string }> {
+  private async publishToThreadsDirect(content: any, save: (p: string, d: Record<string, any>) => Promise<void> = async () => {}): Promise<{ platform: string; success: boolean; error?: string }> {
     try {
       log(`Планировщик: Прямая публикация в Threads для контента ${content.id}`, 'scheduler');
 
@@ -872,7 +872,7 @@ export class PublishScheduler {
   /**
    * Публикует контент в Facebook напрямую через API (без N8N)
    */
-  private async publishToFacebookDirect(content: any, save: (p: string, d: Record<string, any>) => Promise<void>): Promise<{ platform: string; success: boolean; error?: string }> {
+  private async publishToFacebookDirect(content: any, save: (p: string, d: Record<string, any>) => Promise<void> = async () => {}): Promise<{ platform: string; success: boolean; error?: string }> {
     try {
       log(`Планировщик: Прямая публикация в Facebook для контента ${content.id}`, 'scheduler');
 
@@ -937,7 +937,7 @@ export class PublishScheduler {
   /**
    * Публикует контент в Telegram напрямую через Bot API (без N8N)
    */
-  private async publishToTelegramDirect(content: any, save: (p: string, d: Record<string, any>) => Promise<void>): Promise<{ platform: string; success: boolean; error?: string }> {
+  private async publishToTelegramDirect(content: any, save: (p: string, d: Record<string, any>) => Promise<void> = async () => {}): Promise<{ platform: string; success: boolean; error?: string }> {
     try {
       log(`Планировщик: Прямая публикация в Telegram для контента ${content.id}`, 'scheduler');
 
@@ -979,7 +979,7 @@ export class PublishScheduler {
   /**
    * Публикует контент ВКонтакте напрямую через VK API (без N8N)
    */
-  private async publishToVkDirect(content: any, save: (p: string, d: Record<string, any>) => Promise<void>): Promise<{ platform: string; success: boolean; error?: string }> {
+  private async publishToVkDirect(content: any, save: (p: string, d: Record<string, any>) => Promise<void> = async () => {}): Promise<{ platform: string; success: boolean; error?: string }> {
     try {
       log(`Планировщик: Прямая публикация в VK для контента ${content.id}`, 'scheduler');
 
@@ -1074,7 +1074,7 @@ export class PublishScheduler {
   /**
    * Публикует контент в Instagram напрямую через Graph API (без N8N)
    */
-  private async publishToInstagramDirect(content: any, save: (p: string, d: Record<string, any>) => Promise<void>): Promise<{ platform: string; success: boolean; error?: string }> {
+  private async publishToInstagramDirect(content: any, save: (p: string, d: Record<string, any>) => Promise<void> = async () => {}): Promise<{ platform: string; success: boolean; error?: string }> {
     try {
       log(`Планировщик: Прямая публикация в Instagram для контента ${content.id}`, 'scheduler');
 
@@ -1120,7 +1120,7 @@ export class PublishScheduler {
    * Токены берутся из social_accounts (отдельная таблица, не из social_media_settings).
    * Требует video_url в контенте.
    */
-  private async publishToTikTokDirect(content: any, save: (p: string, d: Record<string, any>) => Promise<void>): Promise<{ platform: string; success: boolean; error?: string }> {
+  private async publishToTikTokDirect(content: any, save: (p: string, d: Record<string, any>) => Promise<void> = async () => {}): Promise<{ platform: string; success: boolean; error?: string }> {
     try {
       log(`Планировщик: Прямая публикация в TikTok для контента ${content.id}`, 'scheduler');
 
@@ -1283,7 +1283,7 @@ export class PublishScheduler {
   /**
    * Публикует VK Stories напрямую через VK API
    */
-  private async publishToVkStoriesDirect(content: any, save: (p: string, d: Record<string, any>) => Promise<void>): Promise<{ platform: string; success: boolean; error?: string }> {
+  private async publishToVkStoriesDirect(content: any, save: (p: string, d: Record<string, any>) => Promise<void> = async () => {}): Promise<{ platform: string; success: boolean; error?: string }> {
     try {
       log(`Планировщик: Прямая публикация VK Story для контента ${content.id}`, 'scheduler');
       const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || undefined;
@@ -1307,7 +1307,7 @@ export class PublishScheduler {
   /**
    * Публикует VK Clips (короткие видео) напрямую через VK API
    */
-  private async publishToVkClipsDirect(content: any, save: (p: string, d: Record<string, any>) => Promise<void>): Promise<{ platform: string; success: boolean; error?: string }> {
+  private async publishToVkClipsDirect(content: any, save: (p: string, d: Record<string, any>) => Promise<void> = async () => {}): Promise<{ platform: string; success: boolean; error?: string }> {
     try {
       log(`Планировщик: Прямая публикация VK Clip для контента ${content.id}`, 'scheduler');
       if (!content.video_url) throw new Error('VK Clips: контент не содержит video_url');
@@ -1332,7 +1332,7 @@ export class PublishScheduler {
   /**
    * Публикует Instagram Reels напрямую через Graph API
    */
-  private async publishToInstagramReelsDirect(content: any, save: (p: string, d: Record<string, any>) => Promise<void>): Promise<{ platform: string; success: boolean; error?: string }> {
+  private async publishToInstagramReelsDirect(content: any, save: (p: string, d: Record<string, any>) => Promise<void> = async () => {}): Promise<{ platform: string; success: boolean; error?: string }> {
     try {
       log(`Планировщик: Прямая публикация Instagram Reels для контента ${content.id}`, 'scheduler');
       if (!content.video_url) throw new Error('Instagram Reels: контент не содержит video_url');
@@ -1579,7 +1579,7 @@ ${text}
   /**
    * Публикует контент в YouTube напрямую через API
    */
-  private async publishToYouTubeDirect(content: any, authToken: string, save: (p: string, d: Record<string, any>) => Promise<void>) {
+  private async publishToYouTubeDirect(content: any, authToken: string, save: (p: string, d: Record<string, any>) => Promise<void> = async () => {}) {
     try {
       log(`Планировщик: Прямая публикация в YouTube для контента ${content.id}`, 'scheduler');
       

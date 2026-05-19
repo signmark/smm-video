@@ -34,6 +34,7 @@ describe('server/utils/environment-detector', () => {
 
     it('должен определять production по умолчанию', () => {
       delete process.env.ENV;
+      delete process.env.NODE_ENV;
       const config = detectEnvironment();
       expect(config.environment).toBe('production');
     });

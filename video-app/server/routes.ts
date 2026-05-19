@@ -31,7 +31,7 @@ import { generateScript } from './services/script-generator.js';
 import { generateImage, generateLayeredImage } from './services/image-generator.js';
 import { generateAudio } from './services/tts-generator.js';
 import { assembleVideo, assembleFromClips, extractLastFrame, burnSubtitles, subtitleSizeMultiplier, mixBackgroundMusic } from './services/video-assembler.js';
-import { generateBackgroundMusic } from './services/music-generator.js';
+import { generateBackgroundMusic, getMusicStyle } from './services/music-generator.js';
 
 import { animateFrame, animateText, isT2VModel } from './services/fal-animator.js';
 import { searchAndDownloadStockClip, searchAndDownloadStockPhoto } from './services/stock-video.js';
@@ -108,6 +108,46 @@ router.get('/tts-preview/:voice', async (req, res) => {
     return res.send(buf);
   } catch (err: any) {
     console.error(`[tts-preview] ${voice}/${lang} failed: ${err.message}`);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Music preview: returns Jamendo 30-sec stream URL for a given style (no download, instant)
+router.get('/music/preview', async (req, res) => {
+  await ensureKeysLoaded();
+  const styleValue = String(req.query.style || 'ambient');
+  const styleDef = getMusicStyle(styleValue);
+
+  if (styleDef.value === 'none' || !styleDef.jamendoTags) {
+    return res.status(400).json({ error: 'No preview available for this style' });
+  }
+
+  const clientId = process.env.JAMENDO_CLIENT_ID;
+  if (!clientId) {
+    return res.status(503).json({ error: 'JAMENDO_CLIENT_ID not configured' });
+  }
+
+  try {
+    const url = new URL('https://api.jamendo.com/v3.0/tracks/');
+    url.searchParams.set('client_id', clientId);
+    url.searchParams.set('format', 'json');
+    url.searchParams.set('limit', '5');
+    url.searchParams.set('fuzzytags', styleDef.jamendoTags);
+    url.searchParams.set('boost', 'popularity_total');
+    url.searchParams.set('order', 'popularity_total_desc');
+
+    const resp = await fetch(url.toString(), { signal: AbortSignal.timeout(10_000) });
+    if (!resp.ok) return res.status(502).json({ error: `Jamendo API error: ${resp.status}` });
+
+    const data = await resp.json() as any;
+    const track = data.results?.[0];
+    if (!track) return res.status(404).json({ error: 'No tracks found for this style' });
+
+    const previewUrl: string = track.audio;
+    if (!previewUrl) return res.status(404).json({ error: 'No preview URL in Jamendo response' });
+
+    return res.json({ previewUrl, trackName: track.name, artistName: track.artist_name });
+  } catch (err: any) {
     return res.status(500).json({ error: err.message });
   }
 });

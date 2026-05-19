@@ -361,12 +361,24 @@ export default function Create() {
   const [voice, setVoice] = useState('alloy');
   const [musicStyle, setMusicStyle] = useState<MusicStyleValue>('ambient');
   const [playingVoice, setPlayingVoice] = useState<string | null>(null);
+  const [playingMusic, setPlayingMusic] = useState(false);
+  const [loadingMusicPreview, setLoadingMusicPreview] = useState(false);
+  const [musicPreviewInfo, setMusicPreviewInfo] = useState<{ trackName: string; artistName: string } | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const musicAudioRef = useRef<HTMLAudioElement | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  function stopMusicPreview() {
+    if (musicAudioRef.current) {
+      musicAudioRef.current.pause();
+      musicAudioRef.current = null;
+    }
+    setPlayingMusic(false);
+  }
+
   function playVoicePreview(v: string) {
-    // Stop current audio if any
+    stopMusicPreview();
     if (audioRef.current) {
       audioRef.current.pause();
       audioRef.current = null;
@@ -381,6 +393,35 @@ export default function Create() {
     audio.play().catch(() => {});
     audio.onended = () => { setPlayingVoice(null); audioRef.current = null; };
     audio.onerror = () => { setPlayingVoice(null); audioRef.current = null; };
+  }
+
+  async function playMusicPreview() {
+    if (playingMusic) {
+      stopMusicPreview();
+      return;
+    }
+    if (audioRef.current) { audioRef.current.pause(); audioRef.current = null; setPlayingVoice(null); }
+    setLoadingMusicPreview(true);
+    setMusicPreviewInfo(null);
+    try {
+      const resp = await fetch(`${API}/music/preview?style=${musicStyle}`);
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ error: 'Ошибка запроса' }));
+        throw new Error(err.error || 'Ошибка');
+      }
+      const { previewUrl, trackName, artistName } = await resp.json();
+      setMusicPreviewInfo({ trackName, artistName });
+      const audio = new Audio(previewUrl);
+      musicAudioRef.current = audio;
+      setPlayingMusic(true);
+      audio.play().catch(() => {});
+      audio.onended = () => { setPlayingMusic(false); musicAudioRef.current = null; };
+      audio.onerror = () => { setPlayingMusic(false); musicAudioRef.current = null; };
+    } catch (err: any) {
+      setMusicPreviewInfo({ trackName: 'Ошибка: ' + err.message, artistName: '' });
+    } finally {
+      setLoadingMusicPreview(false);
+    }
   }
 
   function handlePipelineSwitch(mode: 'i2v' | 't2v') {
@@ -744,8 +785,37 @@ export default function Create() {
             })}
           </div>
           {musicStyle !== 'none' && (
-            <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5, padding: '6px 10px', borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}>
-              🎵 Громкость фоновой музыки составляет ~18% — голос всегда преобладает. Треки из Jamendo распространяются под лицензией CC (атрибуция при публикации).
+            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <button
+                type="button"
+                data-testid="music-preview-btn"
+                onClick={playMusicPreview}
+                disabled={loadingMusicPreview}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 8,
+                  padding: '7px 14px', borderRadius: 'var(--radius-sm)',
+                  border: `1.5px solid ${playingMusic ? 'var(--accent)' : 'var(--border)'}`,
+                  background: playingMusic ? 'rgba(139,92,246,0.15)' : 'var(--bg-card2)',
+                  color: playingMusic ? 'var(--accent)' : 'var(--text)',
+                  cursor: loadingMusicPreview ? 'wait' : 'pointer',
+                  fontSize: 13, fontWeight: 500, transition: 'all 0.15s',
+                  alignSelf: 'flex-start',
+                }}
+              >
+                <span style={{ fontSize: 16 }}>
+                  {loadingMusicPreview ? '⏳' : playingMusic ? '⏹' : '▶'}
+                </span>
+                {loadingMusicPreview ? 'Загрузка...' : playingMusic ? 'Остановить' : 'Прослушать стиль'}
+              </button>
+              {musicPreviewInfo && (
+                <div style={{ fontSize: 11, color: playingMusic ? 'var(--accent)' : 'var(--text-muted)', padding: '4px 8px', borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
+                  {playingMusic ? '🎵 ' : ''}<strong>{musicPreviewInfo.trackName}</strong>
+                  {musicPreviewInfo.artistName ? ` — ${musicPreviewInfo.artistName}` : ''}
+                </div>
+              )}
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5, padding: '6px 10px', borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}>
+                🎵 Громкость фоновой музыки ~18% — голос всегда преобладает. Треки Jamendo под лицензией CC.
+              </div>
             </div>
           )}
         </Field>

@@ -837,8 +837,8 @@ export default function PricingPage() {
               <p className="text-gray-500 dark:text-gray-400 mb-6 text-sm leading-relaxed">
                 Администратор получил уведомление и активирует тариф <strong>{selectedPlan?.name}</strong> в течение рабочего дня.<br /><br />
                 По вопросам обращайтесь:{' '}
-                <a href="https://t.me/omemo_tech" className="text-blue-600 hover:underline" target="_blank" rel="noopener noreferrer">
-                  @omemo_tech
+                <a href="https://t.me/smm_nplanner_sup_bot" className="text-blue-600 hover:underline" target="_blank" rel="noopener noreferrer">
+                  @smm_nplanner_sup_bot
                 </a>
               </p>
               <Button onClick={closeModal} className="w-full" data-testid="button-close-success">

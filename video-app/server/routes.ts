@@ -112,7 +112,7 @@ router.get('/tts-preview/:voice', async (req, res) => {
   }
 });
 
-// Music preview: returns Jamendo 30-sec stream URL for a given style (no download, instant)
+// Music preview: proxies Jamendo audio stream to avoid CORS + stale token issues
 router.get('/music/preview', async (req, res) => {
   await ensureKeysLoaded();
   const styleValue = String(req.query.style || 'ambient');
@@ -131,8 +131,9 @@ router.get('/music/preview', async (req, res) => {
     const url = new URL('https://api.jamendo.com/v3.0/tracks/');
     url.searchParams.set('client_id', clientId);
     url.searchParams.set('format', 'json');
-    url.searchParams.set('limit', '5');
+    url.searchParams.set('limit', '10');
     url.searchParams.set('fuzzytags', styleDef.jamendoTags);
+    url.searchParams.set('audiodlformat', 'mp32');
     url.searchParams.set('boost', 'popularity_total');
     url.searchParams.set('order', 'popularity_total_desc');
 
@@ -140,15 +141,44 @@ router.get('/music/preview', async (req, res) => {
     if (!resp.ok) return res.status(502).json({ error: `Jamendo API error: ${resp.status}` });
 
     const data = await resp.json() as any;
-    const track = data.results?.[0];
-    if (!track) return res.status(404).json({ error: 'No tracks found for this style' });
+    const tracks: any[] = data.results ?? [];
+    if (!tracks.length) return res.status(404).json({ error: 'No tracks found for this style' });
 
-    const previewUrl: string = track.audio;
-    if (!previewUrl) return res.status(404).json({ error: 'No preview URL in Jamendo response' });
+    // Pick first track that has a valid download URL
+    let track: any = null;
+    let audioUrl = '';
+    for (const t of tracks) {
+      const dl = t.audiodownload || t.audio;
+      if (dl && dl.startsWith('http')) { track = t; audioUrl = dl; break; }
+    }
+    if (!track) return res.status(404).json({ error: 'No playable track found' });
 
-    return res.json({ previewUrl, trackName: track.name, artistName: track.artist_name });
+    // If meta=only query param, return metadata without proxying audio
+    if (req.query.meta === '1') {
+      return res.json({ trackName: track.name, artistName: track.artist_name });
+    }
+
+    // Proxy audio stream — avoids CORS and stale-token issues in the browser
+    const audioResp = await fetch(audioUrl, {
+      signal: AbortSignal.timeout(30_000),
+      headers: { 'User-Agent': 'Mozilla/5.0 (compatible; VideoBot/1.0)' },
+    });
+    if (!audioResp.ok) return res.status(502).json({ error: `Audio fetch failed: ${audioResp.status}` });
+
+    res.setHeader('Content-Type', audioResp.headers.get('content-type') || 'audio/mpeg');
+    res.setHeader('X-Track-Name', encodeURIComponent(track.name));
+    res.setHeader('X-Artist-Name', encodeURIComponent(track.artist_name));
+    res.setHeader('Cache-Control', 'public, max-age=300');
+
+    const reader = audioResp.body as any;
+    if (reader?.pipe) {
+      reader.pipe(res);
+    } else {
+      const buf = Buffer.from(await audioResp.arrayBuffer());
+      res.send(buf);
+    }
   } catch (err: any) {
-    return res.status(500).json({ error: err.message });
+    if (!res.headersSent) res.status(500).json({ error: err.message });
   }
 });
 

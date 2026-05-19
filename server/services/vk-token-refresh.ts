@@ -20,6 +20,12 @@ export async function markVkAuthExpired(campaignId: string): Promise<void> {
     const existing = campaignData.social_media_settings || {};
     const existingVk = existing.vk || {};
 
+    // Если authExpired уже стоит — не шлём повторное уведомление
+    if (existingVk.authExpired === true) {
+      log(`[VK-REFRESH] authExpired уже выставлен для кампании ${campaignId} — повторное уведомление не отправляем`, 'vk-refresh');
+      return;
+    }
+
     await axios.patch(`${directusUrl}/items/user_campaigns/${campaignId}`, {
       social_media_settings: {
         ...existing,

@@ -1282,6 +1282,7 @@ async function refreshAllVkTokens() {
     for (const campaign of campaigns) {
       const vk = campaign.social_media_settings?.vk;
       if (!vk?.refreshToken) { skipped++; continue; }
+      if (vk.authExpired) { skipped++; continue; } // уже требует переподключения — не трогаем
       // clientId берём из настроек кампании или fallback на дефолтный app id
       if (!vk.clientId) vk.clientId = process.env.VK_APP_ID || VK_DEFAULT_APP_ID;
 

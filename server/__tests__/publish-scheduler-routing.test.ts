@@ -103,6 +103,7 @@ vi.mock('../services/social-platforms/telegram-service', () => ({
 }));
 
 vi.mock('../services/social-platforms/vk-service', () => ({
+  VK_DEFAULT_APP_ID: 'test_app_id',
   vkService: {
     publishPost: vi.fn().mockResolvedValue({
       success: true,
@@ -169,6 +170,7 @@ vi.mock('../services/social-platforms/instagram-reels-service', () => ({
 
 vi.mock('../services/vk-token-refresh', () => ({
   refreshAndSaveVkToken: vi.fn().mockResolvedValue(null),
+  markVkAuthExpired: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../index', () => ({
@@ -575,6 +577,8 @@ describe('publishToInstagramDirect', () => {
     expect(vi.mocked(instagramService.publishPost)).toHaveBeenCalledWith(
       expect.objectContaining({ accessToken: 'ig_token_123' }),
       expect.objectContaining({ imageUrl: 'https://cdn.test/photo.jpg' }),
+      expect.any(String),
+      expect.anything(),
     );
   });
 

@@ -73,14 +73,17 @@ describe('Auth Flow Integration Tests', () => {
         is_smm_admin: false
       };
 
-      // Mock Directus response
-      (directusApi.get as any).mockResolvedValue({
-        data: { data: { ...mockProfileData } }
-      });
+      // Route uses native fetch (not directusApi), so mock global fetch
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ data: { ...mockProfileData } }),
+      }));
 
       const response = await request(app)
         .get('/api/user/profile')
         .set('Authorization', `Bearer ${mockToken}`);
+
+      vi.unstubAllGlobals();
 
       expect(response.status).toBe(200);
       expect(response.body).toMatchObject({

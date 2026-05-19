@@ -107,7 +107,8 @@ describe('Integration: PublishScheduler Protection & Workflow', () => {
     await scheduler.checkScheduledContent();
 
     expect(spyTelegram).toHaveBeenCalledWith(
-      expect.objectContaining({ id: 'c-2' })
+      expect.objectContaining({ id: 'c-2' }),
+      expect.any(Function)
     );
   });
 

@@ -90,9 +90,9 @@ describe('AutonomousAI Tool Implementations', () => {
 
       const result = await TOOL_IMPLEMENTATIONS.getCampaignData({ campaignId: 'camp-1' }, mockRequest);
       
-      expect(result.campaign.name).toBe('My Campaign');
-      expect(result.questionnaire.company_name).toBe('Test Corp');
-      expect(result.hasQuestionnaire).toBe(true);
+      expect(result.data.campaign.name).toBe('My Campaign');
+      expect(result.data.questionnaire.company_name).toBe('Test Corp');
+      expect(result.data.hasQuestionnaire).toBe(true);
     });
   });
 

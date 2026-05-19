@@ -377,8 +377,9 @@ class ThreadsService {
 
       // Threads требует небольшую паузу перед публикацией для всех типов контейнеров
       if (mediaType !== 'VIDEO') {
-        log(`[${opId}] Waiting 3s for container to be ready (Threads eventual consistency)`, 'threads-service');
-        await new Promise(r => setTimeout(r, 3000));
+        const waitMs = process.env.VITEST ? 0 : 3000;
+        if (waitMs > 0) log(`[${opId}] Waiting 3s for container to be ready (Threads eventual consistency)`, 'threads-service');
+        await new Promise(r => setTimeout(r, waitMs));
       }
 
       log(`[${opId}] Step 3: Publishing container ${creationId}`, 'threads-service');
@@ -428,7 +429,7 @@ class ThreadsService {
           );
           const textCreationId = textContainerRes.data.id;
           if (!textCreationId) throw new Error('Нет ID контейнера');
-          await new Promise(r => setTimeout(r, 3000));
+          await new Promise(r => setTimeout(r, process.env.VITEST ? 0 : 3000));
           const textPublishRes = await axios.post(
             `${THREADS_API}/${settings.threadsUserId}/threads_publish`,
             null,

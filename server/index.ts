@@ -1183,6 +1183,25 @@ app.use('/video-app', (req, res, next) => {
         log('✅ Планировщик публикаций успешно запущен', 'scheduler');
       }, 35000); // Задержка 35 секунд для завершения инициализации всех сервисов
 
+      // Фоновый job обновления VK токенов: первый запуск через 1 минуту, затем каждые 6 часов
+      setTimeout(async () => {
+        try {
+          const { refreshAllExpiringVkTokens } = await import('./services/vk-token-refresh');
+          log('[VK-CRON] Первый запуск фонового обновления VK токенов', 'vk-refresh');
+          await refreshAllExpiringVkTokens();
+        } catch (e: any) {
+          log(`[VK-CRON] Ошибка первого запуска: ${e.message}`, 'vk-refresh', 'warn');
+        }
+        setInterval(async () => {
+          try {
+            const { refreshAllExpiringVkTokens } = await import('./services/vk-token-refresh');
+            await refreshAllExpiringVkTokens();
+          } catch (e: any) {
+            log(`[VK-CRON] Ошибка планового обновления VK токенов: ${e.message}`, 'vk-refresh', 'warn');
+          }
+        }, 6 * 60 * 60 * 1000); // каждые 6 часов
+      }, 60 * 1000); // первый запуск через 1 минуту
+
       // Запускаем Telegram бота
       setTimeout(async () => {
         try {

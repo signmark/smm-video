@@ -2,6 +2,113 @@ import axios from 'axios';
 import crypto from 'crypto';
 import { log } from '../utils/logger';
 
+/**
+ * Выставляет authExpired=true для VK в настройках кампании.
+ * Вызывается при permanentFailure (refresh_token невалиден).
+ */
+export async function markVkAuthExpired(campaignId: string): Promise<void> {
+  try {
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+    const directusUrl = process.env.DIRECTUS_URL;
+    if (!adminToken || !directusUrl) return;
+
+    const resp = await axios.get(`${directusUrl}/items/user_campaigns/${campaignId}`, {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const existing = resp.data.data.social_media_settings || {};
+    const existingVk = existing.vk || {};
+
+    await axios.patch(`${directusUrl}/items/user_campaigns/${campaignId}`, {
+      social_media_settings: {
+        ...existing,
+        vk: { ...existingVk, authExpired: true }
+      }
+    }, { headers: { Authorization: `Bearer ${adminToken}` } });
+
+    log(`[VK-REFRESH] authExpired=true выставлен для кампании ${campaignId}`, 'vk-refresh');
+  } catch (err: any) {
+    log(`[VK-REFRESH] Ошибка при выставлении authExpired для кампании ${campaignId}: ${err.message}`, 'vk-refresh', 'warn');
+  }
+}
+
+/**
+ * Фоновое задание: обновляет токены всех кампаний, у которых tokenExpiresAt < now+26h
+ * или нет tokenExpiresAt, но есть refreshToken.
+ * Запускается каждые 6 часов через setInterval в server/index.ts.
+ */
+export async function refreshAllExpiringVkTokens(): Promise<void> {
+  log('[VK-CRON] Запуск фонового обновления истекающих VK токенов...', 'vk-refresh');
+  try {
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+    const directusUrl = process.env.DIRECTUS_URL;
+    if (!adminToken || !directusUrl) {
+      log('[VK-CRON] Нет adminToken или directusUrl, пропуск', 'vk-refresh', 'warn');
+      return;
+    }
+
+    // Получаем все кампании с настройками — постранично
+    let page = 1;
+    const limit = 100;
+    let processed = 0;
+    let refreshed = 0;
+    let failed = 0;
+
+    while (true) {
+      const resp = await axios.get(`${directusUrl}/items/user_campaigns`, {
+        headers: { Authorization: `Bearer ${adminToken}` },
+        params: { fields: 'id,social_media_settings', limit, page, filter: { 'social_media_settings': { '_nnull': true } } }
+      });
+      const campaigns: Array<{ id: string; social_media_settings: any }> = resp.data.data || [];
+      if (campaigns.length === 0) break;
+
+      const threshold = Date.now() + 26 * 60 * 60 * 1000; // now + 26 часов
+
+      const toRefresh = campaigns.filter(c => {
+        const vk = c.social_media_settings?.vk;
+        if (!vk?.refreshToken || !vk?.clientId) return false;
+        if (vk.authExpired) return false; // уже помечено как требует переподключения — не трогаем
+        if (!vk.tokenExpiresAt) return true; // нет даты — обновляем на всякий случай
+        return new Date(vk.tokenExpiresAt).getTime() < threshold;
+      });
+
+      log(`[VK-CRON] Страница ${page}: кампаний=${campaigns.length}, к обновлению=${toRefresh.length}`, 'vk-refresh');
+
+      await Promise.all(toRefresh.map(async (c) => {
+        processed++;
+        const vk = c.social_media_settings.vk;
+        try {
+          const newToken = await refreshAndSaveVkToken(c.id, {
+            refreshToken: vk.refreshToken,
+            clientId: vk.clientId,
+            deviceId: vk.deviceId
+          });
+          if (newToken) {
+            refreshed++;
+            log(`[VK-CRON] Обновлён токен для кампании ${c.id}`, 'vk-refresh');
+          } else {
+            log(`[VK-CRON] refresh вернул null для кампании ${c.id} (временная ошибка)`, 'vk-refresh', 'warn');
+          }
+        } catch (err: any) {
+          failed++;
+          if (err.permanentFailure) {
+            log(`[VK-CRON] permanentFailure для кампании ${c.id}: ${err.message} — ставим authExpired`, 'vk-refresh', 'error');
+            await markVkAuthExpired(c.id);
+          } else {
+            log(`[VK-CRON] Ошибка обновления токена для кампании ${c.id}: ${err.message}`, 'vk-refresh', 'error');
+          }
+        }
+      }));
+
+      if (campaigns.length < limit) break;
+      page++;
+    }
+
+    log(`[VK-CRON] Завершено: обработано=${processed}, обновлено=${refreshed}, ошибок=${failed}`, 'vk-refresh');
+  } catch (err: any) {
+    log(`[VK-CRON] Критическая ошибка: ${err.message}`, 'vk-refresh', 'error');
+  }
+}
+
 export interface VkRefreshResult {
   accessToken: string;
   refreshToken: string;

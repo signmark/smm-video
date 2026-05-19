@@ -269,6 +269,8 @@ const VkSetupWizard: React.FC<VkSetupWizardProps> = ({ campaignId, onComplete, o
           <span>
             <strong>Рекомендуемый способ.</strong> Нажмите кнопку ниже — откроется окно авторизации VK.
             Токен будет обновляться автоматически, публикации не прервутся.
+            Включены разрешения: стена, группы, фото, <strong>видео</strong>.
+            {" "}<span className="text-amber-700">Если VK уже подключён — переподключитесь, чтобы разрешить публикацию видеозаписей.</span>
           </span>
         </AlertDescription>
       </Alert>

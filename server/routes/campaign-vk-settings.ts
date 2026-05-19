@@ -12,9 +12,8 @@ router.get('/campaigns/:campaignId/vk-settings', async (req, res) => {
   const userToken = req.headers.authorization?.replace('Bearer ', '');
 
   try {
-    // Используем системный токен как fallback для доступа к базе данных
     const tokenToUse = userToken || process.env.DIRECTUS_TOKEN;
-    
+
     if (!tokenToUse) {
       return res.status(401).json({
         success: false,
@@ -22,7 +21,6 @@ router.get('/campaigns/:campaignId/vk-settings', async (req, res) => {
       });
     }
 
-    // Получаем настройки кампании
     const getCampaignResponse = await axios.get(
       `${process.env.DIRECTUS_URL}/items/user_campaigns/${campaignId}`,
       {
@@ -44,6 +42,10 @@ router.get('/campaigns/:campaignId/vk-settings', async (req, res) => {
 
   } catch (error: any) {
     console.error('❌ Error retrieving VK settings:', error.message);
+    const status = error.response?.status;
+    if (status === 401 || status === 403) {
+      return res.status(403).json({ success: false, error: 'Нет прав на чтение этой кампании' });
+    }
     res.status(500).json({
       success: false,
       error: 'Ошибка при получении VK настроек',
@@ -53,7 +55,9 @@ router.get('/campaigns/:campaignId/vk-settings', async (req, res) => {
 });
 
 /**
- * Сохранение VK настроек в JSON кампании
+ * Сохранение VK настроек в JSON кампании.
+ * Авторизация: сначала проверяем, что пользователь владеет кампанией (GET с userToken через Directus).
+ * Запись производится через admin-токен (пользователь может не иметь прав на прямую запись).
  */
 router.patch('/campaigns/:campaignId/vk-settings', async (req, res) => {
   const { campaignId } = req.params;
@@ -77,21 +81,38 @@ router.patch('/campaigns/:campaignId/vk-settings', async (req, res) => {
       });
     }
 
-    // Получим существующие настройки кампании
-    const getCampaignResponse = await axios.get(
-      `${process.env.DIRECTUS_URL}/items/user_campaigns/${campaignId}`,
-      {
-        headers: {
-          Authorization: `Bearer ${userToken}`,
-          'Content-Type': 'application/json'
+    if (!userToken) {
+      return res.status(401).json({ success: false, error: 'Требуется авторизация' });
+    }
+
+    // Шаг 1: Проверка прав доступа через пользовательский токен.
+    // Directus вернёт 403, если пользователь не владеет кампанией.
+    let existingSettings: Record<string, any>;
+    try {
+      const ownershipCheck = await axios.get(
+        `${process.env.DIRECTUS_URL}/items/user_campaigns/${campaignId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${userToken}`,
+            'Content-Type': 'application/json'
+          }
         }
+      );
+      existingSettings = ownershipCheck.data.data.social_media_settings || {};
+    } catch (authErr: any) {
+      const status = authErr.response?.status;
+      if (status === 401 || status === 403) {
+        return res.status(403).json({ success: false, error: 'Нет прав на изменение этой кампании' });
       }
-    );
+      throw authErr;
+    }
 
-    const campaign = getCampaignResponse.data.data;
-    const existingSettings = campaign.social_media_settings || {};
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+    if (!adminToken) {
+      return res.status(500).json({ success: false, error: 'Не настроен admin-токен Directus (DIRECTUS_STATIC_TOKEN / DIRECTUS_ADMIN_TOKEN)' });
+    }
 
-    // Обновляем VK настройки (сохраняем и объединяем с существующими)
+    // Шаг 2: Запись через admin-токен (надёжно, без риска 403 на запись)
     const existingVk = existingSettings.vk || {};
     const vkUpdate: Record<string, any> = {
       ...existingVk,
@@ -99,7 +120,8 @@ router.patch('/campaigns/:campaignId/vk-settings', async (req, res) => {
       groupId,
       groupName: groupName || existingVk.groupName || '',
       setupCompletedAt: setupCompletedAt || new Date().toISOString(),
-      configured: true
+      configured: true,
+      authExpired: false
     };
     if (refreshToken) vkUpdate.refreshToken = refreshToken;
     if (deviceId) vkUpdate.deviceId = deviceId;
@@ -111,25 +133,18 @@ router.patch('/campaigns/:campaignId/vk-settings', async (req, res) => {
       vk: vkUpdate
     };
 
-    // Сохраняем обновленные настройки
-    const updateResponse = await axios.patch(
+    await axios.patch(
       `${process.env.DIRECTUS_URL}/items/user_campaigns/${campaignId}`,
-      {
-        social_media_settings: updatedSettings
-      },
+      { social_media_settings: updatedSettings },
       {
         headers: {
-          Authorization: `Bearer ${userToken}`,
+          Authorization: `Bearer ${adminToken}`,
           'Content-Type': 'application/json'
         }
       }
     );
 
-    log('VK settings saved successfully', {
-      campaignId,
-      groupName: groupName,
-      hasToken: !!token
-    });
+    log('VK settings saved successfully', { campaignId, groupName, hasToken: !!token });
 
     res.json({
       success: true,

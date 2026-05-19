@@ -82,7 +82,7 @@ function SidebarContent({ location, onNavigate, onLogout, userIsAdmin, isCollaps
       </div>
 
       {/* Navigation */}
-      <div className="flex-1 flex flex-col p-2 space-y-3 overflow-y-auto min-h-0">
+      <div className="flex-1 flex flex-col p-2 space-y-3 overflow-y-auto min-h-0 scrollbar-thin scrollbar-thumb-sidebar-border/50">
         <div className="space-y-0.5">
           {/* Main Navigation */}
           {!isCollapsed && (
@@ -187,38 +187,38 @@ function SidebarContent({ location, onNavigate, onLogout, userIsAdmin, isCollaps
           </div>
         )}
 
-      </div>
-
-      {/* Plan Badge */}
-      {!isCollapsed && (
-        <div className="shrink-0 px-2 pb-2">
-          <Link href="/pricing">
-            <div
-              data-testid="plan-badge"
-              className={`flex items-center justify-between rounded-lg px-3 py-2 text-xs cursor-pointer transition-colors ${
-                effectivePlan === 'free'
-                  ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700/40 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/30'
-                  : effectivePlan === 'basic'
-                  ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/30'
-                  : effectivePlan === 'pro'
-                  ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700/40 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/30'
-                  : 'bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-700/40 text-violet-700 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-900/30'
-              }`}
-            >
-              <div className="flex items-center gap-1.5">
-                <Zap className="h-3 w-3" />
-                <span className="font-semibold">{label}</span>
-              </div>
-              {(effectivePlan === 'free' || effectivePlan === 'basic') && (
-                <span className="text-[10px] opacity-70">Выбрать →</span>
-              )}
+        {/* Plan Badge + Support — прибиты к низу через mt-auto, скроллятся вместе с меню на маленьких экранах */}
+        <div className="mt-auto pt-2 space-y-2">
+          {/* Plan Badge */}
+          {!isCollapsed && (
+            <div className="px-0">
+              <Link href="/pricing">
+                <div
+                  data-testid="plan-badge"
+                  className={`flex items-center justify-between rounded-lg px-3 py-2 text-xs cursor-pointer transition-colors ${
+                    effectivePlan === 'free'
+                      ? 'bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700/40 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/30'
+                      : effectivePlan === 'basic'
+                      ? 'bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700/40 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/30'
+                      : effectivePlan === 'pro'
+                      ? 'bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700/40 text-blue-700 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/30'
+                      : 'bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-700/40 text-violet-700 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-900/30'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5">
+                    <Zap className="h-3 w-3" />
+                    <span className="font-semibold">{label}</span>
+                  </div>
+                  {(effectivePlan === 'free' || effectivePlan === 'basic') && (
+                    <span className="text-[10px] opacity-70">Выбрать →</span>
+                  )}
+                </div>
+              </Link>
             </div>
-          </Link>
-        </div>
-      )}
+          )}
 
-      {/* Support Section — only for Pro/Enterprise */}
-      {limits.support && <div className="shrink-0 border-t border-sidebar-border/30 p-2">
+          {/* Support Section — only for Pro/Enterprise */}
+          {limits.support && <div className="border-t border-sidebar-border/30 pt-2">
         {!isCollapsed ? (
           <div className="space-y-1">
             <div className="text-[10px] font-semibold text-sidebar-foreground/50 uppercase tracking-wider px-1">
@@ -296,6 +296,8 @@ function SidebarContent({ location, onNavigate, onLogout, userIsAdmin, isCollaps
         )}
         
       </div>}
+        </div>{/* /mt-auto */}
+      </div>{/* /flex-1 scroll area */}
 
     </nav>
   );

@@ -344,9 +344,10 @@ const VOICES = [
 ] as const;
 
 export default function Create() {
-  const [useCustomScenario, setUseCustomScenario] = useState(false);
+  const [inputMode, setInputMode] = useState<'topic' | 'custom' | 'url'>('topic');
   const [topic, setTopic] = useState('');
   const [customScenario, setCustomScenario] = useState('');
+  const [landingUrl, setLandingUrl] = useState('');
   const [title, setTitle] = useState('');
   const [format, setFormat] = useState('9:16');
   const [duration, setDuration] = useState(30);
@@ -432,9 +433,18 @@ export default function Create() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
 
-    if (useCustomScenario) {
+    if (inputMode === 'custom') {
       if (!customScenario.trim() || customScenario.trim().length < 10) {
         setError('Введите подробный сценарий (минимум 10 символов)');
+        return;
+      }
+    } else if (inputMode === 'url') {
+      if (!landingUrl.trim()) {
+        setError('Введите URL лендинга');
+        return;
+      }
+      try { new URL(landingUrl.trim()); } catch {
+        setError('Введите корректный URL (например: https://example.com)');
         return;
       }
     } else {
@@ -447,8 +457,13 @@ export default function Create() {
     setLoading(true);
     setError('');
     try {
+      const defaultTitle =
+        inputMode === 'custom' ? 'Пользовательский сценарий'
+        : inputMode === 'url' ? (landingUrl.trim().replace(/^https?:\/\//, '').split('/')[0] || 'Промо-видео')
+        : topic.trim();
+
       const body: Record<string, any> = {
-        title: title.trim() || (useCustomScenario ? 'Пользовательский сценарий' : topic.trim()),
+        title: title.trim() || defaultTitle,
         format,
         duration,
         language,
@@ -462,9 +477,12 @@ export default function Create() {
         musicStyle,
       };
 
-      if (useCustomScenario) {
+      if (inputMode === 'custom') {
         body.customScenario = customScenario.trim();
         body.topic = title.trim() || 'Пользовательский сценарий';
+      } else if (inputMode === 'url') {
+        body.landingUrl = landingUrl.trim();
+        body.topic = title.trim() || defaultTitle;
       } else {
         body.topic = topic.trim();
       }
@@ -514,23 +532,31 @@ export default function Create() {
           <button
             type="button"
             data-testid="mode-topic"
-            onClick={() => setUseCustomScenario(false)}
-            style={{ flex: 1, padding: '10px 0', fontSize: 14, fontWeight: 600, border: 'none', cursor: 'pointer', background: !useCustomScenario ? 'var(--accent)' : 'var(--bg-card2)', color: !useCustomScenario ? 'white' : 'var(--text-muted)', transition: 'all 0.15s' }}
+            onClick={() => setInputMode('topic')}
+            style={{ flex: 1, padding: '10px 0', fontSize: 14, fontWeight: 600, border: 'none', cursor: 'pointer', background: inputMode === 'topic' ? 'var(--accent)' : 'var(--bg-card2)', color: inputMode === 'topic' ? 'white' : 'var(--text-muted)', transition: 'all 0.15s' }}
           >
             💡 По теме
           </button>
           <button
             type="button"
             data-testid="mode-scenario"
-            onClick={() => setUseCustomScenario(true)}
-            style={{ flex: 1, padding: '10px 0', fontSize: 14, fontWeight: 600, border: 'none', borderLeft: '1.5px solid var(--border)', cursor: 'pointer', background: useCustomScenario ? 'var(--accent)' : 'var(--bg-card2)', color: useCustomScenario ? 'white' : 'var(--text-muted)', transition: 'all 0.15s' }}
+            onClick={() => setInputMode('custom')}
+            style={{ flex: 1, padding: '10px 0', fontSize: 14, fontWeight: 600, border: 'none', borderLeft: '1.5px solid var(--border)', cursor: 'pointer', background: inputMode === 'custom' ? 'var(--accent)' : 'var(--bg-card2)', color: inputMode === 'custom' ? 'white' : 'var(--text-muted)', transition: 'all 0.15s' }}
           >
             📝 Свой сценарий
           </button>
+          <button
+            type="button"
+            data-testid="mode-url"
+            onClick={() => setInputMode('url')}
+            style={{ flex: 1, padding: '10px 0', fontSize: 14, fontWeight: 600, border: 'none', borderLeft: '1.5px solid var(--border)', cursor: 'pointer', background: inputMode === 'url' ? 'var(--accent)' : 'var(--bg-card2)', color: inputMode === 'url' ? 'white' : 'var(--text-muted)', transition: 'all 0.15s' }}
+          >
+            🌐 По лендингу
+          </button>
         </div>
 
-        {/* Topic OR Custom scenario */}
-        {!useCustomScenario ? (
+        {/* Topic / Custom scenario / Landing URL */}
+        {inputMode === 'topic' ? (
           <Field label="Тема видео *" hint="Что должно быть в видео? Опишите кратко.">
             <textarea
               value={topic}
@@ -541,7 +567,7 @@ export default function Create() {
               style={inputStyle}
             />
           </Field>
-        ) : (
+        ) : inputMode === 'custom' ? (
           <Field label="Подробный сценарий *" hint="Опишите сцены своими словами — AI разберёт и создаст визуализацию">
             <textarea
               value={customScenario}
@@ -555,13 +581,27 @@ export default function Create() {
               💡 AI разобьёт на {Math.round(duration / 10)} сцен по ~10 сек, придумает субтитры и промпты.
             </div>
           </Field>
+        ) : (
+          <Field label="URL лендинга *" hint="AI изучит страницу и создаст промо-рилс для вашего продукта">
+            <input
+              value={landingUrl}
+              onChange={(e) => setLandingUrl(e.target.value)}
+              placeholder="https://omemo.tech/"
+              type="url"
+              data-testid="input-landing-url"
+              style={inputStyle}
+            />
+            <div style={{ marginTop: 6, padding: '10px 14px', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 'var(--radius-sm)', fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+              🤖 AI скачает страницу, извлечёт описание продукта и напишет продающий сценарий: хук → боль → решение → CTA.
+            </div>
+          </Field>
         )}
 
         <Field label="Название (необязательно)" hint="Отображается в списке проектов">
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder={useCustomScenario ? 'Бабушка vs Дрон' : 'Мой крутой Reels'}
+            placeholder={inputMode === 'custom' ? 'Бабушка vs Дрон' : inputMode === 'url' ? 'Промо SMM Manager' : 'Мой крутой Reels'}
             data-testid="input-title"
             style={inputStyle}
           />

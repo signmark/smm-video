@@ -154,14 +154,15 @@ router.get('/music/preview', async (req, res) => {
 
 router.post('/videos', async (req, res) => {
   try {
-    const { title, topic, format, duration, language, animationModel, subtitleStyle, voice, clipDuration, subtitleFont, subtitleSize, subtitleColor, musicStyle, customScenario } = req.body;
+    const { title, topic, format, duration, language, animationModel, subtitleStyle, voice, clipDuration, subtitleFont, subtitleSize, subtitleColor, musicStyle, customScenario, landingUrl } = req.body;
     if (!format || !duration) {
       return res.status(400).json({ error: 'format and duration are required' });
     }
     const hasTopic = topic && String(topic).trim().length > 0;
     const hasScenario = customScenario && String(customScenario).trim().length > 10;
-    if (!hasTopic && !hasScenario) {
-      return res.status(400).json({ error: 'topic or customScenario is required' });
+    const hasLandingUrl = landingUrl && String(landingUrl).trim().length > 5;
+    if (!hasTopic && !hasScenario && !hasLandingUrl) {
+      return res.status(400).json({ error: 'topic, customScenario, or landingUrl is required' });
     }
     const validFormats: VideoFormat[] = ['9:16', '16:9', '1:1'];
     if (!validFormats.includes(format)) {
@@ -183,6 +184,7 @@ router.post('/videos', async (req, res) => {
       subtitleColor: subtitleColor && /^#[0-9a-fA-F]{6}$/.test(subtitleColor) ? subtitleColor : undefined,
       musicStyle: typeof musicStyle === 'string' ? musicStyle : undefined,
       customScenario: hasScenario ? String(customScenario).trim() : undefined,
+      landingUrl: hasLandingUrl ? String(landingUrl).trim() : undefined,
     });
     res.status(201).json(project);
   } catch (err: any) {
@@ -824,6 +826,28 @@ async function generateScriptAudio(projectId: string, script: Script, language: 
   );
 }
 
+// ── Landing page scraper ──────────────────────────────────────────────────────
+async function scrapeLandingPage(url: string): Promise<string> {
+  console.log(`[scraper] Fetching: ${url}`);
+  const resp = await fetch(url, {
+    signal: AbortSignal.timeout(15_000),
+    headers: { 'User-Agent': 'Mozilla/5.0 (compatible; VideoBot/1.0; +https://omemo.tech)' },
+  });
+  if (!resp.ok) throw new Error(`Failed to fetch landing page ${url}: HTTP ${resp.status}`);
+  const html = await resp.text();
+  const text = html
+    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
+    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&nbsp;/gi, ' ').replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>').replace(/&quot;/gi, '"')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 8000);
+  console.log(`[scraper] Extracted ${text.length} chars from ${url}`);
+  return text;
+}
+
 // ── Background stock precheck — runs after script_ready, checks Pexels for ALL scenes ──
 // Video found → videoSource='stock'; Photo found → videoSource='stock-animated'; Nothing → videoSource='ai'
 async function runStockPrecheck(projectId: string, script: Script, format: VideoFormat, clipDuration?: number) {
@@ -936,6 +960,16 @@ async function runScriptOnly(projectId: string) {
 
     await updateProject(projectId, { status: 'generating_script', progress: 5, progressMessage: 'Генерирую сценарий...' });
 
+    let landingPageContent: string | undefined;
+    if (project.landingUrl) {
+      try {
+        await updateProject(projectId, { progressMessage: `Загружаю лендинг: ${project.landingUrl}...` });
+        landingPageContent = await scrapeLandingPage(project.landingUrl);
+      } catch (err: any) {
+        console.warn(`[script-gen] Landing page scrape failed: ${err.message} — proceeding without content`);
+      }
+    }
+
     const useT2V = isT2VModel(project.animationModel);
     const script = await generateScript({
       topic: project.topic,
@@ -943,6 +977,7 @@ async function runScriptOnly(projectId: string) {
       duration: project.duration,
       language: project.language,
       customScenario: project.customScenario,
+      landingPageContent,
       t2v: useT2V,
       animationModel: project.animationModel,
       clipDuration: project.clipDuration,

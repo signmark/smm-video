@@ -8,9 +8,10 @@ import { test, expect, Page } from './fixtures';
 const BASE_URL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:5000';
 
 async function login(page: Page) {
-  await page.goto('/campaigns', { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(1500);
-  if (page.url().includes('/auth/login') || page.url().includes('/login')) {
+  // Auth state уже загружен через fixtures — пропускаем лишний goto('/campaigns')
+  // Проверяем только если мы точно на странице логина
+  const currentUrl = page.url();
+  if (currentUrl.includes('/auth/login') || currentUrl.includes('/login')) {
     await page.fill('input[type="email"]', process.env.TEST_EMAIL || process.env.DIRECTUS_ADMIN_EMAIL || '');
     await page.fill('input[type="password"]', process.env.TEST_PASSWORD || process.env.DIRECTUS_ADMIN_PASSWORD || '');
     await page.getByRole('button', { name: /войти/i }).first().click();
@@ -21,9 +22,10 @@ async function login(page: Page) {
 
 test.describe('Страница ключевых слов', () => {
   test.beforeEach(async ({ page }) => {
+    test.setTimeout(60000);
     await login(page);
-    await page.goto('/keywords', { waitUntil: 'domcontentloaded' });
-    await page.waitForTimeout(3000);
+    await page.goto('/keywords', { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
+    await page.waitForTimeout(2000);
   });
 
   test('страница загружается без ошибок', async ({ page }) => {

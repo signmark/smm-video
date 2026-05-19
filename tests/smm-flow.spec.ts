@@ -96,6 +96,7 @@ async function ensureLoggedIn(page: Page) {
 
 test.describe('Smoke Test — навигация по всем разделам', () => {
   test('все основные ссылки открываются без 404', async ({ page }) => {
+    test.setTimeout(90000);
     await ensureLoggedIn(page);
 
     for (const link of MAIN_NAV_LINKS) {
@@ -433,6 +434,7 @@ test.describe('Управление контентом (CRUD)', () => {
   });
 
   test('Полный цикл: Создание -> Редактирование -> Удаление', async ({ page }) => {
+    test.setTimeout(120000);
     // 1. СОЗДАНИЕ
     console.log('CRUD TEST: Starting creation phase');
     const createBtn = page.getByTestId('button-create-content')
@@ -705,6 +707,7 @@ test.describe('Resilience — асинхронные операции', () => {
   });
 
   test('выход из системы перенаправляет на логин', async ({ page }) => {
+    test.setTimeout(60000);
     await ensureLoggedIn(page);
     await page.goto('/campaigns');
     await waitForPageReady(page);

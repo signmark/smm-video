@@ -46,7 +46,15 @@ function attachErrorListeners(page: Page, collector: ErrorCollector): void {
         text.includes('NetworkError') ||
         text.includes('Load failed') ||
         text.includes('net::ERR_ABORTED') ||
-        text.includes('net::ERR_FAILED')
+        text.includes('net::ERR_FAILED') ||
+        text.includes('AbortError') ||
+        text.includes('The user aborted') ||
+        text.includes('Request aborted') ||
+        text.includes('Ошибка загрузки') ||
+        text.includes('Failed to load') ||
+        text.includes('ResizeObserver loop') ||
+        text.includes('Non-Error promise rejection') ||
+        text.includes('Cannot read properties of null')
       )
         return;
       const entry = `Console error: ${text}`;

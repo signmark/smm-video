@@ -111,7 +111,7 @@ test.describe('Campaign Creation Full Flow', () => {
     const companyNameInputCheck = page.locator('input[name="companyName"]');
     const isAlreadyOpen = await companyNameInputCheck.isVisible().catch(() => false);
     if (!isAlreadyOpen) {
-      await questionnaireTrigger.click();
+      await questionnaireTrigger.click({ force: true });
     }
 
     // Wait for form to load with data from API

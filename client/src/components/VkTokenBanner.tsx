@@ -1,13 +1,13 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "wouter";
-import { AlertTriangle, X, Settings } from "lucide-react";
+import { AlertTriangle, X, RefreshCw, Loader2 } from "lucide-react";
 import { useCampaignStore } from "@/lib/campaignStore";
 import { useAuthStore } from "@/lib/store";
+import { queryClient } from "@/lib/queryClient";
 
 const DISMISSED_KEY = "vk_token_banner_dismissed_";
 
-async function fetchVkSettings(campaignId: string): Promise<{ token?: string; groupId?: string } | null> {
+async function fetchVkSettings(campaignId: string): Promise<Record<string, any> | null> {
   const token = localStorage.getItem("auth_token");
   const res = await fetch(`/api/campaigns/${campaignId}/vk-settings`, {
     headers: token ? { Authorization: `Bearer ${token}` } : {}
@@ -17,85 +17,117 @@ async function fetchVkSettings(campaignId: string): Promise<{ token?: string; gr
   return data?.settings || null;
 }
 
-async function validateVkToken(token: string, groupId?: string): Promise<boolean> {
-  const authToken = localStorage.getItem("auth_token");
-  const res = await fetch("/api/validate/vk", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {})
-    },
-    body: JSON.stringify({ token, groupId })
-  });
-  if (!res.ok) return false;
-  const data = await res.json();
-  return data.success === true;
-}
-
 export function VkTokenBanner() {
   const { selectedCampaignId } = useCampaignStore();
   const userId = useAuthStore((state) => state.userId);
   const [dismissed, setDismissed] = useState(false);
-  const [isInvalid, setIsInvalid] = useState(false);
-  const [checked, setChecked] = useState(false);
+  const [isReconnecting, setIsReconnecting] = useState(false);
+  const listenerRef = useRef<((e: MessageEvent) => void) | null>(null);
+  const checkClosedRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const dismissedKey = DISMISSED_KEY + (selectedCampaignId || "");
 
   useEffect(() => {
     setDismissed(localStorage.getItem(dismissedKey) === "1");
-    setIsInvalid(false);
-    setChecked(false);
   }, [selectedCampaignId, dismissedKey]);
+
+  useEffect(() => {
+    return () => {
+      if (listenerRef.current) window.removeEventListener("message", listenerRef.current);
+      if (checkClosedRef.current) clearInterval(checkClosedRef.current);
+    };
+  }, []);
 
   const { data: vkSettings } = useQuery({
     queryKey: ["/api/vk-settings-for-banner", selectedCampaignId],
     queryFn: () => fetchVkSettings(selectedCampaignId!),
     enabled: !!selectedCampaignId && !!userId && !dismissed,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 2 * 60 * 1000,
     retry: false,
   });
-
-  useEffect(() => {
-    if (!vkSettings || checked || dismissed) return;
-    if (!vkSettings.token) {
-      setChecked(true);
-      return;
-    }
-
-    let cancelled = false;
-    validateVkToken(vkSettings.token, vkSettings.groupId).then((valid) => {
-      if (!cancelled) {
-        setIsInvalid(!valid);
-        setChecked(true);
-      }
-    }).catch(() => {
-      if (!cancelled) setChecked(true);
-    });
-
-    return () => { cancelled = true; };
-  }, [vkSettings, checked, dismissed]);
 
   const handleDismiss = () => {
     localStorage.setItem(dismissedKey, "1");
     setDismissed(true);
   };
 
-  if (!selectedCampaignId || dismissed || !isInvalid) return null;
+  const cleanup = () => {
+    if (listenerRef.current) {
+      window.removeEventListener("message", listenerRef.current);
+      listenerRef.current = null;
+    }
+    if (checkClosedRef.current) {
+      clearInterval(checkClosedRef.current);
+      checkClosedRef.current = null;
+    }
+    setIsReconnecting(false);
+  };
+
+  const startReconnect = () => {
+    if (!selectedCampaignId) return;
+
+    const popup = window.open(
+      `/api/vk/oauth2/start?campaign_id=${selectedCampaignId}`,
+      "vk-oauth2-reconnect",
+      "width=600,height=700,scrollbars=yes"
+    );
+
+    if (!popup) {
+      return;
+    }
+
+    setIsReconnecting(true);
+
+    const listener = (e: MessageEvent) => {
+      if (e.origin !== window.location.origin) return;
+      if (e.data?.type === "VK_OAUTH2_SUCCESS") {
+        cleanup();
+        setDismissed(false);
+        localStorage.removeItem(dismissedKey);
+        queryClient.invalidateQueries({ queryKey: ["/api/vk-settings-for-banner", selectedCampaignId] });
+      } else if (e.data?.type === "VK_OAUTH_ERROR") {
+        cleanup();
+      }
+    };
+    listenerRef.current = listener;
+    window.addEventListener("message", listener);
+
+    checkClosedRef.current = setInterval(() => {
+      if (popup.closed) {
+        cleanup();
+      }
+    }, 1000);
+  };
+
+  if (!selectedCampaignId || dismissed || !vkSettings) return null;
+
+  const tokenExpiredByDate = vkSettings.tokenExpiresAt
+    ? new Date(vkSettings.tokenExpiresAt).getTime() < Date.now()
+    : false;
+  const shouldShow =
+    vkSettings.authExpired === true ||
+    (!vkSettings.refreshToken && tokenExpiredByDate);
+
+  if (!shouldShow) return null;
 
   return (
     <div className="bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-800 px-4 py-2.5">
       <div className="flex items-center gap-3 max-w-full">
         <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 flex-shrink-0" />
         <p className="text-sm text-amber-800 dark:text-amber-200 flex-1 min-w-0">
-          <span className="font-medium">Токен ВКонтакте недействителен.</span>
+          <span className="font-medium">Токен ВКонтакте истёк.</span>
           {" "}Публикации в VK не будут работать.{" "}
-          <Link
-            href={`/campaigns/${selectedCampaignId}`}
-            className="inline-flex items-center gap-1 underline font-medium hover:no-underline"
+          <button
+            onClick={startReconnect}
+            disabled={isReconnecting}
+            className="inline-flex items-center gap-1 underline font-medium hover:no-underline disabled:opacity-50"
+            data-testid="button-vk-reconnect-banner"
           >
-            <Settings className="h-3 w-3" />
-            Обновить токен
-          </Link>
+            {isReconnecting
+              ? <><Loader2 className="h-3 w-3 animate-spin" /> Подключение...</>
+              : <><RefreshCw className="h-3 w-3" /> Переподключить VK</>
+            }
+          </button>
         </p>
         <button
           onClick={handleDismiss}

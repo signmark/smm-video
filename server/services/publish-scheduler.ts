@@ -1030,16 +1030,29 @@ export class PublishScheduler {
 
       if (!result.success && result.error && this.isAuthError(result.error) && vkSettings.refreshToken && vkClientId) {
         log(`[VK] Auth error после публикации, повторный token refresh для campaign ${campaignId}...`, 'scheduler');
-        const { refreshAndSaveVkToken } = await import('./vk-token-refresh');
-        const newToken = await refreshAndSaveVkToken(campaignId, vkSettings);
-        if (newToken) {
-          log(`[VK] Token refreshed, retrying publish for ${content.id}`, 'scheduler');
-          result = await vkService.publishPost({ ...vkSettings, token: newToken, accessToken: newToken }, { text, imageUrl: content.image_url, videoUrl: content.video_url });
-        } else {
-          log(`[VK] Token refresh failed for campaign ${campaignId} — возможно нужно переподключить VK`, 'scheduler', 'error');
+        try {
+          const { refreshAndSaveVkToken, markVkAuthExpired } = await import('./vk-token-refresh');
+          const newToken = await refreshAndSaveVkToken(campaignId, vkSettings);
+          if (newToken) {
+            log(`[VK] Token refreshed, retrying publish for ${content.id}`, 'scheduler');
+            result = await vkService.publishPost({ ...vkSettings, token: newToken, accessToken: newToken }, { text, imageUrl: content.image_url, videoUrl: content.video_url });
+          } else {
+            log(`[VK] Token refresh returned null для campaign ${campaignId} — ставим authExpired`, 'scheduler', 'error');
+            await markVkAuthExpired(campaignId);
+          }
+        } catch (refreshErr: any) {
+          if (refreshErr.permanentFailure) {
+            log(`[VK] permanentFailure при refresh для campaign ${campaignId}: ${refreshErr.message} — ставим authExpired`, 'scheduler', 'error');
+            const { markVkAuthExpired } = await import('./vk-token-refresh');
+            await markVkAuthExpired(campaignId);
+          } else {
+            log(`[VK] Ошибка refresh токена для campaign ${campaignId}: ${refreshErr.message}`, 'scheduler', 'error');
+          }
         }
       } else if (!result.success && result.error && this.isAuthError(result.error) && !settings.refreshToken) {
         log(`[VK] Auth error без refresh_token — токен VK истёк, требуется переподключение ВК в настройках кампании`, 'scheduler', 'error');
+        const { markVkAuthExpired } = await import('./vk-token-refresh');
+        await markVkAuthExpired(campaignId);
       }
 
       if (result.success) {

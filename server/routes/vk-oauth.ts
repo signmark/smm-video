@@ -61,7 +61,7 @@ router.get('/vk/oauth2/start', (req, res) => {
   authUrl.searchParams.set('client_id', effectiveClientId);
   authUrl.searchParams.set('redirect_uri', redirectUri);
   authUrl.searchParams.set('response_type', 'code');
-  authUrl.searchParams.set('scope', 'wall groups photos');
+  authUrl.searchParams.set('scope', 'wall groups photos video');
   authUrl.searchParams.set('state', state);
   authUrl.searchParams.set('code_challenge', codeChallenge);
   authUrl.searchParams.set('code_challenge_method', 'S256');
@@ -134,6 +134,7 @@ router.get('/vk/oauth2/callback', async (req, res) => {
         clientId: pending.clientId,
         tokenExpiresAt: expiresAt,
         configured: true,
+        authExpired: false,
         setupCompletedAt: new Date().toISOString()
       }
     };

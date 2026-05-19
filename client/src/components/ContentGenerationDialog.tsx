@@ -6,8 +6,9 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
-import { Loader2, Wand2 } from "lucide-react";
+import { Loader2, Wand2, Lock, Zap } from "lucide-react";
 import { useToast } from '@/hooks/use-toast';
+import { usePlan } from '@/hooks/use-plan';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { queryClient } from '@/lib/queryClient';
 import { apiRequest } from '@/lib/queryClient';
@@ -28,6 +29,7 @@ type ApiService = 'apiservice' | 'deepseek' | 'qwen' | 'gemini-2.5-flash' | 'gem
 // UPDATED: 2025-11-22 15:13 - Added Gemini 3.0 Pro
 export function ContentGenerationDialog({ campaignId, keywords, onClose }: ContentGenerationDialogProps) {
   const { toast } = useToast();
+  const { isExpired } = usePlan();
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationResult, setGenerationResult] = useState<string | null>(null);
   const [selectedKeywords, setSelectedKeywords] = useState<string[]>([]);
@@ -237,7 +239,26 @@ export function ContentGenerationDialog({ campaignId, keywords, onClose }: Conte
           )}
         </DialogHeader>
 
-        {!generationResult ? (
+        {isExpired ? (
+          <div className="flex flex-col items-center gap-5 py-8 px-4 text-center">
+            <div className="rounded-full bg-orange-100 dark:bg-orange-900/30 p-4">
+              <Lock className="h-8 w-8 text-orange-500" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-base mb-1">Подписка истекла</h3>
+              <p className="text-sm text-muted-foreground">
+                Генерация контента с помощью ИИ недоступна.<br />
+                Выберите тариф для продолжения работы.
+              </p>
+            </div>
+            <Button asChild variant="default" className="gap-2">
+              <a href="/pricing">
+                <Zap className="h-4 w-4" />
+                Выбрать тариф
+              </a>
+            </Button>
+          </div>
+        ) : !generationResult ? (
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="selectedService" className="text-right">

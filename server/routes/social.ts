@@ -116,6 +116,10 @@ export function registerSocialRoutes(app: Express) {
       const { socialPlatforms, status } = req.body;
       const userId = req.user?.id;
       const token = req.user?.token;
+
+      if (!req.user?.is_smm_admin && req.user?.expire_date && new Date(req.user.expire_date) <= new Date()) {
+        return res.status(403).json({ error: 'Подписка истекла', message: 'Выберите тариф для продолжения работы.', subscriptionExpired: true });
+      }
       
       console.log(`[CONTENT_PUBLISH] Updating content ${id} for publication. Status: ${status}, User: ${userId}`);
       
@@ -187,6 +191,10 @@ export function registerSocialRoutes(app: Express) {
     try {
       const { id } = req.params;
       const token = req.user?.token;
+
+      if (!req.user?.is_smm_admin && req.user?.expire_date && new Date(req.user.expire_date) <= new Date()) {
+        return res.status(403).json({ error: 'Подписка истекла', message: 'Выберите тариф для продолжения работы.', subscriptionExpired: true });
+      }
       
       const contentResponse = await directusApi.get(`/items/campaign_content/${id}`, {
         headers: { Authorization: `Bearer ${token}` }

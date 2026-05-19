@@ -82,6 +82,10 @@ export function registerAiRoutes(app: Express) {
       const token = req.user?.token;
       
       if (!userId || !token) return res.status(401).json({ error: "Не авторизован" });
+
+      if (!req.user?.is_smm_admin && req.user?.expire_date && new Date(req.user.expire_date) <= new Date()) {
+        return res.status(403).json({ error: 'Подписка истекла', message: 'Выберите тариф для продолжения работы.', subscriptionExpired: true });
+      }
     
       log(`[API] Запрос на генерацию контента: service=${service}, model=${model}`, 'info');
       
@@ -150,6 +154,10 @@ export function registerAiRoutes(app: Express) {
       const model = modelName || modelField;
       const userId = req.user?.id;
       const token = req.user?.token;
+
+      if (!req.user?.is_smm_admin && req.user?.expire_date && new Date(req.user.expire_date) <= new Date()) {
+        return res.status(403).json({ error: 'Подписка истекла', message: 'Выберите тариф для продолжения работы.', subscriptionExpired: true });
+      }
 
       // Проверка плана и месячного лимита генераций
       if (userId) {

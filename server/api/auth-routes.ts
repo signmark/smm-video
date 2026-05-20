@@ -273,10 +273,18 @@ export function registerAuthRoutes(app: Express): void {
       
       log(`Сессия сохранена в DirectusAuthManager для пользователя ${userData.id}`, 'auth');
 
-      // Возвращаем токен и данные пользователя
+      // expires_at из Directus — абсолютный timestamp в мс
+      const expiresAt = response.data.data.expires_at;
+      // expires для клиента в секундах (86400 = 24ч), клиент умножит на 1000 если < 10_000
+      const expiresSeconds = expiresAt
+        ? Math.max(Math.floor((expiresAt - Date.now()) / 1000), 900)
+        : 86400;
+
       res.status(200).json({ 
         token,
         refresh_token: refreshToken,
+        expires: expiresSeconds,
+        expires_at: expiresAt || null,
         user: {
           id: userData.id,
           email: userData.email,

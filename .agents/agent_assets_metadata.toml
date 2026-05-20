@@ -48,3 +48,9 @@ id = "siK9PhFkQGPa5fXpLhuW-"
 uri = "file://video-app/data/videos/83.mp4"
 type = "video"
 title = "Неоновый дождь в Токио — Cinematic субтитры"
+
+[[outputs]]
+id = "u9JSTTiJyuib6Bq5sxfQG"
+uri = "file://docs/ТЗ_SMM_Manager.md"
+type = "text"
+title = "ТЗ SMM Manager"

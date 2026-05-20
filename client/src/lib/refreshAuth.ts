@@ -31,17 +31,18 @@ export async function refreshAuthToken(): Promise<boolean> {
       
       if (response.ok) {
         const data = await response.json();
-        if (data.token && data.user_id) {
-          // КРИТИЧНО: Обновляем токен в localStorage И Zustand store
+        // user_id сервер не возвращает в ответе на refresh — берём из localStorage
+        const userId = data.user_id || localStorage.getItem('user_id');
+        if (data.token && userId) {
           localStorage.setItem('auth_token', data.token);
-          localStorage.setItem('user_id', data.user_id);
-          useAuthStore.getState().setAuth(data.token, data.user_id);
+          if (data.refresh_token) localStorage.setItem('refresh_token', data.refresh_token);
+          localStorage.setItem('user_id', userId);
+          useAuthStore.getState().setAuth(data.token, userId);
           
           console.log('[refreshAuth] Токен успешно обновлен и сохранен');
           return true;
         }
       } else {
-        // Если обновление не удалось, пробуем прямую повторную авторизацию
         console.log('Не удалось обновить токен через refresh token, пробуем прямую авторизацию');
       }
     }

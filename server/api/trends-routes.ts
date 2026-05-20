@@ -174,8 +174,32 @@ export function registerTrendsRoutes(app: Express) {
       }
 
       const authToken = req.user?.token || process.env.DIRECTUS_ADMIN_TOKEN || '';
-      const collectionDays = req.body.collectionDays || req.body.day_past || 7;
-      const postsPerPlatform = req.body.maxTrendsPerSource || 20;
+
+      // Читаем настройки анализа трендов из кампании
+      let campaignTrendSettings: Record<string, any> = {};
+      try {
+        const campaign = await directusCrud.getById<any>('user_campaigns', campaignId, { useAdminToken: true });
+        const ts = campaign?.trend_analysis_settings;
+        if (ts && typeof ts === 'object') {
+          campaignTrendSettings = ts;
+        }
+      } catch (e: any) {
+        log(`[Trends Route] Не удалось получить trend_analysis_settings для ${campaignId}: ${e.message}`, 'warn');
+      }
+
+      // Параметры: настройки кампании → перекрываются явными значениями из req.body
+      const collectionDays = req.body.collectionDays ?? req.body.day_past ?? campaignTrendSettings.collectionDays ?? 7;
+      const minViews = req.body.minViews ?? campaignTrendSettings.minViews ?? 500;
+      const maxTrendsPerSource = req.body.maxTrendsPerSource ?? campaignTrendSettings.maxTrendsPerSource ?? 5;
+      const maxSourcesPerPlatform = req.body.maxSourcesPerPlatform ?? campaignTrendSettings.maxSourcesPerPlatform ?? 10;
+      const minFollowers = req.body.minFollowers ?? campaignTrendSettings.minFollowers ?? {
+        instagram: 5000,
+        telegram: 2000,
+        vk: 3000,
+        facebook: 5000,
+        youtube: 10000
+      };
+      const postsPerPlatform = maxTrendsPerSource;
 
       // Вызываем N8N webhook (основной механизм сбора трендов)
       const n8nWebhookUrl = process.env.N8N_TRENDS_COLLECT_WEBHOOK || getN8nWebhookUrl('collect-trends');
@@ -185,10 +209,10 @@ export function registerTrendsRoutes(app: Express) {
         userID: userId,
         collectionDays,
         day_past: collectionDays,
-        // Явные дефолты на случай если поле не пришло с фронтенда
-        minViews: req.body.minViews ?? 500,
-        maxTrendsPerSource: req.body.maxTrendsPerSource ?? 5,
-        maxSourcesPerPlatform: req.body.maxSourcesPerPlatform ?? 10
+        minViews,
+        maxTrendsPerSource,
+        maxSourcesPerPlatform,
+        minFollowers
       };
       log(`[Trends Route] 📤 Отправка запроса на N8N вебхук: ${n8nWebhookUrl}`, 'info');
       axios.post(n8nWebhookUrl, n8nPayload, {

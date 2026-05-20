@@ -1453,7 +1453,7 @@ ${text}
             if (!shouldAdapt) {
               const campaignId = content.campaign_id || content.campaignId;
               if (campaignId) {
-                const camp: any = await directusCrud.getById('user_campaigns', campaignId);
+                const camp: any = await directusCrud.getById('user_campaigns', campaignId, { useAdminToken: true });
                 const rawSettings = camp?.autonomous_settings;
                 let autoSettings: { useEditorPass?: boolean } = {};
                 if (rawSettings && typeof rawSettings === 'object') autoSettings = rawSettings;

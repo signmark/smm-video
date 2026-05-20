@@ -36,7 +36,16 @@ export function TrendAnalysisSettings({
   };
   
   const [settings, setSettings] = useState<TrendSettings>(
-    initialSettings || defaultSettings
+    initialSettings
+      ? {
+          ...defaultSettings,
+          ...initialSettings,
+          minFollowers: {
+            ...defaultSettings.minFollowers,
+            ...(initialSettings.minFollowers || {})
+          }
+        }
+      : defaultSettings
   );
   
   const handleFollowersChange = (platform: keyof TrendSettings['minFollowers'], value: string) => {

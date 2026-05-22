@@ -216,12 +216,23 @@ export async function refreshAllExpiringVkTokens(): Promise<void> {
       const campaigns: Array<{ id: string; social_media_settings: any }> = resp.data.data || [];
       if (campaigns.length === 0) break;
 
-      const threshold = Date.now() + 26 * 60 * 60 * 1000; // now + 26 часов
+      // Рефрешим только если токен истекает в ближайшие 4 часа.
+      // VK ID v2 токены живут 24 часа — порог 26h был слишком агрессивным
+      // и вызывал лишние рефреши на каждом запуске кроп.
+      const threshold = Date.now() + 4 * 60 * 60 * 1000; // now + 4 часа
+      // Не рефрешим если последний успешный refresh был менее 1 часа назад
+      // (защита от гонки кроп ↔ проактивный refresh при публикации)
+      const minRefreshIntervalMs = 60 * 60 * 1000; // 1 час
 
       const toRefresh = campaigns.filter(c => {
         const vk = c.social_media_settings?.vk;
         if (!vk?.refreshToken || !vk?.clientId) return false;
-        if (vk.authExpired) return false; // уже помечено как требует переподключения — не трогаем
+        if (vk.authExpired) return false;
+        // Если обновляли менее часа назад — пропускаем (дать вкервер VK остыть)
+        if (vk.tokenRefreshedAt) {
+          const lastRefresh = new Date(vk.tokenRefreshedAt).getTime();
+          if (Date.now() - lastRefresh < minRefreshIntervalMs) return false;
+        }
         if (!vk.tokenExpiresAt) return true; // нет даты — обновляем на всякий случай
         return new Date(vk.tokenExpiresAt).getTime() < threshold;
       });
@@ -347,10 +358,37 @@ export async function refreshVkToken(settings: {
 }
 
 /**
+ * Per-campaign lock: предотвращает одновременный refresh одного токена
+ * из разных потоков (кроп + публикация).
+ * Если refresh уже идёт — ожидаем его результата вместо нового запроса к VK.
+ */
+const _refreshLocks = new Map<string, Promise<string | null>>();
+
+/**
  * Обновляет токен и сохраняет обратно в настройки кампании.
  * Возвращает новый access_token или null при неудаче.
+ * Потокобезопасно: параллельные вызовы для одной кампании ждут одного результата.
  */
 export async function refreshAndSaveVkToken(
+  campaignId: string,
+  currentSettings: Record<string, any>
+): Promise<string | null> {
+  const existing = _refreshLocks.get(campaignId);
+  if (existing) {
+    log(`[VK-REFRESH] Refresh для кампании ${campaignId} уже выполняется — ожидаем результата`, 'vk-refresh');
+    return existing;
+  }
+
+  const promise = _doRefreshAndSave(campaignId, currentSettings);
+  _refreshLocks.set(campaignId, promise);
+  try {
+    return await promise;
+  } finally {
+    _refreshLocks.delete(campaignId);
+  }
+}
+
+async function _doRefreshAndSave(
   campaignId: string,
   currentSettings: Record<string, any>
 ): Promise<string | null> {

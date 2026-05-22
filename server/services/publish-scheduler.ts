@@ -1010,9 +1010,13 @@ export class PublishScheduler {
       const vkClientId = settings.clientId || process.env.VK_APP_ID || VK_DEFAULT_APP_ID;
       const vkSettings = { ...settings, campaignId, clientId: vkClientId };
 
-      // Проактивно обновляем токен ПЕРЕД каждой публикацией (VK может инвалидировать токен в любой момент)
-      if (vkSettings.refreshToken && vkClientId) {
-        log(`[VK] Обновляем токен перед публикацией...`, 'scheduler');
+      // Проактивно обновляем токен ТОЛЬКО если он истекает в ближайшие 10 минут или дата неизвестна.
+      // Не рефрешим перед каждой публикацией — это вызывает гонку при параллельных постах.
+      const tokenExpiresAt = vkSettings.tokenExpiresAt ? new Date(vkSettings.tokenExpiresAt).getTime() : 0;
+      const needsRefresh = vkSettings.refreshToken && vkClientId &&
+        (!vkSettings.tokenExpiresAt || tokenExpiresAt < Date.now() + 10 * 60 * 1000);
+      if (needsRefresh) {
+        log(`[VK] Токен истекает менее чем через 10 минут (или дата неизвестна) — обновляем...`, 'scheduler');
         try {
           const { refreshAndSaveVkToken } = await import('./vk-token-refresh');
           const newToken = await refreshAndSaveVkToken(campaignId, vkSettings);

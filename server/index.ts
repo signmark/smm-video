@@ -1304,6 +1304,26 @@ setTimeout(() => {
   setInterval(checkVkTokensStatus, 30 * 60 * 1000);
 }, 5 * 60 * 1000);
 
+// Фоновое обновление истекающих VK токенов — каждые 6 часов.
+// Первый запуск через 3 минуты после старта (чтобы сервер успел полностью инициализироваться).
+setTimeout(async () => {
+  try {
+    const { refreshAllExpiringVkTokens } = await import('./services/vk-token-refresh');
+    log('[VK-CRON] Первый запуск фонового обновления VK токенов', 'vk-cron');
+    await refreshAllExpiringVkTokens();
+  } catch (e: any) {
+    log(`[VK-CRON] Ошибка первого запуска: ${e.message}`, 'vk-cron', 'error');
+  }
+  setInterval(async () => {
+    try {
+      const { refreshAllExpiringVkTokens } = await import('./services/vk-token-refresh');
+      await refreshAllExpiringVkTokens();
+    } catch (e: any) {
+      log(`[VK-CRON] Ошибка: ${e.message}`, 'vk-cron', 'error');
+    }
+  }, 6 * 60 * 60 * 1000); // каждые 6 часов
+}, 3 * 60 * 1000);
+
 // Graceful shutdown для всех сервисов
 function gracefulShutdown(signal: string) {
   log(`🔴 Получен сигнал ${signal}, выполняем graceful shutdown`, 'shutdown');

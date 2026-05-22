@@ -1241,23 +1241,6 @@ function performGlobalMemoryCleanup() {
 // Запускаем очистку памяти каждые 30 минут
 setInterval(performGlobalMemoryCleanup, 30 * 60 * 1000);
 
-// ======================================================
-// Фоновое обновление VK токенов (каждые 6 часов)
-// Обновляет все токены, срок жизни которых < 26 часов
-async function runVkTokenRefresh() {
-  try {
-    const { refreshAllExpiringVkTokens } = await import('./services/vk-token-refresh');
-    await refreshAllExpiringVkTokens();
-  } catch (e: any) {
-    log(`[VK-AUTO-REFRESH] Ошибка: ${e.message}`, 'vk-cron', 'error');
-  }
-}
-
-// Первый запуск через 3 минуты после старта, затем каждые 6 часов
-setTimeout(() => {
-  runVkTokenRefresh();
-  setInterval(runVkTokenRefresh, 6 * 60 * 60 * 1000);
-}, 3 * 60 * 1000);
 
 // ======================================================
 // Фоновая проверка VK токенов (каждые 30 минут) — мониторинг статуса

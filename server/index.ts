@@ -1304,7 +1304,7 @@ setTimeout(async () => {
     } catch (e: any) {
       log(`[VK-CRON] Ошибка: ${e.message}`, 'vk-cron', 'error');
     }
-  }, 6 * 60 * 60 * 1000); // каждые 6 часов
+  }, 30 * 60 * 1000); // каждые 30 минут
 }, 3 * 60 * 1000);
 
 // Graceful shutdown для всех сервисов

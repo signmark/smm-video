@@ -216,26 +216,15 @@ export async function refreshAllExpiringVkTokens(): Promise<void> {
       const campaigns: Array<{ id: string; social_media_settings: any }> = resp.data.data || [];
       if (campaigns.length === 0) break;
 
-      // Рефрешим если токен истекает в ближайшие 10 часов.
-      // VK ID v2 токены живут 24 часа, кроп бежит раз в 6 часов.
-      // Порог ОБЯЗАН быть > интервала кроп (6ч), иначе возникает слепая зона:
-      // при 6ч интервале остаток на каждом прогоне = [24, 18, 12, 6] — без запаса
-      // попадём на последний прогон (6ч остатка), при 8ч порог ловит его впритык.
-      // 10ч перекрывает сдвиги кроп при перезапусках сервера с запасом в 4ч.
-      const threshold = Date.now() + 10 * 60 * 60 * 1000; // now + 10 часов
-      // Не рефрешим если последний успешный refresh был менее 1 часа назад
-      // (защита от гонки кроп ↔ проактивный refresh при публикации)
-      const minRefreshIntervalMs = 60 * 60 * 1000; // 1 час
+      // Рефрешим если токен истекает в ближайший 1 час.
+      // Кроп бежит каждые 30 минут → токен всегда поймаем за 30-60 мин до истечения.
+      // Mutex (_refreshLocks) защищает от одновременных refresh одного аккаунта.
+      const threshold = Date.now() + 60 * 60 * 1000; // now + 1 час
 
       const toRefresh = campaigns.filter(c => {
         const vk = c.social_media_settings?.vk;
         if (!vk?.refreshToken || !vk?.clientId) return false;
         if (vk.authExpired) return false;
-        // Если обновляли менее часа назад — пропускаем (дать вкервер VK остыть)
-        if (vk.tokenRefreshedAt) {
-          const lastRefresh = new Date(vk.tokenRefreshedAt).getTime();
-          if (Date.now() - lastRefresh < minRefreshIntervalMs) return false;
-        }
         if (!vk.tokenExpiresAt) return true; // нет даты — обновляем на всякий случай
         return new Date(vk.tokenExpiresAt).getTime() < threshold;
       });

@@ -339,13 +339,14 @@ class VkService {
       let { token } = settings;
       if (!token) throw new Error('VK не настроен: отсутствует token');
 
-      // Проактивная проверка срока действия токена.
-      // Если до истечения менее 5 минут (или токен уже истёк) — обновляем заранее.
+      // Аварийная проверка срока действия токена перед каждым запросом.
+      // Если до истечения менее 15 минут — обновляем прямо сейчас, не дожидаясь кроп.
+      // Кроп ловит токены за 30-60 мин (бежит каждые 30 мин, порог 1ч) — это последний рубеж.
       if (settings.tokenExpiresAt && settings.refreshToken && settings.clientId && settings.campaignId) {
         const expiresAt = new Date(settings.tokenExpiresAt).getTime();
-        const fiveMinutes = 5 * 60 * 1000;
-        if (Date.now() + fiveMinutes >= expiresAt) {
-          log.warn(`[${opId}] [VK] Токен истекает менее чем через 5 минут, обновляем заранее...`);
+        const fifteenMinutes = 15 * 60 * 1000;
+        if (Date.now() + fifteenMinutes >= expiresAt) {
+          log.warn(`[${opId}] [VK] Токен истекает менее чем через 15 минут, обновляем заранее...`);
           try {
             const { refreshAndSaveVkToken } = await import('../vk-token-refresh');
             const newToken = await refreshAndSaveVkToken(

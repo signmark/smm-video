@@ -257,12 +257,23 @@ class VkService {
       form.append('video_file', vidBuffer, { filename: 'video.mp4', contentType: 'video/mp4' });
 
       log.info(`[${opId}] [VK] Загружаем видео (${(vidBuffer.length / 1024 / 1024).toFixed(1)} MB) на VK...`);
-      await axios.post(uploadUrl, form, {
+      const uploadRes = await axios.post(uploadUrl, form, {
         headers: form.getHeaders(),
         timeout: 300000,
         maxContentLength: Infinity,
         maxBodyLength: Infinity
       });
+
+      // VK upload-сервер возвращает JSON — проверяем его.
+      // Если не проверять, невалидный аттачмент молча теряется в wall.post → только текст.
+      log.info(`[${opId}] [VK] Ответ upload-сервера: ${JSON.stringify(uploadRes.data)}`);
+      if (uploadRes.data?.error) {
+        throw new Error(`VK upload server error: ${uploadRes.data.error}`);
+      }
+      // Некоторые VK upload-серверы возвращают пустой объект при ошибке
+      if (!uploadRes.data || (typeof uploadRes.data === 'object' && Object.keys(uploadRes.data).length === 0)) {
+        throw new Error('VK upload server вернул пустой ответ — видео не принято');
+      }
 
       const attachment = `video${ownerId}_${videoId}`;
       log.info(`[${opId}] [VK] Видео загружено: ${attachment}`);

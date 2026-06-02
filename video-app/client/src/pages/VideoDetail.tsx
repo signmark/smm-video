@@ -570,6 +570,7 @@ export default function VideoDetail({ id }: { id: string }) {
   const [editText, setEditText] = useState('');
   const [editingPrompt, setEditingPrompt] = useState<string | null>(null);
   const [editPromptText, setEditPromptText] = useState('');
+  const [translatingPrompt, setTranslatingPrompt] = useState<string | null>(null);
   const [expandedPrompts, setExpandedPrompts] = useState<Set<string>>(new Set());
   const [editingStockQuery, setEditingStockQuery] = useState<string | null>(null); // sceneId
   const [stockQueryDraft, setStockQueryDraft] = useState('');
@@ -735,18 +736,45 @@ export default function VideoDetail({ id }: { id: string }) {
     setEditingScene(null);
   }
 
-  async function handleSavePrompt(sceneId: string, field: 't2vPrompt' | 'imagePrompt') {
-    await fetch(`${API}/videos/${id}/scenes/${sceneId}`, {
+  async function handleSavePrompt(sceneId: string, field: 't2vPrompt' | 'imagePrompt' | 't2vPromptRu' | 'imagePromptRu') {
+    const res = await fetch(`${API}/videos/${id}/scenes/${sceneId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: project!.script!.scenes.find(s => s.id === sceneId)!.text, [field]: editPromptText }),
+      body: JSON.stringify({ [field]: editPromptText }),
     });
+    const data = await res.json().catch(() => ({}));
     setProject((p) => {
       if (!p?.script) return p;
-      const scenes = p.script.scenes.map((s) => s.id === sceneId ? { ...s, [field]: editPromptText } : s);
+      const scenes = p.script.scenes.map((s) => {
+        if (s.id !== sceneId) return s;
+        const updated: any = { ...s, [field]: editPromptText };
+        if (field === 'imagePromptRu' && data.imagePrompt) updated.imagePrompt = data.imagePrompt;
+        if (field === 't2vPromptRu' && data.t2vPrompt) updated.t2vPrompt = data.t2vPrompt;
+        return updated;
+      });
       return { ...p, script: { ...p.script, scenes } };
     });
     setEditingPrompt(null);
+  }
+
+  async function handleTranslatePrompt(sceneIndex: number, sceneId: string, isT2V: boolean) {
+    setTranslatingPrompt(sceneId);
+    try {
+      const res = await fetch(`${API}/videos/${id}/scenes/${sceneIndex}/translate-prompt`, { method: 'POST' });
+      if (!res.ok) throw new Error('Translation failed');
+      const data = await res.json();
+      const ruText = isT2V ? data.t2vPromptRu : data.imagePromptRu;
+      if (ruText) {
+        setProject((p) => {
+          if (!p?.script) return p;
+          const scenes = p.script.scenes.map((s) => s.id === sceneId
+            ? { ...s, [isT2V ? 't2vPromptRu' : 'imagePromptRu']: ruText }
+            : s);
+          return { ...p, script: { ...p.script, scenes } };
+        });
+      }
+    } catch { /* silently ignore */ }
+    setTranslatingPrompt(null);
   }
 
   function togglePrompt(sceneId: string) {
@@ -1099,58 +1127,79 @@ export default function VideoDetail({ id }: { id: string }) {
                         <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>{scene.narration}</div>
                       </div>
                     )}
-                    {/* ── Prompt inline (truncated, expandable) ── */}
+                    {/* ── Prompt inline (Russian primary, EN collapsed) ── */}
                     {(() => {
                       const isT2VScene = project.animationModel === 'chain' ? i === 0 : !!scene.t2vPrompt;
-                      const promptField: 't2vPrompt' | 'imagePrompt' = isT2VScene ? 't2vPrompt' : 'imagePrompt';
-                      const promptValue = isT2VScene ? (scene.t2vPrompt || '') : (scene.imagePrompt || '');
+                      const promptFieldRu: 't2vPromptRu' | 'imagePromptRu' = isT2VScene ? 't2vPromptRu' : 'imagePromptRu';
+                      const enValue = isT2VScene ? (scene.t2vPrompt || '') : (scene.imagePrompt || '');
+                      const ruValue = isT2VScene ? ((scene as any).t2vPromptRu || '') : ((scene as any).imagePromptRu || '');
                       const isExpanded = expandedPrompts.has(scene.id);
                       const isEditingThisPrompt = editingPrompt === scene.id;
-                      const TRUNC = 110;
-                      const needsTrunc = promptValue.length > TRUNC;
+                      const isTranslating = translatingPrompt === scene.id;
+                      const label = isT2VScene ? '🎬 Видео-промпт:' : '🖼️ Визуальный промпт:';
+                      const accentColor = isT2VScene ? '#86efac' : '#93c5fd';
+                      const TRUNC = 120;
+                      const needsTrunc = ruValue.length > TRUNC;
                       return (
                         <>
                           <div style={{ marginTop: 8 }}>
+                            <div style={{ fontSize: 10, color: accentColor, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 3 }}>{label}</div>
                             {isEditingThisPrompt ? (
                               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                                 <textarea
                                   value={editPromptText}
                                   onChange={(e) => setEditPromptText(e.target.value)}
                                   autoFocus
-                                  rows={5}
+                                  rows={4}
+                                  placeholder="Опишите сцену на русском..."
                                   style={{ width: '100%', background: 'var(--bg-card2)', border: '1.5px solid #7c3aed', borderRadius: 'var(--radius-sm)', color: 'var(--text)', padding: '8px 10px', fontSize: 12, lineHeight: 1.6, outline: 'none', resize: 'vertical', boxSizing: 'border-box' }}
                                 />
+                                <div style={{ fontSize: 10, color: '#6b7280' }}>Пишите на русском — сервер автоматически переведёт в English для AI</div>
                                 <div style={{ display: 'flex', gap: 6 }}>
-                                  <button onClick={() => handleSavePrompt(scene.id, promptField)} style={{ padding: '5px 14px', border: 'none', borderRadius: 'var(--radius-sm)', background: '#7c3aed', color: 'white', fontSize: 12, cursor: 'pointer' }}>✓ Сохранить</button>
+                                  <button onClick={() => handleSavePrompt(scene.id, promptFieldRu)} style={{ padding: '5px 14px', border: 'none', borderRadius: 'var(--radius-sm)', background: '#7c3aed', color: 'white', fontSize: 12, cursor: 'pointer' }}>✓ Сохранить</button>
                                   <button onClick={() => setEditingPrompt(null)} style={{ padding: '5px 10px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', background: 'transparent', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer' }}>✕</button>
                                 </div>
                               </div>
-                            ) : (
-                              <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6, wordBreak: 'break-word' }}>
-                                <span style={{ color: isT2VScene ? '#86efac' : '#93c5fd', fontWeight: 600, marginRight: 4 }} title="Визуальное описание для AI на английском. Именно это отправляется в FAL.AI / Imagen для генерации изображения или видео.">
-                                  {isT2VScene ? '🎬 Видео-промпт (англ.):' : '🖼️ Визуальный промпт (англ.):'}
-                                </span>
-                                {promptValue ? (
-                                  <>
-                                    {(isExpanded || !needsTrunc) ? promptValue : promptValue.slice(0, TRUNC)}
-                                    {needsTrunc && !isExpanded && (
-                                      <button onClick={() => togglePrompt(scene.id)} style={{ background: 'none', border: 'none', color: '#a78bfa', fontSize: 11, cursor: 'pointer', padding: '0 3px' }}>
-                                        ...ещё
-                                      </button>
-                                    )}
-                                    {needsTrunc && isExpanded && (
-                                      <button onClick={() => togglePrompt(scene.id)} style={{ background: 'none', border: 'none', color: '#a78bfa', fontSize: 11, cursor: 'pointer', padding: '0 3px' }}>
-                                        {' '}скрыть
-                                      </button>
-                                    )}
-                                  </>
-                                ) : (
-                                  <span style={{ color: '#6b7280', fontStyle: 'italic' }}>пусто</span>
+                            ) : ruValue ? (
+                              <div>
+                                <div style={{ fontSize: 12, color: 'var(--text)', lineHeight: 1.6, wordBreak: 'break-word' }}>
+                                  {(isExpanded || !needsTrunc) ? ruValue : ruValue.slice(0, TRUNC)}
+                                  {needsTrunc && !isExpanded && (
+                                    <button onClick={() => togglePrompt(scene.id)} style={{ background: 'none', border: 'none', color: '#a78bfa', fontSize: 11, cursor: 'pointer', padding: '0 3px' }}>...ещё</button>
+                                  )}
+                                  {needsTrunc && isExpanded && (
+                                    <button onClick={() => togglePrompt(scene.id)} style={{ background: 'none', border: 'none', color: '#a78bfa', fontSize: 11, cursor: 'pointer', padding: '0 3px' }}> скрыть</button>
+                                  )}
+                                  <button onClick={() => { setEditingPrompt(scene.id); setEditPromptText(ruValue); }} style={{ marginLeft: 6, padding: '1px 6px', border: '1px solid rgba(124,58,237,0.3)', borderRadius: 3, background: 'rgba(124,58,237,0.1)', color: '#c4b5fd', fontSize: 10, cursor: 'pointer' }}>✏️</button>
+                                </div>
+                                {enValue && (
+                                  <div style={{ marginTop: 4, fontSize: 10, color: '#374151', lineHeight: 1.5, wordBreak: 'break-word' }}>
+                                    <span style={{ color: '#4b5563', fontWeight: 600 }}>EN (для AI): </span>
+                                    {enValue.length > 100 ? enValue.slice(0, 100) + '…' : enValue}
+                                  </div>
                                 )}
+                              </div>
+                            ) : (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                {enValue ? (
+                                  <button
+                                    onClick={() => handleTranslatePrompt(i, scene.id, isT2VScene)}
+                                    disabled={isTranslating}
+                                    style={{ padding: '3px 10px', fontSize: 11, borderRadius: 4, border: '1px solid #374151', background: 'transparent', color: isTranslating ? '#6b7280' : '#9ca3af', cursor: isTranslating ? 'default' : 'pointer' }}
+                                  >
+                                    {isTranslating ? '⏳ Перевожу...' : '🌐 Перевести на русский'}
+                                  </button>
+                                ) : null}
                                 <button
-                                  onClick={() => { setEditingPrompt(scene.id); setEditPromptText(promptValue); }}
-                                  style={{ marginLeft: 5, padding: '1px 6px', border: '1px solid rgba(124,58,237,0.3)', borderRadius: 3, background: 'rgba(124,58,237,0.1)', color: '#c4b5fd', fontSize: 10, cursor: 'pointer' }}
-                                >✏️</button>
+                                  onClick={() => { setEditingPrompt(scene.id); setEditPromptText(''); }}
+                                  style={{ padding: '3px 10px', fontSize: 11, borderRadius: 4, border: '1px solid rgba(124,58,237,0.3)', background: 'rgba(124,58,237,0.08)', color: '#c4b5fd', cursor: 'pointer' }}
+                                >✏️ Написать на русском</button>
+                                {enValue && (
+                                  <div style={{ width: '100%', marginTop: 2, fontSize: 10, color: '#4b5563', lineHeight: 1.5, wordBreak: 'break-word' }}>
+                                    <span style={{ color: '#6b7280', fontWeight: 600 }}>EN: </span>
+                                    {enValue.length > 120 ? enValue.slice(0, 120) + '…' : enValue}
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>

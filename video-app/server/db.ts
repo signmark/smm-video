@@ -25,6 +25,8 @@ export interface Scene {
   stockQuery?: string;          // custom search query for Pexels (defaults to imagePrompt)
   stockAvailable?: boolean;     // set by precheck: true = clip found & downloaded, false = not found
   stockPhotoAvailable?: boolean; // set by precheck: true = Pexels photo found, saved as variant 0
+  imagePromptRu?: string;       // Russian version of imagePrompt (shown in UI, back-translated to EN at generation)
+  t2vPromptRu?: string;         // Russian version of t2vPrompt
 }
 
 export interface Script {

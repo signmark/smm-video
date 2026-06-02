@@ -390,13 +390,57 @@ router.post('/videos/:id/scenes/:sceneIndex/stock-retry', async (req, res) => {
   }
 });
 
+// Translates text using DeepSeek → OpenAI → Gemini fallback chain
+async function translateText(text: string, direction: 'ru-to-en' | 'en-to-ru'): Promise<string> {
+  const system = direction === 'en-to-ru'
+    ? 'Translate the following text from English to Russian. Return ONLY the translated text, no explanations, no quotes.'
+    : 'Translate the following text from Russian to English. Return ONLY the translated text, no explanations, no quotes.';
+
+  const deepseekKey = process.env.DEEPSEEK_API_KEY;
+  if (deepseekKey) {
+    const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${deepseekKey}` },
+      body: JSON.stringify({ model: 'deepseek-chat', messages: [{ role: 'system', content: system }, { role: 'user', content: text }], max_tokens: 500, temperature: 0.3 }),
+    });
+    const data = await res.json() as any;
+    const result = data.choices?.[0]?.message?.content?.trim();
+    if (result) return result;
+  }
+
+  const openaiKey = process.env.OPENAI_API_KEY;
+  if (openaiKey) {
+    const res = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${openaiKey}` },
+      body: JSON.stringify({ model: 'gpt-4o-mini', messages: [{ role: 'system', content: system }, { role: 'user', content: text }], max_tokens: 500, temperature: 0.3 }),
+    });
+    const data = await res.json() as any;
+    const result = data.choices?.[0]?.message?.content?.trim();
+    if (result) return result;
+  }
+
+  throw new Error('No AI key available for translation');
+}
+
 router.patch('/videos/:id/scenes/:sceneId', async (req, res) => {
   try {
     const project = await getProject(req.params.id);
     if (!project) return res.status(404).json({ error: 'Not found' });
     if (!project.script) return res.status(400).json({ error: 'No script' });
 
-    const { text, t2vPrompt, imagePrompt, narration, selectedVariant, videoSource, stockQuery } = req.body;
+    const { text, t2vPrompt, imagePrompt, narration, selectedVariant, videoSource, stockQuery, imagePromptRu, t2vPromptRu } = req.body;
+
+    let translatedImagePrompt: string | undefined;
+    let translatedT2vPrompt: string | undefined;
+
+    // When Russian prompt is saved, back-translate to English for AI generation
+    if (typeof imagePromptRu === 'string' && imagePromptRu.trim()) {
+      try { translatedImagePrompt = await translateText(imagePromptRu.trim(), 'ru-to-en'); } catch { /* use old EN */ }
+    }
+    if (typeof t2vPromptRu === 'string' && t2vPromptRu.trim()) {
+      try { translatedT2vPrompt = await translateText(t2vPromptRu.trim(), 'ru-to-en'); } catch { /* use old EN */ }
+    }
 
     const scenes = project.script.scenes.map((s) => {
       if (s.id !== req.params.sceneId) return s;
@@ -408,11 +452,41 @@ router.patch('/videos/:id/scenes/:sceneId', async (req, res) => {
       if (typeof selectedVariant === 'number') updated.selectedVariant = selectedVariant;
       if (videoSource === 'ai' || videoSource === 'stock' || videoSource === 'stock-animated') updated.videoSource = videoSource;
       if (typeof stockQuery === 'string') updated.stockQuery = stockQuery.trim();
+      if (typeof imagePromptRu === 'string') updated.imagePromptRu = imagePromptRu.trim();
+      if (typeof t2vPromptRu === 'string') updated.t2vPromptRu = t2vPromptRu.trim();
+      if (translatedImagePrompt) updated.imagePrompt = translatedImagePrompt;
+      if (translatedT2vPrompt) updated.t2vPrompt = translatedT2vPrompt;
       return updated;
     });
     const updatedScript = { ...project.script, scenes };
     await updateProject(req.params.id, { script: updatedScript });
-    res.json({ success: true });
+    res.json({ success: true, imagePrompt: translatedImagePrompt, t2vPrompt: translatedT2vPrompt });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Translate scene's English prompt → Russian, save as imagePromptRu / t2vPromptRu
+router.post('/videos/:id/scenes/:sceneIndex/translate-prompt', async (req, res) => {
+  try {
+    const project = await getProject(req.params.id);
+    if (!project?.script) return res.status(404).json({ error: 'Not found' });
+    const idx = parseInt(req.params.sceneIndex, 10);
+    const scene = project.script.scenes[idx];
+    if (!scene) return res.status(404).json({ error: 'Scene not found' });
+
+    const isT2V = !!scene.t2vPrompt;
+    const enText = isT2V ? (scene.t2vPrompt || '') : (scene.imagePrompt || '');
+    if (!enText) return res.status(400).json({ error: 'No prompt to translate' });
+
+    const ruText = await translateText(enText, 'en-to-ru');
+
+    const scenes = project.script.scenes.map((s, i) => {
+      if (i !== idx) return s;
+      return isT2V ? { ...s, t2vPromptRu: ruText } : { ...s, imagePromptRu: ruText };
+    });
+    await updateProject(req.params.id, { script: { ...project.script, scenes } });
+    res.json({ success: true, imagePromptRu: isT2V ? undefined : ruText, t2vPromptRu: isT2V ? ruText : undefined });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

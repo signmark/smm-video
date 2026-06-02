@@ -216,7 +216,7 @@ router.get('/music/preview', async (req, res) => {
 
 router.post('/videos', async (req, res) => {
   try {
-    const { title, topic, format, duration, language, animationModel, subtitleStyle, voice, clipDuration, subtitleFont, subtitleSize, subtitleColor, musicStyle, customScenario, landingUrl } = req.body;
+    const { title, topic, format, duration, language, animationModel, subtitleStyle, voice, clipDuration, subtitleFont, subtitleSize, subtitleColor, musicStyle, customScenario, landingUrl, additionalDetails } = req.body;
     if (!format || !duration) {
       return res.status(400).json({ error: 'format and duration are required' });
     }
@@ -247,6 +247,7 @@ router.post('/videos', async (req, res) => {
       musicStyle: typeof musicStyle === 'string' ? musicStyle : undefined,
       customScenario: hasScenario ? String(customScenario).trim() : undefined,
       landingUrl: hasLandingUrl ? String(landingUrl).trim() : undefined,
+      additionalDetails: (additionalDetails && String(additionalDetails).trim()) ? String(additionalDetails).trim() : undefined,
     });
     res.status(201).json(project);
   } catch (err: any) {
@@ -1062,6 +1063,7 @@ async function runScriptOnly(projectId: string) {
       t2v: useT2V,
       animationModel: project.animationModel,
       clipDuration: project.clipDuration,
+      additionalDetails: project.additionalDetails,
     });
 
     await updateProject(projectId, {

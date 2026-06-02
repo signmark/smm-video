@@ -973,22 +973,25 @@ export default function VideoDetail({ id }: { id: string }) {
                         <button onClick={() => setEditingScene(null)} style={{ padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', background: 'transparent', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer' }}>✕</button>
                       </div>
                     ) : (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontWeight: 600, fontSize: 15 }}>{scene.text}</span>
-                        <button
-                          onClick={() => { setEditingScene(scene.id); setEditText(scene.text); }}
-                          style={{ padding: '2px 8px', border: '1px solid var(--border)', borderRadius: 4, background: 'transparent', color: 'var(--text-muted)', fontSize: 11, cursor: 'pointer' }}
-                        >
-                          ✏️
-                        </button>
+                      <div>
+                        <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 3 }}>📝 Субтитры (текст на экране)</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontWeight: 600, fontSize: 15 }}>{scene.text}</span>
+                          <button
+                            onClick={() => { setEditingScene(scene.id); setEditText(scene.text); }}
+                            style={{ padding: '2px 8px', border: '1px solid var(--border)', borderRadius: 4, background: 'transparent', color: 'var(--text-muted)', fontSize: 11, cursor: 'pointer' }}
+                          >
+                            ✏️
+                          </button>
+                        </div>
                       </div>
                     )}
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8, flexWrap: 'wrap', gap: 6 }}>
                       <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                         {project.clipDuration ?? scene.duration}с
                         {(project.animationModel === 'chain' ? i === 0 : !!scene.t2vPrompt)
-                          ? <span style={{ marginLeft: 8, color: '#86efac' }}>T2V</span>
-                          : <span style={{ marginLeft: 8, color: '#93c5fd' }}>I2V</span>}
+                          ? <span style={{ marginLeft: 8, color: '#86efac' }} title="Text-to-Video: видео генерируется напрямую из текстового промпта, без опорного кадра">Текст→Видео</span>
+                          : <span style={{ marginLeft: 8, color: '#93c5fd' }} title="Image-to-Video: сначала генерируется картинка, затем она анимируется в видеоклип">Картинка→Видео</span>}
                       </div>
                       {/* Source toggle */}
                       {(() => {
@@ -999,19 +1002,19 @@ export default function VideoDetail({ id }: { id: string }) {
                           ? (available === false ? '#ef4444' : '#0ea5e9')
                           : 'transparent';
                         const stockLabel = checking
-                          ? '⏳ Stock'
+                          ? '⏳ Сток...'
                           : available === true
-                            ? '✅ Stock'
+                            ? '✅ Сток'
                             : available === false
-                              ? '❌ Stock'
-                              : '📹 Stock';
+                              ? '❌ Сток'
+                              : '📹 Сток';
                         const stockTitle = checking
-                          ? 'Проверяю наличие в Pexels...'
+                          ? 'Ищу подходящий бесплатный клип в Pexels...'
                           : available === true
-                            ? 'Клип найден в Pexels ✓'
+                            ? 'Клип найден в Pexels (бесплатные стоковые видео) ✓'
                             : available === false
-                              ? 'Клип не найден в Pexels — переключитесь на AI'
-                              : 'Стоковое видео (Pexels)';
+                              ? 'Подходящий клип не найден в Pexels — используйте AI-генерацию'
+                              : 'Pexels — бесплатные стоковые видео. Быстро и без затрат на AI';
                         const photoAvailable = (scene as any).stockPhotoAvailable as boolean | undefined;
                         const isAnimated = scene.videoSource === 'stock-animated';
                         return (
@@ -1091,8 +1094,9 @@ export default function VideoDetail({ id }: { id: string }) {
                       );
                     })()}
                     {scene.narration && (
-                      <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5, borderLeft: '2px solid rgba(167,139,250,0.3)', paddingLeft: 8 }}>
-                        {scene.narration}
+                      <div style={{ marginTop: 8, borderLeft: '2px solid rgba(167,139,250,0.3)', paddingLeft: 8 }}>
+                        <div style={{ fontSize: 10, color: '#c4b5fd', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 3 }}>🎙️ Озвучка (голос за кадром)</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>{scene.narration}</div>
                       </div>
                     )}
                     {/* ── Prompt inline (truncated, expandable) ── */}
@@ -1123,8 +1127,8 @@ export default function VideoDetail({ id }: { id: string }) {
                               </div>
                             ) : (
                               <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6, wordBreak: 'break-word' }}>
-                                <span style={{ color: isT2VScene ? '#86efac' : '#93c5fd', fontWeight: 600, marginRight: 4 }}>
-                                  {isT2VScene ? 'T2V:' : 'Промпт:'}
+                                <span style={{ color: isT2VScene ? '#86efac' : '#93c5fd', fontWeight: 600, marginRight: 4 }} title="Визуальное описание для AI на английском. Именно это отправляется в FAL.AI / Imagen для генерации изображения или видео.">
+                                  {isT2VScene ? '🎬 Видео-промпт (англ.):' : '🖼️ Визуальный промпт (англ.):'}
                                 </span>
                                 {promptValue ? (
                                   <>

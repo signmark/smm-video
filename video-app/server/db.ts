@@ -86,6 +86,7 @@ export interface VideoProject {
   script?: Script;
   customScenario?: string;
   landingUrl?: string;
+  additionalDetails?: string;
   videoPath?: string;
   videoUrl?: string;
   error?: string;
@@ -140,6 +141,7 @@ function projectToDirectus(p: Partial<VideoProject>): Record<string, any> {
   if (p.topic !== undefined) d.topic = p.topic;
   if (p.customScenario !== undefined) d.custom_scenario = p.customScenario;
   if (p.landingUrl !== undefined) d.landing_url = p.landingUrl;
+  if (p.additionalDetails !== undefined) d.additional_details = p.additionalDetails ?? null;
   if (p.format !== undefined) d.format = p.format;
   if (p.duration !== undefined) d.duration = p.duration;
   if (p.language !== undefined) d.language = p.language;
@@ -168,6 +170,7 @@ function directusToProject(row: any): VideoProject {
     topic: row.topic ?? '',
     customScenario: row.custom_scenario ?? undefined,
     landingUrl: row.landing_url ?? undefined,
+    additionalDetails: row.additional_details ?? undefined,
     format: row.format as VideoFormat,
     duration: row.duration,
     language: row.language ?? 'ru',

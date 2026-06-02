@@ -375,6 +375,7 @@ export default function Create() {
   const [topic, setTopic] = useState('');
   const [customScenario, setCustomScenario] = useState('');
   const [landingUrl, setLandingUrl] = useState('');
+  const [additionalDetails, setAdditionalDetails] = useState('');
   const [title, setTitle] = useState('');
   const [format, setFormat] = useState('9:16');
   const [duration, setDuration] = useState(30);
@@ -570,8 +571,10 @@ export default function Create() {
       } else if (inputMode === 'url') {
         body.landingUrl = landingUrl.trim();
         body.topic = title.trim() || defaultTitle;
+        if (additionalDetails.trim()) body.additionalDetails = additionalDetails.trim();
       } else {
         body.topic = topic.trim();
+        if (additionalDetails.trim()) body.additionalDetails = additionalDetails.trim();
       }
 
       // Step 1: create project
@@ -644,16 +647,28 @@ export default function Create() {
 
         {/* Topic / Custom scenario / Landing URL */}
         {inputMode === 'topic' ? (
-          <Field label="Тема видео *" hint="Что должно быть в видео? Опишите кратко.">
-            <textarea
-              value={topic}
-              onChange={(e) => setTopic(e.target.value)}
-              placeholder="Например: топ 5 советов по продуктивности"
-              rows={3}
-              data-testid="input-topic"
-              style={inputStyle}
-            />
-          </Field>
+          <>
+            <Field label="Тема видео *" hint="Что должно быть в видео? Опишите кратко.">
+              <textarea
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                placeholder="Например: топ 5 советов по продуктивности"
+                rows={3}
+                data-testid="input-topic"
+                style={inputStyle}
+              />
+            </Field>
+            <Field label="Дополнительные уточнения" hint="Стиль, декорации, обстановка, цветовая гамма, атмосфера — всё что важно передать AI">
+              <textarea
+                value={additionalDetails}
+                onChange={(e) => setAdditionalDetails(e.target.value)}
+                placeholder="Например: тёплые оранжевые тона, уютный деревянный интерьер, мягкий рассеянный свет"
+                rows={2}
+                data-testid="input-additional-details-topic"
+                style={inputStyle}
+              />
+            </Field>
+          </>
         ) : inputMode === 'custom' ? (
           <Field label="Подробный сценарий *" hint="Опишите сцены своими словами — AI разберёт и создаст визуализацию">
             <textarea
@@ -669,19 +684,31 @@ export default function Create() {
             </div>
           </Field>
         ) : (
-          <Field label="URL лендинга *" hint="AI изучит страницу и создаст промо-рилс для вашего продукта">
-            <input
-              value={landingUrl}
-              onChange={(e) => setLandingUrl(e.target.value)}
-              placeholder="https://omemo.tech/"
-              type="url"
-              data-testid="input-landing-url"
-              style={inputStyle}
-            />
-            <div style={{ marginTop: 6, padding: '10px 14px', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 'var(--radius-sm)', fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>
-              🤖 AI скачает страницу, извлечёт описание продукта и напишет продающий сценарий: хук → боль → решение → CTA.
-            </div>
-          </Field>
+          <>
+            <Field label="URL лендинга *" hint="AI изучит страницу и создаст промо-рилс для вашего продукта">
+              <input
+                value={landingUrl}
+                onChange={(e) => setLandingUrl(e.target.value)}
+                placeholder="https://omemo.tech/"
+                type="url"
+                data-testid="input-landing-url"
+                style={inputStyle}
+              />
+              <div style={{ marginTop: 6, padding: '10px 14px', background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)', borderRadius: 'var(--radius-sm)', fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+                🤖 AI скачает страницу, извлечёт описание продукта и напишет продающий сценарий: хук → боль → решение → CTA.
+              </div>
+            </Field>
+            <Field label="Дополнительные уточнения" hint="Стиль, декорации, обстановка, цветовая гамма, атмосфера — всё что важно передать AI">
+              <textarea
+                value={additionalDetails}
+                onChange={(e) => setAdditionalDetails(e.target.value)}
+                placeholder="Например: минималистичный белый офис, холодный синий свет, деловой стиль"
+                rows={2}
+                data-testid="input-additional-details-url"
+                style={inputStyle}
+              />
+            </Field>
+          </>
         )}
 
         <Field label="Название (необязательно)" hint="Отображается в списке проектов">

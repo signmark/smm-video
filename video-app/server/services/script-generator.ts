@@ -416,6 +416,7 @@ export async function generateScript(params: {
   t2v?: boolean;
   animationModel?: string;
   clipDuration?: number;
+  additionalDetails?: string;
 }): Promise<Script> {
   // Guard: null/undefined language defaults to Russian
   const safeParams = { ...params, language: (params.language ?? 'ru') as 'ru' | 'en' };
@@ -437,6 +438,11 @@ export async function generateScript(params: {
     prompt = isT2V
       ? buildT2VPrompt(safeParams, sceneCount, sceneDuration)
       : buildI2VPrompt(safeParams, sceneCount, sceneDuration);
+  }
+
+  // Append user's additional style/context notes to the prompt
+  if (safeParams.additionalDetails && safeParams.additionalDetails.trim()) {
+    prompt += `\n\nIMPORTANT — Additional style/context requirements from the user (incorporate into ALL scenes — style_anchor, t2vPrompt, imagePrompt, environment, atmosphere, etc.):\n"${safeParams.additionalDetails.trim()}"`;
   }
 
   // When generating from a landing page, extract the product name for a hard system instruction

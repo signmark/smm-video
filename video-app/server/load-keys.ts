@@ -11,7 +11,7 @@ import { fileURLToPath } from 'url';
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 dotenvConfig({ path: resolve(__dirname, '../.env'), override: false });
 
-const KEYS_NEEDED = ['ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'GOOGLE_AI_API_KEY', 'HUGGINGFACE_API_KEY', 'FAL_AI_API_KEY', 'OPENAI_API_KEY', 'GEMINI_PROXY_URL', 'BEGET_S3_ACCESS_KEY', 'BEGET_S3_SECRET_KEY', 'BEGET_S3_BUCKET', 'BEGET_S3_ENDPOINT', 'BEGET_S3_REGION', 'PEXELS_API_KEY', 'JAMENDO_CLIENT_ID'];
+const KEYS_NEEDED = ['ANTHROPIC_API_KEY', 'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'GOOGLE_AI_API_KEY', 'HUGGINGFACE_API_KEY', 'FAL_AI_API_KEY', 'OPENAI_API_KEY', 'DEEPSEEK_API_KEY', 'GEMINI_PROXY_URL', 'BEGET_S3_ACCESS_KEY', 'BEGET_S3_SECRET_KEY', 'BEGET_S3_BUCKET', 'BEGET_S3_ENDPOINT', 'BEGET_S3_REGION', 'PEXELS_API_KEY', 'JAMENDO_CLIENT_ID'];
 
 // Алиасы: имя в Directus → имя env-переменной
 const KEY_ALIASES: Record<string, string> = {
@@ -19,6 +19,7 @@ const KEY_ALIASES: Record<string, string> = {
   gemini:              'GEMINI_API_KEY',
   fal_ai:              'FAL_AI_API_KEY',
   openai:              'OPENAI_API_KEY',
+  deepseek:            'DEEPSEEK_API_KEY',
   huggingface:         'HUGGINGFACE_API_KEY',
   beget_s3_access_key: 'BEGET_S3_ACCESS_KEY',
   beget_s3_secret_key: 'BEGET_S3_SECRET_KEY',

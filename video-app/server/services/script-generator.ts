@@ -374,6 +374,24 @@ async function generateWithGemini(prompt: string, apiKey: string, systemInstruct
   return text;
 }
 
+async function generateWithDeepSeek(prompt: string, apiKey: string, systemInstruction?: string): Promise<string> {
+  const messages: any[] = [];
+  if (systemInstruction) messages.push({ role: 'system', content: systemInstruction });
+  messages.push({ role: 'user', content: prompt });
+  const res = await fetch('https://api.deepseek.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+    body: JSON.stringify({ model: 'deepseek-chat', messages, max_tokens: 4096, temperature: 0.7 }),
+    signal: AbortSignal.timeout(120_000),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`DeepSeek error ${res.status}: ${err.slice(0, 300)}`);
+  }
+  const data = await res.json() as any;
+  return data.choices[0].message.content.trim();
+}
+
 async function generateWithOpenAI(prompt: string, apiKey: string, systemInstruction?: string): Promise<string> {
   const messages: any[] = [];
   if (systemInstruction) messages.push({ role: 'system', content: systemInstruction });
@@ -462,15 +480,28 @@ export async function generateScript(params: {
 
   console.log(`[script-gen] Mode: ${isT2V ? 'T2V' : 'I2V'}, lang: ${safeParams.language}, scenes: ${sceneCount}×${sceneDuration}s`);
 
+  const deepseekKey = process.env.DEEPSEEK_API_KEY;
   const geminiKey = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY;
   const openaiKey = process.env.OPENAI_API_KEY;
   const claudeKey = process.env.ANTHROPIC_API_KEY;
 
-  if (!geminiKey && !openaiKey && !claudeKey) {
-    throw new Error('No AI API key available (GEMINI_API_KEY, OPENAI_API_KEY or ANTHROPIC_API_KEY required)');
+  if (!deepseekKey && !geminiKey && !openaiKey && !claudeKey) {
+    throw new Error('No AI API key available (DEEPSEEK_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY or ANTHROPIC_API_KEY required)');
   }
 
   const errors: string[] = [];
+
+  if (deepseekKey) {
+    try {
+      console.log('[script-gen] Using DeepSeek...');
+      const text = await generateWithDeepSeek(prompt, deepseekKey, systemInstruction);
+      return parseScriptJson(text, sceneCount, isT2V);
+    } catch (err: any) {
+      const msg = `DeepSeek: ${err.message}`;
+      console.warn(`[script-gen] ${msg} — trying Gemini`);
+      errors.push(msg);
+    }
+  }
 
   if (geminiKey) {
     try {

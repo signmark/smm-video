@@ -215,6 +215,33 @@ const T2V_MODELS = [
     color: '#0ea5e9',
   },
   {
+    value: 'seedance2-t2v',
+    label: 'Seedance 2.0 T2V',
+    speed: '~30-60с',
+    quality: '★★★★★',
+    desc: 'ByteDance Seedance 2.0: улучшенное качество и детализация',
+    clip: '5 или 10 с/клип',
+    color: '#10b981',
+  },
+  {
+    value: 'veo3',
+    label: 'Google Veo 3.1',
+    speed: '~2-5 мин',
+    quality: '★★★★★',
+    desc: 'Топовая модель от Google. Фотореализм, плавное движение.',
+    clip: '~8 с/клип',
+    color: '#4285f4',
+  },
+  {
+    value: 'happy-horse',
+    label: 'Alibaba Happy Horse',
+    speed: '~30-60с',
+    quality: '★★★★☆',
+    desc: 'Alibaba T2V: яркий стиль, хорошая детализация',
+    clip: '5 или 10 с/клип',
+    color: '#ff6a00',
+  },
+  {
     value: 'chain',
     label: 'Chain T2V→I2V',
     speed: '~5-10 мин',
@@ -294,7 +321,7 @@ const SUBTITLE_STYLES = [
 
 type SubtitleStyleValue = typeof SUBTITLE_STYLES[number]['value'];
 
-const CLIP_DURATION_MODELS = new Set(['kling', 'kling-pro', 'seedance', 'kling-t2v', 'kling-pro-t2v', 'luma', 'seedance-t2v']);
+const CLIP_DURATION_MODELS = new Set(['kling', 'kling-pro', 'seedance', 'kling-t2v', 'kling-pro-t2v', 'luma', 'seedance-t2v', 'seedance2-t2v', 'happy-horse']);
 
 const SUBTITLE_FONTS = [
   { value: 'DejaVu Sans',      label: 'Стандартный', desc: 'Округлый sans-serif' },

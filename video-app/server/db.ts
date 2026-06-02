@@ -50,6 +50,9 @@ export type AnimationModel =
   | 'kling-pro-t2v'// Kling v3 Pro Text-to-Video
   | 'luma'         // Luma Dream Machine Ray 2 Flash T2V
   | 'seedance-t2v' // Seedance 1 Lite Text-to-Video
+  | 'seedance2-t2v'// Seedance 2.0 Text-to-Video
+  | 'veo3'         // Google Veo 3.1 T2V
+  | 'happy-horse'  // Alibaba Happy Horse T2V
   | 'chain';       // Chain: Kling T2V (сцена 1) → Kling I2V (сцены 2+)
 
 export type VideoStatus =

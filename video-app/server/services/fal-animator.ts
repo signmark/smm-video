@@ -13,7 +13,10 @@
  *   kling-t2v   — fal-ai/kling-video/v3/standard/text-to-video
  *   kling-pro-t2v — fal-ai/kling-video/v3/pro/text-to-video
  *   luma        — fal-ai/luma-dream-machine/ray-2-flash
- *   seedance-t2v — fal-ai/bytedance/seedance-1-lite/text-to-video
+ *   seedance-t2v  — fal-ai/bytedance/seedance-1-lite/text-to-video
+ *   seedance2-t2v — fal-ai/bytedance/seedance-2.0/text-to-video
+ *   veo3          — fal-ai/veo3.1
+ *   happy-horse   — fal-ai/alibaba/happy-horse/text-to-video
  */
 import fs from 'fs/promises';
 import path from 'path';
@@ -35,7 +38,7 @@ const LUMA_ASPECT: Record<VideoFormat, string> = {
 };
 
 export function isT2VModel(model: AnimationModel): boolean {
-  return ['wan-t2v', 'kling-t2v', 'kling-pro-t2v', 'luma', 'chain'].includes(model);
+  return ['wan-t2v', 'kling-t2v', 'kling-pro-t2v', 'luma', 'seedance-t2v', 'seedance2-t2v', 'veo3', 'happy-horse', 'chain'].includes(model);
 }
 
 // ── FAL queue helpers ──────────────────────────────────────────────────────────
@@ -304,6 +307,56 @@ async function animateWithSeedanceT2V(prompt: string, format: VideoFormat, durat
   console.log(`[fal-anim] Seedance T2V clip saved: ${path.basename(outputPath)}`);
 }
 
+async function animateWithSeedance2T2V(prompt: string, format: VideoFormat, durationSeconds: number, outputPath: string, apiKey: string, onWait?: (ms: number) => void, clipDuration?: number): Promise<void> {
+  const duration = clipDuration ?? (durationSeconds >= 8 ? 10 : 5);
+  const aspect_ratio = format;
+  console.log(`[fal-anim] Seedance 2.0 T2V: submitting... (${duration}s, ${aspect_ratio})`);
+  const q = await falSubmit('fal-ai/bytedance/seedance-2.0/text-to-video', {
+    prompt,
+    duration,
+    resolution: '720p',
+    aspect_ratio,
+  }, apiKey);
+  console.log(`[fal-anim] Seedance 2.0 T2V request_id: ${q.request_id}`);
+  const result = await falPoll(q, apiKey, 300_000, onWait);
+  const videoUrl = result?.video?.url;
+  if (!videoUrl) throw new Error(`Seedance 2.0 T2V no video URL: ${JSON.stringify(result).slice(0, 200)}`);
+  await downloadVideo(videoUrl, outputPath);
+  console.log(`[fal-anim] Seedance 2.0 T2V clip saved: ${path.basename(outputPath)}`);
+}
+
+async function animateWithVeo3(prompt: string, format: VideoFormat, durationSeconds: number, outputPath: string, apiKey: string, onWait?: (ms: number) => void): Promise<void> {
+  const aspect_ratio = format; // '9:16', '16:9', '1:1'
+  console.log(`[fal-anim] Veo 3.1 T2V: submitting... (${aspect_ratio})`);
+  const q = await falSubmit('fal-ai/veo3.1', {
+    prompt,
+    aspect_ratio,
+  }, apiKey);
+  console.log(`[fal-anim] Veo 3.1 request_id: ${q.request_id}`);
+  const result = await falPoll(q, apiKey, 600_000, onWait); // до 10 мин
+  const videoUrl = result?.video?.url;
+  if (!videoUrl) throw new Error(`Veo 3.1 no video URL: ${JSON.stringify(result).slice(0, 200)}`);
+  await downloadVideo(videoUrl, outputPath);
+  console.log(`[fal-anim] Veo 3.1 clip saved: ${path.basename(outputPath)}`);
+}
+
+async function animateWithHappyHorse(prompt: string, format: VideoFormat, durationSeconds: number, outputPath: string, apiKey: string, onWait?: (ms: number) => void, clipDuration?: number): Promise<void> {
+  const duration = clipDuration ?? (durationSeconds >= 8 ? 10 : 5);
+  const aspect_ratio = format;
+  console.log(`[fal-anim] Happy Horse T2V: submitting... (${duration}s, ${aspect_ratio})`);
+  const q = await falSubmit('fal-ai/alibaba/happy-horse/text-to-video', {
+    prompt,
+    duration,
+    aspect_ratio,
+  }, apiKey);
+  console.log(`[fal-anim] Happy Horse T2V request_id: ${q.request_id}`);
+  const result = await falPoll(q, apiKey, 300_000, onWait);
+  const videoUrl = result?.video?.url;
+  if (!videoUrl) throw new Error(`Happy Horse T2V no video URL: ${JSON.stringify(result).slice(0, 200)}`);
+  await downloadVideo(videoUrl, outputPath);
+  console.log(`[fal-anim] Happy Horse T2V clip saved: ${path.basename(outputPath)}`);
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /** I2V: animate a source image into a video clip */
@@ -384,6 +437,9 @@ export async function animateText(params: {
       case 'kling-pro-t2v': return animateWithKlingProT2V(prompt, format, durationSeconds, outputPath, apiKey, onWait, clipDuration);
       case 'luma':          return animateWithLuma(prompt, format, durationSeconds, outputPath, apiKey, onWait, clipDuration);
       case 'seedance-t2v':  return animateWithSeedanceT2V(prompt, format, durationSeconds, outputPath, apiKey, onWait, clipDuration);
+      case 'seedance2-t2v': return animateWithSeedance2T2V(prompt, format, durationSeconds, outputPath, apiKey, onWait, clipDuration);
+      case 'veo3':          return animateWithVeo3(prompt, format, durationSeconds, outputPath, apiKey, onWait);
+      case 'happy-horse':   return animateWithHappyHorse(prompt, format, durationSeconds, outputPath, apiKey, onWait, clipDuration);
       default: throw new Error(`Model ${model} is I2V, use animateFrame() instead`);
     }
   };

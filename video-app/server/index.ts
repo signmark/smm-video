@@ -10,6 +10,7 @@ await loadKeysFromDirectus();
 
 import apiRouter from './routes.js';
 import { listProjects, updateProject } from './db.js';
+import { scheduleCleanup } from './cleanup.js';
 
 // Reset projects stuck in active states (server was restarted mid-generation)
 try {
@@ -25,6 +26,13 @@ try {
   }
 } catch (e: any) {
   console.warn('[startup] Could not reset stuck projects:', e.message);
+}
+
+// Schedule daily cleanup of video files older than 3 days
+try {
+  scheduleCleanup();
+} catch (e: any) {
+  console.warn('[startup] Could not schedule cleanup:', e.message);
 }
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

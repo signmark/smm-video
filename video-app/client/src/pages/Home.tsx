@@ -126,9 +126,20 @@ export default function Home() {
   );
 }
 
+function getExpiryLabel(createdAt: string): { label: string; urgent: boolean } | null {
+  const RETENTION_DAYS = 3;
+  const age = Date.now() - new Date(createdAt).getTime();
+  const msRemaining = RETENTION_DAYS * 24 * 60 * 60 * 1000 - age;
+  if (msRemaining <= 0) return null;
+  const daysRemaining = Math.ceil(msRemaining / (24 * 60 * 60 * 1000));
+  if (daysRemaining === 1) return { label: '🗑 удалится завтра', urgent: true };
+  return { label: `🗑 ${daysRemaining} дн.`, urgent: false };
+}
+
 function ProjectCard({ project: p, onClick, onResume, onRestart }: { project: VideoProject; onClick: () => void; onResume: () => void; onRestart: () => void }) {
   const isActive = ['generating_script', 'generating_images', 'assembling'].includes(p.status);
   const isError = p.status === 'error';
+  const expiry = p.status === 'done' ? getExpiryLabel(p.createdAt) : null;
 
   return (
     <div
@@ -194,6 +205,11 @@ function ProjectCard({ project: p, onClick, onResume, onRestart }: { project: Vi
         <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>
           {p.format} · {p.duration}с
         </span>
+        {expiry && (
+          <span style={{ fontSize: 11, color: expiry.urgent ? '#f87171' : '#6b7280' }} title="Видеофайл автоматически удаляется через 3 дня после создания. Сценарий сохраняется.">
+            {expiry.label}
+          </span>
+        )}
         {isError && (
           <div style={{ display: 'flex', gap: 6, marginTop: 2 }} onClick={(e) => e.stopPropagation()}>
             <button

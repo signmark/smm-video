@@ -216,7 +216,7 @@ router.get('/music/preview', async (req, res) => {
 
 router.post('/videos', async (req, res) => {
   try {
-    const { title, topic, format, duration, language, animationModel, subtitleStyle, voice, clipDuration, subtitleFont, subtitleSize, subtitleColor, musicStyle, customScenario, landingUrl, additionalDetails } = req.body;
+    const { title, topic, format, duration, language, animationModel, subtitleStyle, voice, clipDuration, subtitleFont, subtitleSize, subtitleColor, musicStyle, customScenario, landingUrl, additionalDetails, scriptMode } = req.body;
     if (!format || !duration) {
       return res.status(400).json({ error: 'format and duration are required' });
     }
@@ -248,6 +248,7 @@ router.post('/videos', async (req, res) => {
       customScenario: hasScenario ? String(customScenario).trim() : undefined,
       landingUrl: hasLandingUrl ? String(landingUrl).trim() : undefined,
       additionalDetails: (additionalDetails && String(additionalDetails).trim()) ? String(additionalDetails).trim() : undefined,
+      scriptMode: scriptMode === 'viral' ? 'viral' : undefined,
     });
     res.status(201).json(project);
   } catch (err: any) {
@@ -1138,6 +1139,7 @@ async function runScriptOnly(projectId: string) {
       animationModel: project.animationModel,
       clipDuration: project.clipDuration,
       additionalDetails: project.additionalDetails,
+      scriptMode: project.scriptMode,
     });
 
     await updateProject(projectId, {
@@ -1193,6 +1195,7 @@ async function runGenerationPipeline(projectId: string) {
         t2v: useT2V,
         animationModel: project.animationModel,
         clipDuration: project.clipDuration,
+        scriptMode: project.scriptMode,
       });
 
       await update({

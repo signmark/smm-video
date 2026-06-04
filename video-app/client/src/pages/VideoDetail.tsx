@@ -984,8 +984,20 @@ export default function VideoDetail({ id }: { id: string }) {
                 style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '14px 16px' }}
               >
                 <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
-                  <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#7c3aed', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0, color: 'white' }}>
-                    {i + 1}
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+                    <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#7c3aed', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: 'white' }}>
+                      {i + 1}
+                    </div>
+                    {scene.role && (
+                      <div style={{
+                        fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', padding: '2px 5px', borderRadius: 3,
+                        background: scene.role === 'hook' ? 'rgba(239,68,68,0.18)' : scene.role === 'cta' ? 'rgba(16,185,129,0.18)' : 'rgba(59,130,246,0.18)',
+                        color: scene.role === 'hook' ? '#f87171' : scene.role === 'cta' ? '#34d399' : '#60a5fa',
+                        border: `1px solid ${scene.role === 'hook' ? 'rgba(239,68,68,0.35)' : scene.role === 'cta' ? 'rgba(16,185,129,0.35)' : 'rgba(59,130,246,0.35)'}`,
+                      }}>
+                        {scene.role === 'hook' ? '🎣' : scene.role === 'cta' ? '🚀' : '⚡'}
+                      </div>
+                    )}
                   </div>
                   <div style={{ flex: 1 }}>
                     {editingScene === scene.id ? (

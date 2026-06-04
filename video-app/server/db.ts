@@ -11,6 +11,7 @@ export const DATA_DIR = path.resolve(__dirname, '../data');
 
 export interface Scene {
   id: string;
+  role?: 'hook' | 'body' | 'cta';  // viral Reels structure role
   text: string;       // short subtitle shown on screen (max 8 words)
   narration?: string; // full voiceover text sized to fill the clip duration
   imagePrompt: string;
@@ -89,6 +90,7 @@ export interface VideoProject {
   customScenario?: string;
   landingUrl?: string;
   additionalDetails?: string;
+  scriptMode?: 'standard' | 'viral';
   videoPath?: string;
   videoUrl?: string;
   error?: string;
@@ -144,6 +146,7 @@ function projectToDirectus(p: Partial<VideoProject>): Record<string, any> {
   if (p.customScenario !== undefined) d.custom_scenario = p.customScenario;
   if (p.landingUrl !== undefined) d.landing_url = p.landingUrl;
   if (p.additionalDetails !== undefined) d.additional_details = p.additionalDetails ?? null;
+  if (p.scriptMode !== undefined) d.script_mode = p.scriptMode ?? null;
   if (p.format !== undefined) d.format = p.format;
   if (p.duration !== undefined) d.duration = p.duration;
   if (p.language !== undefined) d.language = p.language;
@@ -173,6 +176,7 @@ function directusToProject(row: any): VideoProject {
     customScenario: row.custom_scenario ?? undefined,
     landingUrl: row.landing_url ?? undefined,
     additionalDetails: row.additional_details ?? undefined,
+    scriptMode: (row.script_mode as 'standard' | 'viral') ?? undefined,
     format: row.format as VideoFormat,
     duration: row.duration,
     language: row.language ?? 'ru',
@@ -269,6 +273,8 @@ async function ensureTable(): Promise<void> {
   await p.query(`ALTER TABLE video_projects ADD COLUMN IF NOT EXISTS subtitle_color TEXT`);
   await p.query(`ALTER TABLE video_projects ADD COLUMN IF NOT EXISTS music_style TEXT`);
   await p.query(`ALTER TABLE video_projects ADD COLUMN IF NOT EXISTS landing_url TEXT`);
+  await p.query(`ALTER TABLE video_projects ADD COLUMN IF NOT EXISTS script_mode TEXT`);
+  await p.query(`ALTER TABLE video_projects ADD COLUMN IF NOT EXISTS additional_details TEXT`);
 }
 
 let tableReady = false;
@@ -301,6 +307,8 @@ function rowToProject(row: any): VideoProject {
     script: row.script ?? undefined,
     customScenario: row.custom_scenario ?? undefined,
     landingUrl: row.landing_url ?? undefined,
+    additionalDetails: row.additional_details ?? undefined,
+    scriptMode: (row.script_mode as 'standard' | 'viral') ?? undefined,
     videoPath: row.video_path ?? undefined,
     videoUrl: row.video_url ?? undefined,
     error: row.error ?? undefined,
@@ -351,6 +359,8 @@ export async function createProject(data: {
   musicStyle?: string;
   customScenario?: string;
   landingUrl?: string;
+  additionalDetails?: string;
+  scriptMode?: 'standard' | 'viral';
 }): Promise<VideoProject> {
   const id = uuidv4();
   const now = new Date().toISOString();
@@ -396,8 +406,9 @@ export async function createProject(data: {
       `INSERT INTO video_projects
         (id, title, topic, format, duration, language, animation_model, subtitle_style, voice, clip_duration,
          subtitle_font, subtitle_size, subtitle_color,
-         status, progress, progress_message, custom_scenario, landing_url, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+         status, progress, progress_message, custom_scenario, landing_url,
+         additional_details, script_mode, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
       [
         project.id, project.title, project.topic, project.format,
         project.duration, project.language, project.animationModel, project.subtitleStyle,
@@ -405,6 +416,7 @@ export async function createProject(data: {
         project.subtitleFont ?? null, project.subtitleSize ?? null, project.subtitleColor ?? null,
         project.status, project.progress, project.progressMessage,
         project.customScenario ?? null, project.landingUrl ?? null,
+        project.additionalDetails ?? null, project.scriptMode ?? null,
         project.createdAt, project.updatedAt,
       ]
     );
@@ -486,7 +498,7 @@ export async function updateProject(
       subtitleFont: 'subtitle_font', subtitleSize: 'subtitle_size', subtitleColor: 'subtitle_color',
       musicStyle: 'music_style', status: 'status',
       progress: 'progress', progressMessage: 'progress_message', script: 'script',
-      customScenario: 'custom_scenario', landingUrl: 'landing_url', videoPath: 'video_path',
+      customScenario: 'custom_scenario', landingUrl: 'landing_url', additionalDetails: 'additional_details', scriptMode: 'script_mode', videoPath: 'video_path',
       videoUrl: 'video_url', error: 'error',
     };
 

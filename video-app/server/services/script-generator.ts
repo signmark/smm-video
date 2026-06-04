@@ -103,6 +103,58 @@ Rules:
 - Exactly ${sceneCount} scenes total`;
 }
 
+// ── Viral Reels (Hook / Body / CTA) prompt ───────────────────────────────────
+
+function buildViralReelsPrompt(params: { topic: string; format: VideoFormat; duration: number; language: 'ru' | 'en' }, sceneCount: number, sceneDuration: number): string {
+  const langName = params.language === 'ru' ? 'Russian' : 'English';
+  const wordsPerSec = params.language === 'ru' ? 1.8 : 2.3;
+  const narrationWords = Math.round(sceneDuration * wordsPerSec);
+  const bodyEnd = sceneCount - 1;
+
+  return `You are an expert viral short-video scriptwriter. Create a ${params.duration}-second viral Reels/Shorts/TikTok script about: "${params.topic}".
+
+MANDATORY 3-PART STRUCTURE — EXACTLY ${sceneCount} scenes, ${sceneDuration}s each:
+
+🎣 Scene 1 — HOOK (${sceneDuration}s): Stop-scroll moment.
+- MUST open with a shocking fact, bold claim, direct pain-point, or provocative question
+- FORBIDDEN openers: "Привет", "Сегодня я расскажу", "В этом видео", any greeting or warm-up
+- Examples: "Твой контент не видят из-за одной настройки" / "99% людей делают это неправильно" / "Как я удвоил охваты за 3 дня"
+- Visual: dynamic close-up, reaction shot, dramatic reveal, bold on-screen moment
+
+⚡ Scenes 2–${bodyEnd} — BODY (${sceneDuration}s each): Ultra-fast value delivery.
+- EXACTLY ONE insight per scene — if two ideas fit, split them across two scenes
+- Zero filler words. Every word must earn its place.
+- Visuals: B-roll cutaways, screen demos, hands-in-action, fast-motion shots
+
+🚀 Scene ${sceneCount} — CTA (${sceneDuration}s): Comment trigger (NOT "like and subscribe").
+- Ask for a SPECIFIC comment word or save action that creates FOMO or reward
+- Examples: "Напиши КЛИП в комменты — скину готовый шаблон" / "Сохрани — это пригодится" / "Пиши ДА если хочешь полный гайд"
+
+Return ONLY valid JSON, no markdown, no explanation:
+{
+  "title": "catchy viral video title in ${langName}",
+  "scenes": [
+    {
+      "role": "hook",
+      "text": "Punchy subtitle in ${langName} — MAX 5 WORDS, max impact, works as a standalone hook",
+      "narration": "Voiceover in ${langName}. EXACTLY ~${narrationWords} words. Fast confident expert tone. Natural reading pace = ${sceneDuration}s. Zero filler.",
+      "stockQuery": "2-4 English Pexels keywords — visually DYNAMIC: close-ups, screens, hands, reactions, fast motion, urban life",
+      "imagePrompt": "Cinematic English visual description. Dynamic, high-contrast, modern aesthetic. NO TEXT IN IMAGE.",
+      "motionPrompt": "Fast dynamic English movement description for this ${sceneDuration}s clip. Quick zoom, fast pan, or dramatic reveal.",
+      "duration": ${sceneDuration}
+    }
+  ]
+}
+
+VIRAL QUALITY RULES:
+- Hook narration: create pain, curiosity, or disbelief within the first 3 words
+- Body narration: short punchy sentences — expert delivering gold, not reading a textbook
+- CTA narration: specific action + reward/reason to act NOW
+- Every subtitle must stand alone as a hook if screenshot
+- stockQuery: always visually dynamic B-roll — no talking heads, no static objects
+- Exactly ${sceneCount} scenes total, each exactly ${sceneDuration}s`;
+}
+
 // ── Landing page product promo prompts ───────────────────────────────────────
 
 function buildLandingI2VPrompt(params: { landingPageContent: string; topic: string; format: VideoFormat; duration: number; language: 'ru' | 'en' }, sceneCount: number, sceneDuration: number): string {
@@ -435,6 +487,7 @@ export async function generateScript(params: {
   animationModel?: string;
   clipDuration?: number;
   additionalDetails?: string;
+  scriptMode?: 'standard' | 'viral';
 }): Promise<Script> {
   // Guard: null/undefined language defaults to Russian
   const safeParams = { ...params, language: (params.language ?? 'ru') as 'ru' | 'en' };
@@ -452,6 +505,8 @@ export async function generateScript(params: {
     prompt = isT2V
       ? buildCustomT2VPrompt({ ...safeParams, customScenario: safeParams.customScenario! }, sceneCount, sceneDuration)
       : buildCustomI2VPrompt({ ...safeParams, customScenario: safeParams.customScenario! }, sceneCount, sceneDuration);
+  } else if (safeParams.scriptMode === 'viral') {
+    prompt = buildViralReelsPrompt(safeParams, sceneCount, sceneDuration);
   } else {
     prompt = isT2V
       ? buildT2VPrompt(safeParams, sceneCount, sceneDuration)

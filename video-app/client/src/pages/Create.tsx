@@ -371,6 +371,7 @@ const VOICES = [
 ] as const;
 
 export default function Create() {
+  const [scriptMode, setScriptMode] = useState<'standard' | 'viral'>('standard');
   const [inputMode, setInputMode] = useState<'topic' | 'custom' | 'url'>('topic');
   const [topic, setTopic] = useState('');
   const [customScenario, setCustomScenario] = useState('');
@@ -577,6 +578,8 @@ export default function Create() {
         if (additionalDetails.trim()) body.additionalDetails = additionalDetails.trim();
       }
 
+      if (scriptMode === 'viral') body.scriptMode = 'viral';
+
       // Step 1: create project
       const res = await fetch(`${API}/videos`, {
         method: 'POST',
@@ -719,6 +722,37 @@ export default function Create() {
             data-testid="input-title"
             style={inputStyle}
           />
+        </Field>
+
+        {/* Script mode toggle */}
+        <Field label="Режим сценария">
+          <div style={{ display: 'flex', gap: 0, borderRadius: 'var(--radius-sm)', overflow: 'hidden', border: '1.5px solid var(--border)' }}>
+            <button
+              type="button"
+              data-testid="script-mode-standard"
+              onClick={() => setScriptMode('standard')}
+              style={{ flex: 1, padding: '10px 0', fontSize: 14, fontWeight: 600, border: 'none', cursor: 'pointer', background: scriptMode === 'standard' ? 'var(--accent)' : 'var(--bg-card2)', color: scriptMode === 'standard' ? 'white' : 'var(--text-muted)', transition: 'all 0.15s' }}
+            >
+              📊 Стандартный
+            </button>
+            <button
+              type="button"
+              data-testid="script-mode-viral"
+              onClick={() => {
+                setScriptMode('viral');
+                setFormat('9:16');
+                if (duration > 30) setDuration(30);
+              }}
+              style={{ flex: 1, padding: '10px 0', fontSize: 14, fontWeight: 600, border: 'none', borderLeft: '1.5px solid var(--border)', cursor: 'pointer', background: scriptMode === 'viral' ? '#7c3aed' : 'var(--bg-card2)', color: scriptMode === 'viral' ? 'white' : 'var(--text-muted)', transition: 'all 0.15s' }}
+            >
+              🚀 Вирусный Reels
+            </button>
+          </div>
+          {scriptMode === 'viral' && (
+            <div style={{ marginTop: 8, padding: '10px 14px', borderRadius: 'var(--radius-sm)', background: 'rgba(124,58,237,0.12)', border: '1.5px solid rgba(124,58,237,0.35)', fontSize: 13, color: '#c4b5fd', lineHeight: 1.6 }}>
+              <strong style={{ color: '#a78bfa' }}>Hook / Body / CTA структура:</strong> Сцена 1 — резкий крючок (шок-факт, боль), средние сцены — быстрая польза, последняя — триггер комментариев. Рекомендуется 9:16, 15–30с.
+            </div>
+          )}
         </Field>
 
         <Field label="Формат">

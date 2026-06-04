@@ -30,7 +30,7 @@ async function waitForFile(filePath: string, maxMs = 10000): Promise<void> {
 import { generateScript } from './services/script-generator.js';
 import { generateImage, generateLayeredImage } from './services/image-generator.js';
 import { generateAudio } from './services/tts-generator.js';
-import { assembleVideo, assembleFromClips, extractLastFrame, burnSubtitles, subtitleSizeMultiplier, mixBackgroundMusic } from './services/video-assembler.js';
+import { assembleVideo, assembleFromClips, extractLastFrame, burnSubtitles, subtitleSizeMultiplier, mixBackgroundMusic, mixWhooshSFX } from './services/video-assembler.js';
 import { generateBackgroundMusic, getMusicStyle } from './services/music-generator.js';
 
 import { animateFrame, animateText, isT2VModel } from './services/fal-animator.js';
@@ -706,7 +706,11 @@ router.post('/videos/:id/resume', async (req, res) => {
   }
 });
 
-async function applyMusic(projectId: string, videoPath: string, topic: string, scenes: { duration: number }[], clipDuration?: number, musicStyle?: string): Promise<void> {
+async function applyMusic(projectId: string, videoPath: string, topic: string, scenes: { duration: number }[], clipDuration?: number, musicStyle?: string, scriptMode?: string): Promise<void> {
+  // Whoosh SFX on scene transitions (viral mode)
+  if (scriptMode === 'viral') {
+    await mixWhooshSFX({ videoPath, sceneDurations: scenes.map(s => clipDuration ?? s.duration) });
+  }
   const totalDuration = scenes.reduce((s, sc) => s + (clipDuration ?? sc.duration), 0);
   const musicPath = videoPath.replace(/\.mp4$/, '_bg_music.mp3');
   const musicFile = await generateBackgroundMusic({ style: musicStyle, outputPath: musicPath, targetDurationSec: totalDuration });
@@ -818,7 +822,7 @@ async function runResumePipeline(projectId: string) {
       });
 
       await update({ progress: 98, progressMessage: 'Добавляю фоновую музыку...' });
-      await applyMusic(projectId, videoPath, project.topic, script.scenes, project.clipDuration, project.musicStyle);
+      await applyMusic(projectId, videoPath, project.topic, script.scenes, project.clipDuration, project.musicStyle, project.scriptMode);
       await waitForFile(videoPath);
       await update({
         status: 'done', progress: 100, progressMessage: 'Готово!',
@@ -1331,7 +1335,7 @@ async function runGenerationPipeline(projectId: string) {
       });
 
       await update({ progress: 98, progressMessage: 'Добавляю фоновую музыку...' });
-      await applyMusic(projectId, videoPath, project.topic, script.scenes, project.clipDuration);
+      await applyMusic(projectId, videoPath, project.topic, script.scenes, project.clipDuration, undefined, project.scriptMode);
       await waitForFile(videoPath);
       await update({
         status: 'done',
@@ -1439,7 +1443,7 @@ async function runGenerationPipeline(projectId: string) {
       });
 
       await update({ progress: 98, progressMessage: 'Добавляю фоновую музыку...' });
-      await applyMusic(projectId, videoPath, project.topic, script.scenes, project.clipDuration, project.musicStyle);
+      await applyMusic(projectId, videoPath, project.topic, script.scenes, project.clipDuration, project.musicStyle, project.scriptMode);
       await waitForFile(videoPath);
       await update({
         status: 'done',
@@ -1768,7 +1772,7 @@ async function runGenerationPipeline(projectId: string) {
 
     // ── Done ─────────────────────────────────────────────────────────────────
     await update({ progress: 98, progressMessage: 'Добавляю фоновую музыку...' });
-    await applyMusic(projectId, videoPath, project.topic, script.scenes, project.clipDuration, project.musicStyle);
+    await applyMusic(projectId, videoPath, project.topic, script.scenes, project.clipDuration, project.musicStyle, project.scriptMode);
     await waitForFile(videoPath);
     await update({
       status: 'done',

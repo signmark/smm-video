@@ -4,13 +4,13 @@ import { log } from '../utils/logger';
 import { globalApiKeysService } from './global-api-keys';
 import { ApiServiceName } from './api-keys';
 
-// Новый скрейпер-сервер (Telegram + VK): /find-groups и /trending-posts
-const SCRAPER_NEW_BASE = 'http://31.129.109.216:3030';
-// Фоллбэк-токен (виден в N8N-воркфлоу, храним для надёжности)
-const SCRAPER_NEW_BEARER_FALLBACK = '68b5bed1-ae3e-4eb5-be9e-eddf00ac3600';
+// Скрейпер-сервер (Telegram, VK, YouTube, Instagram + аналитика)
+export const SCRAPER_BASE = 'http://217.26.25.95:3030';
+// Фоллбэк api-key для скрейпера
+const SCRAPER_API_KEY_FALLBACK = 'N5beUaQCEdBPYed_fZeBIXdXhD6yZBpdbFzcSwB8MVI';
 
-// Старый скрейпер-сервер (YouTube + Instagram)
-const SCRAPER_OLD_BASE = 'http://217.26.25.95:3030';
+// Алиас для обратной совместимости
+const SCRAPER_OLD_BASE = SCRAPER_BASE;
 
 export interface CollectTrendsParams {
   campaignId: string;
@@ -42,25 +42,20 @@ interface VkGroup {
   is_closed: number;
 }
 
-// ─── Получение Bearer-токена ─────────────────────────────────────────────────
+// ─── Получение API-ключа скрейпера ───────────────────────────────────────────
 
-async function getScraperBearerToken(): Promise<string> {
-  try {
-    const token = await globalApiKeysService.getGlobalApiKey(ApiServiceName.TRENDS_SCRAPER);
-    if (token) return token;
-  } catch {
-    // ignore
+export async function getScraperApiKey(): Promise<string> {
+  // Пробуем ключ из Directus (service: telegram_collect_comments или trends_scraper)
+  for (const svc of [ApiServiceName.TELEGRAM_COLLECT_COMMENTS, ApiServiceName.TRENDS_SCRAPER]) {
+    try {
+      const key = await globalApiKeysService.getGlobalApiKey(svc);
+      if (key) return key;
+    } catch {
+      // игнорируем
+    }
   }
-  log('[TrendCollector] Используем fallback Bearer-токен для скрейпера', 'warn');
-  return SCRAPER_NEW_BEARER_FALLBACK;
-}
-
-async function getOldScraperApiKey(): Promise<string | null> {
-  try {
-    return await globalApiKeysService.getGlobalApiKey(ApiServiceName.TELEGRAM_COLLECT_COMMENTS) || null;
-  } catch {
-    return null;
-  }
+  log('[TrendCollector] Используем fallback api-key для скрейпера', 'warn');
+  return SCRAPER_API_KEY_FALLBACK;
 }
 
 // ─── Вспомогательные функции ─────────────────────────────────────────────────
@@ -79,23 +74,19 @@ function extractChannelId(url: string): string {
     .split('/')[0];
 }
 
-// ─── Запросы к новому скрейперу (31.129.109.216:3030) ────────────────────────
+// ─── Запросы к скрейперу (217.26.25.95:3030) ─────────────────────────────────
 
-async function callNewScraper(endpoint: string, body: any, token: string): Promise<any | null> {
+async function callScraper(endpoint: string, body: any, apiKey: string): Promise<any | null> {
   try {
-    const url = `${SCRAPER_NEW_BASE}${endpoint}`;
+    const url = `${SCRAPER_BASE}${endpoint}`;
     log(`[TrendCollector] POST ${url} body=${JSON.stringify(body).substring(0, 200)}`, 'info');
     const response = await axios.post(url, body, {
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
+      headers: { 'Content-Type': 'application/json', 'api-key': apiKey },
       timeout: 45000
     });
     log(`[TrendCollector] RESPONSE ${endpoint} status=${response.status} data=${JSON.stringify(response.data).substring(0, 400)}`, 'info');
     return response.data;
   } catch (err: any) {
-    // console.error напрямую — минуя FILTERED_MESSAGES в логгере (ECONNREFUSED, ETIMEDOUT там отфильтрованы)
     console.error(`[TrendCollector] ❌ Ошибка ${endpoint}: status=${err.response?.status} code=${err.code} msg=${err.message}`);
     if (err.response?.data) {
       console.error(`[TrendCollector] Response body: ${JSON.stringify(err.response.data).substring(0, 400)}`);
@@ -103,8 +94,6 @@ async function callNewScraper(endpoint: string, body: any, token: string): Promi
     return null;
   }
 }
-
-// ─── Запросы к старому скрейперу (217.26.25.95:3030) ─────────────────────────
 
 async function callOldScraper(endpoint: string, body: any, apiKey: string): Promise<any[] | null> {
   try {
@@ -133,14 +122,14 @@ async function findGroups(
   keywords: string[],
   minMembers: number,
   maxGroups: number,
-  token: string
+  apiKey: string
 ): Promise<TgGroup[] | VkGroup[]> {
-  const data = await callNewScraper('/find-groups', {
-    platform,
+  const endpoint = platform === 'telegram' ? '/api/telegram/find-groups' : '/api/vk/find-groups';
+  const data = await callScraper(endpoint, {
     keywords,
     min_members: minMembers,
     max_groups: maxGroups
-  }, token);
+  }, apiKey);
 
   if (!data) return [];
 
@@ -341,42 +330,54 @@ async function getCampaignSources(
 
 // ─── Поллинг задачи скрейпера ─────────────────────────────────────────────────
 
-async function pollScraperTask(taskId: string, token: string, maxWaitMs = 120000): Promise<any[]> {
+async function pollScraperTask(
+  taskId: string,
+  apiKey: string,
+  platform: 'telegram' | 'vk',
+  maxWaitMs = 120000
+): Promise<any[]> {
   const pollInterval = 5000;
   const maxAttempts = Math.ceil(maxWaitMs / pollInterval);
+  const statusPath = platform === 'telegram'
+    ? `/api/telegram/tasks/status/${taskId}`
+    : `/api/vk/tasks/status/${taskId}`;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     await new Promise(r => setTimeout(r, pollInterval));
 
     try {
-      const url = `${SCRAPER_NEW_BASE}/task/${taskId}`;
+      const url = `${SCRAPER_BASE}${statusPath}`;
       const resp = await axios.get(url, {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { 'api-key': apiKey },
         timeout: 15000
       });
       const d = resp.data;
-      log(`[TrendCollector] Poll task/${taskId} attempt=${attempt} status=${d?.status} keys=${Object.keys(d || {}).join(',')}`, 'info');
+      log(`[TrendCollector] Poll ${statusPath} attempt=${attempt} status=${d?.status}`, 'info');
 
       const status = (d?.status || '').toLowerCase();
 
-      if (status === 'completed' || status === 'done' || status === 'finished' || status === 'success') {
+      if (status === 'done' || status === 'completed' || status === 'finished' || status === 'success') {
+        // Результат хранится в d.result (TelegramTaskStatus/VKTaskStatus)
+        const result = d?.result;
+        if (result) {
+          if (Array.isArray(result?.posts)) return result.posts;
+          if (Array.isArray(result)) return result;
+          if (Array.isArray(result?.results)) return result.results;
+          if (Array.isArray(result?.items)) return result.items;
+        }
         if (Array.isArray(d?.posts)) return d.posts;
-        if (Array.isArray(d?.results)) return d.results;
-        if (Array.isArray(d?.items)) return d.items;
-        if (Array.isArray(d?.data)) return d.data;
-        if (Array.isArray(d)) return d;
-        log(`[TrendCollector] Task ${taskId} completed but unknown result format: ${JSON.stringify(d).substring(0, 200)}`, 'warn');
+        log(`[TrendCollector] Task ${taskId} done but unknown result format: ${JSON.stringify(d).substring(0, 300)}`, 'warn');
         return [];
       }
 
       if (status === 'failed' || status === 'error') {
-        log(`[TrendCollector] Task ${taskId} failed: ${JSON.stringify(d).substring(0, 200)}`, 'error');
+        log(`[TrendCollector] Task ${taskId} error: ${d?.error || JSON.stringify(d).substring(0, 200)}`, 'error');
         return [];
       }
 
-      // status: pending/running/processing — продолжаем ждать
+      // status: pending/processing — продолжаем ждать
     } catch (err: any) {
-      log(`[TrendCollector] Poll task/${taskId} error: ${err.response?.status} ${err.message}`, 'error');
+      log(`[TrendCollector] Poll ${statusPath} error: ${err.response?.status} ${err.message}`, 'error');
       if (attempt >= 3) return [];
     }
   }
@@ -402,36 +403,52 @@ async function fetchTrendingPosts(
   daysBack: number,
   postsPerGroup: number,
   minViews: number,
-  token: string
+  apiKey: string
 ): Promise<any[]> {
   if (groupIds.length === 0) return [];
 
-  const data = await callNewScraper('/trending-posts', {
-    platform,
-    group_ids: groupIds,
-    days_back: daysBack,
-    posts_per_group: postsPerGroup,
-    min_views: minViews
-  }, token);
+  let endpoint: string;
+  let body: Record<string, any>;
+
+  if (platform === 'telegram') {
+    endpoint = '/api/telegram/trending-posts';
+    body = {
+      channel_ids: groupIds.map(String),
+      limit: postsPerGroup * groupIds.length,
+      fetch_limit: 100,
+      merge_results: true,
+      days_back: daysBack,
+      min_views: minViews,
+      async_mode: true
+    };
+  } else {
+    endpoint = '/api/vk/trending-posts';
+    body = {
+      group_ids: groupIds.map(String),
+      limit: postsPerGroup * groupIds.length,
+      days_back: daysBack,
+      min_views: minViews,
+      async_mode: true
+    };
+  }
+
+  const data = await callScraper(endpoint, body, apiKey);
 
   if (!data) return [];
 
-  // Синхронный ответ — массив постов
+  // Синхронный ответ — прямо массив постов
   const directPosts = extractPostsFromResponse(data);
-  if (directPosts !== null) {
-    if (directPosts.length > 0) return directPosts;
-    // Пустой массив — может быть async задача ещё не готова, проверяем task_id
-  }
+  if (directPosts !== null && directPosts.length > 0) return directPosts;
 
-  // Async паттерн: скрейпер вернул task_id/job_id
+  // Async паттерн: скрейпер вернул task_id → поллим статус
   const taskId = data?.task_id || data?.job_id || data?.id || data?.taskId;
   if (taskId) {
     const status = (data?.status || '').toLowerCase();
-    log(`[TrendCollector] /trending-posts (${platform}) вернул task_id=${taskId} status=${status} — запускаем поллинг`, 'info');
-    return pollScraperTask(String(taskId), token);
+    log(`[TrendCollector] ${endpoint} (${platform}) вернул task_id=${taskId} status=${status} — поллинг`, 'info');
+    return pollScraperTask(String(taskId), apiKey, platform);
   }
 
-  log(`[TrendCollector] /trending-posts (${platform}) вернул неожиданный формат: ${JSON.stringify(data).substring(0, 300)}`, 'warn');
+  log(`[TrendCollector] ${endpoint} (${platform}) неожиданный формат: ${JSON.stringify(data).substring(0, 300)}`, 'warn');
   return [];
 }
 
@@ -604,8 +621,8 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
 
   log(`[TrendCollector] 🚀 Сбор трендов для кампании ${campaignId} | platforms=${platforms.join(',')} | collectSources=${collectSources} | keywords=${keywords.length} | sourcesList=${sourcesList?.length ?? 'не передан'}`, 'info');
 
-  const newScraperToken = await getScraperBearerToken();
-  const oldScraperKey = await getOldScraperApiKey();
+  const apiKey = await getScraperApiKey();
+  const oldScraperKey = apiKey; // используем тот же ключ для YT/IG (тот же сервер)
 
   const results = { telegram: 0, vk: 0, youtube: 0, instagram: 0, total: 0, sourcesFound: { telegram: 0, vk: 0 } };
   const tasks: Promise<void>[] = [];
@@ -618,7 +635,7 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
 
       if (collectSources && keywords.length > 0) {
         log(`[TrendCollector][TG] Поиск каналов по ${keywords.length} ключевым словам`, 'info');
-        const groups = await findGroups('telegram', keywords, minFollowers.telegram || 2000, maxSourcesPerPlatform, newScraperToken) as TgGroup[];
+        const groups = await findGroups('telegram', keywords, minFollowers.telegram || 2000, maxSourcesPerPlatform, apiKey) as TgGroup[];
         log(`[TrendCollector][TG] Найдено каналов: ${groups.length}`, 'info');
         results.sourcesFound!.telegram = groups.length;
 
@@ -644,7 +661,7 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
 
       log(`[TrendCollector][TG] Сбор трендов из ${tgIds.length} каналов: ${tgIds.slice(0, 5).join(', ')}`, 'info');
       const postsPerGroup = Math.max(Math.ceil(limit / tgIds.length), 3);
-      const posts = await fetchTrendingPosts('telegram', tgIds, daysBack, postsPerGroup, 300, newScraperToken);
+      const posts = await fetchTrendingPosts('telegram', tgIds, daysBack, postsPerGroup, 300, apiKey);
       log(`[TrendCollector][TG] Получено постов: ${posts.length}`, 'info');
 
       if (posts.length > 0) {
@@ -662,7 +679,7 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
 
       if (collectSources && keywords.length > 0) {
         log(`[TrendCollector][VK] Поиск групп по ${keywords.length} ключевым словам`, 'info');
-        const groups = await findGroups('vk', keywords, minFollowers.vk || 3000, maxSourcesPerPlatform, newScraperToken) as VkGroup[];
+        const groups = await findGroups('vk', keywords, minFollowers.vk || 3000, maxSourcesPerPlatform, apiKey) as VkGroup[];
         log(`[TrendCollector][VK] Найдено открытых групп: ${groups.length}`, 'info');
         results.sourcesFound!.vk = groups.length;
 
@@ -688,7 +705,7 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
 
       log(`[TrendCollector][VK] Сбор трендов из ${vkIds.length} групп`, 'info');
       const postsPerGroup = Math.max(Math.ceil(limit / vkIds.length), 3);
-      const posts = await fetchTrendingPosts('vk', vkIds, daysBack, postsPerGroup, 300, newScraperToken);
+      const posts = await fetchTrendingPosts('vk', vkIds, daysBack, postsPerGroup, 300, apiKey);
       log(`[TrendCollector][VK] Получено постов: ${posts.length}`, 'info');
 
       if (posts.length > 0) {

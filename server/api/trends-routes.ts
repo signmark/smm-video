@@ -1557,4 +1557,188 @@ ${trendSummaries.length > 0 ? `ВЫВОДЫ ПО ТРЕНДАМ:\n${trendSummari
       res.status(500).json({ error: 'Ошибка запуска сбора трендов' });
     }
   });
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // Scraper Analytics API (прокси к http://217.26.25.95:3030/api/v1/...)
+  // ──────────────────────────────────────────────────────────────────────────
+
+  /**
+   * GET /api/scraper/monitoring/channels — список зарегистрированных каналов
+   */
+  app.get('/api/scraper/monitoring/channels', authenticateUser, async (req: Request, res: Response) => {
+    try {
+      const { getMonitoredChannels } = await import('../services/scraper-analytics');
+      const channels = await getMonitoredChannels();
+      res.json({ success: true, data: channels });
+    } catch (err: any) {
+      log(`[ScraperAnalytics] GET monitoring/channels error: ${err.message}`, 'error');
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  /**
+   * POST /api/scraper/monitoring/channels — зарегистрировать канал
+   */
+  app.post('/api/scraper/monitoring/channels', authenticateUser, async (req: Request, res: Response) => {
+    try {
+      const { platform, platform_channel_id, name, metadata } = req.body;
+      if (!platform || !platform_channel_id) {
+        return res.status(400).json({ success: false, error: 'platform и platform_channel_id обязательны' });
+      }
+      const { createMonitoringChannel } = await import('../services/scraper-analytics');
+      const channel = await createMonitoringChannel({ platform, platform_channel_id, name, metadata });
+      if (!channel) return res.status(502).json({ success: false, error: 'Скрейпер не ответил' });
+      res.json({ success: true, data: channel });
+    } catch (err: any) {
+      log(`[ScraperAnalytics] POST monitoring/channels error: ${err.message}`, 'error');
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  /**
+   * GET /api/scraper/channels/:channelId/overview — обзор канала
+   */
+  app.get('/api/scraper/channels/:channelId/overview', authenticateUser, async (req: Request, res: Response) => {
+    try {
+      const { channelId } = req.params;
+      const { getChannelOverview } = await import('../services/scraper-analytics');
+      const overview = await getChannelOverview(channelId);
+      if (!overview) return res.status(404).json({ success: false, error: 'Канал не найден или нет данных' });
+      res.json({ success: true, data: overview });
+    } catch (err: any) {
+      log(`[ScraperAnalytics] GET overview error: ${err.message}`, 'error');
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  /**
+   * GET /api/scraper/channels/:channelId/analytics — аналитика за период
+   * Query: from_date, to_date, granularity (day|week|month)
+   */
+  app.get('/api/scraper/channels/:channelId/analytics', authenticateUser, async (req: Request, res: Response) => {
+    try {
+      const { channelId } = req.params;
+      const { from_date, to_date, granularity } = req.query as Record<string, string>;
+      const { getChannelAnalytics } = await import('../services/scraper-analytics');
+      const data = await getChannelAnalytics(channelId, {
+        from_date,
+        to_date,
+        granularity: (granularity as any) || 'day'
+      });
+      if (!data) return res.status(404).json({ success: false, error: 'Нет данных аналитики' });
+      res.json({ success: true, data });
+    } catch (err: any) {
+      log(`[ScraperAnalytics] GET analytics error: ${err.message}`, 'error');
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  /**
+   * GET /api/scraper/trends/posts — топ постов из скрейпера
+   * Query: platform, from_date, to_date, limit, channel_ids (comma-separated)
+   */
+  app.get('/api/scraper/trends/posts', authenticateUser, async (req: Request, res: Response) => {
+    try {
+      const { platform, from_date, to_date, limit, channel_ids } = req.query as Record<string, string>;
+      const { getTrendingPosts } = await import('../services/scraper-analytics');
+      const posts = await getTrendingPosts({
+        platform,
+        from_date,
+        to_date,
+        limit: limit ? Number(limit) : 50,
+        channel_ids: channel_ids ? channel_ids.split(',') : undefined
+      });
+      res.json({ success: true, data: posts, total: posts.length });
+    } catch (err: any) {
+      log(`[ScraperAnalytics] GET trends/posts error: ${err.message}`, 'error');
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  /**
+   * GET /api/scraper/trends/hashtags — топ хэштегов
+   * Query: platform, from_date, to_date, limit
+   */
+  app.get('/api/scraper/trends/hashtags', authenticateUser, async (req: Request, res: Response) => {
+    try {
+      const { platform, from_date, to_date, limit } = req.query as Record<string, string>;
+      const { getTrendingHashtags } = await import('../services/scraper-analytics');
+      const hashtags = await getTrendingHashtags({
+        platform,
+        from_date,
+        to_date,
+        limit: limit ? Number(limit) : 30
+      });
+      res.json({ success: true, data: hashtags, total: hashtags.length });
+    } catch (err: any) {
+      log(`[ScraperAnalytics] GET trends/hashtags error: ${err.message}`, 'error');
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  /**
+   * GET /api/scraper/analytics/engagement — сравнительный engagement
+   * Query: platform, channel_ids (comma-separated), from_date, to_date
+   */
+  app.get('/api/scraper/analytics/engagement', authenticateUser, async (req: Request, res: Response) => {
+    try {
+      const { platform, channel_ids, from_date, to_date } = req.query as Record<string, string>;
+      const { getEngagementComparison } = await import('../services/scraper-analytics');
+      const data = await getEngagementComparison({
+        platform,
+        from_date,
+        to_date,
+        channel_ids: channel_ids ? channel_ids.split(',') : undefined
+      });
+      res.json({ success: true, data, total: data.length });
+    } catch (err: any) {
+      log(`[ScraperAnalytics] GET analytics/engagement error: ${err.message}`, 'error');
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  /**
+   * POST /api/scraper/monitoring/sync-campaign — авторегистрация каналов кампании в скрейпере
+   * Body: { campaignId }
+   */
+  app.post('/api/scraper/monitoring/sync-campaign', authenticateUser, async (req: Request, res: Response) => {
+    try {
+      const { campaignId } = req.body;
+      if (!campaignId) return res.status(400).json({ success: false, error: 'campaignId обязателен' });
+
+      const sources = await directusCrud.list('campaign_content_sources', {
+        filter: { campaign_id: { _eq: campaignId } },
+        fields: ['id', 'type', 'TgId', 'vkId', 'name', 'url'],
+        limit: -1,
+        useAdminToken: true
+      }) as any[];
+
+      const channels: Array<{ platform: string; id: string; name?: string }> = [];
+      for (const s of sources || []) {
+        const type = (s.type || '').toLowerCase();
+        if (type === 'telegram' && s.TgId) {
+          channels.push({ platform: 'telegram', id: s.TgId, name: s.name });
+        } else if (type === 'vk' && s.vkId) {
+          channels.push({ platform: 'vk', id: String(s.vkId), name: s.name });
+        }
+      }
+
+      if (channels.length === 0) {
+        return res.json({ success: true, registered: 0, message: 'Нет TG/VK каналов в кампании' });
+      }
+
+      const { ensureChannelsRegistered } = await import('../services/scraper-analytics');
+      const idMap = await ensureChannelsRegistered(channels);
+
+      res.json({
+        success: true,
+        registered: idMap.size,
+        total: channels.length,
+        message: `Зарегистрировано/найдено ${idMap.size} из ${channels.length} каналов`
+      });
+    } catch (err: any) {
+      log(`[ScraperAnalytics] sync-campaign error: ${err.message}`, 'error');
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
 }

@@ -147,18 +147,6 @@ export function logMessage(message: string, source = "express", level = "info") 
   const envPrefix = envConfig.environment === 'development' ? '[DEV] ' : '';
   console.log(`${time} ${envPrefix}[${source}] ${message}`);
 
-  // Детальное логирование только в development
-  if (envConfig.environment === 'development') {
-    const isDebug = (typeof source === 'string' && source.endsWith('-debug')) || level === "debug";
-    if (isDebug) {
-      try {
-        // Простое логирование в консоль для debug сообщений
-        console.log(`[DEBUG-LOG] ${new Date().toISOString()} [${source}] ${message}`);
-      } catch (err) {
-        // Игнорируем ошибки
-      }
-    }
-  }
 }
 
 /**
@@ -314,8 +302,7 @@ export function warn(message: string, source = "express") {
  * @param source Источник сообщения (по умолчанию "express")
  */
 export function debug(message: string, source = "express") {
-  const time = new Date().toLocaleTimeString();
-  console.debug(`${time} [${source}] ${message}`);
+  logMessage(message, source, 'debug');
 }
 
 /**

@@ -330,6 +330,7 @@ export default function AnalyticsPage() {
                 <SelectContent>
                   <SelectItem value="7days">{t('analytics.7days')}</SelectItem>
                   <SelectItem value="30days">{t('analytics.30days')}</SelectItem>
+                  <SelectItem value="thisMonth">Текущий месяц</SelectItem>
                 </SelectContent>
               </Select>
               

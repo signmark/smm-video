@@ -359,6 +359,7 @@ async function pollScraperTask(
       if (status === 'done' || status === 'completed' || status === 'finished' || status === 'success') {
         // Результат хранится в d.result (TelegramTaskStatus/VKTaskStatus)
         const result = d?.result;
+        log(`[TrendCollector] Task ${taskId} done. result keys=${result ? Object.keys(result).join(',') : 'null'} raw=${JSON.stringify(d).substring(0, 400)}`, 'info');
         if (result) {
           if (Array.isArray(result?.posts)) return result.posts;
           if (Array.isArray(result)) return result;
@@ -454,16 +455,19 @@ async function fetchTrendingPosts(
 
 // ─── Нормализация поста ───────────────────────────────────────────────────────
 
+const PG_INT_MAX = 2147483647;
+const clampInt = (v: number): number => Math.min(Math.max(Math.floor(v || 0), 0), PG_INT_MAX);
+
 function normalizeTgPost(raw: any): {
   title: string; description: string; urlPost: string;
   reactions: number; comments: number; views: number; reposts: number;
   trendScore: number; mediaLinks: any; date: string | null; sourceId: string | null;
 } {
   const text = raw.text || raw.message || '';
-  const views = Number(raw.views || raw.views_count || 0);
-  const reactions = Number(raw.reactions || raw.reactions_count || 0);
-  const comments = Number(raw.comments || raw.comments_count || 0);
-  const reposts = Number(raw.forwards || raw.reposts || raw.shares || 0);
+  const views = clampInt(Number(raw.views || raw.views_count || 0));
+  const reactions = clampInt(Number(raw.reactions || raw.reactions_count || 0));
+  const comments = clampInt(Number(raw.comments || raw.comments_count || 0));
+  const reposts = clampInt(Number(raw.forwards || raw.reposts || raw.shares || 0));
 
   return {
     title: text.substring(0, 100) || 'Telegram пост',
@@ -473,7 +477,7 @@ function normalizeTgPost(raw: any): {
     comments,
     views,
     reposts,
-    trendScore: Number(raw.trend_score || calcEngagementScore(reactions, comments, views, reposts)),
+    trendScore: clampInt(Number(raw.trend_score || calcEngagementScore(reactions, comments, views, reposts))),
     mediaLinks: raw.media_links || null,
     date: raw.date || null,
     sourceId: raw.sourceId || raw.source_id || null
@@ -490,17 +494,17 @@ function normalizeVkPost(raw: any): {
   return {
     title: text.substring(0, 100) || 'VK пост',
     description: text,
-    urlPost: raw.url || raw.link || '',
-    reactions: Number(raw.likesCount || raw.reactions || raw.likes || 0),
-    comments: Number(raw.commentsCount || raw.comments || 0),
-    views: Number(raw.viewsCount || raw.views || 0),
-    reposts: Number(raw.repostsCount || raw.reposts || raw.shares || 0),
-    trendScore: Number(raw.trendScore || raw.trend_score || 0),
+    urlPost: raw.url || raw.link || (raw.id && raw.owner_id ? `https://vk.com/wall${raw.owner_id}_${raw.id}` : '') || '',
+    reactions: clampInt(Number(raw.likesCount || raw.reactions || raw.likes || 0)),
+    comments: clampInt(Number(raw.commentsCount || raw.comments || 0)),
+    views: clampInt(Number(raw.viewsCount || raw.views || 0)),
+    reposts: clampInt(Number(raw.repostsCount || raw.reposts || raw.shares || 0)),
+    trendScore: clampInt(Number(raw.trendScore || raw.trend_score || 0)),
     mediaLinks: raw.media_links || null,
     date: raw.timestamp || raw.date || null,
     sourceId: raw.source_id || raw.sourceId || null,
     postType: raw.type || 'post',
-    accountUrl: raw.accountUrl || ''
+    accountUrl: raw.accountUrl || (raw.owner_id ? `https://vk.com/club${String(raw.owner_id).replace('-', '')}` : '')
   };
 }
 
@@ -512,8 +516,31 @@ async function saveTrendPosts(
   campaignId: string,
   sourceIdMap?: Map<string, string>
 ): Promise<number> {
+  // Pre-dedup: collect urlPost values and query existing records to avoid RECORD_NOT_UNIQUE 400s
+  const candidateUrls = posts
+    .map(raw => raw.url || raw.link || (raw.id && raw.owner_id ? `https://vk.com/wall${raw.owner_id}_${raw.id}` : null))
+    .filter((u): u is string => !!u);
+
+  const existingUrls = new Set<string>();
+  if (candidateUrls.length > 0) {
+    try {
+      const existing = await directusCrud.list<{ urlPost: string }>('campaign_trend_topics', {
+        useAdminToken: true,
+        filter: { urlPost: { _in: candidateUrls } },
+        fields: ['urlPost'],
+        limit: candidateUrls.length
+      });
+      for (const r of existing) {
+        if (r.urlPost) existingUrls.add(r.urlPost);
+      }
+    } catch { /* not critical — proceed with insert attempts */ }
+  }
+
   let saved = 0;
   for (const raw of posts) {
+    const rawUrl = raw.url || raw.link || null;
+    if (rawUrl && existingUrls.has(rawUrl)) continue;
+
     try {
       let topicData: Record<string, any>;
 
@@ -533,7 +560,6 @@ async function saveTrendPosts(
           reposts: p.reposts,
           trendScore: p.trendScore,
           media_links: p.mediaLinks,
-          created_at: p.date || new Date().toISOString(),
           campaign_id: campaignId,
           source_id: dbSourceId,
           is_bookmarked: false,
@@ -557,7 +583,6 @@ async function saveTrendPosts(
           reposts: p.reposts,
           trendScore: p.trendScore,
           media_links: p.mediaLinks,
-          created_at: p.date || new Date().toISOString(),
           campaign_id: campaignId,
           source_id: dbSourceId,
           is_bookmarked: false,
@@ -566,10 +591,10 @@ async function saveTrendPosts(
       } else {
         // YouTube / Instagram — нормализация как раньше
         const text = raw.text || raw.message || raw.description || raw.title || raw.caption || '';
-        const views = Number(raw.views || raw.views_count || raw.view_count || 0);
-        const reactions = Number(raw.reactions || raw.reactions_count || raw.likes || raw.likes_count || 0);
-        const comments = Number(raw.comments || raw.comments_count || 0);
-        const reposts = Number(raw.reposts || raw.shares || 0);
+        const views = clampInt(Number(raw.views || raw.views_count || raw.view_count || 0));
+        const reactions = clampInt(Number(raw.reactions || raw.reactions_count || raw.likes || raw.likes_count || 0));
+        const comments = clampInt(Number(raw.comments || raw.comments_count || 0));
+        const reposts = clampInt(Number(raw.reposts || raw.shares || 0));
         topicData = {
           title: text.substring(0, 200) || `${platform} пост`,
           description: text || null,
@@ -580,10 +605,10 @@ async function saveTrendPosts(
           views,
           reposts,
           trendScore: raw.trend_score
-            ? Number(raw.trend_score)
+            ? clampInt(Number(raw.trend_score))
             : raw.engagement_rate
-              ? Math.round(Number(raw.engagement_rate) * 1000)
-              : calcEngagementScore(reactions, comments, views, reposts),
+              ? clampInt(Math.round(Number(raw.engagement_rate) * 1000))
+              : clampInt(calcEngagementScore(reactions, comments, views, reposts)),
           campaign_id: campaignId,
           is_bookmarked: false,
           raw_source_data: raw
@@ -593,7 +618,10 @@ async function saveTrendPosts(
       await directusCrud.create('campaign_trend_topics', topicData, { useAdminToken: true });
       saved++;
     } catch (err: any) {
-      log(`[TrendCollector] Ошибка сохранения поста (${platform}): ${err.message}`, 'error');
+      const isdup = err?.response?.data?.errors?.[0]?.extensions?.code === 'RECORD_NOT_UNIQUE';
+      if (!isdup) {
+        log(`[TrendCollector] Ошибка сохранения поста (${platform}): ${err.message}`, 'error');
+      }
     }
   }
   return saved;

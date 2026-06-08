@@ -345,8 +345,13 @@ export class PublishScheduler {
           // Определяем платформы готовые к публикации с учетом времени
           const readyPlatforms = [];
           // Анализируем платформы (детали только в debug)
-          
+          const { isPlatformCompatible } = await import('../utils/content-type-platform-map');
+          const contentTypeForFilter = content.content_type as string | undefined;
+
           for (const [platformName, platformData] of Object.entries(platforms)) {
+            // Молча пропускаем несовместимые платформы (например, YouTube для text-image)
+            if (!isPlatformCompatible(platformName, contentTypeForFilter)) continue;
+
             const data = platformData as any;
             log(`  📍 ${content.id}:${platformName} status=${data.status}, postUrl=${data.postUrl ? 'SET' : 'EMPTY'}`, 'scheduler', 'debug');
             
@@ -424,17 +429,6 @@ export class PublishScheduler {
               continue; // Молча пропускаем конфигурационные ошибки
             }
 
-            // 🎯 ПРОВЕРКА СОВМЕСТИМОСТИ ТИПА КОНТЕНТА И ПЛАТФОРМЫ (последний рубеж защиты)
-            {
-              const { isPlatformCompatible, getIncompatibilityReason } = await import('../utils/content-type-platform-map');
-              const contentType = content.content_type as string | undefined;
-              if (!isPlatformCompatible(platformName, contentType)) {
-                const reason = getIncompatibilityReason(platformName, contentType || 'unknown');
-                log(`  ⛔ ${content.id}:${platformName} BLOCKED - ${reason}`, 'scheduler');
-                continue;
-              }
-            }
-            
             // 📊 ДЕТАЛЬНАЯ ПРОВЕРКА ЗАЩИТЫ
             log(`  📊 ${content.id}:${platformName} - checking protection levels`, 'scheduler', 'debug');
             

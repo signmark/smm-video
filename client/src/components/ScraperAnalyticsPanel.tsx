@@ -127,7 +127,7 @@ export function ScraperAnalyticsPanel({ campaignId }: Props) {
             Аналитика из скрейпера
           </h2>
           <p className="text-sm text-muted-foreground mt-0.5">
-            Данные из системы мониторинга (217.26.25.95)
+            Данные из системы мониторинга
           </p>
         </div>
         <div className="flex items-center gap-2">

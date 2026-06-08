@@ -13,6 +13,8 @@ export interface EnvironmentConfig {
   verboseLogs: boolean;
 }
 
+let _logged = false;
+
 /**
  * Detects current environment and returns appropriate admin credentials
  */
@@ -27,14 +29,17 @@ export function detectEnvironment(): EnvironmentConfig {
     process.env.DIRECTUS_INTERNAL_URL ||
     (environment === 'development' ? 'http://localhost:8055' : 'https://directus.nplanner.ru');
 
-  console.log(`[ENV-DETECTOR] Detected environment: ${environment}, Directus URL: ${directusUrl}`);
+  if (!_logged) {
+    console.log(`[ENV-DETECTOR] Detected environment: ${environment}, Directus URL: ${directusUrl}`);
+    _logged = true;
+  }
 
   // Конфигурация логгирования в зависимости от окружения
   const logLevel = (process.env.LOG_LEVEL as 'debug' | 'info' | 'warn' | 'error') ||
     (environment === 'development' ? 'debug' : 'info');
 
-  const debugScheduler = process.env.DEBUG_SCHEDULER === 'true' || environment === 'development';
-  const verboseLogs = process.env.VERBOSE_LOGS === 'true' || environment === 'development';
+  const debugScheduler = process.env.DEBUG_SCHEDULER === 'true';
+  const verboseLogs = process.env.VERBOSE_LOGS === 'true';
 
   return {
     adminEmail: process.env.DIRECTUS_ADMIN_EMAIL || 'lbrspb@gmail.com',

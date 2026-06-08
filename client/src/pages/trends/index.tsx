@@ -87,6 +87,7 @@ import {
 } from "@/components/ui/table";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useCampaignStore } from "@/lib/campaignStore";
+import { ScraperAnalyticsPanel } from "@/components/ScraperAnalyticsPanel";
 
 // Интерфейс для анализа данных
 interface Analysis {
@@ -3594,6 +3595,13 @@ export default function Trends() {
           </>
         )}
       </div>
+
+      {/* Аналитика скрейпера */}
+      {selectedCampaignId && (
+        <div className="px-4 pb-6 mt-2">
+          <ScraperAnalyticsPanel campaignId={selectedCampaignId} />
+        </div>
+      )}
 
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         {selectedCampaignId && (

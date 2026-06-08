@@ -12,6 +12,29 @@ const SCRAPER_API_KEY_FALLBACK = 'c1f2e8ad-61c5-450a-b301-12690e9e1112';
 // Алиас для обратной совместимости
 const SCRAPER_OLD_BASE = SCRAPER_BASE;
 
+// ─── Webhook-реестр TG-задач ──────────────────────────────────────────────────
+// task_id → метаданные задачи, нужные при получении колбэка от скрейпера
+export interface PendingTgTask {
+  campaignId: string;
+  sourceIdMap: Map<string, string>; // tgUsername.lower → Directus record id
+  createdAt: number;
+}
+export const pendingTgTasks = new Map<string, PendingTgTask>();
+
+// Автоочистка устаревших задач (>2ч) чтобы не копить память
+setInterval(() => {
+  const cutoff = Date.now() - 2 * 3600_000;
+  for (const [id, task] of pendingTgTasks) {
+    if (task.createdAt < cutoff) pendingTgTasks.delete(id);
+  }
+}, 600_000).unref();
+
+// Публичный базовый URL сервера (для callback_url)
+export function getPublicBaseUrl(): string {
+  if (process.env.REPLIT_DEV_DOMAIN) return `https://${process.env.REPLIT_DEV_DOMAIN}`;
+  return (process.env.API_BASE_URL || process.env.PUBLIC_URL || process.env.APP_URL || 'https://smm.omemo.tech').replace(/\/$/, '');
+}
+
 export interface CollectTrendsParams {
   campaignId: string;
   userId: string;
@@ -520,7 +543,7 @@ function normalizeVkPost(raw: any): {
 
 // ─── Сохранение постов ────────────────────────────────────────────────────────
 
-async function saveTrendPosts(
+export async function saveTrendPosts(
   posts: any[],
   platform: 'telegram' | 'vk' | 'youtube' | 'instagram',
   campaignId: string,
@@ -699,16 +722,52 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
         return;
       }
 
-      log(`[TrendCollector][TG] Сбор трендов из ${tgIds.length} каналов: ${tgIds.slice(0, 5).join(', ')}`, 'info');
+      log(`[TrendCollector][TG] 🪝 Webhook-режим: отправляем задачу в скрейпер, результат придёт на колбэк`, 'info');
       const postsPerGroup = Math.max(Math.ceil(limit / tgIds.length), 3);
-      // min_views=100 — порог для TG; API-дефолт = 1000 (слишком высокий для небольших каналов)
-      const posts = await fetchTrendingPosts('telegram', tgIds, daysBack, postsPerGroup, 100, apiKey);
-      log(`[TrendCollector][TG] Получено постов: ${posts.length}`, 'info');
+      const callbackUrl = `${getPublicBaseUrl()}/api/trends/tg-webhook`;
 
-      if (posts.length > 0) {
-        results.telegram = await saveTrendPosts(posts, 'telegram', campaignId, sourceIdMap);
-        log(`[TrendCollector][TG] ✅ Сохранено: ${results.telegram}`, 'info');
+      const channelIds = tgIds.map(id => {
+        const s = String(id).trim();
+        return s.startsWith('@') ? s : `@${s}`;
+      });
+
+      const body = {
+        channel_ids: channelIds,
+        limit: postsPerGroup * tgIds.length,
+        fetch_limit: 100,
+        merge_results: true,
+        days_back: daysBack,
+        min_views: 100,
+        async_mode: true,
+        callback_url: callbackUrl
+      };
+
+      log(`[TrendCollector][TG] POST /api/telegram/trending-posts | channels=${channelIds.slice(0, 5).join(',')} | callback=${callbackUrl}`, 'info');
+      const data = await callScraper('/api/telegram/trending-posts', body, apiKey);
+
+      if (!data) {
+        log(`[TrendCollector][TG] Скрейпер вернул пустой ответ`, 'warn');
+        return;
       }
+
+      // Редкий случай: скрейпер ответил синхронно (уже готовые посты)
+      const directPosts = extractPostsFromResponse(data);
+      if (directPosts && directPosts.length > 0) {
+        log(`[TrendCollector][TG] Синхронный ответ: ${directPosts.length} постов — сохраняем сразу`, 'info');
+        results.telegram = await saveTrendPosts(directPosts, 'telegram', campaignId, sourceIdMap);
+        log(`[TrendCollector][TG] ✅ Сохранено: ${results.telegram}`, 'info');
+        return;
+      }
+
+      // Async: скрейпер принял задачу → регистрируем в реестре, ждём хука
+      const taskId = data?.task_id || data?.job_id || data?.id || data?.taskId;
+      if (taskId) {
+        pendingTgTasks.set(String(taskId), { campaignId, sourceIdMap, createdAt: Date.now() });
+        log(`[TrendCollector][TG] ✅ Задача ${taskId} зарегистрирована — результат придёт на ${callbackUrl}`, 'info');
+      } else {
+        log(`[TrendCollector][TG] ⚠️ Не удалось получить task_id из ответа: ${JSON.stringify(data).substring(0, 200)}`, 'warn');
+      }
+      // Не ждём — результат придёт на webhook
     })());
   }
 

@@ -339,61 +339,108 @@ export function registerTrendsRoutes(app: Express) {
   }
 
   /**
-   * Callback для сбора постов (трендов) Telegram
+   * POST /api/trends/tg-webhook
+   * Основной хук — скрейпер POSTит сюда результат TG-задачи когда готово.
+   * Формат скрейпера: { task_id, status, result: { posts: [...] }, error }
+   * Задача была зарегистрирована в pendingTgTasks в trend-collector.ts.
+   */
+  app.post("/api/trends/tg-webhook", async (req: Request, res: Response) => {
+    // Сразу отвечаем 200 — скрейпер не должен ждать пока мы сохраняем
+    res.json({ success: true });
+
+    try {
+      const body = req.body;
+      log(`[TG Webhook] 📥 Получен колбэк: ${JSON.stringify(body).substring(0, 500)}`, 'info');
+
+      const taskId = body?.task_id || body?.taskId || body?.job_id;
+      const status = (body?.status || '').toLowerCase();
+      const errorMsg = body?.error;
+
+      if (errorMsg || (status && status !== 'done' && status !== 'completed')) {
+        log(`[TG Webhook] ❌ Задача ${taskId} завершилась с ошибкой: ${errorMsg || status}`, 'error');
+        if (taskId) {
+          const { pendingTgTasks } = await import('../services/trend-collector');
+          pendingTgTasks.delete(String(taskId));
+        }
+        return;
+      }
+
+      // Достаём посты из ответа (несколько возможных форматов)
+      const result = body?.result || body;
+      const posts: any[] = result?.posts || result?.items || result?.data || [];
+
+      log(`[TG Webhook] task_id=${taskId} | posts=${posts.length}`, 'info');
+
+      if (!taskId) {
+        log(`[TG Webhook] ⚠️ Нет task_id в теле — невозможно найти кампанию`, 'warn');
+        return;
+      }
+
+      const { pendingTgTasks, saveTrendPosts } = await import('../services/trend-collector');
+      const task = pendingTgTasks.get(String(taskId));
+
+      if (!task) {
+        log(`[TG Webhook] ⚠️ task_id=${taskId} не найден в реестре (возможно, уже обработан или истёк срок)`, 'warn');
+        return;
+      }
+
+      if (posts.length === 0) {
+        log(`[TG Webhook] ℹ️ Нет постов для кампании ${task.campaignId}`, 'info');
+        pendingTgTasks.delete(String(taskId));
+        return;
+      }
+
+      const saved = await saveTrendPosts(posts, 'telegram', task.campaignId, task.sourceIdMap);
+      log(`[TG Webhook] ✅ Сохранено ${saved} TG-постов для кампании ${task.campaignId}`, 'info');
+      pendingTgTasks.delete(String(taskId));
+    } catch (error: any) {
+      log(`[TG Webhook] 💥 Критическая ошибка: ${error.message}`, 'error');
+    }
+  });
+
+  /**
+   * POST /api/trends/collect-trends-callback
+   * Легаси-эндпоинт (для старых вызовов через callTelegramTrendsCollectDirect).
+   * Поддерживает как старый формат { posts, metadata } так и новый { task_id, status, result }.
    */
   app.post("/api/trends/collect-trends-callback", async (req: Request, res: Response) => {
+    // Отвечаем сразу
+    res.json({ success: true });
+
     try {
-      const { posts, metadata } = req.body;
-      const campaignId = metadata?.campaignId;
+      const body = req.body;
+      log(`[TG Callback Legacy] 📥 ${JSON.stringify(body).substring(0, 400)}`, 'info');
 
-      log.warn(`[Telegram Trends Callback] 📥 Received callback for campaign ${campaignId}\nBody: ${JSON.stringify(req.body, null, 2)}`, 'telegram-collect');
+      // Новый формат скрейпера: { task_id, status, result: { posts } }
+      if (body?.task_id || body?.taskId) {
+        const taskId = body.task_id || body.taskId;
+        const posts: any[] = body?.result?.posts || body?.result?.items || [];
+        const campaignId = body?.result?.metadata?.campaignId || body?.metadata?.campaignId;
 
-      if (!campaignId || !posts || !Array.isArray(posts)) {
-        log(`[Telegram Trends Callback] ❌ Missing campaignId or posts array`, 'error');
-        return res.status(400).json({ success: false, error: "Invalid callback payload" });
-      }
-
-      log(`[Telegram Trends Callback] Processing ${posts.length} posts for campaign ${campaignId}`, 'info');
-
-      for (const post of posts) {
-        try {
-          // Строим URL отдельного поста Telegram (не канала)
-          const buildTelegramPostUrl = (p: any): string => {
-            const base = p.url || p.link || '';
-            // Если уже содержит ID поста (https://t.me/channel/12345), используем как есть
-            if (/t\.me\/.+\/\d+/.test(base)) return base;
-            // Иначе пробуем добавить ID сообщения
-            const msgId = p.id || p.message_id || p.post_id;
-            if (msgId && base.includes('t.me/')) {
-              return `${base.replace(/\/$/, '')}/${msgId}`;
-            }
-            return base;
-          };
-
-          // Сохраняем пост как тренд в Directus
-          const topicData = {
-            title: post.text?.substring(0, 100) || 'Telegram Post',
-            sourceType: 'Telegram Direct',
-            urlPost: buildTelegramPostUrl(post),
-            reactions: post.reactions_count || post.reactions?.total_count || 0,
-            comments: post.comments_count || 0,
-            views: post.views_count || 0,
-            is_bookmarked: false,
-            campaign_id: String(campaignId),
-            description: post.text || null,
-            raw_source_data: post
-          };
-
-          await directusCrud.create('campaign_trend_topics', topicData, { useAdminToken: true });
-        } catch (saveErr: any) {
-          log(`[Telegram Trends Callback] Error saving post ${post.url || post.link}: ${saveErr.message}`, 'error');
+        if (campaignId && posts.length > 0) {
+          const { saveTrendPosts } = await import('../services/trend-collector');
+          const saved = await saveTrendPosts(posts, 'telegram', String(campaignId), undefined);
+          log(`[TG Callback Legacy] ✅ Сохранено ${saved} постов для кампании ${campaignId} (task=${taskId})`, 'info');
+        } else {
+          log(`[TG Callback Legacy] ⚠️ task=${taskId} — нет campaignId или постов`, 'warn');
         }
+        return;
       }
 
-      res.json({ success: true, processed: posts.length });
+      // Старый формат: { posts: [...], metadata: { campaignId } }
+      const posts: any[] = body?.posts || [];
+      const campaignId = body?.metadata?.campaignId;
+
+      if (!campaignId || posts.length === 0) {
+        log(`[TG Callback Legacy] ⚠️ Нет campaignId или постов`, 'warn');
+        return;
+      }
+
+      const { saveTrendPosts } = await import('../services/trend-collector');
+      const saved = await saveTrendPosts(posts, 'telegram', String(campaignId), undefined);
+      log(`[TG Callback Legacy] ✅ Сохранено ${saved} постов для кампании ${campaignId}`, 'info');
     } catch (error: any) {
-      log(`[Telegram Trends Callback] Critical error: ${error.message}`, 'error');
-      res.status(500).json({ success: false, error: error.message });
+      log(`[TG Callback Legacy] 💥 Ошибка: ${error.message}`, 'error');
     }
   });
 

@@ -272,6 +272,9 @@ export async function startAutonomousExternal(params: {
     }
   }
 
+  // Сбрасываем ошибку квоты при новом старте агента
+  quotaErrorMap.delete(params.campaignId);
+
   if (autonomousStates.has(params.campaignId)) {
     // Уже активен — запускаем цикл немедленно вместо ошибки
     const existing = autonomousStates.get(params.campaignId)!;
@@ -328,8 +331,9 @@ export function stopAutonomousExternal(campaignId: string) {
 }
 
 export function getAutonomousStatusExternal(campaignId: string) {
+  const quotaError = quotaErrorMap.get(campaignId) || null;
   const state = autonomousStates.get(campaignId);
-  if (!state) return { isActive: false };
+  if (!state) return { isActive: false, quotaError };
   const runtimeMin = Math.round((Date.now() - state.startedAt.getTime()) / 60000);
   const nextCycleMin = state.lastCycleAt
     ? Math.max(0, Math.round(state.interval * 60 - (Date.now() - state.lastCycleAt.getTime()) / 60000))
@@ -348,6 +352,7 @@ export function getAutonomousStatusExternal(campaignId: string) {
     nextCycleMin,
     startedAt: state.startedAt,
     errors: state.errors.slice(-5),
+    quotaError,
     // Ожидание одобрения контент-плана
     pendingApprovalStep: state.pendingApprovalStep || null,
     pendingPlan: state.pendingPlan || null,
@@ -443,6 +448,38 @@ interface AutonomousState {
 
 // Хранилище состояний автономных режимов (in-memory)
 const autonomousStates = new Map<string, AutonomousState>();
+
+// Ошибки квоты AI — хранятся даже после остановки агента, пока пользователь не запустит снова
+const quotaErrorMap = new Map<string, { message: string; retryAfterSec?: number; stoppedAt: string }>();
+
+// Определяет является ли ошибка превышением квоты/rate-limit AI
+function extractQuotaError(err: any): { message: string; retryAfterSec?: number } | null {
+  const msg = (err?.message || String(err)).toLowerCase();
+  const isQuota = msg.includes('429') || msg.includes('quota') ||
+    msg.includes('resource_exhausted') || msg.includes('rate limit') ||
+    msg.includes('exceeded your current quota') || msg.includes('free_tier_requests');
+  if (!isQuota) return null;
+
+  // Извлекаем retryAfter из сообщения об ошибке
+  const retryMatch = (err?.message || '').match(/retry.{0,20}?(\d+)\.?\d*s/i) ||
+    (err?.message || '').match(/(\d{2,5})s/i);
+  const retryAfterSec = retryMatch ? parseInt(retryMatch[1], 10) : undefined;
+
+  let userMessage = '🚫 Исчерпан лимит запросов к AI';
+  if ((err?.message || '').includes('free_tier') || (err?.message || '').includes('Free')) {
+    userMessage += ' (бесплатный тариф Gemini)';
+  }
+  if (retryAfterSec && retryAfterSec < 86400) {
+    const mins = Math.ceil(retryAfterSec / 60);
+    userMessage += mins > 60
+      ? `. Повтор через ${Math.ceil(mins / 60)} ч`
+      : `. Повтор через ${mins} мин`;
+  } else {
+    userMessage += '. Лимит сбросится через 24 часа';
+  }
+
+  return { message: userMessage, retryAfterSec };
+}
 
 // Определяем инструменты (tools) для AI
 const AVAILABLE_TOOLS = [
@@ -3795,7 +3832,17 @@ ${postText.slice(0, 500)}
     
   } catch (error: any) {
     console.error(`[AUTONOMOUS-CYCLE] ❌ Ошибка цикла:`, error.message);
-    state.errors.push(`Цикл ${state.cyclesCompleted + 1}: ${error.message}`);
+
+    const quotaErr = extractQuotaError(error);
+    if (quotaErr) {
+      console.error(`[AUTONOMOUS-CYCLE] 🚫 Квота AI исчерпана — автоматически останавливаем агент для кампании ${state.campaignId}`);
+      quotaErrorMap.set(state.campaignId, { ...quotaErr, stoppedAt: new Date().toISOString() });
+      if (state.timer) clearInterval(state.timer);
+      autonomousStates.delete(state.campaignId);
+      deleteAutonomousPersistence(state.campaignId);
+    } else {
+      state.errors.push(`Цикл ${state.cyclesCompleted + 1}: ${error.message}`);
+    }
     state.cycleRunning = false;
   }
 }

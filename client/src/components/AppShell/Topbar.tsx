@@ -59,11 +59,15 @@ export function Topbar({ onMenuClick, onLogout, onOpenProfile, onOpenAIChat, onO
       });
       return res.json();
     },
-    refetchInterval: 30000,
+    refetchInterval: 10000,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
+    staleTime: 0,
     enabled: !!selectedCampaignId && !!token,
   });
 
   const isAutonomousActive = autonomousStatus?.isActive === true;
+  const hasQuotaError = !isAutonomousActive && !!autonomousStatus?.quotaError;
 
   // Настройки автономного режима из кампании
   const { data: campaignData } = useQuery<any>({
@@ -265,12 +269,18 @@ export function Topbar({ onMenuClick, onLogout, onOpenProfile, onOpenAIChat, onO
                       className={`h-4 w-4 transition-colors ${
                         isAutonomousActive
                           ? 'text-green-500 dark:text-green-400'
+                          : hasQuotaError
+                          ? 'text-yellow-500 dark:text-yellow-400'
                           : 'text-red-400 dark:text-red-500'
                       }`}
                     />
                     <span
                       className={`absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full ${
-                        isAutonomousActive ? 'bg-green-500 animate-pulse' : 'bg-red-400'
+                        isAutonomousActive
+                          ? 'bg-green-500 animate-pulse'
+                          : hasQuotaError
+                          ? 'bg-yellow-500 animate-pulse'
+                          : 'bg-red-400'
                       }`}
                     />
                   </Button>
@@ -294,6 +304,12 @@ export function Topbar({ onMenuClick, onLogout, onOpenProfile, onOpenAIChat, onO
                       <p className="text-xs text-muted-foreground">Циклов: {autonomousStatus.cyclesCompleted} · Постов: {autonomousStatus.postsCreated ?? 0}</p>
                     )}
                     <p className="text-xs text-muted-foreground">Нажмите чтобы остановить</p>
+                  </div>
+                ) : hasQuotaError ? (
+                  <div className="space-y-0.5">
+                    <p className="font-medium text-yellow-600 dark:text-yellow-400">Агент остановлен</p>
+                    <p className="text-xs text-yellow-700 dark:text-yellow-300">{autonomousStatus.quotaError.message}</p>
+                    <p className="text-xs text-muted-foreground">Нажмите чтобы перезапустить</p>
                   </div>
                 ) : (
                   <div className="space-y-0.5">

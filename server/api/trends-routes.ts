@@ -236,7 +236,8 @@ export function registerTrendsRoutes(app: Express) {
             collectSources: collectSources ?? false,
             keywords: resolvedKeywords,
             maxSourcesPerPlatform,
-            minFollowers
+            minFollowers,
+            sourcesList: Array.isArray(sourcesList) && sourcesList.length > 0 ? sourcesList : undefined
           });
           log(`[Trends Route] ✅ Прямой сбор завершён: TG=${result.telegram}, VK=${result.vk}, YT=${result.youtube}, IG=${result.instagram}, total=${result.total}`, 'info');
 

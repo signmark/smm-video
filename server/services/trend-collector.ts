@@ -23,6 +23,7 @@ export interface CollectTrendsParams {
   keywords?: string[];
   maxSourcesPerPlatform?: number;
   minFollowers?: Record<string, number>;
+  sourcesList?: string[];
 }
 
 // ─── Вспомогательные типы ────────────────────────────────────────────────────
@@ -260,19 +261,29 @@ async function saveSourcesToDB(
 
 // ─── Получение существующих источников из БД ─────────────────────────────────
 
-async function getCampaignSources(campaignId: string): Promise<{
-  telegram: string[];
-  vk: (number | string)[];
-  youtube: string[];
-  instagram: string[];
+async function getCampaignSources(
+  campaignId: string,
+  authToken: string,
+  sourcesList?: string[]
+): Promise<{
+  telegram: { id: string; tgId: string }[];
+  vk: { id: string; vkId: number | string }[];
+  youtube: { id: string; channelId: string }[];
+  instagram: { id: string; username: string }[];
 }> {
   const result: any = { telegram: [], vk: [], youtube: [], instagram: [] };
   try {
+    // Если переданы конкретные ID источников — фильтруем по ним, иначе по кампании
+    const filter: Record<string, any> = sourcesList && sourcesList.length > 0
+      ? { id: { _in: sourcesList } }
+      : { campaign_id: { _eq: campaignId } };
+
+    // Используем токен юзера (не admin) — так как в dev admin-токен не имеет прав на эту коллекцию
     const sources = await directusCrud.list('campaign_content_sources', {
-      filter: { campaign_id: { _eq: campaignId } },
+      filter,
       fields: ['id', 'url', 'type', 'name', 'username', 'TgId', 'vkId'],
       limit: -1,
-      useAdminToken: true
+      authToken
     }) as any[];
 
     for (const s of sources) {
@@ -280,18 +291,17 @@ async function getCampaignSources(campaignId: string): Promise<{
       const type: string = (s.type || '').toLowerCase();
 
       if (type === 'telegram' || url.includes('t.me')) {
-        const id = s.TgId || extractChannelId(url);
-        if (id) result.telegram.push(id);
+        const tgId = s.TgId || extractChannelId(url);
+        if (tgId) result.telegram.push({ id: s.id, tgId });
       } else if (type === 'vk' || url.includes('vk.com')) {
-        // Используем vkId если есть, иначе числовой id из URL
-        const id = s.vkId || extractChannelId(url).replace('club', '');
-        if (id) result.vk.push(id);
+        const vkId = s.vkId || extractChannelId(url).replace('club', '');
+        if (vkId) result.vk.push({ id: s.id, vkId });
       } else if (type === 'youtube' || url.includes('youtube.com') || url.includes('youtu.be')) {
-        const id = extractChannelId(url);
-        if (id) result.youtube.push(id);
+        const channelId = extractChannelId(url);
+        if (channelId) result.youtube.push({ id: s.id, channelId });
       } else if (type === 'instagram' || url.includes('instagram.com')) {
-        const id = extractChannelId(url);
-        if (id) result.instagram.push(id);
+        const username = s.username || extractChannelId(url);
+        if (username) result.instagram.push({ id: s.id, username });
       }
     }
 
@@ -489,7 +499,7 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
   total: number;
   sourcesFound?: { telegram: number; vk: number };
 }> {
-  const { campaignId } = params;
+  const { campaignId, authToken } = params;
   const limit = params.postsPerPlatform || 10;
   const daysBack = params.daysSince || 7;
   const collectSources = params.collectSources ?? false;
@@ -497,8 +507,9 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
   const maxSourcesPerPlatform = params.maxSourcesPerPlatform || 10;
   const minFollowers = params.minFollowers || { telegram: 2000, vk: 3000, youtube: 10000, instagram: 5000 };
   const platforms = params.platforms || ['telegram', 'vk', 'youtube', 'instagram'];
+  const sourcesList = params.sourcesList;
 
-  log(`[TrendCollector] 🚀 Сбор трендов для кампании ${campaignId} | platforms=${platforms.join(',')} | collectSources=${collectSources} | keywords=${keywords.length}`, 'info');
+  log(`[TrendCollector] 🚀 Сбор трендов для кампании ${campaignId} | platforms=${platforms.join(',')} | collectSources=${collectSources} | keywords=${keywords.length} | sourcesList=${sourcesList?.length ?? 'не передан'}`, 'info');
 
   const newScraperToken = await getScraperBearerToken();
   const oldScraperKey = await getOldScraperApiKey();
@@ -510,7 +521,7 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
   if (platforms.includes('telegram')) {
     tasks.push((async () => {
       let tgIds: string[] = [];
-      const sourceIdMap = new Map<string, string>(); // TgId.lower → DB record id
+      const sourceIdMap = new Map<string, string>(); // tgId.lower → DB record id
 
       if (collectSources && keywords.length > 0) {
         log(`[TrendCollector][TG] Поиск каналов по ${keywords.length} ключевым словам`, 'info');
@@ -521,26 +532,15 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
         if (groups.length > 0) {
           const { savedIds, tgIds: foundTgIds } = await saveSourcesToDB('telegram', groups, campaignId);
           tgIds = foundTgIds;
-          // Строим карту TgId → DB id для последующей привязки постов
           groups.forEach((g, i) => {
             if (g.id && savedIds[i]) sourceIdMap.set(g.id.trim().toLowerCase(), savedIds[i]);
           });
         }
       } else {
-        // Используем существующие источники из БД
-        const sources = await getCampaignSources(campaignId);
-        tgIds = sources.telegram;
-        // Загружаем маппинг TgId → id из БД
-        if (tgIds.length > 0) {
-          const rows = await directusCrud.list('campaign_content_sources', {
-            filter: { campaign_id: { _eq: campaignId }, type: { _eq: 'telegram' } },
-            fields: ['id', 'TgId'],
-            limit: -1,
-            useAdminToken: true
-          }) as any[];
-          rows.forEach((r: any) => {
-            if (r.TgId) sourceIdMap.set(r.TgId.trim().toLowerCase(), r.id);
-          });
+        const dbSources = await getCampaignSources(campaignId, authToken, sourcesList);
+        for (const s of dbSources.telegram) {
+          tgIds.push(s.tgId);
+          sourceIdMap.set(s.tgId.trim().toLowerCase(), s.id);
         }
       }
 
@@ -549,8 +549,9 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
         return;
       }
 
-      log(`[TrendCollector][TG] Сбор трендов из ${tgIds.length} каналов`, 'info');
-      const posts = await fetchTrendingPosts('telegram', tgIds, daysBack, Math.ceil(limit / tgIds.length) || 5, 300, newScraperToken);
+      log(`[TrendCollector][TG] Сбор трендов из ${tgIds.length} каналов: ${tgIds.slice(0, 5).join(', ')}`, 'info');
+      const postsPerGroup = Math.max(Math.ceil(limit / tgIds.length), 3);
+      const posts = await fetchTrendingPosts('telegram', tgIds, daysBack, postsPerGroup, 300, newScraperToken);
       log(`[TrendCollector][TG] Получено постов: ${posts.length}`, 'info');
 
       if (posts.length > 0) {
@@ -580,18 +581,10 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
           });
         }
       } else {
-        const sources = await getCampaignSources(campaignId);
-        vkIds = sources.vk;
-        if (vkIds.length > 0) {
-          const rows = await directusCrud.list('campaign_content_sources', {
-            filter: { campaign_id: { _eq: campaignId }, type: { _eq: 'vk' } },
-            fields: ['id', 'vkId'],
-            limit: -1,
-            useAdminToken: true
-          }) as any[];
-          rows.forEach((r: any) => {
-            if (r.vkId != null) sourceIdMap.set(String(r.vkId), r.id);
-          });
+        const dbSources = await getCampaignSources(campaignId, authToken, sourcesList);
+        for (const s of dbSources.vk) {
+          vkIds.push(s.vkId);
+          sourceIdMap.set(String(s.vkId), s.id);
         }
       }
 
@@ -601,7 +594,8 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
       }
 
       log(`[TrendCollector][VK] Сбор трендов из ${vkIds.length} групп`, 'info');
-      const posts = await fetchTrendingPosts('vk', vkIds, daysBack, Math.ceil(limit / vkIds.length) || 5, 300, newScraperToken);
+      const postsPerGroup = Math.max(Math.ceil(limit / vkIds.length), 3);
+      const posts = await fetchTrendingPosts('vk', vkIds, daysBack, postsPerGroup, 300, newScraperToken);
       log(`[TrendCollector][VK] Получено постов: ${posts.length}`, 'info');
 
       if (posts.length > 0) {
@@ -614,14 +608,15 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
   // ── YouTube ───────────────────────────────────────────────────────────────
   if (platforms.includes('youtube') && oldScraperKey) {
     tasks.push((async () => {
-      const sources = await getCampaignSources(campaignId);
-      if (sources.youtube.length === 0) {
+      const dbSources = await getCampaignSources(campaignId, authToken, sourcesList);
+      if (dbSources.youtube.length === 0) {
         log(`[TrendCollector][YT] Нет каналов YouTube в источниках`, 'warn');
         return;
       }
-      log(`[TrendCollector][YT] Сбор из ${sources.youtube.length} каналов`, 'info');
+      const channelIds = dbSources.youtube.map(s => s.channelId);
+      log(`[TrendCollector][YT] Сбор из ${channelIds.length} каналов`, 'info');
       const posts = await callOldScraper('/api/youtube/trending-videos', {
-        channel_ids: sources.youtube,
+        channel_ids: channelIds,
         limit,
         days_back: daysBack,
         min_views: 500
@@ -636,16 +631,17 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
   // ── Instagram ─────────────────────────────────────────────────────────────
   if (platforms.includes('instagram') && oldScraperKey) {
     tasks.push((async () => {
-      const sources = await getCampaignSources(campaignId);
-      if (sources.instagram.length === 0) {
+      const dbSources = await getCampaignSources(campaignId, authToken, sourcesList);
+      if (dbSources.instagram.length === 0) {
         log(`[TrendCollector][IG] Нет аккаунтов Instagram в источниках`, 'warn');
         return;
       }
-      log(`[TrendCollector][IG] Сбор из ${sources.instagram.length} аккаунтов`, 'info');
+      const usernames = dbSources.instagram.map(s => s.username);
+      log(`[TrendCollector][IG] Сбор из ${usernames.length} аккаунтов`, 'info');
       const posts = await callOldScraper('/api/instagram/instagram/collect-and-get-trending', {
-        usernames: sources.instagram,
+        usernames,
         days_back: daysBack,
-        content_per_user: Math.ceil(limit / sources.instagram.length),
+        content_per_user: Math.ceil(limit / usernames.length),
         trending_limit: limit,
         sort_by: 'engagement_rate'
       }, oldScraperKey);

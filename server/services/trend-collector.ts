@@ -739,6 +739,7 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
         days_back: daysBack,
         min_views: 100,
         async_mode: true,
+        max_concurrent: 3,
         callback_url: callbackUrl
       };
 

@@ -189,7 +189,7 @@ export function registerTrendsRoutes(app: Express) {
 
       // Параметры: настройки кампании → перекрываются явными значениями из req.body
       const collectionDays = req.body.collectionDays ?? req.body.day_past ?? campaignTrendSettings.collectionDays ?? 7;
-      const minViews = req.body.minViews ?? campaignTrendSettings.minViews ?? 500;
+      const minViews = req.body.minViews ?? campaignTrendSettings.minViews ?? 300;
       const maxTrendsPerSource = req.body.maxTrendsPerSource ?? campaignTrendSettings.maxTrendsPerSource ?? 5;
       const maxSourcesPerPlatform = req.body.maxSourcesPerPlatform ?? campaignTrendSettings.maxSourcesPerPlatform ?? 10;
       const minFollowers = req.body.minFollowers ?? campaignTrendSettings.minFollowers ?? {
@@ -199,51 +199,82 @@ export function registerTrendsRoutes(app: Express) {
         facebook: 5000,
         youtube: 10000
       };
-      const postsPerPlatform = maxTrendsPerSource;
 
-      // Вызываем N8N webhook (основной механизм сбора трендов)
-      const n8nWebhookUrl = process.env.N8N_TRENDS_COLLECT_WEBHOOK || getN8nWebhookUrl('collect-trends');
-      const n8nPayload = {
-        ...req.body,
-        campaignId,
-        userID: userId,
-        collectionDays,
-        day_past: collectionDays,
-        minViews,
-        maxTrendsPerSource,
-        maxSourcesPerPlatform,
-        minFollowers
-      };
-      log(`[Trends Route] 📤 Отправка запроса на N8N вебхук: ${n8nWebhookUrl}`, 'info');
-      axios.post(n8nWebhookUrl, n8nPayload, {
-        timeout: 15000,
-        headers: { 'Content-Type': 'application/json' }
-      }).then(() => {
-        log(`[Trends Route] ✅ N8N вебхук collect-trends вызван успешно`, 'info');
-      }).catch((err: any) => {
-        log(`[Trends Route] ⚠️ Ошибка N8N вебхука collect-trends: ${err.message}. Запускаем прямой сбор.`, 'error');
-        // Fallback: прямой сбор через scraper если n8n недоступен
-        (async () => {
-          try {
-            const { collectTrendsForCampaign } = await import('../services/trend-collector');
-            const result = await collectTrendsForCampaign({
+      // Ключевые слова: из запроса → из настроек кампании → из коллекции campaign_keywords
+      let resolvedKeywords: string[] = [];
+      if (keywords && Array.isArray(keywords) && keywords.length > 0) {
+        resolvedKeywords = keywords;
+      } else if (campaignTrendSettings.keywords && Array.isArray(campaignTrendSettings.keywords)) {
+        resolvedKeywords = campaignTrendSettings.keywords;
+      } else {
+        try {
+          const kwData = await directusCrud.list('campaign_keywords', {
+            filter: { campaign_id: { _eq: campaignId } },
+            fields: ['keyword'],
+            limit: 20,
+            useAdminToken: true
+          }) as any[];
+          resolvedKeywords = (kwData || []).map((k: any) => k.keyword).filter(Boolean);
+        } catch {
+          // ignore
+        }
+      }
+
+      log(`[Trends Route] Параметры: days=${collectionDays}, maxTrends=${maxTrendsPerSource}, maxSources=${maxSourcesPerPlatform}, collectSources=${collectSources}, keywords=${resolvedKeywords.length}, platforms=${JSON.stringify(platforms)}`, 'info');
+
+      // Запускаем прямой сбор фоново, сразу отвечаем клиенту
+      (async () => {
+        try {
+          const { collectTrendsForCampaign } = await import('../services/trend-collector');
+          const result = await collectTrendsForCampaign({
+            campaignId,
+            userId: userId!,
+            authToken,
+            postsPerPlatform: maxTrendsPerSource,
+            daysSince: collectionDays,
+            platforms: platforms || ['telegram', 'vk', 'youtube', 'instagram'],
+            collectSources: collectSources ?? false,
+            keywords: resolvedKeywords,
+            maxSourcesPerPlatform,
+            minFollowers
+          });
+          log(`[Trends Route] ✅ Прямой сбор завершён: TG=${result.telegram}, VK=${result.vk}, YT=${result.youtube}, IG=${result.instagram}, total=${result.total}`, 'info');
+
+          // Дополнительно уведомляем N8N если настроен (для совместимости с обработчиком комментариев)
+          const n8nWebhookUrl = process.env.N8N_TRENDS_COLLECT_WEBHOOK;
+          if (n8nWebhookUrl && result.total > 0) {
+            axios.post(n8nWebhookUrl, {
               campaignId,
-              userId: userId!,
-              authToken,
-              postsPerPlatform,
-              daysSince: collectionDays
+              userID: userId,
+              collectionDays,
+              minViews,
+              maxTrendsPerSource,
+              maxSourcesPerPlatform,
+              minFollowers,
+              platforms,
+              collectSources: false,
+              collectComments
+            }, { timeout: 10000 }).catch((e: any) => {
+              log(`[Trends Route] N8N notify failed (non-critical): ${e.message}`, 'warn');
             });
-            log(`[Trends Route] ✅ Fallback сбор завершён: TG=${result.telegram}, VK=${result.vk}, YT=${result.youtube}, IG=${result.instagram}, total=${result.total}`, 'info');
-          } catch (err2: any) {
-            log(`[Trends Route] ❌ Ошибка fallback сбора: ${err2.message}`, 'error');
           }
-        })();
-      });
+        } catch (err: any) {
+          log(`[Trends Route] ❌ Ошибка прямого сбора трендов: ${err.message}`, 'error');
+        }
+      })();
 
       res.json({
         success: true,
         message: 'Сбор трендов запущен',
-        campaignId
+        campaignId,
+        params: {
+          platforms: platforms || ['telegram', 'vk', 'youtube', 'instagram'],
+          collectSources: collectSources ?? false,
+          keywords: resolvedKeywords.length,
+          days: collectionDays,
+          maxTrendsPerSource,
+          maxSourcesPerPlatform
+        }
       });
     } catch (error: any) {
       log(`[Trends Route] Ошибка при запуске сбора трендов: ${error.message}`, 'error');

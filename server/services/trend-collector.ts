@@ -411,6 +411,64 @@ async function pollScraperTask(
   return [];
 }
 
+// ─── Фоновый поллинг TG-задачи (fire-and-forget) ─────────────────────────────
+// Запускается через setTimeout().unref() — не блокирует ни вызывающую функцию,
+// ни завершение процесса. Результат сохраняется когда задача завершится.
+function pollTgTaskInBackground(
+  taskId: string,
+  apiKey: string,
+  campaignId: string,
+  sourceIdMap: Map<string, string>
+): void {
+  const statusPath = `/api/telegram/tasks/status/${taskId}`;
+  const pollInterval = 15000; // 15с между попытками
+  const maxAttempts = 40;     // 40 × 15с = 10 минут максимум
+
+  async function poll(attempt: number): Promise<void> {
+    try {
+      const resp = await axios.get(`${SCRAPER_BASE}${statusPath}`, {
+        headers: { 'api-key': apiKey },
+        timeout: 12000
+      });
+      const d = resp.data;
+      const status = (d?.status || '').toLowerCase();
+      log(`[TG BG Poll] task=${taskId} attempt=${attempt}/${maxAttempts} status=${status}`, 'info');
+
+      if (status === 'done' || status === 'completed' || status === 'finished' || status === 'success') {
+        const posts: any[] = d?.result?.posts || d?.result?.items || d?.posts || [];
+        if (posts.length > 0) {
+          const saved = await saveTrendPosts(posts, 'telegram', campaignId, sourceIdMap);
+          log(`[TG BG Poll] ✅ task=${taskId} saved=${saved} для кампании ${campaignId}`, 'info');
+        } else {
+          log(`[TG BG Poll] ℹ️ task=${taskId} завершён, постов нет`, 'info');
+        }
+        return;
+      }
+
+      if (status === 'failed' || status === 'error') {
+        log(`[TG BG Poll] ❌ task=${taskId} error: ${d?.error}`, 'error');
+        return;
+      }
+
+      // pending / processing — продолжаем
+      if (attempt < maxAttempts) {
+        setTimeout(() => poll(attempt + 1), pollInterval).unref();
+      } else {
+        log(`[TG BG Poll] ⏱️ task=${taskId} timeout после ${maxAttempts} попыток`, 'warn');
+      }
+    } catch (err: any) {
+      log(`[TG BG Poll] ⚠️ task=${taskId} попытка ${attempt} ошибка: ${err.message}`, 'warn');
+      if (attempt < maxAttempts) {
+        setTimeout(() => poll(attempt + 1), pollInterval).unref();
+      }
+    }
+  }
+
+  // Первая попытка через 15с
+  setTimeout(() => poll(1), pollInterval).unref();
+  log(`[TG BG Poll] 🚀 Запущен фоновый поллинг task=${taskId} (макс ${maxAttempts} попыток × ${pollInterval / 1000}с)`, 'info');
+}
+
 function extractPostsFromResponse(data: any): any[] | null {
   if (Array.isArray(data)) return data;
   if (Array.isArray(data?.posts)) return data.posts;
@@ -722,9 +780,10 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
         return;
       }
 
-      log(`[TrendCollector][TG] 🪝 Webhook-режим: отправляем задачу в скрейпер, результат придёт на колбэк`, 'info');
+      // ВАЖНО: callback_url нельзя передавать — скрейпер при его наличии
+      // возвращает posts:[] немедленно вместо реального сбора. Используем
+      // фоновый поллинг (pollTgTaskInBackground) — он не блокирует вызывающий код.
       const postsPerGroup = Math.max(Math.ceil(limit / tgIds.length), 3);
-      const callbackUrl = `${getPublicBaseUrl()}/api/trends/tg-webhook`;
 
       const channelIds = tgIds.map(id => {
         const s = String(id).trim();
@@ -739,11 +798,11 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
         days_back: daysBack,
         min_views: 100,
         async_mode: true,
-        max_concurrent: parseInt(process.env.SCRAPER_MAX_CONCURRENT || '3', 10),
-        callback_url: callbackUrl
+        max_concurrent: parseInt(process.env.SCRAPER_MAX_CONCURRENT || '3', 10)
+        // callback_url — НЕ передавать! Ломает TG-запрос (возвращает posts:[] мгновенно)
       };
 
-      log(`[TrendCollector][TG] POST /api/telegram/trending-posts | channels=${channelIds.slice(0, 5).join(',')} | callback=${callbackUrl}`, 'info');
+      log(`[TrendCollector][TG] POST /api/telegram/trending-posts | channels=${channelIds.slice(0, 5).join(',')} | count=${channelIds.length}`, 'info');
       const data = await callScraper('/api/telegram/trending-posts', body, apiKey);
 
       if (!data) {
@@ -751,7 +810,7 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
         return;
       }
 
-      // Редкий случай: скрейпер ответил синхронно (уже готовые посты)
+      // Редкий случай: скрейпер ответил синхронно
       const directPosts = extractPostsFromResponse(data);
       if (directPosts && directPosts.length > 0) {
         log(`[TrendCollector][TG] Синхронный ответ: ${directPosts.length} постов — сохраняем сразу`, 'info');
@@ -760,15 +819,14 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
         return;
       }
 
-      // Async: скрейпер принял задачу → регистрируем в реестре, ждём хука
+      // Async: скрейпер принял задачу → запускаем фоновый поллинг (не блокируем)
       const taskId = data?.task_id || data?.job_id || data?.id || data?.taskId;
       if (taskId) {
-        pendingTgTasks.set(String(taskId), { campaignId, sourceIdMap, createdAt: Date.now() });
-        log(`[TrendCollector][TG] ✅ Задача ${taskId} зарегистрирована — результат придёт на ${callbackUrl}`, 'info');
+        pollTgTaskInBackground(String(taskId), apiKey, campaignId, sourceIdMap);
+        log(`[TrendCollector][TG] 🔄 Фоновый поллинг запущен task=${taskId}, возвращаемся немедленно`, 'info');
       } else {
-        log(`[TrendCollector][TG] ⚠️ Не удалось получить task_id из ответа: ${JSON.stringify(data).substring(0, 200)}`, 'warn');
+        log(`[TrendCollector][TG] ⚠️ Не удалось получить task_id: ${JSON.stringify(data).substring(0, 200)}`, 'warn');
       }
-      // Не ждём — результат придёт на webhook
     })());
   }
 

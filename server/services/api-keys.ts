@@ -20,7 +20,8 @@ export enum ApiServiceName {
   VERTEX_AI_SERVICE_ACCOUNT = 'vertex_ai_service_account',
   VERTEX_AI_API_KEY = 'VERTEX_AI_API_KEY',
   TELEGRAM_COLLECT_COMMENTS = 'telegram_collect_comments',
-  SERPAPI_KEY = 'SERPAPI_KEY'
+  SERPAPI_KEY = 'SERPAPI_KEY',
+  TRENDS_SCRAPER = 'trends_scraper'
 }
 
 // Маппинг имен сервисов как они записаны в БД
@@ -37,7 +38,8 @@ const SERVICE_NAME_DB_MAPPING: Record<ApiServiceName, string> = {
   [ApiServiceName.VERTEX_AI_SERVICE_ACCOUNT]: 'vertex_ai_service_account',
   [ApiServiceName.VERTEX_AI_API_KEY]: 'VERTEX_AI_API_KEY',
   [ApiServiceName.TELEGRAM_COLLECT_COMMENTS]: 'telegram_collect_comments',
-  [ApiServiceName.SERPAPI_KEY]: 'SERPAPI_KEY'
+  [ApiServiceName.SERPAPI_KEY]: 'SERPAPI_KEY',
+  [ApiServiceName.TRENDS_SCRAPER]: 'trends_scraper'
 };
 
 // Индексы полей в UI и их сопоставление с сервисами в случае отсутствия service_name

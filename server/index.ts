@@ -23,7 +23,7 @@ import { registerTelegramChannelsRoutes } from "./routes/telegram-channels-route
 import supportRoutes from "./routes/support-routes";
 import autonomousRouter from "./routes/autonomous";
 import { restoreAutonomousStates, getActiveAutonomousCampaignIds } from './services/autonomous-ai';
-import { startDailyTrendScheduler } from './services/daily-trend-scheduler';
+// daily-trend-scheduler импорт удалён — планировщик отключён, сбор трендов только вручную
 import { log, logEnvironmentInfo } from "./utils/logger";
 import { directusApiManager } from './directus';
 import { registerXmlRiverRoutes } from './api/xmlriver-routes';
@@ -1160,10 +1160,9 @@ app.use('/video-app', (req, res, next) => {
         restoreAutonomousStates();
       }, 10000);
 
-      // Запускаем ежедневный планировщик сбора трендов для неактивных пользователей
-      setTimeout(() => {
-        startDailyTrendScheduler(getActiveAutonomousCampaignIds);
-      }, 15000);
+      // Ежедневный планировщик сбора трендов ОТКЛЮЧЁН:
+      // сбор трендов запускается только вручную пользователем
+      // startDailyTrendScheduler(getActiveAutonomousCampaignIds);
 
       // Запускаем валидатор статусов публикаций для автоматического исправления некорректных статусов
       setTimeout(() => {

@@ -3304,17 +3304,10 @@ async function runAutonomousCycle(state: AutonomousState) {
       console.warn(`[AUTONOMOUS-CYCLE] ⚠️ Аналитика недоступна: ${analyticsErr.message}`);
     }
     
-    // 2. Сбор трендов (некритично)
-    console.log(`[AUTONOMOUS-CYCLE] 🔍 Сбор трендов...`);
-    try {
-      await TOOL_IMPLEMENTATIONS.collectTrends({
-        campaignId: state.campaignId
-      }, request);
-    } catch (trendsErr: any) {
-      console.warn(`[AUTONOMOUS-CYCLE] ⚠️ Сбор трендов недоступен: ${trendsErr.message}`);
-    }
-    
-    // 3. Получение трендов (некритично) — берём широкую выборку, отсортируем сами
+    // 2. Сбор трендов — ОТКЛЮЧЁН: сбор трендов только вручную юзером
+    // (был: await TOOL_IMPLEMENTATIONS.collectTrends(...))
+
+    // 3. Получение трендов (некритично) — берём уже собранные тренды из БД
     let trendsResult: any = { trends: [] };
     try {
       trendsResult = await TOOL_IMPLEMENTATIONS.getTrendsData({

@@ -277,8 +277,9 @@ async function getCampaignSources(
     const adminToken = process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_TOKEN;
 
     // Строим URL для прямого запроса к Directus
+    // Поле username отсутствует в dev Directus — не запрашиваем его
     const params = new URLSearchParams();
-    params.set('fields', 'id,url,type,name,username,TgId,vkId');
+    params.set('fields', 'id,url,type,name,TgId,vkId');
     params.set('limit', '-1');
 
     if (sourcesList && sourcesList.length > 0) {
@@ -324,7 +325,7 @@ async function getCampaignSources(
         const channelId = extractChannelId(url);
         if (channelId) result.youtube.push({ id: s.id, channelId });
       } else if (type === 'instagram' || url.includes('instagram.com')) {
-        const username = s.username || extractChannelId(url);
+        const username = extractChannelId(url);
         if (username) result.instagram.push({ id: s.id, username });
       }
     }

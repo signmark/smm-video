@@ -334,9 +334,10 @@ async function pollScraperTask(
   taskId: string,
   apiKey: string,
   platform: 'telegram' | 'vk',
-  maxWaitMs = 120000
+  maxWaitMs = platform === 'telegram' ? 360000 : 120000
 ): Promise<any[]> {
-  const pollInterval = 5000;
+  // TG воркер медленнее VK — ждём до 6 минут; опрашиваем каждые 10с
+  const pollInterval = platform === 'telegram' ? 10000 : 5000;
   const maxAttempts = Math.ceil(maxWaitMs / pollInterval);
   const statusPath = platform === 'telegram'
     ? `/api/telegram/tasks/status/${taskId}`
@@ -379,7 +380,7 @@ async function pollScraperTask(
       // status: pending/processing — продолжаем ждать
     } catch (err: any) {
       log(`[TrendCollector] Poll ${statusPath} error: ${err.response?.status} ${err.message}`, 'error');
-      if (attempt >= 3) return [];
+      // Не прерываем досрочно — транзиентные ошибки сети не должны останавливать поллинг
     }
   }
 
@@ -700,7 +701,8 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
 
       log(`[TrendCollector][TG] Сбор трендов из ${tgIds.length} каналов: ${tgIds.slice(0, 5).join(', ')}`, 'info');
       const postsPerGroup = Math.max(Math.ceil(limit / tgIds.length), 3);
-      const posts = await fetchTrendingPosts('telegram', tgIds, daysBack, postsPerGroup, 300, apiKey);
+      // min_views=100 — порог для TG; API-дефолт = 1000 (слишком высокий для небольших каналов)
+      const posts = await fetchTrendingPosts('telegram', tgIds, daysBack, postsPerGroup, 100, apiKey);
       log(`[TrendCollector][TG] Получено постов: ${posts.length}`, 'info');
 
       if (posts.length > 0) {

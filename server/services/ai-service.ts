@@ -590,21 +590,51 @@ export class AiService {
 
   /**
    * Метод для автоматического выбора сервиса
+   * При исчерпании квоты Gemini (429/RESOURCE_EXHAUSTED) автоматически переключается на DeepSeek.
    */
   async generateContent(params: GenerateContentParams): Promise<any> {
     const service = params.service || 'gemini';
     log(`[AiService] generateContent: service=${service}, model=${params.model || 'none'}`, 'info');
 
+    const isQuotaError = (err: any) => {
+      const msg: string = err?.message || '';
+      return msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota') || msg.includes('rate limit');
+    };
+
     let result;
     if (service.includes('gemini') || service === 'apiservice') {
-      result = await this.generateWithGemini(params);
+      try {
+        result = await this.generateWithGemini(params);
+      } catch (geminiErr: any) {
+        if (isQuotaError(geminiErr)) {
+          log(`[AiService] ⚠️ Gemini квота исчерпана — переключаемся на DeepSeek`, 'warn');
+          try {
+            result = await this.generateWithDeepSeek({ ...params, model: 'deepseek-chat', service: 'deepseek' });
+            log(`[AiService] ✅ DeepSeek fallback успешен`, 'info');
+          } catch (deepseekErr: any) {
+            log(`[AiService] ❌ DeepSeek fallback тоже не удался: ${deepseekErr.message}`, 'error');
+            throw geminiErr;
+          }
+        } else {
+          throw geminiErr;
+        }
+      }
     } else if (service === 'deepseek') {
       result = await this.generateWithDeepSeek(params);
     } else if (service === 'qwen') {
       result = await this.generateWithQwen(params);
     } else {
       log(`[AiService] Неизвестный сервис "${service}", используем Gemini по умолчанию`, 'warn');
-      result = await this.generateWithGemini(params);
+      try {
+        result = await this.generateWithGemini(params);
+      } catch (geminiErr: any) {
+        if (isQuotaError(geminiErr)) {
+          log(`[AiService] ⚠️ Gemini квота исчерпана — переключаемся на DeepSeek`, 'warn');
+          result = await this.generateWithDeepSeek({ ...params, model: 'deepseek-chat', service: 'deepseek' });
+        } else {
+          throw geminiErr;
+        }
+      }
     }
 
     if (!result || !result.content) {

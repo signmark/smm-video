@@ -219,7 +219,7 @@ export function registerAnalyticsRoutes(app: Express) {
         response = await axios.get(`${directusUrl}/items/campaign_trend_topics`, {
           params: {
             'filter[campaign_id][_eq]': campaignId,
-            sort: '-date_created',
+            sort: '-created_at',
             limit: 1000,
             fields: '*'
           },

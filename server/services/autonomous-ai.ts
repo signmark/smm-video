@@ -1739,10 +1739,10 @@ export const TOOL_IMPLEMENTATIONS = {
       });
       
       const trends = await directusCrud.list('campaign_trend_topics', {
-        ...directusAuth(request.authToken),
+        useAdminToken: true,
         filter: { campaign_id: { _eq: params.campaignId } },
         limit: params.limit || 10,
-        sort: ['-date_created']
+        sort: ['-created_at']
       });
       
       console.log('[GET-TRENDS-DATA] Получено трендов:', trends?.length || 0);
@@ -2077,7 +2077,7 @@ ${titleInstruction}`;
       });
       
       const trends = await directusCrud.list('campaign_trend_topics', {
-        ...directusAuth(request.authToken),
+        useAdminToken: true,
         filter: { campaign_id: { _eq: params.campaignId } },
         limit: -1
       });
@@ -3423,10 +3423,10 @@ async function runAutonomousCycle(state: AutonomousState) {
     try {
       const recent: any[] = await directusCrud.list('campaign_content', {
         filter: { campaign_id: { _eq: state.campaignId } },
-        fields: ['title', 'topic'],
-        sort: ['-date_created'],
+        fields: ['title'],
+        sort: ['-created_at'],
         limit: 30,
-        ...directusAuth(request.authToken),
+        useAdminToken: true,
       });
       recentTitles = recent
         .map((r: any) => r?.title || r?.topic || '')
@@ -3590,6 +3590,17 @@ async function runAutonomousCycle(state: AutonomousState) {
           console.warn(`[PIPELINE] ⚠️ createContent вернул success=false для поста ${i + 1}`);
         }
       } catch (error: any) {
+        const isQuota = error.message && (
+          error.message.includes('429') ||
+          error.message.includes('RESOURCE_EXHAUSTED') ||
+          error.message.includes('quota') ||
+          error.message.includes('rate limit')
+        );
+        if (isQuota) {
+          console.warn(`[PIPELINE] ⛔ Квота AI исчерпана (все провайдеры). Прерываем генерацию постов. Ошибка: ${error.message.slice(0, 120)}`);
+          state.errors.push(`Квота AI исчерпана: ${error.message.slice(0, 120)}`);
+          break;
+        }
         console.error(`[PIPELINE] Ошибка создания поста ${i + 1}:`, error.message);
         state.errors.push(`Генерация поста: ${error.message}`);
       }

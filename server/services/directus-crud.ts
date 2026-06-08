@@ -231,7 +231,12 @@ export class DirectusCrud {
         const isRetryable = statusCode && retryableStatuses.includes(statusCode);
         const isLastAttempt = attempt === maxRetries;
 
-        console.error(`[${this.logPrefix}] ${operation} ${collection} failed (attempt ${attempt + 1}/${maxRetries + 1}):`, error.message);
+        const isHttpError = error.response != null;
+        const logFn = (isRetryable || !isHttpError) ? console.error : console.warn;
+        logFn(`[${this.logPrefix}] ${operation} ${collection} failed (attempt ${attempt + 1}/${maxRetries + 1}):`, error.message);
+        if (isHttpError) {
+          logFn(`[${this.logPrefix}] Response body [${error.response.status}]:`, JSON.stringify(error.response.data ?? '(empty)'));
+        }
 
         if (isRetryable && !isLastAttempt) {
           const delay = Math.pow(2, attempt) * 1000;

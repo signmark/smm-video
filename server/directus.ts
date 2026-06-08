@@ -36,8 +36,7 @@ class DirectusApiManager {
     // Убеждаемся, что URL не содержит лишних слэшей в конце
     this.baseURL = this.baseURL.replace(/\/$/, '');
     
-    console.log(`[Directus] Using baseURL: ${this.baseURL}`);
-    log(`Инициализация DirectusApiManager с baseURL: ${this.baseURL}`, 'directus');
+    log.debug(`Инициализация DirectusApiManager с baseURL: ${this.baseURL}`, 'directus');
     
     // Создаем Axios инстанс
     this.axiosInstance = axios.create({
@@ -178,32 +177,25 @@ class DirectusApiManager {
    * @returns Результат запроса
    */
   async request(config: AxiosRequestConfig, userIdOrToken?: string): Promise<any> {
-    log(`📝 directusApiManager.request called with userIdOrToken: ${userIdOrToken ? (userIdOrToken.includes('.') ? 'JWT_TOKEN' : `userId=${userIdOrToken}`) : 'UNDEFINED'}`, 'directus');
-    
     if (userIdOrToken) {
-      // Проверяем, является ли это JWT токеном (содержит точки)
       const isToken = userIdOrToken.includes('.');
       
       if (isToken) {
-        // Это уже токен - используем его напрямую
         config.headers = {
           ...config.headers,
           'Authorization': `Bearer ${userIdOrToken}`
         };
-        log(`✅ Added Authorization header from JWT token`, 'directus');
       } else if (this.authTokenCache[userIdOrToken]?.token) {
-        // Это userId - ищем токен в кэше
         const cachedAuth = this.authTokenCache[userIdOrToken];
         
-        // Проверяем, не истек ли токен
         if (cachedAuth.expiresAt > Date.now()) {
           config.headers = {
             ...config.headers,
             'Authorization': `Bearer ${cachedAuth.token}`
           };
-          log(`Используем кэшированный токен для пользователя ${userIdOrToken}`, 'directus');
+          log.debug(`Используем кэшированный токен для пользователя ${userIdOrToken}`, 'directus');
         } else {
-          log(`Токен для пользователя ${userIdOrToken} истек, удаляем из кэша`, 'directus');
+          log.debug(`Токен для пользователя ${userIdOrToken} истек, удаляем из кэша`, 'directus');
           delete this.authTokenCache[userIdOrToken];
         }
       }
@@ -227,7 +219,7 @@ class DirectusApiManager {
     };
     // Сбрасываем счетчик неудачных попыток при успешном кэшировании токена
     this.failedRefreshCount[userId] = 0;
-    log(`Токен авторизации для пользователя ${userId} сохранен в кэше`, 'directus');
+    log.debug(`Токен авторизации для пользователя ${userId} сохранен в кэше`, 'directus');
   }
 
   /**
@@ -237,7 +229,7 @@ class DirectusApiManager {
   clearAuthTokenCache(userId: string): void {
     if (this.authTokenCache[userId]) {
       delete this.authTokenCache[userId];
-      log(`Кэш токенов авторизации для пользователя ${userId} очищен`, 'directus');
+      log.debug(`Кэш токенов авторизации для пользователя ${userId} очищен`, 'directus');
     }
   }
   
@@ -259,7 +251,7 @@ class DirectusApiManager {
     const requests = [...this.pendingRequests];
     this.pendingRequests = [];
     
-    log(`Обработка ${requests.length} ожидающих запросов с обновленным токеном`, 'directus');
+    log.debug(`Обработка ${requests.length} ожидающих запросов с обновленным токеном`, 'directus');
     
     requests.forEach(request => {
       // Обновляем токен в заголовке запроса
@@ -287,11 +279,11 @@ class DirectusApiManager {
     // Сбрасываем флаг обновления
     this.isRefreshingToken = false;
     
-    log(`Не удалось обновить токен для пользователя ${userId}. Попытка ${this.failedRefreshCount[userId]} из ${this.maxRefreshAttempts}`, 'directus');
+    log.warn(`Не удалось обновить токен для пользователя ${userId}. Попытка ${this.failedRefreshCount[userId]} из ${this.maxRefreshAttempts}`, 'directus');
     
     // Если превышено максимальное количество попыток, очищаем кэш
     if (this.failedRefreshCount[userId] >= this.maxRefreshAttempts) {
-      log(`Превышено максимальное количество попыток обновления токена для пользователя ${userId}. Очищаем кэш.`, 'directus');
+      log.error(`Превышено максимальное количество попыток обновления токена для пользователя ${userId}. Очищаем кэш.`, 'directus');
       this.clearAuthTokenCache(userId);
     }
     

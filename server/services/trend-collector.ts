@@ -6,8 +6,8 @@ import { ApiServiceName } from './api-keys';
 
 // Скрейпер-сервер (Telegram, VK, YouTube, Instagram + аналитика)
 export const SCRAPER_BASE = 'http://217.26.25.95:3030';
-// Фоллбэк api-key для скрейпера
-const SCRAPER_API_KEY_FALLBACK = 'N5beUaQCEdBPYed_fZeBIXdXhD6yZBpdbFzcSwB8MVI';
+// Фоллбэк api-key для скрейпера (обновлён 2026-06-08)
+const SCRAPER_API_KEY_FALLBACK = 'c1f2e8ad-61c5-450a-b301-12690e9e1112';
 
 // Алиас для обратной совместимости
 const SCRAPER_OLD_BASE = SCRAPER_BASE;
@@ -413,8 +413,12 @@ async function fetchTrendingPosts(
 
   if (platform === 'telegram') {
     endpoint = '/api/telegram/trending-posts';
+    // Docs: предпочтительно передавать @username для публичных каналов
     body = {
-      channel_ids: groupIds.map(String),
+      channel_ids: groupIds.map(id => {
+        const s = String(id).trim();
+        return s.startsWith('@') ? s : `@${s}`;
+      }),
       limit: postsPerGroup * groupIds.length,
       fetch_limit: 100,
       merge_results: true,
@@ -472,15 +476,17 @@ function normalizeTgPost(raw: any): {
   return {
     title: text.substring(0, 100) || 'Telegram пост',
     description: text,
-    urlPost: raw.url || raw.link || '',
+    // Docs: public_url — стабильная публичная ссылка; url — приватная (t.me/c/...), менее предпочтительна
+    urlPost: raw.public_url || raw.url || raw.link || '',
     reactions,
     comments,
     views,
     reposts,
     trendScore: clampInt(Number(raw.trend_score || calcEngagementScore(reactions, comments, views, reposts))),
-    mediaLinks: raw.media_links || null,
+    mediaLinks: raw.media_links || raw.photos || null,
     date: raw.date || null,
-    sourceId: raw.sourceId || raw.source_id || null
+    // Docs: channel_username — имя канала (совпадает с tgId в источниках)
+    sourceId: raw.channel_username || raw.sourceId || raw.source_id || null
   };
 }
 
@@ -502,9 +508,12 @@ function normalizeVkPost(raw: any): {
     trendScore: clampInt(Number(raw.trendScore || raw.trend_score || 0)),
     mediaLinks: raw.media_links || null,
     date: raw.timestamp || raw.date || null,
-    sourceId: raw.source_id || raw.sourceId || null,
+    // Docs: group_id — ID группы в формате "-174948538", совпадает с vkId в источниках
+    sourceId: raw.group_id || raw.source_id || raw.sourceId || null,
     postType: raw.type || 'post',
-    accountUrl: raw.accountUrl || (raw.owner_id ? `https://vk.com/club${String(raw.owner_id).replace('-', '')}` : '')
+    accountUrl: raw.group_id
+      ? `https://vk.com/club${String(raw.group_id).replace('-', '')}`
+      : (raw.owner_id ? `https://vk.com/club${String(raw.owner_id).replace('-', '')}` : '')
   };
 }
 
@@ -517,8 +526,9 @@ async function saveTrendPosts(
   sourceIdMap?: Map<string, string>
 ): Promise<number> {
   // Pre-dedup: collect urlPost values and query existing records to avoid RECORD_NOT_UNIQUE 400s
+  // TG: prefer public_url (stable); VK: url already contains the post URL from API
   const candidateUrls = posts
-    .map(raw => raw.url || raw.link || (raw.id && raw.owner_id ? `https://vk.com/wall${raw.owner_id}_${raw.id}` : null))
+    .map(raw => raw.public_url || raw.url || raw.link || (raw.id && raw.owner_id ? `https://vk.com/wall${raw.owner_id}_${raw.id}` : null))
     .filter((u): u is string => !!u);
 
   const existingUrls = new Set<string>();
@@ -538,7 +548,8 @@ async function saveTrendPosts(
 
   let saved = 0;
   for (const raw of posts) {
-    const rawUrl = raw.url || raw.link || null;
+    // Совпадает с логикой candidateUrls выше: TG — public_url, VK — url
+    const rawUrl = raw.public_url || raw.url || raw.link || null;
     if (rawUrl && existingUrls.has(rawUrl)) continue;
 
     try {

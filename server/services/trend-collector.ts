@@ -92,11 +92,12 @@ async function callNewScraper(endpoint: string, body: any, token: string): Promi
       },
       timeout: 45000
     });
+    log(`[TrendCollector] RESPONSE ${endpoint} status=${response.status} data=${JSON.stringify(response.data).substring(0, 400)}`, 'info');
     return response.data;
   } catch (err: any) {
-    log(`[TrendCollector] Ошибка ${endpoint}: ${err.response?.status} ${err.message}`, 'error');
+    log(`[TrendCollector] Ошибка ${endpoint}: status=${err.response?.status} msg=${err.message}`, 'error');
     if (err.response?.data) {
-      log(`[TrendCollector] Response body: ${JSON.stringify(err.response.data).substring(0, 300)}`, 'error');
+      log(`[TrendCollector] Response body: ${JSON.stringify(err.response.data).substring(0, 400)}`, 'error');
     }
     return null;
   }
@@ -337,6 +338,61 @@ async function getCampaignSources(
   return result;
 }
 
+// ─── Поллинг задачи скрейпера ─────────────────────────────────────────────────
+
+async function pollScraperTask(taskId: string, token: string, maxWaitMs = 120000): Promise<any[]> {
+  const pollInterval = 5000;
+  const maxAttempts = Math.ceil(maxWaitMs / pollInterval);
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    await new Promise(r => setTimeout(r, pollInterval));
+
+    try {
+      const url = `${SCRAPER_NEW_BASE}/task/${taskId}`;
+      const resp = await axios.get(url, {
+        headers: { Authorization: `Bearer ${token}` },
+        timeout: 15000
+      });
+      const d = resp.data;
+      log(`[TrendCollector] Poll task/${taskId} attempt=${attempt} status=${d?.status} keys=${Object.keys(d || {}).join(',')}`, 'info');
+
+      const status = (d?.status || '').toLowerCase();
+
+      if (status === 'completed' || status === 'done' || status === 'finished' || status === 'success') {
+        if (Array.isArray(d?.posts)) return d.posts;
+        if (Array.isArray(d?.results)) return d.results;
+        if (Array.isArray(d?.items)) return d.items;
+        if (Array.isArray(d?.data)) return d.data;
+        if (Array.isArray(d)) return d;
+        log(`[TrendCollector] Task ${taskId} completed but unknown result format: ${JSON.stringify(d).substring(0, 200)}`, 'warn');
+        return [];
+      }
+
+      if (status === 'failed' || status === 'error') {
+        log(`[TrendCollector] Task ${taskId} failed: ${JSON.stringify(d).substring(0, 200)}`, 'error');
+        return [];
+      }
+
+      // status: pending/running/processing — продолжаем ждать
+    } catch (err: any) {
+      log(`[TrendCollector] Poll task/${taskId} error: ${err.response?.status} ${err.message}`, 'error');
+      if (attempt >= 3) return [];
+    }
+  }
+
+  log(`[TrendCollector] Task ${taskId} timed out after ${maxWaitMs / 1000}s`, 'warn');
+  return [];
+}
+
+function extractPostsFromResponse(data: any): any[] | null {
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.posts)) return data.posts;
+  if (Array.isArray(data?.items)) return data.items;
+  if (Array.isArray(data?.results)) return data.results;
+  if (Array.isArray(data?.data)) return data.data;
+  return null;
+}
+
 // ─── Получение трендовых постов ───────────────────────────────────────────────
 
 async function fetchTrendingPosts(
@@ -358,12 +414,23 @@ async function fetchTrendingPosts(
   }, token);
 
   if (!data) return [];
-  if (Array.isArray(data)) return data;
-  if (Array.isArray(data?.posts)) return data.posts;
-  if (Array.isArray(data?.items)) return data.items;
-  if (Array.isArray(data?.results)) return data.results;
 
-  log(`[TrendCollector] /trending-posts (${platform}) вернул неожиданный формат: ${JSON.stringify(data).substring(0, 200)}`, 'warn');
+  // Синхронный ответ — массив постов
+  const directPosts = extractPostsFromResponse(data);
+  if (directPosts !== null) {
+    if (directPosts.length > 0) return directPosts;
+    // Пустой массив — может быть async задача ещё не готова, проверяем task_id
+  }
+
+  // Async паттерн: скрейпер вернул task_id/job_id
+  const taskId = data?.task_id || data?.job_id || data?.id || data?.taskId;
+  if (taskId) {
+    const status = (data?.status || '').toLowerCase();
+    log(`[TrendCollector] /trending-posts (${platform}) вернул task_id=${taskId} status=${status} — запускаем поллинг`, 'info');
+    return pollScraperTask(String(taskId), token);
+  }
+
+  log(`[TrendCollector] /trending-posts (${platform}) вернул неожиданный формат: ${JSON.stringify(data).substring(0, 300)}`, 'warn');
   return [];
 }
 

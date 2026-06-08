@@ -16,6 +16,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useMutation } from '@tanstack/react-query';
 import { queryClient } from '@/lib/queryClient';
 import { ExportReportDialog } from '@/components/export-report-dialog';
+import { ScraperAnalyticsPanel } from '@/components/ScraperAnalyticsPanel';
 
 
 interface AnalyticsData {
@@ -501,6 +502,11 @@ export default function AnalyticsPage() {
               )}
             </>
           )}
+
+          {/* Scraper Analytics Section */}
+          <div className="mt-4 pt-6 border-t">
+            <ScraperAnalyticsPanel campaignId={selectedCampaign || undefined} />
+          </div>
         </div>
       </div>
     </div>

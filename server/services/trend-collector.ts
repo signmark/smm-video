@@ -273,20 +273,44 @@ async function getCampaignSources(
 }> {
   const result: any = { telegram: [], vk: [], youtube: [], instagram: [] };
   try {
-    // Если переданы конкретные ID источников — фильтруем по ним, иначе по кампании
-    const filter: Record<string, any> = sourcesList && sourcesList.length > 0
-      ? { id: { _in: sourcesList } }
-      : { campaign_id: { _eq: campaignId } };
+    const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
+    const adminToken = process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_TOKEN;
 
-    // Используем токен юзера (не admin) — так как в dev admin-токен не имеет прав на эту коллекцию
-    const sources = await directusCrud.list('campaign_content_sources', {
-      filter,
-      fields: ['id', 'url', 'type', 'name', 'username', 'TgId', 'vkId'],
-      limit: -1,
-      authToken
-    }) as any[];
+    // Строим URL для прямого запроса к Directus
+    const params = new URLSearchParams();
+    params.set('fields', 'id,url,type,name,username,TgId,vkId');
+    params.set('limit', '-1');
 
-    for (const s of sources) {
+    if (sourcesList && sourcesList.length > 0) {
+      // Фильтр по конкретным ID источников
+      sourcesList.forEach(id => params.append('filter[id][_in][]', id));
+    } else {
+      params.set('filter[campaign_id][_eq]', campaignId);
+    }
+
+    const fetchUrl = `${directusUrl}/items/campaign_content_sources?${params.toString()}`;
+    log(`[TrendCollector] Запрос источников из Directus: ${fetchUrl.substring(0, 200)}...`, 'info');
+    log(`[TrendCollector] Используем токен (первые 20 символов): ${(authToken || adminToken || '').substring(0, 20)}... adminToken present: ${!!adminToken}`, 'info');
+
+    // Пробуем сначала user-токен, потом admin-токен
+    let sourcesRaw: any[] = [];
+    for (const tok of [authToken, adminToken].filter(Boolean)) {
+      try {
+        const resp = await axios.get(fetchUrl, {
+          headers: { Authorization: `Bearer ${tok}`, 'Content-Type': 'application/json' },
+          timeout: 10000
+        });
+        sourcesRaw = resp.data?.data || [];
+        log(`[TrendCollector] ✅ Получено источников: ${sourcesRaw.length} (токен: ${tok?.substring(0, 15)}...)`, 'info');
+        break;
+      } catch (axErr: any) {
+        const status = axErr.response?.status;
+        const body = JSON.stringify(axErr.response?.data);
+        log(`[TrendCollector] ❌ Ошибка с токеном ${tok?.substring(0, 15)}... | status=${status} | body=${body}`, 'error');
+      }
+    }
+
+    for (const s of sourcesRaw) {
       const url: string = s.url || '';
       const type: string = (s.type || '').toLowerCase();
 

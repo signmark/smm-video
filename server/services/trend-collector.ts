@@ -95,9 +95,10 @@ async function callNewScraper(endpoint: string, body: any, token: string): Promi
     log(`[TrendCollector] RESPONSE ${endpoint} status=${response.status} data=${JSON.stringify(response.data).substring(0, 400)}`, 'info');
     return response.data;
   } catch (err: any) {
-    log(`[TrendCollector] Ошибка ${endpoint}: status=${err.response?.status} msg=${err.message}`, 'error');
+    // console.error напрямую — минуя FILTERED_MESSAGES в логгере (ECONNREFUSED, ETIMEDOUT там отфильтрованы)
+    console.error(`[TrendCollector] ❌ Ошибка ${endpoint}: status=${err.response?.status} code=${err.code} msg=${err.message}`);
     if (err.response?.data) {
-      log(`[TrendCollector] Response body: ${JSON.stringify(err.response.data).substring(0, 400)}`, 'error');
+      console.error(`[TrendCollector] Response body: ${JSON.stringify(err.response.data).substring(0, 400)}`);
     }
     return null;
   }

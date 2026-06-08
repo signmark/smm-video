@@ -435,12 +435,25 @@ function pollTgTaskInBackground(
       log(`[TG BG Poll] task=${taskId} attempt=${attempt}/${maxAttempts} status=${status}`, 'info');
 
       if (status === 'done' || status === 'completed' || status === 'finished' || status === 'success') {
-        const posts: any[] = d?.result?.posts || d?.result?.items || d?.posts || [];
+        log(`[TG BG Poll] RAW done response task=${taskId}: ${JSON.stringify(d).substring(0, 800)}`, 'info');
+        const result = d?.result;
+        const resultKeys = result ? Object.keys(result).join(',') : 'null';
+        log(`[TG BG Poll] result keys=${resultKeys}`, 'info');
+        const posts: any[] = (
+          result?.posts ||
+          result?.items ||
+          result?.results ||
+          result?.data ||
+          d?.posts ||
+          d?.items ||
+          (Array.isArray(result) ? result : null) ||
+          []
+        );
         if (posts.length > 0) {
           const saved = await saveTrendPosts(posts, 'telegram', campaignId, sourceIdMap);
           log(`[TG BG Poll] ✅ task=${taskId} saved=${saved} для кампании ${campaignId}`, 'info');
         } else {
-          log(`[TG BG Poll] ℹ️ task=${taskId} завершён, постов нет`, 'info');
+          log(`[TG BG Poll] ℹ️ task=${taskId} завершён, постов нет (result=${JSON.stringify(result).substring(0, 200)})`, 'info');
         }
         return;
       }

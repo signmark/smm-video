@@ -1,5 +1,5 @@
 import React, { useEffect, Suspense, lazy } from "react";
-import { Switch, Route } from "wouter";
+import { Switch, Route, useParams } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -7,7 +7,6 @@ import { CookieBanner } from "@/components/CookieBanner";
 
 // Принудительная очистка истекшего токена
 const clearExpiredToken = () => {
-  // НЕ проверяем токен на страницах аутентификации
   const currentPath = window.location.pathname;
   if (currentPath === '/login' || currentPath === '/auth/login' || currentPath === '/auth/register' || currentPath === '/auth/forgot-password' || currentPath === '/auth/reset-password') {
     return;
@@ -30,6 +29,7 @@ const clearExpiredToken = () => {
     }
   }
 };
+
 // Lazy loading для основных страниц - это ускоряет первоначальную загрузку
 const Dashboard = lazy(() => import("@/pages/dashboard"));
 const Campaigns = lazy(() => import("@/pages/campaigns"));
@@ -96,50 +96,52 @@ const PricingPage = lazy(() => import("@/pages/pricing"));
 const PaymentSuccessPage = lazy(() => import("@/pages/payment/success"));
 const PaymentCancelPage = lazy(() => import("@/pages/payment/cancel"));
 
-// Создаем обертки для компонентов с Layout
+// Обертка Layout
 const WithLayout = ({ Component }: { Component: React.ComponentType }) => (
   <Layout>
     <Component />
   </Layout>
 );
 
+// Утилита для мемоизированных компонентов с Layout
+const wrapWithLayout = (Component: React.ComponentType) =>
+  React.memo(() => <WithLayout Component={Component} />);
+
 // Мемоизированные компоненты с Layout
-const LayoutDashboard = React.memo(() => <WithLayout Component={Dashboard} />);
-const LayoutCampaigns = React.memo(() => <WithLayout Component={Campaigns} />);
-const LayoutCampaignDetails = React.memo(() => <WithLayout Component={CampaignDetails} />);
-const LayoutKeywords = React.memo(() => <WithLayout Component={Keywords} />);
-const LayoutContent = React.memo(() => <WithLayout Component={Content} />);
-const LayoutEditContentPage = React.memo(() => <WithLayout Component={EditContentPage} />);
-const LayoutPosts = React.memo(() => <WithLayout Component={Posts} />);
+const LayoutDashboard = wrapWithLayout(Dashboard);
+const LayoutCampaigns = wrapWithLayout(Campaigns);
+const LayoutCampaignDetails = wrapWithLayout(CampaignDetails);
+const LayoutKeywords = wrapWithLayout(Keywords);
+const LayoutContent = wrapWithLayout(Content);
+const LayoutEditContentPage = wrapWithLayout(EditContentPage);
+const LayoutPosts = wrapWithLayout(Posts);
+const LayoutTrends = wrapWithLayout(Trends);
+const LayoutAnalytics = wrapWithLayout(Analytics);
+const LayoutScheduledPublications = wrapWithLayout(ScheduledPublications);
+const LayoutCalendarView = wrapWithLayout(CalendarView);
+const LayoutTestPublish = wrapWithLayout(TestPublish);
+const LayoutImageGenerationTest = wrapWithLayout(ImageGenerationTest);
+const LayoutTransparentDialogTest = wrapWithLayout(TransparentDialogTest);
+const LayoutFalAiTest = wrapWithLayout(FalAiTest);
+const LayoutApiKeyPriorityTest = wrapWithLayout(ApiKeyPriorityTest);
+const LayoutApiKeysTest = wrapWithLayout(ApiKeysTest);
+const LayoutUniversalImageGenTest = wrapWithLayout(UniversalImageGenTest);
+const LayoutHtmlTagsTestPage = wrapWithLayout(HtmlTagsTestPage);
+const LayoutAiImageTester = wrapWithLayout(AiImageTester);
+const LayoutErrorHandlingTest = wrapWithLayout(ErrorHandlingTest);
+const LayoutTestPage = wrapWithLayout(TestPage);
+const LayoutGlobalApiKeysPage = wrapWithLayout(GlobalApiKeysPage);
+const LayoutUserManagement = wrapWithLayout(UserManagement);
+const LayoutEditorDemo = wrapWithLayout(EditorDemoPage);
+const LayoutBusinessQuestionnaire = wrapWithLayout(BusinessQuestionnairePage);
+const LayoutInstagramSetup = wrapWithLayout(InstagramSimplePage);
+const LayoutStoriesGeneratorTest = wrapWithLayout(StoriesGeneratorTest);
+const LayoutStoriesPage = wrapWithLayout(StoriesPage);
+const LayoutTelegramChannelsAdmin = wrapWithLayout(TelegramChannelsAdmin);
 
-const LayoutTrends = React.memo(() => <WithLayout Component={Trends} />);
-const LayoutAnalytics = React.memo(() => <WithLayout Component={Analytics} />);
-const LayoutScheduledPublications = React.memo(() => <WithLayout Component={ScheduledPublications} />);
-const LayoutCalendarView = React.memo(() => <WithLayout Component={CalendarView} />);
-const LayoutTestPublish = React.memo(() => <WithLayout Component={TestPublish} />);
-const LayoutImageGenerationTest = React.memo(() => <WithLayout Component={ImageGenerationTest} />);
-const LayoutTransparentDialogTest = React.memo(() => <WithLayout Component={TransparentDialogTest} />);
-const LayoutFalAiTest = React.memo(() => <WithLayout Component={FalAiTest} />);
-const LayoutApiKeyPriorityTest = React.memo(() => <WithLayout Component={ApiKeyPriorityTest} />);
-const LayoutApiKeysTest = React.memo(() => <WithLayout Component={ApiKeysTest} />);
-const LayoutUniversalImageGenTest = React.memo(() => <WithLayout Component={UniversalImageGenTest} />);
-const LayoutHtmlTagsTestPage = React.memo(() => <WithLayout Component={HtmlTagsTestPage} />);
-const LayoutAiImageTester = React.memo(() => <WithLayout Component={AiImageTester} />);
-const LayoutErrorHandlingTest = React.memo(() => <WithLayout Component={ErrorHandlingTest} />);
-const LayoutTestPage = React.memo(() => <WithLayout Component={TestPage} />);
-const LayoutGlobalApiKeysPage = React.memo(() => <WithLayout Component={GlobalApiKeysPage} />);
-const LayoutUserManagement = React.memo(() => <WithLayout Component={UserManagement} />);
-const LayoutEditorDemo = React.memo(() => <WithLayout Component={EditorDemoPage} />);
-const LayoutBusinessQuestionnaire = React.memo(() => <WithLayout Component={BusinessQuestionnairePage} />);
-const LayoutInstagramSetup = React.memo(() => <WithLayout Component={InstagramSimplePage} />);
-const LayoutStoriesGeneratorTest = React.memo(() => <WithLayout Component={StoriesGeneratorTest} />);
-const LayoutStoriesPage = React.memo(() => <WithLayout Component={StoriesPage} />);
-const LayoutTelegramChannelsAdmin = React.memo(() => <WithLayout Component={TelegramChannelsAdmin} />);
-
-// Wrapper для VideoStoryEditor
+// Wrapper для VideoStoryEditor — использует useParams вместо ручного парсинга URL
 const LayoutVideoStoryEditor = React.memo(() => {
-  const path = window.location.pathname;
-  const storyId = path.match(/\/stories\/([^\/]+)\/video-edit/)?.[1];
+  const { storyId } = useParams<{ storyId: string }>();
 
   if (!storyId) {
     return <NotFound />;
@@ -217,17 +219,15 @@ function Router() {
       <Route path="/vk-callback" component={VkCallback} />
       <Route path="/threads-callback" component={ThreadsCallback} />
 
-
       {/* Help routes */}
       <Route path="/help" component={HelpPage} />
       <Route path="/help/tutorials" component={TutorialsPage} />
       <Route path="/help/tutorials/:id" component={TutorialDetailsPage} />
 
-
       {/* Dashboard routes */}
       <Route path="/dashboard" component={LayoutDashboard} />
 
-      {/* Добавляем корневой роут - теперь ведет на Dashboard */}
+      {/* Корневой роут */}
       <Route path="/" component={LayoutDashboard} />
       {/* NotFound должен быть последним */}
       <Route component={NotFound} />
@@ -235,24 +235,18 @@ function Router() {
   );
 }
 
-// Отдельный компонент для инициализации WebSocket внутри провайдеров
 function AppWithWebSocket() {
-  // Инициализируем WebSocket соединение для real-time уведомлений
   useWebSocket();
-
   return <Router />;
 }
 
 function App() {
-  // ПРИНУДИТЕЛЬНАЯ проверка токенов каждую секунду
   useEffect(() => {
-    // Первоначальная проверка
+    // Первоначальная проверка при загрузке страницы
     clearExpiredToken();
 
-    // Интервальная проверка
-    const interval = setInterval(() => {
-      clearExpiredToken();
-    }, 1000);
+    // Проверка раз в минуту достаточна — истечение токена не происходит мгновенно
+    const interval = setInterval(clearExpiredToken, 60000);
 
     return () => clearInterval(interval);
   }, []);

@@ -152,8 +152,12 @@ app.use((req, res, next) => {
   console.log(`[HTTP] ${req.method} ${req.originalUrl}`);
   next();
 });
+const corsOrigin = process.env.NODE_ENV === 'production'
+  ? ['https://smm.omemo.tech', 'https://t.me']
+  : true;
+
 app.use(cors({
-  origin: true, // В продакшене лучше ограничить конкретными доменами
+  origin: corsOrigin,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'x-user-id']
@@ -198,19 +202,6 @@ registerTrendsRoutes(app);
 log("Registering Analytics routes early...");
 registerAnalyticsRoutes(app);
 
-// Request logging (only for debugging specific issues)
-app.use((req, res, next) => {
-  if (req.method === 'POST') {
-    console.log(`📥 [DEBUG-POST] ${req.method} ${req.path}`);
-  }
-  if (req.path.startsWith('/api')) {
-    console.log(`📡 [DEBUG] API Request: ${req.method} ${req.path}`);
-  }
-  if (req.method === 'GET' && req.path.includes('youtube/channel-info')) {
-    console.log('🎯 YOUTUBE CHANNEL INFO:', req.url);
-  }
-  next();
-});
 
 // Добавляем API маршруты для проверки статуса и проверки админа явно, чтобы они работали до инициализации Vite
 app.get('/api/status-check', (req, res) => {
@@ -390,10 +381,6 @@ app.get('/api/auth/is-admin', async (req, res) => {
   }
 });
 
-// Добавляем маршрут для проверки здоровья
-app.get('/health', (req, res) => {
-  return res.status(200).send('OK');
-});
 
 // robots.txt
 app.get('/robots.txt', (req, res) => {
@@ -627,19 +614,18 @@ app.use('/video-app', (req, res, next) => {
     });
     log("Telegram webhook endpoint registered");
 
-    // Регистрируем тестовые маршруты для проверки Telegram и других API
-    console.log("Registering test API routes...");
-    log("Registering test API routes first...");
-    // Регистрируем основные тестовые маршруты
-    app.use('/api/test', testRouter);
-    // Регистрируем маршруты для диагностики и исправления проблем с URL Telegram
-    app.use('/api/telegram-diagnostics', telegramDiagnosticsRouter);
-    // Тестовые маршруты для диагностики Instagram видео
-    try {
-      const instagramVideoTestRoutes = (await import('./routes/instagram-video-test')).default;
-      app.use('/api/test', instagramVideoTestRoutes);
-    } catch (err) {
-      console.warn('[startup] instagram-video-test routes skipped:', err instanceof Error ? err.message : err);
+    // Тестовые маршруты — только в dev-окружении
+    if (process.env.NODE_ENV !== 'production') {
+      log("Registering test API routes (dev only)...");
+      app.use('/api/test', testRouter);
+      app.use('/api/telegram-diagnostics', telegramDiagnosticsRouter);
+      try {
+        const instagramVideoTestRoutes = (await import('./routes/instagram-video-test')).default;
+        app.use('/api/test', instagramVideoTestRoutes);
+      } catch (err) {
+        log(`instagram-video-test routes skipped: ${err instanceof Error ? err.message : err}`);
+      }
+      log("Test API routes registered");
     }
 
     // Прокси для Instagram видео (решение проблемы S3)
@@ -647,68 +633,35 @@ app.use('/video-app', (req, res, next) => {
       const instagramVideoProxyRoutes = (await import('./routes/instagram-video-proxy')).default;
       app.use('/api', instagramVideoProxyRoutes);
     } catch (err) {
-      console.warn('[startup] instagram-video-proxy routes skipped:', err instanceof Error ? err.message : err);
+      log(`instagram-video-proxy routes skipped: ${err instanceof Error ? err.message : err}`);
     }
-    console.log("Test API routes registered");
-    log("Test API routes registered successfully");
 
-    // Регистрируем маршруты для Claude AI
-    console.log("Registering Claude AI routes...");
     log("Registering Claude AI routes...");
     registerClaudeRoutes(app);
-    console.log("Claude AI routes registered");
-    log("Claude AI routes registered successfully");
+    log("Claude AI routes registered");
 
-    // Регистрируем маршруты для DeepSeek
-    console.log("Registering DeepSeek routes...");
     log("Registering DeepSeek routes...");
     registerDeepSeekRoutes(app);
-    console.log("DeepSeek routes registered");
-    log("DeepSeek routes registered successfully");
+    log("DeepSeek routes registered");
 
-    // Регистрируем маршруты для Qwen
-    console.log("Registering Qwen routes...");
     log("Registering Qwen routes...");
     registerQwenRoutes(app);
-    console.log("Qwen routes registered");
-    log("Qwen routes registered successfully");
+    log("Qwen routes registered");
 
-    // Регистрируем маршруты для Gemini
-    console.log("Registering Gemini routes...");
     log("Registering Gemini routes...");
     registerGeminiRoutes(app);
-    console.log("Gemini routes registered");
-    log("Gemini routes registered successfully");
+    log("Gemini routes registered");
 
-    // Регистрируем YouTube Channel Info маршруты ПЕРЕД основными маршрутами
-    console.log("Registering YouTube Channel routes EARLY...");
-    log("Registering YouTube Channel routes EARLY...");
+    log("Registering YouTube Channel routes...");
     try {
       const youtubeChannelRouter = (await import('./routes/youtube-channel')).default;
-      console.log('📍 [YOUTUBE-ROUTER] Router imported successfully:', !!youtubeChannelRouter);
-      console.log('📍 [YOUTUBE-ROUTER] Registering at /api prefix EARLY');
       app.use('/api', youtubeChannelRouter);
-      console.log("YouTube Channel routes registered EARLY");
-      log("YouTube Channel routes registered successfully EARLY");
+      log("YouTube Channel routes registered");
     } catch (err) {
-      console.warn('[startup] youtube-channel routes skipped:', err instanceof Error ? err.message : err);
+      log(`youtube-channel routes skipped: ${err instanceof Error ? err.message : err}`);
     }
 
-    // Регистрируем YouTube OAuth маршруты ПЕРЕД основными маршрутами
-    console.log("Registering YouTube OAuth routes EARLY...");
-    log("Registering YouTube OAuth routes EARLY...");
-    try {
-      const youtubeOAuthRouter = (await import('./routes/youtube-auth')).default;
-      app.use('/api', youtubeOAuthRouter);
-      console.log("YouTube OAuth routes registered EARLY");
-      log("YouTube OAuth routes registered successfully EARLY");
-    } catch (err) {
-      console.error("Error registering YouTube OAuth routes EARLY:", err);
-      log(`Error registering YouTube OAuth routes EARLY: ${err instanceof Error ? err.message : String(err)}`);
-    }
-
-    log("Registering main routes after YouTube routes...");
-    console.log("Starting route registration...");
+    log("Registering main routes...");
     await registerRoutes(app);
 
     // Swagger API Documentation - добавляем после всех маршрутов
@@ -742,210 +695,143 @@ app.use('/video-app', (req, res, next) => {
 
     // Регистрируем Instagram Campaign Settings маршруты ПОСЛЕ registerRoutes
     // чтобы они имели приоритет над конфликтующими маршрутами в routes.ts
-    console.log("Registering Instagram Campaign Settings routes...");
     log("Registering Instagram Campaign Settings routes...");
     try {
       const campaignInstagramRoutes = (await import('./routes/campaign-instagram-settings')).default;
       app.use('/api', campaignInstagramRoutes);
-      console.log("Instagram Campaign Settings routes registered");
       log('Instagram Campaign Settings routes registered with priority');
     } catch (err) {
-      console.warn('[startup] campaign-instagram-settings routes skipped:', err instanceof Error ? err.message : err);
+      log(`campaign-instagram-settings routes skipped: ${err instanceof Error ? err.message : err}`);
     }
 
-    // Регистрируем Instagram OAuth маршруты
-    console.log("Registering Instagram OAuth routes...");
     log("Registering Instagram OAuth routes...");
     try {
       const instagramOAuthRouter = (await import('./routes/instagram-oauth')).default;
       app.use('/api', instagramOAuthRouter);
-      console.log("Instagram OAuth routes registered");
-      log("Instagram OAuth routes registered successfully");
+      log("Instagram OAuth routes registered");
     } catch (err) {
-      console.warn('[startup] instagram-oauth routes skipped:', err instanceof Error ? err.message : err);
+      log(`instagram-oauth routes skipped: ${err instanceof Error ? err.message : err}`);
     }
 
-    // Регистрируем Threads OAuth маршруты
-    console.log("Registering Threads OAuth routes...");
     log("Registering Threads OAuth routes...");
     try {
       const threadsOAuthRouter = (await import('./routes/threads-oauth')).default;
       app.use('/api', threadsOAuthRouter);
-      console.log("Threads OAuth routes registered");
+      log("Threads OAuth routes registered");
     } catch (err) {
-      console.warn('[startup] threads-oauth routes skipped:', err instanceof Error ? err.message : err);
+      log(`threads-oauth routes skipped: ${err instanceof Error ? err.message : err}`);
     }
 
-    // Регистрируем Threads настройки кампании
-    console.log("Registering Threads Campaign Settings routes...");
     try {
       const threadsSettingsRouter = (await import('./routes/campaign-threads-settings')).default;
       app.use('/api', threadsSettingsRouter);
-      console.log("Threads Campaign Settings routes registered");
+      log("Threads Campaign Settings routes registered");
     } catch (err) {
-      console.warn('[startup] campaign-threads-settings routes skipped:', err instanceof Error ? err.message : err);
+      log(`campaign-threads-settings routes skipped: ${err instanceof Error ? err.message : err}`);
     }
 
-    // Регистрируем VK OAuth маршруты
-    console.log("Registering VK OAuth routes...");
     log("Registering VK OAuth routes...");
     try {
       const vkOAuthRouter = (await import('./routes/vk-oauth')).default;
       app.use('/api', vkOAuthRouter);
-      console.log("VK OAuth routes registered");
-      log("VK OAuth routes registered successfully");
+      log("VK OAuth routes registered");
     } catch (err) {
-      console.warn('[startup] vk-oauth routes skipped:', err instanceof Error ? err.message : err);
+      log(`vk-oauth routes skipped: ${err instanceof Error ? err.message : err}`);
     }
 
-    // Регистрируем VK настройки кампании
-    console.log("Registering VK Campaign Settings routes...");
-    log("Registering VK Campaign Settings routes...");
     try {
       const vkSettingsRouter = (await import('./routes/campaign-vk-settings')).default;
       app.use('/api', vkSettingsRouter);
-      console.log("VK Campaign Settings routes registered");
-      log("VK Campaign Settings routes registered successfully");
+      log("VK Campaign Settings routes registered");
     } catch (err) {
-      console.warn('[startup] campaign-vk-settings routes skipped:', err instanceof Error ? err.message : err);
+      log(`campaign-vk-settings routes skipped: ${err instanceof Error ? err.message : err}`);
     }
 
-    // Регистрируем Facebook настройки кампании
-    console.log("Registering Facebook Campaign Settings routes...");
-    log("Registering Facebook Campaign Settings routes...");
     try {
       const facebookSettingsRouter = (await import('./routes/campaign-facebook-settings')).default;
       app.use('/api', facebookSettingsRouter);
-      console.log("Facebook Campaign Settings routes registered");
-      log("Facebook Campaign Settings routes registered successfully");
+      log("Facebook Campaign Settings routes registered");
     } catch (err) {
-      console.warn('[startup] campaign-facebook-settings routes skipped:', err instanceof Error ? err.message : err);
+      log(`campaign-facebook-settings routes skipped: ${err instanceof Error ? err.message : err}`);
     }
 
-    // Регистрируем YouTube настройки кампании
-    console.log("Registering YouTube Campaign Settings routes...");
-    log("Registering YouTube Campaign Settings routes...");
     try {
       const youtubeSettingsRouter = (await import('./routes/campaign-youtube-settings')).default;
       app.use('/api', youtubeSettingsRouter);
-      console.log("YouTube Campaign Settings routes registered");
-      log("YouTube Campaign Settings routes registered successfully");
+      log("YouTube Campaign Settings routes registered");
     } catch (err) {
-      console.error("Error registering YouTube Campaign Settings routes:", err);
-      log(`Error registering YouTube Campaign Settings routes: ${err instanceof Error ? err.message : String(err)}`);
+      log(`campaign-youtube-settings routes error: ${err instanceof Error ? err.message : String(err)}`);
     }
 
-    // Регистрируем общие настройки кампании (для trend_analysis_settings и др.)
-    console.log("Registering Campaign Settings routes...");
-    log("Registering Campaign Settings routes...");
     try {
       const campaignSettingsRouter = (await import('./routes/campaign-settings')).default;
       app.use('/api', campaignSettingsRouter);
-      console.log("Campaign Settings routes registered");
-      log("Campaign Settings routes registered successfully");
+      log("Campaign Settings routes registered");
     } catch (err) {
-      console.warn('[startup] campaign-settings routes skipped:', err instanceof Error ? err.message : err);
+      log(`campaign-settings routes skipped: ${err instanceof Error ? err.message : err}`);
     }
 
-    // Регистрируем роут для снятия публикаций из соцсетей
-    console.log("Registering Unpublish Content routes...");
-    log("Registering Unpublish Content routes...");
     try {
       const unpublishContentRouter = (await import('./routes/unpublish-content')).default;
       app.use('/api', unpublishContentRouter);
-      console.log("Unpublish Content routes registered");
-      log("Unpublish Content routes registered successfully");
+      log("Unpublish Content routes registered");
     } catch (err) {
-      console.warn('[startup] unpublish-content routes skipped:', err instanceof Error ? err.message : err);
+      log(`unpublish-content routes skipped: ${err instanceof Error ? err.message : err}`);
     }
 
-    // Регистрируем роут для удаления контента
-    console.log("Registering Delete Content routes...");
-    log("Registering Delete Content routes...");
     try {
       const deleteContentRouter = (await import('./routes/delete-content')).default;
       app.use('/api', deleteContentRouter);
-      console.log("Delete Content routes registered");
-      log("Delete Content routes registered successfully");
+      log("Delete Content routes registered");
     } catch (err) {
-      console.warn('[startup] delete-content routes skipped:', err instanceof Error ? err.message : err);
+      log(`delete-content routes skipped: ${err instanceof Error ? err.message : err}`);
     }
 
-    // Register stories routes with proper API fixes
-    console.log("Registering Stories routes...");
-    log("Registering Stories routes...");
     try {
       const storiesRoutes = (await import('./routes/stories')).default;
       app.use('/api/stories', storiesRoutes);
-      console.log("Stories routes registered");
-      log("Stories routes registered successfully");
+      log("Stories routes registered");
     } catch (err) {
-      console.warn('[startup] stories routes skipped:', err instanceof Error ? err.message : err);
+      log(`stories routes skipped: ${err instanceof Error ? err.message : err}`);
     }
 
-    // Register stories image generator
-    console.log("Registering Stories Image Generator routes...");
-    log("Registering Stories Image Generator routes...");
     try {
       const storiesImageGenerator = (await import('./routes/stories-image-generator')).default;
       app.use('/api/stories', storiesImageGenerator);
-      console.log("Stories Image Generator routes registered");
-      log("Stories Image Generator routes registered successfully");
+      log("Stories Image Generator routes registered");
     } catch (err) {
-      console.warn('[startup] stories-image-generator routes skipped:', err instanceof Error ? err.message : err);
+      log(`stories-image-generator routes skipped: ${err instanceof Error ? err.message : err}`);
     }
 
-
-    // Регистрируем маршруты для Telegram каналов
-    log("Registering Telegram Channels routes...");
     registerTelegramChannelsRoutes(app);
-    log("Telegram Channels routes registered successfully");
+    log("Telegram Channels routes registered");
 
-    // Регистрируем маршруты AI поддержки
-    log("Registering AI Support routes...");
     app.use('/api/support', supportRoutes);
-    log("AI Support routes registered successfully");
+    log("AI Support routes registered");
 
-    // Регистрируем маршруты автономного режима AI
     app.use('/api/autonomous', autonomousRouter);
     log("Autonomous AI routes registered");
 
-    // Регистрируем специальные маршруты для XMLRiver API
-    log("Registering XMLRiver API routes...");
     registerXmlRiverRoutes(app);
-    log("XMLRiver API routes registered successfully");
+    log("XMLRiver API routes registered");
 
-    // Регистрируем универсальный интерфейс для моделей FAL.AI
-    log("Registering FAL.AI Universal Image Generation routes...");
     registerFalAiImageRoutes(app);
-    log("FAL.AI Universal Image Generation routes registered successfully");
+    log("FAL.AI Universal Image Generation routes registered");
 
-
-    // Регистрируем маршруты для получения моделей DeepSeek
-    log("Registering DeepSeek Models route...");
     registerDeepSeekModelsRoute(app);
-    log("DeepSeek Models route registered successfully");
+    log("DeepSeek Models route registered");
 
-    // Регистрируем маршруты для работы с Beget S3
-    log("Registering Beget S3 routes...");
     registerBegetS3Routes(app);
-    log("Beget S3 routes registered successfully");
+    log("Beget S3 routes registered");
 
-    // Регистрируем маршрут для очистки кэша
-    log("Registering clear cache routes...");
     try {
       const clearCacheRouter = (await import('./routes/clear-cache')).default;
       app.use('/api', clearCacheRouter);
-      log("Clear cache routes registered successfully");
+      log("Clear cache routes registered");
     } catch (err) {
-      console.warn('[startup] clear-cache routes skipped:', err instanceof Error ? err.message : err);
+      log(`clear-cache routes skipped: ${err instanceof Error ? err.message : err}`);
     }
 
-
-    // Маршруты для работы с личными API ключами пользователя уже зарегистрированы в начале файла
-    log("User API keys routes already registered early");
-
-    // Register additional routes
     app.use('/api', adminUsersRoutes);
     app.use('/api', promoCodesRouter);
     app.use('/api', subscriptionsRouter);
@@ -954,9 +840,7 @@ app.use('/video-app', (req, res, next) => {
     app.use('/api/real-video-converter', realVideoConverterRoutes);
     app.use('/api/web-crawler', webCrawlerRoutes);
 
-    console.log("Route registration completed");
-    log("Routes registered successfully");
-    console.log("DEBUG: Setting up global error handler...");
+    log("Route registration completed");
 
     // Глобальный обработчик ошибок
     app.use((err: any, req: Request, res: Response, _next: NextFunction) => {

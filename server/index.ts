@@ -2,6 +2,8 @@ import './load-env';
 import express, { type Request, Response, NextFunction } from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import swaggerUi from 'swagger-ui-express';
 import swaggerSpecs from './config/swagger';
 import { readFileSync, existsSync } from 'fs';
@@ -97,6 +99,20 @@ import videoProcessingRoutes from './routes/videoProcessing';
 
 const app = express();
 app.set('etag', false);
+// За обратным прокси (nginx в проде / прокси Replit в dev) — иначе rate-limit видит IP прокси,
+// а не клиента. 1 = доверяем одному ближайшему прокси.
+app.set('trust proxy', 1);
+
+// Security-заголовки. CSP/frameguard/CORP отключены намеренно: приложение работает
+// как Telegram Mini App внутри iframe (web.telegram.org) и грузит ассеты с S3.
+// Остаются полезные дефолты helmet: nosniff, HSTS, referrer-policy, X-DNS-Prefetch и т.д.
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false,
+  crossOriginResourcePolicy: false,
+  frameguard: false,
+}));
+
 const server = createServer(app);
 
 // Тестовые endpoints удалены для исправления перехвата API
@@ -165,6 +181,33 @@ app.use(cors({
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: false, limit: '50mb' }));
 app.use(cookieParser());
+
+// --- Rate limiting ---
+// Строгий лимит на чувствительные операции (брутфорс логина/регистрации, абуз создания платежей).
+// ВАЖНО: вешаем точечно, НЕ на весь /api/auth — /api/auth/me, /check, /refresh поллит фронт.
+const sensitiveLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Слишком много попыток. Повторите позже.' },
+});
+// Мягкий глобальный флуд-гард: ловит только настоящий поток запросов, не мешает поллингу UI.
+// Вебхуки (платёжка, соцсети) пропускаем — они верифицируются отдельно и приходят от провайдеров.
+const globalApiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 600,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => req.path.includes('/webhook'),
+  message: { success: false, error: 'Слишком много запросов. Повторите позже.' },
+});
+
+app.use('/api/auth/login', sensitiveLimiter);
+app.use('/api/auth/register', sensitiveLimiter);
+app.use('/api/auth/password-reset', sensitiveLimiter);
+app.use('/api/payments/create', sensitiveLimiter);
+app.use('/api', globalApiLimiter);
 
 app.use('/api', (req, res, next) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');

@@ -37,6 +37,12 @@ export interface UserTokenInfo {
   userId: string;
 }
 
+// scheduledAt приходит и как Date, и как ISO-строка — приводим к ISO-строке для Directus.
+function toIsoOrNull(value: Date | string | null | undefined): string | null {
+  if (!value) return null;
+  return value instanceof Date ? value.toISOString() : value;
+}
+
 export interface IStorage {
   // User Authentication
   getUserTokenInfo(userId: string): Promise<UserTokenInfo | null>;
@@ -70,27 +76,7 @@ export interface IStorage {
   
   // Business Questionnaire
   getBusinessQuestionnaire(campaignId: string): Promise<BusinessQuestionnaire | null>;
-
-  // Stories Management
-  createStory(story: any): Promise<any>;
-  getStoryById(id: string, userId: string): Promise<any>;
-  updateStory(id: string, updates: any, userId: string): Promise<any>;
-  deleteStory(id: string, userId: string): Promise<boolean>;
-  getStoriesByCampaign(campaignId: string, userId: string): Promise<any[]>;
-  
-  // Story Slides
-  addSlideToStory(slide: any, userId: string): Promise<any>;
-  updateSlide(slideId: string, updates: any, userId: string): Promise<any>;
-  deleteSlide(slideId: string, userId: string): Promise<boolean>;
-  reorderSlides(storyId: string, slideIds: string[], userId: string): Promise<void>;
-  
-  // Story Elements
-  addElementToSlide(element: any, userId: string): Promise<any>;
-  updateElement(elementId: string, updates: any, userId: string): Promise<any>;
-  deleteElement(elementId: string, userId: string): Promise<boolean>;
-  
-  // Story Scheduling
-  scheduleStory(storyId: string, scheduledAt: string, platformSettings: any, userId: string): Promise<any>;
+  // Stories/Slides/Elements обрабатываются через directusCrud, не через этот слой.
   createBusinessQuestionnaire(questionnaire: InsertBusinessQuestionnaire): Promise<BusinessQuestionnaire>;
   updateBusinessQuestionnaire(id: string, updates: Partial<InsertBusinessQuestionnaire>): Promise<BusinessQuestionnaire>;
   
@@ -763,9 +749,10 @@ export class DatabaseStorage implements IStorage {
   }
   
   // Вспомогательный метод для получения токена пользователя
-  private async getAuthToken(userId: string): Promise<string | null> {
+  private async getAuthToken(userId: string | undefined): Promise<string | null> {
+    if (!userId) return null;
     console.log('Getting auth token for user:', userId);
-    
+
     try {
       // Сначала проверяем кэш
       const now = Date.now();
@@ -1002,6 +989,7 @@ export class DatabaseStorage implements IStorage {
         id: item.id,
         content: item.content,
         userId: item.user_id,
+        campaign_id: item.campaign_id,
         campaignId: item.campaign_id,
         status: item.status,
         contentType: item.content_type || "text",
@@ -1050,7 +1038,7 @@ export class DatabaseStorage implements IStorage {
         image_url: content.imageUrl,
         video_url: content.videoUrl,
         prompt: content.prompt || "",  // Добавляем поле промта при создании
-        scheduled_at: content.scheduledAt?.toISOString() || null,
+        scheduled_at: toIsoOrNull(content.scheduledAt),
         social_platforms: content.socialPlatforms,
         title: content.title || "",
         content_type: content.contentType || "text",
@@ -1068,6 +1056,7 @@ export class DatabaseStorage implements IStorage {
         id: item.id,
         content: item.content,
         userId: item.user_id,
+        campaign_id: item.campaign_id,
         campaignId: item.campaign_id,
         status: item.status,
         contentType: item.content_type || "text",
@@ -1132,7 +1121,7 @@ export class DatabaseStorage implements IStorage {
         console.log(`Обновляем промт контента ${id}: "${updates.prompt}"`);
         directusUpdates.prompt = updates.prompt;
       }
-      if (updates.scheduledAt !== undefined) directusUpdates.scheduled_at = updates.scheduledAt?.toISOString() || null;
+      if (updates.scheduledAt !== undefined) directusUpdates.scheduled_at = toIsoOrNull(updates.scheduledAt);
       
       // КРИТИЧЕСКИ ВАЖНО: при обновлении socialPlatforms сохраняем существующие статусы опубликованных платформ
       if (updates.socialPlatforms !== undefined) {
@@ -1167,7 +1156,7 @@ export class DatabaseStorage implements IStorage {
           }
 
           // Шаг 2: сохраняем платформы, которые не в новом выборе, но уже опубликованы
-          for (const [platform, currentData] of Object.entries(currentPlatforms)) {
+          for (const [platform, currentData] of Object.entries(currentPlatforms) as [string, any][]) {
             if (!newPlatforms[platform] && currentData && currentData.status === 'published' && currentData.postUrl) {
               mergedPlatforms[platform] = currentData;
             }
@@ -1214,6 +1203,7 @@ export class DatabaseStorage implements IStorage {
         id: item.id,
         content: item.content,
         userId: item.user_id,
+        campaign_id: item.campaign_id,
         campaignId: item.campaign_id,
         status: item.status,
         contentType: item.content_type || "text",
@@ -1325,6 +1315,7 @@ export class DatabaseStorage implements IStorage {
         id: item.id,
         content: item.content,
         userId: item.user_id,
+        campaign_id: item.campaign_id,
         campaignId: item.campaign_id,
         status: item.status,
         contentType: item.content_type || "text",
@@ -1352,8 +1343,8 @@ export class DatabaseStorage implements IStorage {
       console.log(`[Scheduled] Получение запланированных публикаций для кампании ${campaignId}, пользователя ${userId}`);
       console.log(`[Scheduled] Токен передан: ${token ? 'ДА' : 'НЕТ'}, длина: ${token?.length || 0}`);
       
-      let authToken = token;
-      
+      let authToken: string | null | undefined = token;
+
       // Если токен не передан, пытаемся получить из кэша
       if (!authToken) {
         console.log(`[Scheduled] Токен не передан, пытаемся получить из кэша`);
@@ -1404,6 +1395,7 @@ export class DatabaseStorage implements IStorage {
         id: item.id,
         content: item.content,
         userId: item.user_id,
+        campaign_id: item.campaign_id,
         campaignId: item.campaign_id,
         status: item.status,
         contentType: item.content_type || "text",

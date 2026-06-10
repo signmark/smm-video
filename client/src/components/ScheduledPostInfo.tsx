@@ -102,8 +102,8 @@ interface SocialPublicationStatus {
 }
 
 interface ScheduledPostInfoProps {
-  scheduledAt: string | null;
-  publishedAt: string | null;
+  scheduledAt: string | Date | null;
+  publishedAt: string | Date | null;
   socialPlatforms?: Record<string, SocialPublicationStatus> | null;
   compact?: boolean;
   className?: string;

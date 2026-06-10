@@ -3284,9 +3284,9 @@ export default function ContentPage() {
                   }}
                   content={{
                     contentType: currentContent.contentType,
-                    imageUrl: currentContent.imageUrl,
+                    imageUrl: currentContent.imageUrl ?? undefined,
                     images: currentContent.images,
-                    videoUrl: currentContent.videoUrl,
+                    videoUrl: currentContent.videoUrl ?? undefined,
                     additionalImages: currentContent.additionalImages,
                     additionalVideos: currentContent.additionalVideos
                   }}

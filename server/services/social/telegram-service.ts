@@ -1002,7 +1002,7 @@ export class TelegramService extends BaseSocialService {
    */
   async publishToTelegram(
     content: CampaignContent,
-    telegramSettings: { token: string | null; chatId: string | null }
+    telegramSettings: { token?: string | null; chatId?: string | null }
   ): Promise<SocialPublication> {
     // ID последнего сообщения для формирования ссылки
     let lastMessageId: number | string | undefined;

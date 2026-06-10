@@ -256,7 +256,6 @@ import { featureFlagsRouter } from './routes/feature-flags';
 app.use('/api', featureFlagsRouter);
 
 // Регистрируем прямые маршруты аутентификации до инициализации Vite
-import { isUserAdmin } from './routes-global-api-keys';
 import { registerSimpleAnalyticsAPI } from './simple-analytics-api';
 
 // Регистрируем прямой API аналитики ПЕРЕД всеми остальными маршрутами
@@ -378,52 +377,8 @@ log('Image upload route registered early');
 // чтобы иметь приоритет над конфликтующими маршрутами в routes.ts
 log('Instagram Campaign Settings routes will be registered after main routes');
 
-// Дополнительно дублируем маршрут is-admin с явными заголовками Content-Type
-app.get('/api/auth/is-admin', async (req, res) => {
-  try {
-    // Указываем явно content-type как JSON
-    res.setHeader('Content-Type', 'application/json');
-    // Добавляем заголовки для предотвращения кэширования
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-    res.setHeader('Surrogate-Control', 'no-store');
-
-    const authHeader = req.headers.authorization;
-
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      log('Запрос на проверку админа без токена', 'auth');
-      return res.status(401).json({
-        success: false,
-        isAdmin: false,
-        message: 'Требуется токен авторизации'
-      });
-    }
-
-    const token = authHeader.substring(7);
-    log(`Проверка статуса админа с токеном: ${token.substring(0, 10)}...`, 'auth');
-
-    const isAdmin = await isUserAdmin(req, token);
-    log(`Результат проверки администратора: ${isAdmin}`, 'auth');
-
-    // Добавляем случайный параметр в ответ, чтобы предотвратить кэширование
-    return res.status(200).json({
-      success: true,
-      isAdmin,
-      timestamp: Date.now(),
-      source: 'early-route'
-    });
-  } catch (error) {
-    log(`Ошибка при проверке статуса администратора: ${error instanceof Error ? error.message : 'Unknown error'}`, 'auth');
-    return res.status(500).json({
-      success: false,
-      error: 'Произошла ошибка при проверке статуса администратора',
-      timestamp: Date.now(),
-      source: 'early-route'
-    });
-  }
-});
-
+// Маршрут /api/auth/is-admin регистрируется в registerAuthRoutes (api/auth-routes.ts).
+// Дубликат, который раньше был здесь, никогда не достигался — Express берёт первый совпавший.
 
 // robots.txt
 app.get('/robots.txt', (req, res) => {

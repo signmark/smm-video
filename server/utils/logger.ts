@@ -339,7 +339,7 @@ export function debug(message: string, source = "express") {
  * Основная функция логирования с поддержкой различных уровней
  */
 export const log: {
-  (message: string, source?: string): void;
+  (message: string, source?: string, level?: string): void;
   info: typeof info;
   error: typeof error;
   warn: typeof warn;

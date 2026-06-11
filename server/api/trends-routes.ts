@@ -352,12 +352,16 @@ export function registerTrendsRoutes(app: Express) {
       const body = req.body;
       log(`[TG Webhook] 📥 Получен колбэк: ${JSON.stringify(body).substring(0, 500)}`, 'info');
 
-      const taskId = body?.task_id || body?.taskId || body?.job_id;
-      const status = (body?.status || '').toLowerCase();
-      const errorMsg = body?.error;
+      const taskId = body?.task_id || body?.taskId || body?.job_id || body?.id || body?.result?.task_id;
+      const status = (body?.status ?? body?.result?.status ?? '').toString().toLowerCase();
+      const errorMsg = body?.error || body?.result?.error;
 
-      if (errorMsg || (status && status !== 'done' && status !== 'completed')) {
-        log(`[TG Webhook] ❌ Задача ${taskId} завершилась с ошибкой: ${errorMsg || status}`, 'error');
+      // Колбэк считаем провалом ТОЛЬКО при явной ошибке или фейл-статусе.
+      // Любой иной статус (success/ok/finished/done/completed/processing и т.п.) НЕ повод
+      // выбрасывать результат — если в теле есть посты, мы их сохраняем.
+      const isFailure = !!errorMsg || ['error', 'failed', 'failure'].includes(status);
+      if (isFailure) {
+        log(`[TG Webhook] ❌ Задача ${taskId} с ошибкой: ${errorMsg || status}`, 'error');
         if (taskId) {
           const { pendingTgTasks } = await import('../services/trend-collector');
           pendingTgTasks.delete(String(taskId));
@@ -365,9 +369,9 @@ export function registerTrendsRoutes(app: Express) {
         return;
       }
 
-      // Достаём посты из ответа (несколько возможных форматов)
+      // Достаём посты (несколько возможных форматов вложенности)
       const result = body?.result || body;
-      const posts: any[] = result?.posts || result?.items || result?.data || [];
+      const posts: any[] = result?.posts || result?.items || result?.data || body?.posts || [];
 
       log(`[TG Webhook] task_id=${taskId} | posts=${posts.length}`, 'info');
 

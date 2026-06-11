@@ -8,6 +8,24 @@ import { detectEnvironment } from './environment-detector';
 // Получаем конфигурацию окружения
 export let envConfig = detectEnvironment();
 
+// --- In-memory кольцевой буфер последних логов (для эндпоинта /api/debug/logs) ---
+// Заполняется самим логгером — глобальный console НЕ патчим.
+const LOG_BUFFER_SIZE = 100;
+const recentLogs: string[] = [];
+
+function recordLog(line: string): void {
+  recentLogs.push(line);
+  if (recentLogs.length > LOG_BUFFER_SIZE) recentLogs.shift();
+}
+
+/**
+ * Возвращает последние записи лога (по умолчанию весь буфер, максимум LOG_BUFFER_SIZE).
+ */
+export function getRecentLogs(limit = LOG_BUFFER_SIZE): string[] {
+  if (limit >= recentLogs.length) return [...recentLogs];
+  return recentLogs.slice(-limit);
+}
+
 /**
  * Режим отладки для всех модулей с учетом ENV переменной
  * В production режиме отключаем почти все логи
@@ -145,7 +163,9 @@ export function logMessage(message: string, source = "express", level = "info") 
 
   const time = new Date().toLocaleTimeString();
   const envPrefix = envConfig.environment === 'development' ? '[DEV] ' : '';
-  console.log(`${time} ${envPrefix}[${source}] ${message}`);
+  const line = `${time} ${envPrefix}[${source}] ${message}`;
+  recordLog(line);
+  console.log(line);
 
 }
 
@@ -193,7 +213,9 @@ export function info(message: string, source = "express") {
   }
 
   const time = new Date().toLocaleTimeString();
-  console.log(`${time} [${source}] ${message}`);
+  const line = `${time} [${source}] ${message}`;
+  recordLog(line);
+  console.log(line);
 }
 
 /**
@@ -256,6 +278,8 @@ export function error(message: string, error?: any, source = "express") {
 
   const time = new Date().toLocaleTimeString();
   const envPrefix = envConfig.environment === 'development' ? '[DEV] ' : '';
+  const line = `${time} ${envPrefix}[${source}] ERROR: ${message}`;
+  recordLog(line);
   console.error(`${time} ${envPrefix}[${source}] ${message}`, error || '');
 }
 
@@ -271,7 +295,9 @@ export function criticalError(message: string, source = "system", userFriendlyMe
     : `КРИТИЧЕСКАЯ ОШИБКА: ${message}. Обратитесь к администрации.`;
 
   const time = new Date().toLocaleTimeString();
-  console.error(`${time} [${source}] ${criticalMessage}`);
+  const line = `${time} [${source}] ${criticalMessage}`;
+  recordLog(line);
+  console.error(line);
 }
 
 /**
@@ -282,7 +308,9 @@ export function criticalError(message: string, source = "system", userFriendlyMe
 export function systemError(message: string, source = "system") {
   if (envConfig.environment === 'development') {
     const time = new Date().toLocaleTimeString();
-    console.error(`${time} [DEV] [${source}] SYSTEM ERROR: ${message}`);
+    const line = `${time} [DEV] [${source}] SYSTEM ERROR: ${message}`;
+    recordLog(line);
+    console.error(line);
   }
 }
 
@@ -293,7 +321,9 @@ export function systemError(message: string, source = "system") {
  */
 export function warn(message: string, source = "express") {
   const time = new Date().toLocaleTimeString();
-  console.warn(`${time} [${source}] ${message}`);
+  const line = `${time} [${source}] ${message}`;
+  recordLog(line);
+  console.warn(line);
 }
 
 /**
@@ -309,7 +339,7 @@ export function debug(message: string, source = "express") {
  * Основная функция логирования с поддержкой различных уровней
  */
 export const log: {
-  (message: string, source?: string): void;
+  (message: string, source?: string, level?: string): void;
   info: typeof info;
   error: typeof error;
   warn: typeof warn;

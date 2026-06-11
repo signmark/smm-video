@@ -58,7 +58,7 @@ export class VkService extends BaseSocialService {
    */
   async publishToVk(
     content: CampaignContent,
-    vkSettings: { token: string | null; groupId: string | null }
+    vkSettings: { token?: string | null; groupId?: string | null }
   ): Promise<SocialPublication> {
     try {
       // Проверяем наличие необходимых параметров

@@ -82,7 +82,7 @@ export class TikTokService extends BaseSocialService {
 
     const result = await this.initVideoPostFromUrl({
       accessToken: token,
-      videoUrl: content.videoUrl || content.video_url,
+      videoUrl: content.videoUrl || content.video_url || undefined,
       caption: content.content || content.title || ''
     });
 

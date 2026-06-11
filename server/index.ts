@@ -2,6 +2,8 @@ import './load-env';
 import express, { type Request, Response, NextFunction } from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import swaggerUi from 'swagger-ui-express';
 import swaggerSpecs from './config/swagger';
 import { readFileSync, existsSync } from 'fs';
@@ -97,6 +99,20 @@ import videoProcessingRoutes from './routes/videoProcessing';
 
 const app = express();
 app.set('etag', false);
+// За обратным прокси (nginx в проде / прокси Replit в dev) — иначе rate-limit видит IP прокси,
+// а не клиента. 1 = доверяем одному ближайшему прокси.
+app.set('trust proxy', 1);
+
+// Security-заголовки. CSP/frameguard/CORP отключены намеренно: приложение работает
+// как Telegram Mini App внутри iframe (web.telegram.org) и грузит ассеты с S3.
+// Остаются полезные дефолты helmet: nosniff, HSTS, referrer-policy, X-DNS-Prefetch и т.д.
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false,
+  crossOriginResourcePolicy: false,
+  frameguard: false,
+}));
+
 const server = createServer(app);
 
 // Тестовые endpoints удалены для исправления перехвата API
@@ -166,6 +182,33 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: false, limit: '50mb' }));
 app.use(cookieParser());
 
+// --- Rate limiting ---
+// Строгий лимит на чувствительные операции (брутфорс логина/регистрации, абуз создания платежей).
+// ВАЖНО: вешаем точечно, НЕ на весь /api/auth — /api/auth/me, /check, /refresh поллит фронт.
+const sensitiveLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, error: 'Слишком много попыток. Повторите позже.' },
+});
+// Мягкий глобальный флуд-гард: ловит только настоящий поток запросов, не мешает поллингу UI.
+// Вебхуки (платёжка, соцсети) пропускаем — они верифицируются отдельно и приходят от провайдеров.
+const globalApiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 600,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => req.path.includes('/webhook'),
+  message: { success: false, error: 'Слишком много запросов. Повторите позже.' },
+});
+
+app.use('/api/auth/login', sensitiveLimiter);
+app.use('/api/auth/register', sensitiveLimiter);
+app.use('/api/auth/password-reset', sensitiveLimiter);
+app.use('/api/payments/create', sensitiveLimiter);
+app.use('/api', globalApiLimiter);
+
 app.use('/api', (req, res, next) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.setHeader('Pragma', 'no-cache');
@@ -213,7 +256,6 @@ import { featureFlagsRouter } from './routes/feature-flags';
 app.use('/api', featureFlagsRouter);
 
 // Регистрируем прямые маршруты аутентификации до инициализации Vite
-import { isUserAdmin } from './routes-global-api-keys';
 import { registerSimpleAnalyticsAPI } from './simple-analytics-api';
 
 // Регистрируем прямой API аналитики ПЕРЕД всеми остальными маршрутами
@@ -335,52 +377,8 @@ log('Image upload route registered early');
 // чтобы иметь приоритет над конфликтующими маршрутами в routes.ts
 log('Instagram Campaign Settings routes will be registered after main routes');
 
-// Дополнительно дублируем маршрут is-admin с явными заголовками Content-Type
-app.get('/api/auth/is-admin', async (req, res) => {
-  try {
-    // Указываем явно content-type как JSON
-    res.setHeader('Content-Type', 'application/json');
-    // Добавляем заголовки для предотвращения кэширования
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-    res.setHeader('Surrogate-Control', 'no-store');
-
-    const authHeader = req.headers.authorization;
-
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
-      log('Запрос на проверку админа без токена', 'auth');
-      return res.status(401).json({
-        success: false,
-        isAdmin: false,
-        message: 'Требуется токен авторизации'
-      });
-    }
-
-    const token = authHeader.substring(7);
-    log(`Проверка статуса админа с токеном: ${token.substring(0, 10)}...`, 'auth');
-
-    const isAdmin = await isUserAdmin(req, token);
-    log(`Результат проверки администратора: ${isAdmin}`, 'auth');
-
-    // Добавляем случайный параметр в ответ, чтобы предотвратить кэширование
-    return res.status(200).json({
-      success: true,
-      isAdmin,
-      timestamp: Date.now(),
-      source: 'early-route'
-    });
-  } catch (error) {
-    log(`Ошибка при проверке статуса администратора: ${error instanceof Error ? error.message : 'Unknown error'}`, 'auth');
-    return res.status(500).json({
-      success: false,
-      error: 'Произошла ошибка при проверке статуса администратора',
-      timestamp: Date.now(),
-      source: 'early-route'
-    });
-  }
-});
-
+// Маршрут /api/auth/is-admin регистрируется в registerAuthRoutes (api/auth-routes.ts).
+// Дубликат, который раньше был здесь, никогда не достигался — Express берёт первый совпавший.
 
 // robots.txt
 app.get('/robots.txt', (req, res) => {

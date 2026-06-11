@@ -860,22 +860,6 @@ ${campaignBusinessContext ? `КОНТЕКСТ БИЗНЕСА:\n${campaignBusines
     }
   });
 
-  // Instagram настройки
-  app.get('/api/campaigns/:campaignId/instagram-settings', authenticateUser, async (req, res) => {
-    try {
-      const { campaignId } = req.params;
-      const token = req.user?.token;
-
-      const response = await directusApi.get(`/items/user_campaigns/${campaignId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
-      const campaign = response.data.data;
-      const instagramSettings = campaign.social_media_settings?.instagram || {};
-
-      res.json({ success: true, settings: instagramSettings });
-    } catch (error: any) {
-      res.status(500).json({ error: 'Failed to get Instagram settings' });
-    }
-  });
+  // GET /api/campaigns/:campaignId/instagram-settings регистрируется в routes/analytics.ts —
+  // идентичная копия, которая была здесь, никогда не достигалась (Express берёт первый совпавший).
 }

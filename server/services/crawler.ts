@@ -106,12 +106,12 @@ export class ContentCrawler {
             // Создаем объект для сохранения в базу данных
             const trendTopic: InsertCampaignTrendTopic = {
               directusId: topic.directusId,
-              title: topic.title,
-              sourceId: topic.sourceId,
+              title: topic.title || '',
+              sourceId: topic.sourceId != null ? String(topic.sourceId) : null,
               campaignId: String(topic.campaignId),
-              reactions: topic.reactions,
-              comments: topic.comments,
-              views: topic.views,
+              reactions: topic.reactions || 0,
+              comments: topic.comments || 0,
+              views: topic.views || 0,
               isBookmarked: false
             };
             

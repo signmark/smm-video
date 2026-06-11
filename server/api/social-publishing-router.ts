@@ -18,6 +18,14 @@ import { getTempVideo, deleteTempVideo } from '../utils/temp-video-store';
 
 const router = express.Router();
 
+// Диагностические endpoints не должны быть доступны в production (утечка инфраструктуры).
+const devOnly = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(404).json({ error: 'Not found' });
+  }
+  next();
+};
+
 // Публичный эндпоинт для временного видео (без auth — нужен Meta серверам для Threads)
 // Поддерживает HEAD + Range-запросы (Threads API требует byte-range support)
 function serveVideoTemp(req: express.Request, res: express.Response) {
@@ -2153,7 +2161,7 @@ router.post('/publish/update-status', authMiddleware, async (req, res) => {
  * @api {get} /api/publish/diagnose Диагностика системы публикации
  * Проверяет переменные окружения, доступность N8N и токены
  */
-router.get('/publish/diagnose', async (req, res) => {
+router.get('/publish/diagnose', devOnly, authMiddleware, async (req, res) => {
   const { getN8nUrl } = await import('../utils/n8n-utils');
   const n8nUrl = getN8nUrl();
   const directusToken = process.env.DIRECTUS_TOKEN;
@@ -2169,10 +2177,11 @@ router.get('/publish/diagnose', async (req, res) => {
       reachable: false,
       error: null
     },
+    // Не раскрываем даже префиксы токенов — только факт наличия.
     tokens: {
-      DIRECTUS_TOKEN: directusToken ? `${directusToken.substring(0, 10)}...` : 'NOT SET',
-      DIRECTUS_SERVICE_TOKEN: serviceToken ? `${serviceToken.substring(0, 10)}...` : 'NOT SET',
-      DIRECTUS_ADMIN_TOKEN: adminToken ? `${adminToken.substring(0, 10)}...` : 'NOT SET',
+      DIRECTUS_TOKEN: !!directusToken,
+      DIRECTUS_SERVICE_TOKEN: !!serviceToken,
+      DIRECTUS_ADMIN_TOKEN: !!adminToken,
       hasAnyToken: !!(directusToken || serviceToken || adminToken)
     },
     directus: {
@@ -2208,7 +2217,7 @@ router.get('/publish/diagnose', async (req, res) => {
  * @api {post} /api/publish/test-webhook Тест N8N webhook
  * Отправляет тестовый запрос на N8N webhook
  */
-router.post('/publish/test-webhook', async (req, res) => {
+router.post('/publish/test-webhook', devOnly, authMiddleware, async (req, res) => {
   const { platform } = req.body;
   const { getN8nUrl } = await import('../utils/n8n-utils');
   const n8nUrl = getN8nUrl();

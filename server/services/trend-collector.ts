@@ -172,30 +172,52 @@ async function findGroups(
   apiKey: string
 ): Promise<TgGroup[] | VkGroup[]> {
   const endpoint = platform === 'telegram' ? '/api/telegram/find-groups' : '/api/vk/find-groups';
-  const data = await callScraper(endpoint, {
-    keywords,
-    min_members: minMembers,
-    max_groups: maxGroups
-  }, apiKey);
 
-  if (!data) return [];
-
-  if (platform === 'telegram') {
-    // Ответ: массив {id, title, link, members_count}
-    if (Array.isArray(data)) return data as TgGroup[];
-    if (Array.isArray(data?.channels)) return data.channels as TgGroup[];
-    if (Array.isArray(data?.groups)) return data.groups as TgGroup[];
-    return [];
-  } else {
-    // Ответ VK: {groups: [{id, name, members, is_closed}]}
-    const groups: VkGroup[] = Array.isArray(data)
-      ? data
-      : Array.isArray(data?.groups)
-        ? data.groups
-        : [];
-    // Фильтруем только открытые группы
-    return groups.filter((g: VkGroup) => g.is_closed === 0 || g.is_closed === undefined);
+  // Новый контракт (06.2026): запрос с большим числом ключей требует -batch + callback.
+  // Но find-groups используется СИНХРОННО инлайн (результат сразу идёт в сбор трендов),
+  // поэтому в callback уходить нельзя. Вместо этого режем ключи на чанки в пределах
+  // лимита одного не-batch запроса (TG ≤5, VK ≤10) и шлём их последовательно,
+  // агрегируя результат. max_concurrent на стороне скрапера = 1.
+  const chunkSize = platform === 'telegram' ? 5 : 10;
+  const chunks: string[][] = [];
+  for (let i = 0; i < keywords.length; i += chunkSize) {
+    chunks.push(keywords.slice(i, i + chunkSize));
   }
+  if (chunks.length === 0) return [];
+
+  const parseGroups = (data: any): (TgGroup | VkGroup)[] => {
+    if (!data) return [];
+    if (platform === 'telegram') {
+      if (Array.isArray(data)) return data as TgGroup[];
+      if (Array.isArray(data?.channels)) return data.channels as TgGroup[];
+      if (Array.isArray(data?.groups)) return data.groups as TgGroup[];
+      return [];
+    }
+    const vkGroups: VkGroup[] = Array.isArray(data)
+      ? data
+      : Array.isArray(data?.groups) ? data.groups : [];
+    return vkGroups.filter((g: VkGroup) => g.is_closed === 0 || g.is_closed === undefined);
+  };
+
+  const all: (TgGroup | VkGroup)[] = [];
+  for (const chunk of chunks) {
+    const data = await callScraper(endpoint, {
+      keywords: chunk,
+      min_members: minMembers,
+      max_groups: maxGroups
+    }, apiKey);
+    all.push(...parseGroups(data));
+  }
+
+  // Дедуп по id + ограничение общего числа источников (maxGroups на всю выборку)
+  const seen = new Set<string>();
+  const deduped = all.filter(g => {
+    const id = String((g as any).id ?? '');
+    if (!id || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+  return deduped.slice(0, maxGroups) as TgGroup[] | VkGroup[];
 }
 
 // ─── Сохранение источников в БД ──────────────────────────────────────────────
@@ -552,6 +574,7 @@ async function fetchTrendingPosts(
       limit: postsPerGroup * groupIds.length,
       days_back: daysBack,
       min_views: minViews,
+      merge_results: true, // новый параметр контракта (06.2026): топ limit со всех групп
       async_mode: true
     };
   }

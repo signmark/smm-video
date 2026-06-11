@@ -350,7 +350,9 @@ export function registerTrendsRoutes(app: Express) {
 
     try {
       const body = req.body;
-      log(`[TG Webhook] 📥 Получен колбэк: ${JSON.stringify(body).substring(0, 500)}`, 'info');
+      // ВНИМАНИЕ: используем console.* напрямую — логгер режет info/warn/error в production
+      // (logger.ts), а этот путь сейчас активно диагностируем и нужен виден на проде.
+      console.log(`[TG Webhook] 📥 Получен колбэк: ${JSON.stringify(body).substring(0, 800)}`);
 
       const taskId = body?.task_id || body?.taskId || body?.job_id || body?.id || body?.result?.task_id;
       const status = (body?.status ?? body?.result?.status ?? '').toString().toLowerCase();
@@ -361,7 +363,7 @@ export function registerTrendsRoutes(app: Express) {
       // выбрасывать результат — если в теле есть посты, мы их сохраняем.
       const isFailure = !!errorMsg || ['error', 'failed', 'failure'].includes(status);
       if (isFailure) {
-        log(`[TG Webhook] ❌ Задача ${taskId} с ошибкой: ${errorMsg || status}`, 'error');
+        console.error(`[TG Webhook] ❌ Задача ${taskId} с ошибкой: ${errorMsg || status}`);
         if (taskId) {
           const { pendingTgTasks } = await import('../services/trend-collector');
           pendingTgTasks.delete(String(taskId));
@@ -373,10 +375,10 @@ export function registerTrendsRoutes(app: Express) {
       const result = body?.result || body;
       const posts: any[] = result?.posts || result?.items || result?.data || body?.posts || [];
 
-      log(`[TG Webhook] task_id=${taskId} | posts=${posts.length}`, 'info');
+      console.log(`[TG Webhook] task_id=${taskId} | status=${status || '—'} | posts=${posts.length}`);
 
       if (!taskId) {
-        log(`[TG Webhook] ⚠️ Нет task_id в теле — невозможно найти кампанию`, 'warn');
+        console.warn(`[TG Webhook] ⚠️ Нет task_id в теле — невозможно найти кампанию`);
         return;
       }
 
@@ -384,21 +386,21 @@ export function registerTrendsRoutes(app: Express) {
       const task = pendingTgTasks.get(String(taskId));
 
       if (!task) {
-        log(`[TG Webhook] ⚠️ task_id=${taskId} не найден в реестре (возможно, уже обработан или истёк срок)`, 'warn');
+        console.warn(`[TG Webhook] ⚠️ task_id=${taskId} НЕ найден в реестре (id из колбэка не совпал с зарегистрированными из batch, либо истёк TTL)`);
         return;
       }
 
       if (posts.length === 0) {
-        log(`[TG Webhook] ℹ️ Нет постов для кампании ${task.campaignId}`, 'info');
+        console.log(`[TG Webhook] ℹ️ Нет постов в колбэке для кампании ${task.campaignId} (этот батч пустой)`);
         pendingTgTasks.delete(String(taskId));
         return;
       }
 
       const saved = await saveTrendPosts(posts, 'telegram', task.campaignId, task.sourceIdMap);
-      log(`[TG Webhook] ✅ Сохранено ${saved} TG-постов для кампании ${task.campaignId}`, 'info');
+      console.log(`[TG Webhook] ✅ Сохранено ${saved} TG-постов для кампании ${task.campaignId}`);
       pendingTgTasks.delete(String(taskId));
     } catch (error: any) {
-      log(`[TG Webhook] 💥 Критическая ошибка: ${error.message}`, 'error');
+      console.error(`[TG Webhook] 💥 Критическая ошибка: ${error.message}`);
     }
   });
 

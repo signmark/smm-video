@@ -594,9 +594,15 @@ export function registerTrendsRoutes(app: Express) {
   }
 
   // ─── Нормализация тела ответа скрейпера в массив items ───────────────────────
+  // Форматы скрейпера:
+  //   { task_id, status:"done", result: { status:"completed", results: [...] } }  ← основной
+  //   { task_id, status, results: [...] }
+  //   [...]
+  //   { post_url, comments }  или  { result: { post_url, comments } }
   function normalizeScraperBody(body: any): Array<{ original_link?: string; post_url?: string; comments: any[] }> | null {
     if (Array.isArray(body)) return body;
     if (Array.isArray(body?.results)) return body.results;
+    if (Array.isArray(body?.result?.results)) return body.result.results;   // ← основной формат callback
     if (Array.isArray(body?.body)) return body.body;
     if (body?.post_url || body?.result?.post_url) {
       const post_url = body.post_url ?? body.result?.post_url;
@@ -680,8 +686,9 @@ export function registerTrendsRoutes(app: Express) {
           headers: { 'api-key': apiKey },
           timeout: 20000
         });
-        const status: string = r.data?.status ?? '';
-        console.log(`[CommentCollector] ${platform.toUpperCase()} task=${taskId} status=${status}`);
+        // Статус может быть на верхнем уровне или внутри result
+        const status: string = r.data?.status ?? r.data?.result?.status ?? '';
+        console.log(`[CommentCollector] ${platform.toUpperCase()} task=${taskId} status=${status} body=${JSON.stringify(r.data).substring(0, 200)}`);
 
         if (status === 'completed' || status === 'done' || status === 'success') {
           const items = normalizeScraperBody(r.data);
@@ -691,7 +698,7 @@ export function registerTrendsRoutes(app: Express) {
           } else {
             console.warn(`[CommentCollector] ${platform.toUpperCase()} task=${taskId} completed but no items. body=${JSON.stringify(r.data).substring(0, 300)}`);
           }
-          return; // завершаем
+          return;
         }
 
         if (status === 'failed' || status === 'error') {
@@ -702,8 +709,13 @@ export function registerTrendsRoutes(app: Express) {
         // processing / pending — ждём следующего интервала
         setTimeout(poll, POLL_INTERVAL_MS);
       } catch (err: any) {
-        console.error(`[CommentCollector] ${platform.toUpperCase()} poll error task=${taskId}: ${err.message}`);
-        // Не останавливаемся — пробуем ещё раз
+        const httpStatus = err.response?.status;
+        if (httpStatus === 404) {
+          // 404 = задача уже завершена и удалена из очереди (callback пришёл раньше) — норма
+          console.log(`[CommentCollector] ${platform.toUpperCase()} task=${taskId} 404 — task already completed (callback handled it)`);
+          return;
+        }
+        console.error(`[CommentCollector] ${platform.toUpperCase()} poll error task=${taskId}: HTTP ${httpStatus ?? 'n/a'} ${err.message}`);
         if (Date.now() < deadline) setTimeout(poll, POLL_INTERVAL_MS);
       }
     };

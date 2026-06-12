@@ -659,7 +659,16 @@ export function registerTrendsRoutes(app: Express) {
       console.log(`[CommentCollector] ${platform.toUpperCase()} accepted: HTTP ${resp.status} data=${JSON.stringify(resp.data).substring(0, 300)}`);
       taskId = resp.data?.task_id;
     } catch (err: any) {
-      console.error(`[CommentCollector] ${platform.toUpperCase()} submit error: HTTP ${err.response?.status} ${err.message}`);
+      const s = err.response?.status;
+      const detail = err.response?.data?.detail ?? err.message;
+      const label = `[CommentCollector] ${platform.toUpperCase()}`;
+      if (s === 400) console.error(`${label} 400 Bad Request — невалидные параметры: ${detail}`);
+      else if (s === 403) console.error(`${label} 403 Forbidden — невалидный api-key или VK-аккаунт заблокирован: ${detail}`);
+      else if (s === 404) console.error(`${label} 404 Not Found — канал/пост не найден: ${detail}`);
+      else if (s === 500) console.error(`${label} 500 Internal Server Error: ${detail}`);
+      else if (s === 502) console.error(`${label} 502 Bad Gateway — ошибка VK/Telegram API: ${detail}`);
+      else if (s === 503) console.error(`${label} 503 Service Unavailable — нет активных аккаунтов: ${detail}`);
+      else console.error(`${label} submit error: HTTP ${s ?? 'n/a'} ${detail}`);
       return;
     }
 

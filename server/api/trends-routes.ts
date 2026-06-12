@@ -492,16 +492,128 @@ export function registerTrendsRoutes(app: Express) {
     }
   }
 
+  // ─── Варианты URL для поиска тренда в Directus ──────────────────────────────
+  function urlVariants(url: string): string[] {
+    const u = url.trim();
+    const set = new Set<string>();
+    set.add(u);
+    set.add(u.toLowerCase());
+    set.add(u.replace(/\/$/, ''));
+    set.add(u.toLowerCase().replace(/\/$/, ''));
+    set.add(`${u}/`);
+    const noProto = u.replace(/^https?:\/\//i, '');
+    set.add(`https://${noProto}`);
+    set.add(`http://${noProto}`);
+    set.add(noProto);
+    return [...set].filter(Boolean);
+  }
+
+  // ─── Поиск trendId по URL (Map → Directus fallback) ─────────────────────────
+  async function findTrendId(postUrl: string): Promise<string | undefined> {
+    const key = postUrl.toLowerCase().trim();
+    const pending = pendingCommentUrls.get(key);
+    if (pending) { pendingCommentUrls.delete(key); return pending.trendId; }
+    for (const v of urlVariants(postUrl)) {
+      const p = pendingCommentUrls.get(v.toLowerCase());
+      if (p) { pendingCommentUrls.delete(v.toLowerCase()); return p.trendId; }
+    }
+    const found = await directusCrud.list('campaign_trend_topics', {
+      filter: { urlPost: { _in: urlVariants(postUrl) } },
+      limit: 1,
+      useAdminToken: true
+    });
+    if (found?.[0]?.id) return found[0].id;
+    console.warn(`[CommentSave] Trend not found. Variants: ${urlVariants(postUrl).join(' | ')}`);
+    return undefined;
+  }
+
+  // ─── Сохранение массива items комментариев в Directus ────────────────────────
+  async function processCommentItems(
+    items: Array<{ original_link?: string; post_url?: string; comments: any[] }>,
+    label: string
+  ): Promise<number> {
+    let totalSaved = 0;
+    for (const item of items) {
+      const postUrl = (item.original_link || item.post_url || '').trim();
+      const comments = item.comments;
+      if (!postUrl || !Array.isArray(comments) || comments.length === 0) continue;
+
+      const trendId = await findTrendId(postUrl);
+      if (!trendId) continue;
+
+      const platform = postUrl.includes('vk.') ? 'vk' : 'telegram';
+      console.log(`[${label}] trend=${trendId} platform=${platform} comments_in=${comments.length} url=${postUrl}`);
+
+      let saved = 0;
+      for (const comment of comments) {
+        if (!comment.text || !String(comment.text).trim()) continue;
+        let commentDate = new Date().toISOString();
+        if (comment.date) {
+          if (typeof comment.date === 'number') {
+            const ms = String(comment.date).length <= 11 ? comment.date * 1000 : comment.date;
+            commentDate = new Date(ms).toISOString();
+          } else if (typeof comment.date === 'string') {
+            const parsed = new Date(comment.date);
+            if (!isNaN(parsed.getTime())) commentDate = parsed.toISOString();
+          }
+        }
+        try {
+          await directusCrud.create('post_comment', {
+            trent_post_id: trendId,
+            comment_id: String(comment.id ?? comment.comment_id ?? ''),
+            text: String(comment.text),
+            author: String(comment.from_id ?? comment.author_name ?? comment.author ?? ''),
+            date: commentDate,
+            platform
+          }, { useAdminToken: true });
+          saved++;
+          totalSaved++;
+        } catch (e: any) {
+          const msg: string = e.message || '';
+          if (!msg.includes('duplicate') && !msg.includes('unique') && !msg.includes('UNIQUE')) {
+            console.warn(`[${label}] Save error trend=${trendId}: ${msg}`);
+          }
+        }
+      }
+      console.log(`[${label}] Saved ${saved}/${comments.length} for trend=${trendId}`);
+
+      if (saved > 0) {
+        try {
+          const trendRec = await directusCrud.list('campaign_trend_topics', {
+            filter: { id: { _eq: trendId } }, fields: ['id', 'comments'], limit: 1, useAdminToken: true
+          });
+          const existing = Number(trendRec?.[0]?.comments ?? 0);
+          await directusCrud.update('campaign_trend_topics', trendId, { comments: existing + saved }, { useAdminToken: true });
+          console.log(`[${label}] trend ${trendId} comments updated: ${existing} → ${existing + saved}`);
+        } catch (upd: any) {
+          console.warn(`[${label}] Failed to update trend comments count: ${upd.message}`);
+        }
+      }
+    }
+    return totalSaved;
+  }
+
+  // ─── Нормализация тела ответа скрейпера в массив items ───────────────────────
+  function normalizeScraperBody(body: any): Array<{ original_link?: string; post_url?: string; comments: any[] }> | null {
+    if (Array.isArray(body)) return body;
+    if (Array.isArray(body?.results)) return body.results;
+    if (Array.isArray(body?.body)) return body.body;
+    if (body?.post_url || body?.result?.post_url) {
+      const post_url = body.post_url ?? body.result?.post_url;
+      return [{ post_url, original_link: post_url, comments: body.comments ?? body.result?.comments ?? [] }];
+    }
+    return null;
+  }
+
   /**
    * Пакетный сбор комментариев через скрейпер (тот же что и для трендов).
    *
    * Telegram: POST /api/telegram/collect-comments-batch
-   *   Callback: { task_id, status, results: [{ post_url, comments: [{ id, from_id, text, date (unix-secs), ... }] }] }
+   * VK:       POST /api/vk/collect-comments-batch
+   * Оба:      { post_urls[], limit: 1000, download_media: false }
    *
-   * VK: POST /api/vk/collect-comments-batch
-   *   Callback: { task_id, status, results: [{ post_url, comments: [{ id, from_id, text, date (ISO), likes, ... }] }] }
-   *
-   * Оба принимают: { post_urls[], limit, download_media, callback_url }
+   * Polling вместо callback: скрейпер возвращает task_id, мы опрашиваем
+   * GET /tasks/status/{task_id} каждые 15с до status=completed (таймаут 10 мин).
    */
   async function callBatchCollectComments(
     platform: 'telegram' | 'vk',
@@ -516,33 +628,88 @@ export function registerTrendsRoutes(app: Express) {
     const post_urls = trends.map(t => t.urlPost).filter(Boolean);
     if (post_urls.length === 0) return;
 
-    const callback_url = `${getPublicBaseUrl()}/api/trends/collect-comments-callback`;
-
-    // Регистрируем маппинг urlPost → trendId для быстрой обработки колбэка
+    // Регистрируем маппинг urlPost → trendId (пригодится если колбэк всё-таки придёт)
     const now = Date.now();
     for (const t of trends) {
-      if (t.urlPost) {
-        pendingCommentUrls.set(t.urlPost.toLowerCase().trim(), { trendId: t.id, insertedAt: now });
-      }
+      if (t.urlPost) pendingCommentUrls.set(t.urlPost.toLowerCase().trim(), { trendId: t.id, insertedAt: now });
     }
 
     const endpoint = platform === 'telegram'
       ? `${COMMENT_SCRAPER_BASE}/api/telegram/collect-comments-batch`
       : `${COMMENT_SCRAPER_BASE}/api/vk/collect-comments-batch`;
 
+    // callback_url оставляем как запасной вариант — вдруг заработает
+    const callback_url = `${getPublicBaseUrl()}/api/trends/collect-comments-callback`;
     const payload = { post_urls, limit: 1000, download_media: false, callback_url };
 
-    console.log(`[CommentCollector] ${platform.toUpperCase()} batch: ${post_urls.length} posts → ${endpoint} callback=${callback_url}`);
+    console.log(`[CommentCollector] ${platform.toUpperCase()} batch: ${post_urls.length} posts → ${endpoint}`);
 
+    let taskId: string | undefined;
     try {
       const resp = await axios.post(endpoint, payload, {
         headers: { 'Content-Type': 'application/json', 'api-key': apiKey },
         timeout: 30000
       });
-      console.log(`[CommentCollector] ${platform.toUpperCase()} accepted: HTTP ${resp.status} data=${JSON.stringify(resp.data).substring(0, 200)}`);
+      console.log(`[CommentCollector] ${platform.toUpperCase()} accepted: HTTP ${resp.status} data=${JSON.stringify(resp.data).substring(0, 300)}`);
+      taskId = resp.data?.task_id;
     } catch (err: any) {
-      console.error(`[CommentCollector] ${platform.toUpperCase()} error: HTTP ${err.response?.status} ${err.message}`);
+      console.error(`[CommentCollector] ${platform.toUpperCase()} submit error: HTTP ${err.response?.status} ${err.message}`);
+      return;
     }
+
+    if (!taskId) {
+      console.warn(`[CommentCollector] ${platform.toUpperCase()} no task_id in response — cannot poll`);
+      return;
+    }
+
+    // ── Polling: GET /tasks/status/{task_id} ──────────────────────────────────
+    const POLL_INTERVAL_MS = 15_000;  // 15 секунд
+    const POLL_TIMEOUT_MS  = 10 * 60_000; // 10 минут
+    const statusUrl = `${COMMENT_SCRAPER_BASE}/tasks/status/${taskId}`;
+    const deadline = Date.now() + POLL_TIMEOUT_MS;
+
+    console.log(`[CommentCollector] ${platform.toUpperCase()} polling task=${taskId} url=${statusUrl}`);
+
+    const poll = async () => {
+      if (Date.now() > deadline) {
+        console.warn(`[CommentCollector] ${platform.toUpperCase()} task=${taskId} polling timeout after 10 min`);
+        return;
+      }
+      try {
+        const r = await axios.get(statusUrl, {
+          headers: { 'api-key': apiKey },
+          timeout: 20000
+        });
+        const status: string = r.data?.status ?? '';
+        console.log(`[CommentCollector] ${platform.toUpperCase()} task=${taskId} status=${status}`);
+
+        if (status === 'completed' || status === 'done' || status === 'success') {
+          const items = normalizeScraperBody(r.data);
+          if (items && items.length > 0) {
+            const saved = await processCommentItems(items, 'CommentPoller');
+            console.log(`[CommentCollector] ${platform.toUpperCase()} task=${taskId} done. Total saved: ${saved}`);
+          } else {
+            console.warn(`[CommentCollector] ${platform.toUpperCase()} task=${taskId} completed but no items. body=${JSON.stringify(r.data).substring(0, 300)}`);
+          }
+          return; // завершаем
+        }
+
+        if (status === 'failed' || status === 'error') {
+          console.error(`[CommentCollector] ${platform.toUpperCase()} task=${taskId} failed: ${JSON.stringify(r.data).substring(0, 200)}`);
+          return;
+        }
+
+        // processing / pending — ждём следующего интервала
+        setTimeout(poll, POLL_INTERVAL_MS);
+      } catch (err: any) {
+        console.error(`[CommentCollector] ${platform.toUpperCase()} poll error task=${taskId}: ${err.message}`);
+        // Не останавливаемся — пробуем ещё раз
+        if (Date.now() < deadline) setTimeout(poll, POLL_INTERVAL_MS);
+      }
+    };
+
+    // Первый опрос через 15 секунд (даём время скрейперу)
+    setTimeout(poll, POLL_INTERVAL_MS);
   }
 
   /**
@@ -702,177 +869,32 @@ export function registerTrendsRoutes(app: Express) {
   });
 
   /**
-   * Callback от скрейпера (217.26.25.95) с результатами сбора комментариев.
-   *
-   * Batch (collect-comments-batch):
-   *   { task_id, status, results: [{ post_url, comments }] }
-   *
-   * Single (collect-comments):
-   *   { task_id, status, post_url, comments }
-   *   или { post_url, comments }
-   *   или { result: { post_url, comments } }
+   * Callback от скрейпера — запасной вариант (polling основной).
+   * Форматы: { results: [...] } | [...] | { post_url, comments } | { result: {...} }
    */
   app.post("/api/trends/collect-comments-callback", async (req: Request, res: Response) => {
     try {
-      const bodyStr = JSON.stringify(req.body).substring(0, 2000);
-      console.log(`[CommentCallback] Received. body(2000):\n${bodyStr}`);
+      console.log(`[CommentCallback] Received. body(2000):\n${JSON.stringify(req.body).substring(0, 2000)}`);
 
-      // ── Нормализуем входящие данные в единый массив items ────────────────────
-      type RawItem = { original_link?: string; post_url?: string; comments: any[] };
-      let items: RawItem[] = [];
-
-      if (Array.isArray(req.body)) {
-        items = req.body;
-      } else if (Array.isArray(req.body?.results)) {
-        // Батч: { task_id, status, results: [{ post_url, comments }] }
-        items = req.body.results;
-      } else if (Array.isArray(req.body?.body)) {
-        items = req.body.body;
-      } else if (req.body?.post_url || req.body?.result?.post_url) {
-        // Одиночный: { post_url, comments } или { result: { post_url, comments } }
-        const post_url = req.body.post_url ?? req.body.result?.post_url;
-        const comments = req.body.comments ?? req.body.result?.comments ?? [];
-        items = [{ post_url, original_link: post_url, comments }];
-      } else if (req.body?.status === 'error') {
+      if (req.body?.status === 'error') {
         console.error(`[CommentCallback] Scraper error: ${req.body.error}`);
-        return res.json({ success: true });
-      } else {
-        console.warn(`[CommentCallback] Unrecognized body format, keys=${Object.keys(req.body || {}).join(',')}`);
         return res.json({ success: true });
       }
 
+      const items = normalizeScraperBody(req.body);
+      if (!items) {
+        console.warn(`[CommentCallback] Unrecognized format, keys=${Object.keys(req.body || {}).join(',')}`);
+        return res.json({ success: true });
+      }
       if (items.length === 0) {
         console.log('[CommentCallback] No items');
         return res.json({ success: true });
       }
 
       console.log(`[CommentCallback] Processing ${items.length} post(s)`);
-
-      /** Варианты URL для поиска в Directus (скрейпер может вернуть чуть иначе) */
-      function urlVariants(url: string): string[] {
-        const u = url.trim();
-        const variants = new Set<string>();
-        variants.add(u);
-        variants.add(u.toLowerCase());
-        // без trailing slash
-        variants.add(u.replace(/\/$/, ''));
-        variants.add(u.toLowerCase().replace(/\/$/, ''));
-        // с trailing slash
-        variants.add(`${u}/`);
-        // без https://
-        const noProto = u.replace(/^https?:\/\//i, '');
-        variants.add(`https://${noProto}`);
-        variants.add(`http://${noProto}`);
-        variants.add(noProto);
-        return [...variants].filter(Boolean);
-      }
-
-      /** Ищет trendId по URL: сначала в памяти (Map), потом в Directus по всем вариантам */
-      async function findTrendId(postUrl: string): Promise<string | undefined> {
-        const key = postUrl.toLowerCase().trim();
-        const pending = pendingCommentUrls.get(key);
-        if (pending) {
-          pendingCommentUrls.delete(key);
-          return pending.trendId;
-        }
-        // Также проверяем все варианты URL в Map
-        for (const v of urlVariants(postUrl)) {
-          const p = pendingCommentUrls.get(v.toLowerCase());
-          if (p) { pendingCommentUrls.delete(v.toLowerCase()); return p.trendId; }
-        }
-        // Fallback: Directus — ищем по всем вариантам URL
-        const variants = urlVariants(postUrl);
-        const found = await directusCrud.list('campaign_trend_topics', {
-          filter: { urlPost: { _in: variants } },
-          limit: 1,
-          useAdminToken: true
-        });
-        if (found?.[0]?.id) return found[0].id;
-        console.warn(`[CommentCallback] Trend not found. Tried variants: ${variants.join(' | ')}`);
-        return undefined;
-      }
-
-      let totalSaved = 0;
-
-      for (const item of items) {
-        const postUrl = (item.original_link || item.post_url || '').trim();
-        const comments = item.comments;
-
-        if (!postUrl || !Array.isArray(comments)) {
-          console.warn(`[CommentCallback] Skipping item: no postUrl or comments not array`);
-          continue;
-        }
-        if (comments.length === 0) {
-          console.log(`[CommentCallback] 0 comments for ${postUrl}`);
-          continue;
-        }
-
-        const trendId = await findTrendId(postUrl);
-        if (!trendId) continue;
-
-        const platform = postUrl.includes('vk.') ? 'vk' : 'telegram';
-        console.log(`[CommentCallback] trend=${trendId} platform=${platform} comments_in=${comments.length} url=${postUrl}`);
-
-        let saved = 0;
-        for (const comment of comments) {
-          if (!comment.text || !String(comment.text).trim()) continue;
-
-          // Дата: Unix-секунды → ISO  или  ISO строка → ISO
-          let commentDate = new Date().toISOString();
-          if (comment.date) {
-            if (typeof comment.date === 'number') {
-              const ms = String(comment.date).length <= 11 ? comment.date * 1000 : comment.date;
-              commentDate = new Date(ms).toISOString();
-            } else if (typeof comment.date === 'string') {
-              const parsed = new Date(comment.date);
-              if (!isNaN(parsed.getTime())) commentDate = parsed.toISOString();
-            }
-          }
-
-          try {
-            await directusCrud.create('post_comment', {
-              trent_post_id: trendId,
-              comment_id: String(comment.id ?? comment.comment_id ?? ''),
-              text: String(comment.text),
-              author: String(comment.from_id ?? comment.author_name ?? comment.author ?? ''),
-              date: commentDate,
-              platform
-            }, { useAdminToken: true });
-            saved++;
-            totalSaved++;
-          } catch (e: any) {
-            const msg: string = e.message || '';
-            if (!msg.includes('duplicate') && !msg.includes('unique') && !msg.includes('UNIQUE')) {
-              console.warn(`[CommentCallback] Save error trend=${trendId}: ${msg}`);
-            }
-          }
-        }
-
-        console.log(`[CommentCallback] Saved ${saved}/${comments.length} for trend=${trendId}`);
-
-        // Обновляем счётчик комментариев в тренде (реальное количество сохранённых)
-        if (saved > 0) {
-          try {
-            // Получаем текущий счётчик, суммируем
-            const trendRec = await directusCrud.list('campaign_trend_topics', {
-              filter: { id: { _eq: trendId } },
-              fields: ['id', 'comments'],
-              limit: 1,
-              useAdminToken: true
-            });
-            const existing = Number(trendRec?.[0]?.comments ?? 0);
-            await directusCrud.update('campaign_trend_topics', trendId, {
-              comments: existing + saved
-            }, { useAdminToken: true });
-            console.log(`[CommentCallback] Updated trend ${trendId} comments: ${existing} → ${existing + saved}`);
-          } catch (upd: any) {
-            console.warn(`[CommentCallback] Failed to update trend comments count: ${upd.message}`);
-          }
-        }
-      }
-
-      console.log(`[CommentCallback] Done. Total saved: ${totalSaved}`);
-      res.json({ success: true, saved: totalSaved });
+      const saved = await processCommentItems(items, 'CommentCallback');
+      console.log(`[CommentCallback] Done. Total saved: ${saved}`);
+      res.json({ success: true, saved });
     } catch (error: any) {
       console.error(`[CommentCallback] Fatal: ${error.message}`);
       res.status(500).json({ success: false, error: error.message });

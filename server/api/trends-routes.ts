@@ -493,8 +493,12 @@ export function registerTrendsRoutes(app: Express) {
   }
 
   /**
-   * Пакетный запрос к скрейперу 31.129.109.216 для сбора комментариев
-   * Платформы: telegram | vk
+   * Пакетный сбор комментариев через скрейпер (тот же что и для трендов).
+   *
+   * Telegram: POST /api/telegram/collect-comments-batch
+   *   { post_urls: [...], limit: 1000, download_media: false, callback_url }
+   *
+   * VK: аналогичный эндпоинт /api/vk/collect-comments-batch (когда появится дока)
    */
   async function callBatchCollectComments(
     platform: 'telegram' | 'vk',
@@ -506,8 +510,8 @@ export function registerTrendsRoutes(app: Express) {
       return;
     }
 
-    const post_links = trends.map(t => t.urlPost).filter(Boolean);
-    if (post_links.length === 0) return;
+    const post_urls = trends.map(t => t.urlPost).filter(Boolean);
+    if (post_urls.length === 0) return;
 
     const callback_url = `${getPublicBaseUrl()}/api/trends/collect-comments-callback`;
 
@@ -519,16 +523,20 @@ export function registerTrendsRoutes(app: Express) {
       }
     }
 
-    const payload = { platform, post_links, max_comments_per_post: 500, callback_url };
+    const endpoint = platform === 'telegram'
+      ? `${COMMENT_SCRAPER_BASE}/api/telegram/collect-comments-batch`
+      : `${COMMENT_SCRAPER_BASE}/api/vk/collect-comments-batch`;
 
-    console.log(`[CommentCollector] ${platform.toUpperCase()} batch: ${post_links.length} posts → ${COMMENT_SCRAPER_BASE}/collect-comments callback=${callback_url}`);
+    const payload = { post_urls, limit: 1000, download_media: false, callback_url };
+
+    console.log(`[CommentCollector] ${platform.toUpperCase()} batch: ${post_urls.length} posts → ${endpoint} callback=${callback_url}`);
 
     try {
-      const resp = await axios.post(`${COMMENT_SCRAPER_BASE}/collect-comments`, payload, {
+      const resp = await axios.post(endpoint, payload, {
         headers: { 'Content-Type': 'application/json', 'api-key': apiKey },
         timeout: 30000
       });
-      console.log(`[CommentCollector] ${platform.toUpperCase()} accepted: HTTP ${resp.status}`);
+      console.log(`[CommentCollector] ${platform.toUpperCase()} accepted: HTTP ${resp.status} data=${JSON.stringify(resp.data).substring(0, 200)}`);
     } catch (err: any) {
       console.error(`[CommentCollector] ${platform.toUpperCase()} error: HTTP ${err.response?.status} ${err.message}`);
     }
@@ -691,19 +699,19 @@ export function registerTrendsRoutes(app: Express) {
   });
 
   /**
-   * Callback от скрейпера 31.129.109.216 с результатами сбора комментариев.
+   * Callback от скрейпера (217.26.25.95) с результатами сбора комментариев.
    *
-   * Новый скрейпер шлёт массив:
-   *   [{ original_link: "https://t.me/...", comments: [{ id, text, date (unix-seconds), from_id }] }]
+   * Batch (collect-comments-batch):
+   *   { task_id, status, results: [{ post_url, comments }] }
    *
-   * Старый скрейпер (217.26.25.95) шлёт:
-   *   { post_url, comments } или { result: { post_url, comments } }
-   *
-   * Оба формата поддерживаются.
+   * Single (collect-comments):
+   *   { task_id, status, post_url, comments }
+   *   или { post_url, comments }
+   *   или { result: { post_url, comments } }
    */
   app.post("/api/trends/collect-comments-callback", async (req: Request, res: Response) => {
     try {
-      const bodyStr = JSON.stringify(req.body).substring(0, 300);
+      const bodyStr = JSON.stringify(req.body).substring(0, 400);
       console.log(`[CommentCallback] Received. body preview: ${bodyStr}`);
 
       // ── Нормализуем входящие данные в единый массив items ────────────────────
@@ -711,13 +719,16 @@ export function registerTrendsRoutes(app: Express) {
       let items: RawItem[] = [];
 
       if (Array.isArray(req.body)) {
-        // Новый формат: тело IS массив
+        // Тело IS массив
         items = req.body;
+      } else if (Array.isArray(req.body?.results)) {
+        // Батч-формат: { task_id, status, results: [{ post_url, comments }] }
+        items = req.body.results;
       } else if (Array.isArray(req.body?.body)) {
-        // Если скрейпер оборачивает массив в { body: [...] }
+        // Тело обёрнуто в { body: [...] }
         items = req.body.body;
       } else if (req.body?.post_url || req.body?.result?.post_url) {
-        // Старый формат: один пост
+        // Одиночный пост: { post_url, comments } или { result: { post_url, comments } }
         const post_url = req.body.post_url ?? req.body.result?.post_url;
         const comments = req.body.comments ?? req.body.result?.comments ?? [];
         items = [{ post_url, original_link: post_url, comments }];

@@ -605,7 +605,8 @@ export function registerTrendsRoutes(app: Express) {
   function normalizeScraperBody(body: any): Array<{ original_link?: string; post_url?: string; comments: any[] }> | null {
     if (Array.isArray(body)) return body;
     if (Array.isArray(body?.results)) return body.results;
-    if (Array.isArray(body?.result?.results)) return body.result.results;   // ← основной формат callback
+    if (Array.isArray(body?.result?.results)) return body.result.results;       // VK callback format
+    if (Array.isArray(body?.result?.posts_results)) return body.result.posts_results; // Telegram callback format
     if (Array.isArray(body?.body)) return body.body;
     if (body?.post_url || body?.result?.post_url) {
       const post_url = body.post_url ?? body.result?.post_url;

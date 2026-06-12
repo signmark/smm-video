@@ -891,7 +891,7 @@ export function registerTrendsRoutes(app: Express) {
         comments = await directusCrud.list('post_comment', {
           filter: { trent_post_id: { _eq: trendId } },
           sort: ['-date'],
-          limit: -1,
+          limit: 200,
           useAdminToken: true
         });
       } catch (sortErr: any) {
@@ -899,7 +899,7 @@ export function registerTrendsRoutes(app: Express) {
         try {
           comments = await directusCrud.list('post_comment', {
             filter: { trent_post_id: { _eq: trendId } },
-            limit: -1,
+            limit: 200,
             useAdminToken: true
           });
         } catch (noSortErr: any) {
@@ -1287,7 +1287,7 @@ ${trendsForAi}
       try {
         comments = await directusCrud.list('post_comment', {
           filter: { trent_post_id: { _eq: trendId } },
-          limit: 500,
+          limit: -1,
           useAdminToken: true
         });
       } catch (err: any) {

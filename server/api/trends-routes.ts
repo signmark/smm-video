@@ -8,10 +8,10 @@ import { geminiVertexDirect } from '../services/gemini-vertex-direct';
 import { DeepSeekService } from '../services/deepseek';
 import { apiKeyService, ApiServiceName } from '../services/api-keys';
 import { globalApiKeysService } from '../services/global-api-keys';
-import { getPublicBaseUrl } from '../services/trend-collector';
+import { getPublicBaseUrl, SCRAPER_BASE, getScraperApiKey } from '../services/trend-collector';
 
-// ─── Comment collector (31.129.109.216) ──────────────────────────────────────
-const COMMENT_SCRAPER_BASE = 'http://31.129.109.216:3030';
+// ─── Comment collector — тот же скрейпер что и для трендов ───────────────────
+const COMMENT_SCRAPER_BASE = SCRAPER_BASE;
 
 interface PendingCommentEntry { trendId: string; insertedAt: number; }
 // urlPost.toLowerCase() → { trendId, insertedAt }
@@ -500,12 +500,9 @@ export function registerTrendsRoutes(app: Express) {
     platform: 'telegram' | 'vk',
     trends: Array<{ id: string; urlPost: string }>
   ): Promise<void> {
-    // Приоритет: новый ключ collect_comments_bearer, затем legacy telegram_collect_comments
-    const apiKey =
-      (await globalApiKeysService.getGlobalApiKey(ApiServiceName.COLLECT_COMMENTS_BEARER)) ||
-      (await globalApiKeysService.getGlobalApiKey(ApiServiceName.TELEGRAM_COLLECT_COMMENTS));
+    const apiKey = await getScraperApiKey();
     if (!apiKey) {
-      console.error('[CommentCollector] No API key: add collect_comments_bearer to Directus global_api_keys');
+      console.error('[CommentCollector] No scraper API key');
       return;
     }
 
@@ -528,7 +525,7 @@ export function registerTrendsRoutes(app: Express) {
 
     try {
       const resp = await axios.post(`${COMMENT_SCRAPER_BASE}/collect-comments`, payload, {
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        headers: { 'Content-Type': 'application/json', 'api-key': apiKey },
         timeout: 30000
       });
       console.log(`[CommentCollector] ${platform.toUpperCase()} accepted: HTTP ${resp.status}`);

@@ -5,13 +5,9 @@ description: Новый скрейпер для сбора комментари�
 
 # Comment collector scraper (31.129.109.216:3030)
 
-**Endpoint**: `POST http://31.129.109.216:3030/collect-comments`
+**Endpoint**: `POST http://217.26.25.95:3030/collect-comments` (тот же сервер что и тренды, `SCRAPER_BASE`)
 
-**Auth**: `Authorization: Bearer <token>` (НЕ `api-key` как у старого скрейпера)
-
-**Ключ в Directus**: `collect_comments_bearer` (service_name в global_api_keys)
-- Fallback: если `collect_comments_bearer` не найден, берёт `telegram_collect_comments`
-- Токен из n8n воркфлоу: `68b5bed1-ae3e-4eb5-be9e-eddf00ac3600`
+**Auth**: `api-key: <key>` header — через `getScraperApiKey()` из trend-collector (тот же ключ что и для трендов)
 
 **Request body**:
 ```json
@@ -44,13 +40,9 @@ description: Новый скрейпер для сбора комментари�
 - `/api/trends/collect-comments-callback` — получение результатов
 - `pendingCommentUrls` Map (module-level) — маппинг urlPost → trendId на время callback
 
-## Отличие от старого скрейпера (217.26.25.95)
-| | Старый (217.26.25.95) | Новый (31.129.109.216) |
-|-|----------------------|----------------------|
-| Endpoint | `/api/telegram/collect-comments` | `/collect-comments` |
-| Auth | `api-key: <key>` header | `Authorization: Bearer <token>` |
-| Запрос | `{ post_url, limit, async_mode }` (один пост) | `{ platform, post_links[], max_comments_per_post }` (батч) |
-| Callback | `{ post_url, comments }` | `[{ original_link, comments }]` (массив) |
-| Ключ Directus | `telegram_collect_comments` | `collect_comments_bearer` |
+## Два режима на одном сервере (217.26.25.95:3030)
 
-Старый скрейпер сохранён для `/api/telegram/collect-comments-direct` (ручной debug-эндпоинт).
+| Эндпоинт | Формат | Где используется |
+|----------|--------|-----------------|
+| `/api/telegram/collect-comments` | `{ post_url, limit, async_mode }` (один пост) | `/api/telegram/collect-comments-direct` (debug) |
+| `/collect-comments` | `{ platform, post_links[], max_comments_per_post }` (батч) | основной flow через `callBatchCollectComments` |

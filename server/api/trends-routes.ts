@@ -664,64 +664,10 @@ export function registerTrendsRoutes(app: Express) {
     }
 
     if (!taskId) {
-      console.warn(`[CommentCollector] ${platform.toUpperCase()} no task_id in response — cannot poll`);
-      return;
+      console.warn(`[CommentCollector] ${platform.toUpperCase()} no task_id in response`);
+    } else {
+      console.log(`[CommentCollector] ${platform.toUpperCase()} task=${taskId} accepted — waiting for callback`);
     }
-
-    // ── Polling: GET /tasks/status/{task_id} ──────────────────────────────────
-    const POLL_INTERVAL_MS = 15_000;  // 15 секунд
-    const POLL_TIMEOUT_MS  = 10 * 60_000; // 10 минут
-    const statusUrl = `${COMMENT_SCRAPER_BASE}/tasks/status/${taskId}`;
-    const deadline = Date.now() + POLL_TIMEOUT_MS;
-
-    console.log(`[CommentCollector] ${platform.toUpperCase()} polling task=${taskId} url=${statusUrl}`);
-
-    const poll = async () => {
-      if (Date.now() > deadline) {
-        console.warn(`[CommentCollector] ${platform.toUpperCase()} task=${taskId} polling timeout after 10 min`);
-        return;
-      }
-      try {
-        const r = await axios.get(statusUrl, {
-          headers: { 'api-key': apiKey },
-          timeout: 20000
-        });
-        // Статус может быть на верхнем уровне или внутри result
-        const status: string = r.data?.status ?? r.data?.result?.status ?? '';
-        console.log(`[CommentCollector] ${platform.toUpperCase()} task=${taskId} status=${status} body=${JSON.stringify(r.data).substring(0, 200)}`);
-
-        if (status === 'completed' || status === 'done' || status === 'success') {
-          const items = normalizeScraperBody(r.data);
-          if (items && items.length > 0) {
-            const saved = await processCommentItems(items, 'CommentPoller');
-            console.log(`[CommentCollector] ${platform.toUpperCase()} task=${taskId} done. Total saved: ${saved}`);
-          } else {
-            console.warn(`[CommentCollector] ${platform.toUpperCase()} task=${taskId} completed but no items. body=${JSON.stringify(r.data).substring(0, 300)}`);
-          }
-          return;
-        }
-
-        if (status === 'failed' || status === 'error') {
-          console.error(`[CommentCollector] ${platform.toUpperCase()} task=${taskId} failed: ${JSON.stringify(r.data).substring(0, 200)}`);
-          return;
-        }
-
-        // processing / pending — ждём следующего интервала
-        setTimeout(poll, POLL_INTERVAL_MS);
-      } catch (err: any) {
-        const httpStatus = err.response?.status;
-        if (httpStatus === 404) {
-          // 404 = задача уже завершена и удалена из очереди (callback пришёл раньше) — норма
-          console.log(`[CommentCollector] ${platform.toUpperCase()} task=${taskId} 404 — task already completed (callback handled it)`);
-          return;
-        }
-        console.error(`[CommentCollector] ${platform.toUpperCase()} poll error task=${taskId}: HTTP ${httpStatus ?? 'n/a'} ${err.message}`);
-        if (Date.now() < deadline) setTimeout(poll, POLL_INTERVAL_MS);
-      }
-    };
-
-    // Первый опрос через 15 секунд (даём время скрейперу)
-    setTimeout(poll, POLL_INTERVAL_MS);
   }
 
   /**

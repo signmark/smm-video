@@ -220,22 +220,22 @@ export function registerAnalyticsRoutes(app: Express) {
           params: {
             'filter[campaign_id][_eq]': campaignId,
             sort: '-created_at',
-            limit: 1000,
+            limit: -1,
             fields: '*'
           },
           headers: { Authorization: `Bearer ${adminToken}` },
-          timeout: 15000
+          timeout: 30000
         });
       } catch (e: any) {
         log(`[Analytics Route] ⚠️ Ошибка при запросе с сортировкой: ${e.message}. Пробуем без сортировки.`, 'warn');
         response = await axios.get(`${directusUrl}/items/campaign_trend_topics`, {
           params: {
             'filter[campaign_id][_eq]': campaignId,
-            limit: 1000,
+            limit: -1,
             fields: '*'
           },
           headers: { Authorization: `Bearer ${adminToken}` },
-          timeout: 15000
+          timeout: 30000
         });
       }
 

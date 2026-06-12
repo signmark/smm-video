@@ -569,8 +569,11 @@ export function registerTrendsRoutes(app: Express) {
           saved++;
           totalSaved++;
         } catch (e: any) {
+          const errCode: string = e.response?.data?.errors?.[0]?.extensions?.code || '';
           const msg: string = e.message || '';
-          if (!msg.includes('duplicate') && !msg.includes('unique') && !msg.includes('UNIQUE')) {
+          const isDuplicate = errCode === 'RECORD_NOT_UNIQUE' ||
+            msg.includes('duplicate') || msg.includes('unique') || msg.includes('UNIQUE');
+          if (!isDuplicate) {
             console.warn(`[${label}] Save error trend=${trendId}: ${msg}`);
           }
         }
@@ -859,9 +862,12 @@ export function registerTrendsRoutes(app: Express) {
       }
 
       console.log(`[CommentCallback] Processing ${items.length} post(s)`);
-      const saved = await processCommentItems(items, 'CommentCallback');
-      console.log(`[CommentCallback] Done. Total saved: ${saved}`);
-      res.json({ success: true, saved });
+      res.json({ success: true });
+      processCommentItems(items, 'CommentCallback').then(saved => {
+        console.log(`[CommentCallback] Done. Total saved: ${saved}`);
+      }).catch(err => {
+        console.error(`[CommentCallback] Fatal: ${err.message}`);
+      });
     } catch (error: any) {
       console.error(`[CommentCallback] Fatal: ${error.message}`);
       res.status(500).json({ success: false, error: error.message });

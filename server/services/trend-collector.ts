@@ -118,6 +118,30 @@ async function callScraper(endpoint: string, body: any, apiKey: string): Promise
   }
 }
 
+// Парсит task_id(ы) из ответа batch-эндпоинтов. Точная форма поля у нового
+// batch-контракта неизвестна — парсим защитно; реальную форму видно в логах RESPONSE.
+function extractTaskIds(data: any): string[] {
+  if (!data) return [];
+  const ids: string[] = [];
+  const pushId = (v: any) => {
+    if (v == null) return;
+    if (typeof v === 'object') {
+      const id = v.task_id ?? v.taskId ?? v.job_id ?? v.id;
+      if (id != null) ids.push(String(id));
+    } else {
+      ids.push(String(v));
+    }
+  };
+  for (const arr of [data.task_ids, data.taskIds, data.job_ids, data.jobIds, data.tasks, data.jobs]) {
+    if (Array.isArray(arr)) arr.forEach(pushId);
+  }
+  if (ids.length === 0) {
+    const single = data.task_id ?? data.taskId ?? data.job_id ?? data.id;
+    if (single != null) ids.push(String(single));
+  }
+  return Array.from(new Set(ids));
+}
+
 async function callOldScraper(endpoint: string, body: any, apiKey: string): Promise<any[] | null> {
   try {
     const response = await axios.post(`${SCRAPER_OLD_BASE}${endpoint}`, body, {
@@ -148,30 +172,52 @@ async function findGroups(
   apiKey: string
 ): Promise<TgGroup[] | VkGroup[]> {
   const endpoint = platform === 'telegram' ? '/api/telegram/find-groups' : '/api/vk/find-groups';
-  const data = await callScraper(endpoint, {
-    keywords,
-    min_members: minMembers,
-    max_groups: maxGroups
-  }, apiKey);
 
-  if (!data) return [];
-
-  if (platform === 'telegram') {
-    // Ответ: массив {id, title, link, members_count}
-    if (Array.isArray(data)) return data as TgGroup[];
-    if (Array.isArray(data?.channels)) return data.channels as TgGroup[];
-    if (Array.isArray(data?.groups)) return data.groups as TgGroup[];
-    return [];
-  } else {
-    // Ответ VK: {groups: [{id, name, members, is_closed}]}
-    const groups: VkGroup[] = Array.isArray(data)
-      ? data
-      : Array.isArray(data?.groups)
-        ? data.groups
-        : [];
-    // Фильтруем только открытые группы
-    return groups.filter((g: VkGroup) => g.is_closed === 0 || g.is_closed === undefined);
+  // Новый контракт (06.2026): запрос с большим числом ключей требует -batch + callback.
+  // Но find-groups используется СИНХРОННО инлайн (результат сразу идёт в сбор трендов),
+  // поэтому в callback уходить нельзя. Вместо этого режем ключи на чанки в пределах
+  // лимита одного не-batch запроса (TG ≤5, VK ≤10) и шлём их последовательно,
+  // агрегируя результат. max_concurrent на стороне скрапера = 1.
+  const chunkSize = platform === 'telegram' ? 5 : 10;
+  const chunks: string[][] = [];
+  for (let i = 0; i < keywords.length; i += chunkSize) {
+    chunks.push(keywords.slice(i, i + chunkSize));
   }
+  if (chunks.length === 0) return [];
+
+  const parseGroups = (data: any): (TgGroup | VkGroup)[] => {
+    if (!data) return [];
+    if (platform === 'telegram') {
+      if (Array.isArray(data)) return data as TgGroup[];
+      if (Array.isArray(data?.channels)) return data.channels as TgGroup[];
+      if (Array.isArray(data?.groups)) return data.groups as TgGroup[];
+      return [];
+    }
+    const vkGroups: VkGroup[] = Array.isArray(data)
+      ? data
+      : Array.isArray(data?.groups) ? data.groups : [];
+    return vkGroups.filter((g: VkGroup) => g.is_closed === 0 || g.is_closed === undefined);
+  };
+
+  const all: (TgGroup | VkGroup)[] = [];
+  for (const chunk of chunks) {
+    const data = await callScraper(endpoint, {
+      keywords: chunk,
+      min_members: minMembers,
+      max_groups: maxGroups
+    }, apiKey);
+    all.push(...parseGroups(data));
+  }
+
+  // Дедуп по id + ограничение общего числа источников (maxGroups на всю выборку)
+  const seen = new Set<string>();
+  const deduped = all.filter(g => {
+    const id = String((g as any).id ?? '');
+    if (!id || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+  return deduped.slice(0, maxGroups) as TgGroup[] | VkGroup[];
 }
 
 // ─── Сохранение источников в БД ──────────────────────────────────────────────
@@ -528,6 +574,7 @@ async function fetchTrendingPosts(
       limit: postsPerGroup * groupIds.length,
       days_back: daysBack,
       min_views: minViews,
+      merge_results: true, // новый параметр контракта (06.2026): топ limit со всех групп
       async_mode: true
     };
   }
@@ -793,9 +840,6 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
         return;
       }
 
-      // ВАЖНО: callback_url нельзя передавать — скрейпер при его наличии
-      // возвращает posts:[] немедленно вместо реального сбора. Используем
-      // фоновый поллинг (pollTgTaskInBackground) — он не блокирует вызывающий код.
       const postsPerGroup = Math.max(Math.ceil(limit / tgIds.length), 3);
 
       const channelIds = tgIds.map(id => {
@@ -803,6 +847,45 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
         return s.startsWith('@') ? s : `@${s}`;
       });
 
+      // НОВЫЙ КОНТРАКТ (Roman, 06.2026): для >5 каналов скрейпер требует batch-эндпоинт
+      // + ОБЯЗАТЕЛЬНЫЙ callback_url, иначе задача не уходит в работу. Он сам режет на
+      // батчи по 5 и возвращает несколько task_id; результаты приходят колбэками на
+      // /api/trends/tg-webhook отдельно по каждому task_id. saveTrendPosts дедуплицирует
+      // по urlPost, поэтому инкрементальное сохранение по колбэкам безопасно.
+      if (channelIds.length > 5) {
+        const callbackUrl = `${getPublicBaseUrl()}/api/trends/tg-webhook`;
+        const batchBody = {
+          channel_ids: channelIds,
+          limit: postsPerGroup * channelIds.length,
+          fetch_limit: 100,
+          merge_results: true,
+          days_back: daysBack,
+          min_views: 100,
+          async_mode: true,
+          max_concurrent: 1,
+          callback_url: callbackUrl,
+        };
+        log(`[TrendCollector][TG] POST /api/telegram/trending-posts-batch | channels=${channelIds.length} | callback=${callbackUrl}`, 'info');
+        const data = await callScraper('/api/telegram/trending-posts-batch', batchBody, apiKey);
+        if (!data) {
+          log(`[TrendCollector][TG] batch: пустой ответ скрейпера`, 'warn');
+          return;
+        }
+        const taskIds = extractTaskIds(data);
+        if (taskIds.length === 0) {
+          log(`[TrendCollector][TG] batch: не нашли task_id в ответе: ${JSON.stringify(data).substring(0, 300)}`, 'warn');
+          return;
+        }
+        for (const tid of taskIds) {
+          pendingTgTasks.set(String(tid), { campaignId, sourceIdMap, createdAt: Date.now() });
+        }
+        log(`[TrendCollector][TG] ✅ batch принят: ${taskIds.length} задач(и) зарегистрировано, ждём колбэки. ids=${taskIds.slice(0, 10).join(',')}`, 'info');
+        return;
+      }
+
+      // ≤5 каналов: старый рабочий путь (без callback, фоновый поллинг).
+      // ВАЖНО: callback_url здесь НЕ передавать — на не-batch TG-запросе скрейпер
+      // при его наличии возвращает posts:[] немедленно вместо реального сбора.
       const body = {
         channel_ids: channelIds,
         limit: postsPerGroup * tgIds.length,
@@ -811,8 +894,7 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
         days_back: daysBack,
         min_views: 100,
         async_mode: true,
-        max_concurrent: parseInt(process.env.SCRAPER_MAX_CONCURRENT || '3', 10)
-        // callback_url — НЕ передавать! Ломает TG-запрос (возвращает posts:[] мгновенно)
+        max_concurrent: 1
       };
 
       log(`[TrendCollector][TG] POST /api/telegram/trending-posts | channels=${channelIds.slice(0, 5).join(',')} | count=${channelIds.length}`, 'info');

@@ -1,1 +1,2 @@
 - [Scraper API config](scraper-api-config.md) — скрейпер 217.26.25.95:3030, auth: api-key header, ключ из Directus telegram_collect_comments или trends_scraper, фолбэк в SCRAPER_API_KEY_FALLBACK
+- [Comment collector scraper](comment-collector-scraper.md) — новый скрейпер 31.129.109.216:3030, Bearer токен, пакетный API; ключ в Directus collect_comments_bearer

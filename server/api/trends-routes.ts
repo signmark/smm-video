@@ -496,9 +496,12 @@ export function registerTrendsRoutes(app: Express) {
    * Пакетный сбор комментариев через скрейпер (тот же что и для трендов).
    *
    * Telegram: POST /api/telegram/collect-comments-batch
-   *   { post_urls: [...], limit: 1000, download_media: false, callback_url }
+   *   Callback: { task_id, status, results: [{ post_url, comments: [{ id, from_id, text, date (unix-secs), ... }] }] }
    *
-   * VK: аналогичный эндпоинт /api/vk/collect-comments-batch (когда появится дока)
+   * VK: POST /api/vk/collect-comments-batch
+   *   Callback: { task_id, status, results: [{ post_url, comments: [{ id, from_id, text, date (ISO), likes, ... }] }] }
+   *
+   * Оба принимают: { post_urls[], limit, download_media, callback_url }
    */
   async function callBatchCollectComments(
     platform: 'telegram' | 'vk',

@@ -1,48 +1,35 @@
 ---
 name: Comment collector scraper
-description: Новый скрейпер для сбора комментариев (замена n8n). Отличается от trend-scraper форматом запроса и авторизацией.
+description: Сбор комментариев через тот же скрейпер что и тренды (217.26.25.95:3030). Замена n8n воркфлоу.
 ---
 
-# Comment collector scraper (31.129.109.216:3030)
+# Comment collector — тот же скрейпер что и тренды
 
-**Endpoint**: `POST http://217.26.25.95:3030/collect-comments` (тот же сервер что и тренды, `SCRAPER_BASE`)
+**Сервер**: `http://217.26.25.95:3030` (`SCRAPER_BASE` из trend-collector)
 
-**Auth**: `api-key: <key>` header — через `getScraperApiKey()` из trend-collector (тот же ключ что и для трендов)
-
-**Request body**:
-```json
-{
-  "platform": "telegram" | "vk",
-  "post_links": ["https://t.me/...", "https://vk.com/..."],
-  "max_comments_per_post": 500,
-  "callback_url": "https://our-domain/api/trends/collect-comments-callback"
-}
-```
-
-**Callback format** (скрейпер шлёт на callback_url):
-```json
-[
-  {
-    "original_link": "https://t.me/channel/123",
-    "comments": [
-      { "id": 277213, "text": "...", "date": 1751375154, "from_id": 942467937 }
-    ]
-  }
-]
-```
-- `date` — Unix timestamp в **секундах** (конвертировать: `* 1000`)
-- `original_link` — ключ для маппинга к тренду (не `post_url`!)
+**Auth**: `api-key: <key>` header — через `getScraperApiKey()` (тот же ключ что и для трендов)
 
 **Why**: n8n воркфлоу портирован напрямую в Express. n8n больше не нужен для collect-comments.
 
-**How to apply**:
-- `callBatchCollectComments(platform, trends)` в trends-routes.ts — вызов скрейпера
-- `/api/trends/collect-comments-callback` — получение результатов
-- `pendingCommentUrls` Map (module-level) — маппинг urlPost → trendId на время callback
+## Эндпоинты скрейпера
 
-## Два режима на одном сервере (217.26.25.95:3030)
+### Батч (основной flow)
+`POST /api/telegram/collect-comments-batch`
+```json
+{ "post_urls": ["https://t.me/..."], "limit": 1000, "download_media": false, "callback_url": "..." }
+```
+Callback: `{ task_id, status, results: [{ post_url, comments }] }`
 
-| Эндпоинт | Формат | Где используется |
-|----------|--------|-----------------|
-| `/api/telegram/collect-comments` | `{ post_url, limit, async_mode }` (один пост) | `/api/telegram/collect-comments-direct` (debug) |
-| `/collect-comments` | `{ platform, post_links[], max_comments_per_post }` (батч) | основной flow через `callBatchCollectComments` |
+### Одиночный (debug endpoint `/api/telegram/collect-comments-direct`)
+`POST /api/telegram/collect-comments`
+```json
+{ "post_url": "https://t.me/...", "limit": 1000, "download_media": false, "callback_url": "..." }
+```
+Callback: `{ task_id, status, post_url, comments }`
+
+**VK**: аналогичный эндпоинт предположительно `/api/vk/collect-comments-batch` (дока не предоставлена)
+
+## Callback handler
+- Поддерживает все форматы: `results[]`, прямой массив `[]`, `body[]`, одиночный `{ post_url, comments }`
+- `date` — может быть Unix-секунды (конвертировать `* 1000`) или ISO строка
+- `pendingCommentUrls` Map (module-level) — маппинг `urlPost.lower → { trendId, insertedAt }`, TTL 2ч

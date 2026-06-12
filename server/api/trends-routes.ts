@@ -8,6 +8,20 @@ import { geminiVertexDirect } from '../services/gemini-vertex-direct';
 import { DeepSeekService } from '../services/deepseek';
 import { apiKeyService, ApiServiceName } from '../services/api-keys';
 import { globalApiKeysService } from '../services/global-api-keys';
+import { getPublicBaseUrl } from '../services/trend-collector';
+
+// ─── Comment collector (31.129.109.216) ──────────────────────────────────────
+const COMMENT_SCRAPER_BASE = 'http://31.129.109.216:3030';
+
+interface PendingCommentEntry { trendId: string; insertedAt: number; }
+// urlPost.toLowerCase() → { trendId, insertedAt }
+const pendingCommentUrls = new Map<string, PendingCommentEntry>();
+setInterval(() => {
+  const cutoff = Date.now() - 2 * 3600_000;
+  for (const [k, v] of pendingCommentUrls) {
+    if (v.insertedAt < cutoff) pendingCommentUrls.delete(k);
+  }
+}, 600_000).unref();
 
 async function analyzeSentimentWithAI(comments: any[]): Promise<Record<string, any>> {
   if (comments.length === 0) {
@@ -135,25 +149,6 @@ function analyzeSentimentFallback(comments: any[]): Record<string, any> {
   };
 }
 
-/**
- * Получает внутренний URL n8n для Docker-сети
- * В production используем внутренний адрес контейнера, в dev - внешний
- */
-function getN8nWebhookUrl(webhookPath: string): string {
-  const isDocker = process.env.DOCKER_ENV === 'true';
-  const isProduction = process.env.NODE_ENV === 'production';
-
-  // В Docker production используем внутренний URL
-  if (isDocker && isProduction) {
-    const internalUrl = process.env.N8N_INTERNAL_URL || 'http://n8n:5678';
-    return `${internalUrl}/webhook/${webhookPath}`;
-  }
-
-  // В dev или без Docker - используем env переменную или внешний URL
-  const { getN8nUrl } = require('../utils/n8n-utils');
-  const externalUrl = getN8nUrl();
-  return `${externalUrl}/webhook/${webhookPath}`;
-}
 
 export function registerTrendsRoutes(app: Express) {
   log('[Trends Routes] 🚀 Регистрация маршрутов сбора трендов', 'info');
@@ -482,24 +477,69 @@ export function registerTrendsRoutes(app: Express) {
       callback_url
     };
 
-    log.warn(`[Telegram Collect] 📤 Sending direct request to ${externalApiUrl}\nPayload: ${JSON.stringify(requestPayload, null, 2)}`, 'telegram-collect');
+    console.log(`[TelegramCollect] POST ${externalApiUrl} post_url=${postUrl}`);
 
     try {
       const response = await axios.post(externalApiUrl, requestPayload, {
         headers: { 'Content-Type': 'application/json', 'api-key': apiKey },
         timeout: 10000
       });
-      log.warn(`[Telegram Collect] 📥 Direct API response: ${response.status}\nData: ${JSON.stringify(response.data, null, 2)}`, 'telegram-collect');
+      console.log(`[TelegramCollect] Response ${response.status}`);
       return true;
     } catch (err: any) {
-      log(`[Telegram Collect] Error for ${postUrl}: ${err.message}`, 'error');
+      console.error(`[TelegramCollect] Error ${postUrl}: ${err.message}`);
       return false;
     }
   }
 
   /**
-   * Запуск сбора комментариев для трендов.
-   * Telegram всегда собирается на нашей стороне (217.26.25.95), остальные источники — через N8N.
+   * Пакетный запрос к скрейперу 31.129.109.216 для сбора комментариев
+   * Платформы: telegram | vk
+   */
+  async function callBatchCollectComments(
+    platform: 'telegram' | 'vk',
+    trends: Array<{ id: string; urlPost: string }>
+  ): Promise<void> {
+    // Приоритет: новый ключ collect_comments_bearer, затем legacy telegram_collect_comments
+    const apiKey =
+      (await globalApiKeysService.getGlobalApiKey(ApiServiceName.COLLECT_COMMENTS_BEARER)) ||
+      (await globalApiKeysService.getGlobalApiKey(ApiServiceName.TELEGRAM_COLLECT_COMMENTS));
+    if (!apiKey) {
+      console.error('[CommentCollector] No API key: add collect_comments_bearer to Directus global_api_keys');
+      return;
+    }
+
+    const post_links = trends.map(t => t.urlPost).filter(Boolean);
+    if (post_links.length === 0) return;
+
+    const callback_url = `${getPublicBaseUrl()}/api/trends/collect-comments-callback`;
+
+    // Регистрируем маппинг urlPost → trendId для быстрой обработки колбэка
+    const now = Date.now();
+    for (const t of trends) {
+      if (t.urlPost) {
+        pendingCommentUrls.set(t.urlPost.toLowerCase().trim(), { trendId: t.id, insertedAt: now });
+      }
+    }
+
+    const payload = { platform, post_links, max_comments_per_post: 500, callback_url };
+
+    console.log(`[CommentCollector] ${platform.toUpperCase()} batch: ${post_links.length} posts → ${COMMENT_SCRAPER_BASE}/collect-comments callback=${callback_url}`);
+
+    try {
+      const resp = await axios.post(`${COMMENT_SCRAPER_BASE}/collect-comments`, payload, {
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` },
+        timeout: 30000
+      });
+      console.log(`[CommentCollector] ${platform.toUpperCase()} accepted: HTTP ${resp.status}`);
+    } catch (err: any) {
+      console.error(`[CommentCollector] ${platform.toUpperCase()} error: HTTP ${err.response?.status} ${err.message}`);
+    }
+  }
+
+  /**
+   * Запуск сбора комментариев для набора трендов.
+   * Telegram и VK отправляются пакетом на 31.129.109.216 по платформам.
    */
   app.post("/api/trends/collect-comments", authenticateUser, async (req: Request, res: Response) => {
     try {
@@ -509,85 +549,57 @@ export function registerTrendsRoutes(app: Express) {
         return res.status(400).json({ success: false, error: "trendIds обязателен" });
       }
 
-      log(`[Trends Route] Запуск сбора комментариев для ${trendIds.length} трендов`, 'info');
+      console.log(`[Trends] collect-comments: ${trendIds.length} trends, campaign=${campaignId}`);
 
-      // Получаем полные данные трендов из Directus
       const trends = await directusCrud.list('campaign_trend_topics', {
         filter: { id: { _in: trendIds } },
         limit: -1,
         useAdminToken: true
       }) as any[];
 
-      log(`[Trends Route] Получено ${(trends || []).length} трендов из Directus`, 'info');
+      const tgTrends: Array<{ id: string; urlPost: string }> = [];
+      const vkTrends: Array<{ id: string; urlPost: string }> = [];
 
-      const telegramTrends: any[] = [];
-      const allTrends: any[] = trends || [];
-
-      for (const trend of allTrends) {
-        const url = trend?.urlPost || trend?.url_post || '';
-        if (url && url.includes('t.me/')) {
-          telegramTrends.push(trend);
-        }
+      for (const t of (trends || [])) {
+        const urlPost = (t.urlPost || t.url_post || '').trim();
+        if (!urlPost) continue;
+        if (urlPost.includes('t.me/')) tgTrends.push({ id: t.id, urlPost });
+        else if (urlPost.includes('vk.com/') || urlPost.includes('vk.ru/')) vkTrends.push({ id: t.id, urlPost });
       }
 
-      // Telegram — наш API напрямую
-      if (telegramTrends.length > 0) {
-        log(`[Trends Route] Сбор Telegram на нашей стороне для ${telegramTrends.length} трендов`, 'info');
-        for (const t of telegramTrends) {
-          const postUrl = t?.urlPost || t?.url_post;
-          if (postUrl) {
-            await callTelegramCollectDirect(postUrl);
-          }
-        }
+      console.log(`[Trends] collect-comments: tg=${tgTrends.length} vk=${vkTrends.length}`);
+
+      if (tgTrends.length > 0) {
+        callBatchCollectComments('telegram', tgTrends).catch(e => console.error('[Trends] TG batch error:', e.message));
       }
-
-      // Отправляем ВСЕ тренды в N8N (включая Telegram — N8N обрабатывает VK/Instagram комменты)
-      const webhookUrl = process.env.N8N_COLLECT_COMMENTS_WEBHOOK || getN8nWebhookUrl('collect-comments');
-      log(`[Trends Route] Отправка ${allTrends.length} трендов на N8N: ${webhookUrl}`, 'info');
-
-      const userId = req.user?.id;
-      const n8nPayload = {
-        trendIds,
-        campaignId,
-        userID: userId
-      };
-
-      log(`[Trends Route] N8N payload: trendIds=${trendIds.length}, campaignId=${campaignId}`, 'info');
-
-      axios.post(webhookUrl, n8nPayload, {
-        timeout: 15000,
-        headers: { 'Content-Type': 'application/json' }
-      }).catch(err => {
-        log(`[Trends Route] ⚠️ Ошибка n8n вебхука collect-comments: ${err.message}`, 'error');
-      });
+      if (vkTrends.length > 0) {
+        callBatchCollectComments('vk', vkTrends).catch(e => console.error('[Trends] VK batch error:', e.message));
+      }
 
       res.json({
         success: true,
         message: "Запрос на сбор комментариев принят",
-        data: { totalTrends: allTrends.length, telegramDirect: telegramTrends.length }
+        data: { total: (trends || []).length, telegram: tgTrends.length, vk: vkTrends.length }
       });
     } catch (error: any) {
-      log(`[Trends Route] Ошибка сбора комментариев: ${error.message}`, 'error');
+      console.error(`[Trends] collect-comments error: ${error.message}`);
       res.status(500).json({ success: false, error: "Ошибка при запуске сбора комментариев" });
     }
   });
 
   /**
    * Запуск сбора комментариев для одного тренда
-   * post_url (urlPost) — обязателен для сбора, берётся из поля "URL Post" тренда
    */
   app.post("/api/trends/collect-comments-single", authenticateUser, async (req: Request, res: Response) => {
     try {
       const { trendId, campaignId } = req.body;
-      const userId = req.user?.id;
 
       if (!trendId) {
         return res.status(400).json({ success: false, error: "trendId обязателен" });
       }
 
-      log(`[Trends Route] Запуск сбора комментариев для одного тренда ${trendId}`, 'info');
+      console.log(`[Trends] collect-comments-single: trendId=${trendId} campaign=${campaignId}`);
 
-      // Получаем полные данные тренда из Directus
       const trends = await directusCrud.list('campaign_trend_topics', {
         filter: { id: { _eq: trendId } },
         limit: 1,
@@ -595,38 +607,28 @@ export function registerTrendsRoutes(app: Express) {
       }) as any[];
 
       const trend = trends?.[0];
-      const postUrl = trend?.urlPost || trend?.url_post || '';
-
-      // Telegram — наш API напрямую
-      if (postUrl && postUrl.includes('t.me/')) {
-        log(`[Trends Route] Telegram тренд — сбор через наш API: ${postUrl}`, 'info');
-        await callTelegramCollectDirect(postUrl);
+      if (!trend) {
+        return res.status(404).json({ success: false, error: "Тренд не найден" });
       }
 
-      // Отправляем на N8N collect-comments (тот же эндпоинт, один тренд в списке)
-      const webhookUrl = process.env.N8N_COLLECT_COMMENTS_WEBHOOK || getN8nWebhookUrl('collect-comments');
+      const urlPost = (trend.urlPost || trend.url_post || '').trim();
+      if (!urlPost) {
+        return res.status(400).json({ success: false, error: "У тренда нет urlPost" });
+      }
 
-      const n8nPayload = {
-        trendIds: [trendId],
-        campaignId,
-        userID: userId
-      };
+      if (urlPost.includes('t.me/')) {
+        callBatchCollectComments('telegram', [{ id: trend.id, urlPost }])
+          .catch(e => console.error('[Trends] TG single error:', e.message));
+      } else if (urlPost.includes('vk.com/') || urlPost.includes('vk.ru/')) {
+        callBatchCollectComments('vk', [{ id: trend.id, urlPost }])
+          .catch(e => console.error('[Trends] VK single error:', e.message));
+      } else {
+        console.warn(`[Trends] collect-comments-single: unknown platform for ${urlPost}`);
+      }
 
-      log(`[Trends Route] Отправка 1 тренда на N8N collect-comments: ${webhookUrl}`, 'info');
-
-      axios.post(webhookUrl, n8nPayload, {
-        timeout: 15000,
-        headers: { 'Content-Type': 'application/json' }
-      }).catch(err => {
-        log(`[Trends Route] ⚠️ Ошибка n8n вебхука collect-comments (single): ${err.message}`, 'error');
-      });
-
-      res.json({
-        success: true,
-        message: "Запрос на сбор комментариев принят"
-      });
+      res.json({ success: true, message: "Запрос на сбор комментариев принят" });
     } catch (error: any) {
-      log(`[Trends Route] Ошибка сбора комментариев (single): ${error.message}`, 'error');
+      console.error(`[Trends] collect-comments-single error: ${error.message}`);
       res.status(500).json({ success: false, error: "Ошибка при запуске сбора комментариев" });
     }
   });
@@ -692,71 +694,126 @@ export function registerTrendsRoutes(app: Express) {
   });
 
   /**
-   * Callback для получения результатов сбора комментариев
+   * Callback от скрейпера 31.129.109.216 с результатами сбора комментариев.
+   *
+   * Новый скрейпер шлёт массив:
+   *   [{ original_link: "https://t.me/...", comments: [{ id, text, date (unix-seconds), from_id }] }]
+   *
+   * Старый скрейпер (217.26.25.95) шлёт:
+   *   { post_url, comments } или { result: { post_url, comments } }
+   *
+   * Оба формата поддерживаются.
    */
   app.post("/api/trends/collect-comments-callback", async (req: Request, res: Response) => {
     try {
-      const { status, error, result } = req.body;
-      const post_url = req.body.post_url ?? result?.post_url;
-      const comments = req.body.comments ?? result?.comments;
+      const bodyStr = JSON.stringify(req.body).substring(0, 300);
+      console.log(`[CommentCallback] Received. body preview: ${bodyStr}`);
 
-      log.warn(`[Trends Callback] 📥 Received callback from Telegram API\nBody: ${JSON.stringify(req.body, null, 2)}`, 'telegram-collect');
+      // ── Нормализуем входящие данные в единый массив items ────────────────────
+      type RawItem = { original_link?: string; post_url?: string; comments: any[] };
+      let items: RawItem[] = [];
 
-      log(`[Trends Callback] Processing for ${post_url}, status: ${status}, comments: ${comments?.length}`, 'info');
-
-      if (status === 'error') {
-        log(`[Trends Callback] Error in external collection: ${error}`, 'error');
+      if (Array.isArray(req.body)) {
+        // Новый формат: тело IS массив
+        items = req.body;
+      } else if (Array.isArray(req.body?.body)) {
+        // Если скрейпер оборачивает массив в { body: [...] }
+        items = req.body.body;
+      } else if (req.body?.post_url || req.body?.result?.post_url) {
+        // Старый формат: один пост
+        const post_url = req.body.post_url ?? req.body.result?.post_url;
+        const comments = req.body.comments ?? req.body.result?.comments ?? [];
+        items = [{ post_url, original_link: post_url, comments }];
+      } else if (req.body?.status === 'error') {
+        console.error(`[CommentCallback] Scraper error: ${req.body.error}`);
+        return res.json({ success: true });
+      } else {
+        console.warn(`[CommentCallback] Unrecognized body format, skipping`);
         return res.json({ success: true });
       }
 
-      if (!comments || !Array.isArray(comments)) {
-        log(`[Trends Callback] No comments in payload`, 'warn');
+      if (items.length === 0) {
+        console.log('[CommentCallback] No items');
         return res.json({ success: true });
       }
 
-      // Находим тренд по post_url
-      const trends = await directusCrud.list('campaign_trend_topics', {
-        filter: { urlPost: { _eq: post_url } },
-        limit: 1,
-        useAdminToken: true
-      });
+      console.log(`[CommentCallback] Processing ${items.length} post(s)`);
 
-      if (trends && trends.length > 0) {
-        const trend = trends[0];
-        log(`[Trends Callback] Found trend ${trend.id} for URL ${post_url}`, 'info');
+      let totalSaved = 0;
 
-        // Сохраняем комментарии
+      for (const item of items) {
+        const postUrl = (item.original_link || item.post_url || '').trim();
+        const comments = item.comments;
+
+        if (!postUrl || !Array.isArray(comments) || comments.length === 0) continue;
+
+        // ── Находим trendId: сначала в реестре, потом в Directus ────────────────
+        const key = postUrl.toLowerCase();
+        let trendId: string | undefined;
+
+        const pending = pendingCommentUrls.get(key);
+        if (pending) {
+          trendId = pending.trendId;
+          pendingCommentUrls.delete(key);
+        } else {
+          const found = await directusCrud.list('campaign_trend_topics', {
+            filter: { urlPost: { _eq: postUrl } },
+            limit: 1,
+            useAdminToken: true
+          });
+          trendId = found?.[0]?.id;
+        }
+
+        if (!trendId) {
+          console.warn(`[CommentCallback] Trend not found for URL: ${postUrl}`);
+          continue;
+        }
+
+        const platform = postUrl.includes('vk.') ? 'vk' : 'telegram';
+        console.log(`[CommentCallback] trend=${trendId} platform=${platform} comments=${comments.length} url=${postUrl}`);
+
+        let saved = 0;
         for (const comment of comments) {
+          if (!comment.text || !String(comment.text).trim()) continue;
+
+          // Преобразуем date: Unix-секунды → ISO, или ISO → ISO
+          let commentDate = new Date().toISOString();
+          if (comment.date) {
+            if (typeof comment.date === 'number') {
+              const ms = String(comment.date).length <= 11 ? comment.date * 1000 : comment.date;
+              commentDate = new Date(ms).toISOString();
+            } else if (typeof comment.date === 'string') {
+              const parsed = new Date(comment.date);
+              if (!isNaN(parsed.getTime())) commentDate = parsed.toISOString();
+            }
+          }
+
           try {
             await directusCrud.create('post_comment', {
-              trent_post_id: trend.id,
-              author: comment.author_name || comment.author || (comment.from_id ? String(comment.from_id) : 'Аноним'),
-              text: comment.text || '',
-              date: comment.date || new Date().toISOString(),
-              platform: comment.platform || 'telegram',
-              comment_id: comment.comment_id || comment.id || ''
+              trent_post_id: trendId,
+              comment_id: String(comment.id ?? comment.comment_id ?? ''),
+              text: String(comment.text),
+              author: String(comment.from_id ?? comment.author_name ?? comment.author ?? ''),
+              date: commentDate,
+              platform
             }, { useAdminToken: true });
-          } catch (saveErr: any) {
-            // Дубликаты пропускаем, остальные — логируем
-            if (!saveErr.message?.includes('duplicate') && !saveErr.message?.includes('unique')) {
-              log(`[Trends Callback] Error saving comment: ${saveErr.message}`, 'warn');
+            saved++;
+            totalSaved++;
+          } catch (e: any) {
+            const msg: string = e.message || '';
+            if (!msg.includes('duplicate') && !msg.includes('unique') && !msg.includes('UNIQUE')) {
+              console.warn(`[CommentCallback] Save error trend=${trendId}: ${msg}`);
             }
           }
         }
 
-        // Обновляем количество комментариев в тренде
-        await directusCrud.update('campaign_trend_topics', trend.id, {
-          comments: (trend.comments || 0) + comments.length
-        }, { useAdminToken: true });
-
-        log(`[Trends Callback] Saved ${comments.length} comments for trend ${trend.id}`, 'info');
-      } else {
-        log(`[Trends Callback] Trend not found for URL ${post_url}`, 'warn');
+        console.log(`[CommentCallback] Saved ${saved}/${comments.length} for trend ${trendId}`);
       }
 
-      res.json({ success: true });
+      console.log(`[CommentCallback] Done. Total saved: ${totalSaved}`);
+      res.json({ success: true, saved: totalSaved });
     } catch (error: any) {
-      log(`[Trends Callback] Fatal error: ${error.message}`, 'error');
+      console.error(`[CommentCallback] Fatal: ${error.message}`);
       res.status(500).json({ success: false, error: error.message });
     }
   });

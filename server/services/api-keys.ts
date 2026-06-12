@@ -20,6 +20,7 @@ export enum ApiServiceName {
   VERTEX_AI_SERVICE_ACCOUNT = 'vertex_ai_service_account',
   VERTEX_AI_API_KEY = 'VERTEX_AI_API_KEY',
   TELEGRAM_COLLECT_COMMENTS = 'telegram_collect_comments',
+  COLLECT_COMMENTS_BEARER = 'collect_comments_bearer',
   SERPAPI_KEY = 'SERPAPI_KEY',
   TRENDS_SCRAPER = 'trends_scraper'
 }
@@ -38,6 +39,7 @@ const SERVICE_NAME_DB_MAPPING: Record<ApiServiceName, string> = {
   [ApiServiceName.VERTEX_AI_SERVICE_ACCOUNT]: 'vertex_ai_service_account',
   [ApiServiceName.VERTEX_AI_API_KEY]: 'VERTEX_AI_API_KEY',
   [ApiServiceName.TELEGRAM_COLLECT_COMMENTS]: 'telegram_collect_comments',
+  [ApiServiceName.COLLECT_COMMENTS_BEARER]: 'collect_comments_bearer',
   [ApiServiceName.SERPAPI_KEY]: 'SERPAPI_KEY',
   [ApiServiceName.TRENDS_SCRAPER]: 'trends_scraper'
 };

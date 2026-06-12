@@ -714,24 +714,22 @@ export function registerTrendsRoutes(app: Express) {
    */
   app.post("/api/trends/collect-comments-callback", async (req: Request, res: Response) => {
     try {
-      const bodyStr = JSON.stringify(req.body).substring(0, 400);
-      console.log(`[CommentCallback] Received. body preview: ${bodyStr}`);
+      const bodyStr = JSON.stringify(req.body).substring(0, 2000);
+      console.log(`[CommentCallback] Received. body(2000):\n${bodyStr}`);
 
       // ── Нормализуем входящие данные в единый массив items ────────────────────
       type RawItem = { original_link?: string; post_url?: string; comments: any[] };
       let items: RawItem[] = [];
 
       if (Array.isArray(req.body)) {
-        // Тело IS массив
         items = req.body;
       } else if (Array.isArray(req.body?.results)) {
-        // Батч-формат: { task_id, status, results: [{ post_url, comments }] }
+        // Батч: { task_id, status, results: [{ post_url, comments }] }
         items = req.body.results;
       } else if (Array.isArray(req.body?.body)) {
-        // Тело обёрнуто в { body: [...] }
         items = req.body.body;
       } else if (req.body?.post_url || req.body?.result?.post_url) {
-        // Одиночный пост: { post_url, comments } или { result: { post_url, comments } }
+        // Одиночный: { post_url, comments } или { result: { post_url, comments } }
         const post_url = req.body.post_url ?? req.body.result?.post_url;
         const comments = req.body.comments ?? req.body.result?.comments ?? [];
         items = [{ post_url, original_link: post_url, comments }];
@@ -739,7 +737,7 @@ export function registerTrendsRoutes(app: Express) {
         console.error(`[CommentCallback] Scraper error: ${req.body.error}`);
         return res.json({ success: true });
       } else {
-        console.warn(`[CommentCallback] Unrecognized body format, skipping`);
+        console.warn(`[CommentCallback] Unrecognized body format, keys=${Object.keys(req.body || {}).join(',')}`);
         return res.json({ success: true });
       }
 
@@ -750,44 +748,76 @@ export function registerTrendsRoutes(app: Express) {
 
       console.log(`[CommentCallback] Processing ${items.length} post(s)`);
 
+      /** Варианты URL для поиска в Directus (скрейпер может вернуть чуть иначе) */
+      function urlVariants(url: string): string[] {
+        const u = url.trim();
+        const variants = new Set<string>();
+        variants.add(u);
+        variants.add(u.toLowerCase());
+        // без trailing slash
+        variants.add(u.replace(/\/$/, ''));
+        variants.add(u.toLowerCase().replace(/\/$/, ''));
+        // с trailing slash
+        variants.add(`${u}/`);
+        // без https://
+        const noProto = u.replace(/^https?:\/\//i, '');
+        variants.add(`https://${noProto}`);
+        variants.add(`http://${noProto}`);
+        variants.add(noProto);
+        return [...variants].filter(Boolean);
+      }
+
+      /** Ищет trendId по URL: сначала в памяти (Map), потом в Directus по всем вариантам */
+      async function findTrendId(postUrl: string): Promise<string | undefined> {
+        const key = postUrl.toLowerCase().trim();
+        const pending = pendingCommentUrls.get(key);
+        if (pending) {
+          pendingCommentUrls.delete(key);
+          return pending.trendId;
+        }
+        // Также проверяем все варианты URL в Map
+        for (const v of urlVariants(postUrl)) {
+          const p = pendingCommentUrls.get(v.toLowerCase());
+          if (p) { pendingCommentUrls.delete(v.toLowerCase()); return p.trendId; }
+        }
+        // Fallback: Directus — ищем по всем вариантам URL
+        const variants = urlVariants(postUrl);
+        const found = await directusCrud.list('campaign_trend_topics', {
+          filter: { urlPost: { _in: variants } },
+          limit: 1,
+          useAdminToken: true
+        });
+        if (found?.[0]?.id) return found[0].id;
+        console.warn(`[CommentCallback] Trend not found. Tried variants: ${variants.join(' | ')}`);
+        return undefined;
+      }
+
       let totalSaved = 0;
 
       for (const item of items) {
         const postUrl = (item.original_link || item.post_url || '').trim();
         const comments = item.comments;
 
-        if (!postUrl || !Array.isArray(comments) || comments.length === 0) continue;
-
-        // ── Находим trendId: сначала в реестре, потом в Directus ────────────────
-        const key = postUrl.toLowerCase();
-        let trendId: string | undefined;
-
-        const pending = pendingCommentUrls.get(key);
-        if (pending) {
-          trendId = pending.trendId;
-          pendingCommentUrls.delete(key);
-        } else {
-          const found = await directusCrud.list('campaign_trend_topics', {
-            filter: { urlPost: { _eq: postUrl } },
-            limit: 1,
-            useAdminToken: true
-          });
-          trendId = found?.[0]?.id;
+        if (!postUrl || !Array.isArray(comments)) {
+          console.warn(`[CommentCallback] Skipping item: no postUrl or comments not array`);
+          continue;
         }
-
-        if (!trendId) {
-          console.warn(`[CommentCallback] Trend not found for URL: ${postUrl}`);
+        if (comments.length === 0) {
+          console.log(`[CommentCallback] 0 comments for ${postUrl}`);
           continue;
         }
 
+        const trendId = await findTrendId(postUrl);
+        if (!trendId) continue;
+
         const platform = postUrl.includes('vk.') ? 'vk' : 'telegram';
-        console.log(`[CommentCallback] trend=${trendId} platform=${platform} comments=${comments.length} url=${postUrl}`);
+        console.log(`[CommentCallback] trend=${trendId} platform=${platform} comments_in=${comments.length} url=${postUrl}`);
 
         let saved = 0;
         for (const comment of comments) {
           if (!comment.text || !String(comment.text).trim()) continue;
 
-          // Преобразуем date: Unix-секунды → ISO, или ISO → ISO
+          // Дата: Unix-секунды → ISO  или  ISO строка → ISO
           let commentDate = new Date().toISOString();
           if (comment.date) {
             if (typeof comment.date === 'number') {
@@ -818,7 +848,27 @@ export function registerTrendsRoutes(app: Express) {
           }
         }
 
-        console.log(`[CommentCallback] Saved ${saved}/${comments.length} for trend ${trendId}`);
+        console.log(`[CommentCallback] Saved ${saved}/${comments.length} for trend=${trendId}`);
+
+        // Обновляем счётчик комментариев в тренде (реальное количество сохранённых)
+        if (saved > 0) {
+          try {
+            // Получаем текущий счётчик, суммируем
+            const trendRec = await directusCrud.list('campaign_trend_topics', {
+              filter: { id: { _eq: trendId } },
+              fields: ['id', 'comments'],
+              limit: 1,
+              useAdminToken: true
+            });
+            const existing = Number(trendRec?.[0]?.comments ?? 0);
+            await directusCrud.update('campaign_trend_topics', trendId, {
+              comments: existing + saved
+            }, { useAdminToken: true });
+            console.log(`[CommentCallback] Updated trend ${trendId} comments: ${existing} → ${existing + saved}`);
+          } catch (upd: any) {
+            console.warn(`[CommentCallback] Failed to update trend comments count: ${upd.message}`);
+          }
+        }
       }
 
       console.log(`[CommentCallback] Done. Total saved: ${totalSaved}`);

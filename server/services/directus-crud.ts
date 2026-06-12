@@ -232,10 +232,15 @@ export class DirectusCrud {
         const isLastAttempt = attempt === maxRetries;
 
         const isHttpError = error.response != null;
-        const logFn = (isRetryable || !isHttpError) ? console.error : console.warn;
-        logFn(`[${this.logPrefix}] ${operation} ${collection} failed (attempt ${attempt + 1}/${maxRetries + 1}):`, error.message);
-        if (isHttpError) {
-          logFn(`[${this.logPrefix}] Response body [${error.response.status}]:`, JSON.stringify(error.response.data ?? '(empty)'));
+        const errCode = error.response?.data?.errors?.[0]?.extensions?.code;
+        const isDuplicate = errCode === 'RECORD_NOT_UNIQUE';
+
+        if (!isDuplicate) {
+          const logFn = (isRetryable || !isHttpError) ? console.error : console.warn;
+          logFn(`[${this.logPrefix}] ${operation} ${collection} failed (attempt ${attempt + 1}/${maxRetries + 1}):`, error.message);
+          if (isHttpError) {
+            logFn(`[${this.logPrefix}] Response body [${error.response.status}]:`, JSON.stringify(error.response.data ?? '(empty)'));
+          }
         }
 
         if (isRetryable && !isLastAttempt) {

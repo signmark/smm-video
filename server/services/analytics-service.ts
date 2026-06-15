@@ -241,6 +241,10 @@ export class AnalyticsService {
           m.platform === ch.platform && m.platform_channel_id === ch.platformId
         );
         if (found) {
+          if (!found.last_parsed_at) {
+            log(`[AnalyticsService] ⏳ Канал ${found.platform}:${found.platform_channel_id} ещё не спарсен (last_parsed_at=null) — пропускаем metrics-refresh`, 'info');
+            continue;
+          }
           channelObjects.push({
             id: found.id,
             platform: found.platform,
@@ -252,6 +256,8 @@ export class AnalyticsService {
       if (channelObjects.length > 0) {
         await refreshChannelMetrics({ channels: channelObjects, days: 30, force: true });
         log(`[AnalyticsService] 🔄 Обновление метрик запрошено для ${channelObjects.length} каналов кампании ${campaignId}`, 'info');
+      } else {
+        log(`[AnalyticsService] ⏳ Все каналы ещё не спарсены — metrics-refresh не вызывается`, 'info');
       }
 
       return { success: true, message: `Обновление аналитики запущено для ${channelObjects.length} канала(ов)` };

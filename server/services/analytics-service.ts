@@ -260,7 +260,7 @@ export class AnalyticsService {
       }
 
       if (channelObjects.length > 0) {
-        await refreshChannelMetrics({ channels: channelObjects, days: 30, force: true });
+        await refreshChannelMetrics({ channels: channelObjects, days: 30 });
         log(`[AnalyticsService] 🔄 Обновление метрик запрошено для ${channelObjects.length} каналов кампании ${campaignId}`, 'info');
       } else {
         log(`[AnalyticsService] ⏳ Все каналы ещё не спарсены — metrics-refresh не вызывается`, 'info');

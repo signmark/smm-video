@@ -9,27 +9,33 @@ import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 import {
   Hash, TrendingUp, Eye, MessageCircle, Share2, RefreshCw,
-  Layers, Radio, AlertCircle, ChevronRight, ExternalLink
+  Layers, Radio, AlertCircle, ExternalLink, ThumbsUp, BarChart2,
+  Clock, Trash2, Zap, ChevronLeft, TrendingDown, Minus
 } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow, format } from 'date-fns';
 import { ru } from 'date-fns/locale';
 
 interface TrendPost {
-  id: number;
-  text: string;
-  date: string;
+  id: string;
+  platform: string;
+  platform_post_id: string;
+  published_date: string;
   views: number;
-  reactions: number;
+  likes: number;
   comments: number;
-  forwards: number;
+  shares: number;
+  engagement_rate: number;
+  text: string;
   url?: string;
-  platform?: string;
+  channel_name?: string;
+  hashtags?: string[];
 }
 
 interface TrendHashtag {
   hashtag: string;
-  count: number;
-  total_views?: number;
+  posts_count: number;
+  total_reach: number;
+  trend_score: number;
 }
 
 interface MonitoredChannel {
@@ -39,7 +45,26 @@ interface MonitoredChannel {
   name: string;
   is_active: boolean;
   last_parsed_at: string | null;
-  metadata: Record<string, any>;
+  metadata: { subscribers_count?: number; [key: string]: any };
+}
+
+interface EngagementChannel {
+  channel_id: string;
+  channel_name: string;
+  platform: string;
+  avg_engagement: number;
+  posts_count: number;
+  url: string;
+}
+
+interface BestTimesData {
+  channel_id: string;
+  best_days: string[];
+  best_hours: number[];
+  data: {
+    by_day: Array<{ day: number; day_name: string; avg_engagement: number; posts_count: number }>;
+    by_hour: Array<{ hour: number; avg_engagement: number; posts_count: number }>;
+  };
 }
 
 interface Props {
@@ -52,11 +77,108 @@ const PLATFORM_OPTIONS = [
   { value: 'vk', label: 'ВКонтакте' },
 ];
 
+function PlatformBadge({ platform }: { platform: string }) {
+  const colors: Record<string, string> = {
+    telegram: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
+    vk: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
+    instagram: 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400',
+    youtube: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
+  };
+  return (
+    <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${colors[platform] ?? 'bg-muted text-muted-foreground'}`}>
+      {platform}
+    </span>
+  );
+}
+
+function EngagementBadge({ value }: { value: number }) {
+  const color = value >= 3 ? 'text-green-600' : value >= 1 ? 'text-yellow-600' : 'text-muted-foreground';
+  return <span className={`font-semibold tabular-nums ${color}`}>{value.toFixed(2)}%</span>;
+}
+
+function ChannelBestTimes({ channelId, onBack }: { channelId: string; onBack: () => void }) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['scraper-best-times', channelId],
+    queryFn: async () => {
+      const resp = await apiRequest(`/api/scraper/channels/${channelId}/best-times`);
+      return resp?.data as BestTimesData | null;
+    }
+  });
+
+  if (isLoading) return <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}</div>;
+  if (!data) return <p className="text-sm text-muted-foreground text-center py-6">Нет данных о лучшем времени</p>;
+
+  const maxEngDay = Math.max(...data.data.by_day.map(d => d.avg_engagement), 0.01);
+  const maxEngHour = Math.max(...data.data.by_hour.map(h => h.avg_engagement), 0.01);
+
+  return (
+    <div className="space-y-4">
+      <Button variant="ghost" size="sm" onClick={onBack} className="gap-1">
+        <ChevronLeft className="h-4 w-4" /> Назад
+      </Button>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Clock className="h-4 w-4 text-blue-500" /> Лучшие дни
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-1.5">
+            {data.data.by_day.sort((a, b) => b.avg_engagement - a.avg_engagement).map(d => (
+              <div key={d.day} className="flex items-center gap-2">
+                <span className="text-xs w-20 text-muted-foreground shrink-0">{d.day_name}</span>
+                <div className="flex-1 bg-muted rounded-full h-2 overflow-hidden">
+                  <div
+                    className="h-full bg-blue-500 rounded-full transition-all"
+                    style={{ width: `${(d.avg_engagement / maxEngDay) * 100}%` }}
+                  />
+                </div>
+                <span className="text-xs tabular-nums w-10 text-right"><EngagementBadge value={d.avg_engagement} /></span>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Clock className="h-4 w-4 text-purple-500" /> Лучшие часы
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-1.5">
+            {data.data.by_hour.sort((a, b) => b.avg_engagement - a.avg_engagement).slice(0, 8).map(h => (
+              <div key={h.hour} className="flex items-center gap-2">
+                <span className="text-xs w-10 text-muted-foreground shrink-0">{String(h.hour).padStart(2, '0')}:00</span>
+                <div className="flex-1 bg-muted rounded-full h-2 overflow-hidden">
+                  <div
+                    className="h-full bg-purple-500 rounded-full transition-all"
+                    style={{ width: `${(h.avg_engagement / maxEngHour) * 100}%` }}
+                  />
+                </div>
+                <span className="text-xs tabular-nums w-10 text-right"><EngagementBadge value={h.avg_engagement} /></span>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="flex flex-wrap gap-2 text-sm">
+        <span className="text-muted-foreground">Лучшие дни:</span>
+        {data.best_days.slice(0, 3).map(d => <Badge key={d} variant="secondary">{d}</Badge>)}
+        <span className="text-muted-foreground ml-2">Лучшие часы:</span>
+        {data.best_hours.slice(0, 3).map(h => <Badge key={h} variant="outline">{h}:00</Badge>)}
+      </div>
+    </div>
+  );
+}
+
 export function ScraperAnalyticsPanel({ campaignId }: Props) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [platform, setPlatform] = useState('all');
-  const [activeTab, setActiveTab] = useState<'posts' | 'hashtags' | 'channels'>('posts');
+  const [activeTab, setActiveTab] = useState<'posts' | 'hashtags' | 'channels' | 'engagement'>('posts');
+  const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
 
   const platformParam = platform !== 'all' ? platform : undefined;
 
@@ -85,10 +207,22 @@ export function ScraperAnalyticsPanel({ campaignId }: Props) {
   const { data: channelsData, isLoading: channelsLoading } = useQuery({
     queryKey: ['scraper-monitoring-channels'],
     queryFn: async () => {
-      const resp = await apiRequest('/api/scraper/monitoring/channels');
+      const resp = await apiRequest('/api/scraper/monitoring/channels?page_size=100');
       return (resp?.data ?? []) as MonitoredChannel[];
     },
     staleTime: 2 * 60 * 1000
+  });
+
+  const { data: engagementData, isLoading: engagementLoading } = useQuery({
+    queryKey: ['scraper-engagement', platform],
+    queryFn: async () => {
+      const params = new URLSearchParams({ limit: '20' });
+      if (platformParam) params.set('platform', platformParam);
+      const resp = await apiRequest(`/api/scraper/analytics/engagement?${params}`);
+      return (resp?.data ?? []) as EngagementChannel[];
+    },
+    staleTime: 5 * 60 * 1000,
+    enabled: activeTab === 'engagement'
   });
 
   const syncMutation = useMutation({
@@ -108,15 +242,50 @@ export function ScraperAnalyticsPanel({ campaignId }: Props) {
     }
   });
 
+  const deleteChannelMutation = useMutation({
+    mutationFn: async (channelId: string) => {
+      return apiRequest(`/api/scraper/monitoring/channels/${channelId}`, { method: 'DELETE' });
+    },
+    onSuccess: () => {
+      toast({ title: '✅ Канал удалён' });
+      queryClient.invalidateQueries({ queryKey: ['scraper-monitoring-channels'] });
+    },
+    onError: (err: any) => {
+      toast({ title: '❌ Ошибка', description: err?.message, variant: 'destructive' });
+    }
+  });
+
+  const forceParseMutation = useMutation({
+    mutationFn: async (channelId: string) => {
+      return apiRequest(`/api/scraper/monitoring/channels/${channelId}/force-parse`, { method: 'POST' });
+    },
+    onSuccess: () => {
+      toast({ title: '✅ Парсинг запущен', description: 'Данные обновятся в ближайшее время' });
+    },
+    onError: (err: any) => {
+      toast({ title: '❌ Ошибка', description: err?.message, variant: 'destructive' });
+    }
+  });
+
   const posts = postsData ?? [];
   const hashtags = hashtagsData ?? [];
   const channels = channelsData ?? [];
+  const engagementChannels = engagementData ?? [];
 
   const tabs = [
     { key: 'posts' as const, label: 'Топ постов', count: posts.length, icon: TrendingUp },
     { key: 'hashtags' as const, label: 'Хэштеги', count: hashtags.length, icon: Hash },
     { key: 'channels' as const, label: 'Каналы', count: channels.length, icon: Radio },
+    { key: 'engagement' as const, label: 'Engagement', count: engagementChannels.length, icon: BarChart2 },
   ];
+
+  if (selectedChannelId && activeTab === 'channels') {
+    return (
+      <div className="space-y-4">
+        <ChannelBestTimes channelId={selectedChannelId} onBack={() => setSelectedChannelId(null)} />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -156,14 +325,14 @@ export function ScraperAnalyticsPanel({ campaignId }: Props) {
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b">
+      <div className="flex border-b overflow-x-auto">
         {tabs.map(tab => {
           const Icon = tab.icon;
           return (
             <button
               key={tab.key}
               onClick={() => setActiveTab(tab.key)}
-              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px ${
+              className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors -mb-px whitespace-nowrap ${
                 activeTab === tab.key
                   ? 'border-primary text-primary'
                   : 'border-transparent text-muted-foreground hover:text-foreground'
@@ -179,13 +348,11 @@ export function ScraperAnalyticsPanel({ campaignId }: Props) {
         })}
       </div>
 
-      {/* Tab content */}
+      {/* Posts tab */}
       {activeTab === 'posts' && (
         <div className="space-y-3">
           {postsLoading ? (
-            Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-24 w-full rounded-lg" />
-            ))
+            Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-24 w-full rounded-lg" />)
           ) : postsError ? (
             <div className="flex items-center gap-2 text-muted-foreground p-4 bg-muted/30 rounded-lg">
               <AlertCircle className="h-5 w-5 text-yellow-500 shrink-0" />
@@ -204,6 +371,12 @@ export function ScraperAnalyticsPanel({ campaignId }: Props) {
                 <CardContent className="pt-4 pb-3">
                   <div className="flex items-start gap-3">
                     <div className="flex-1 min-w-0">
+                      {post.channel_name && (
+                        <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1.5">
+                          <PlatformBadge platform={post.platform} />
+                          {post.channel_name}
+                        </p>
+                      )}
                       <p className="text-sm line-clamp-3 text-foreground">
                         {post.text || '(без текста)'}
                       </p>
@@ -213,24 +386,36 @@ export function ScraperAnalyticsPanel({ campaignId }: Props) {
                           {(post.views || 0).toLocaleString()}
                         </span>
                         <span className="flex items-center gap-1">
+                          <ThumbsUp className="h-3 w-3" />
+                          {(post.likes || 0).toLocaleString()}
+                        </span>
+                        <span className="flex items-center gap-1">
                           <MessageCircle className="h-3 w-3" />
                           {(post.comments || 0).toLocaleString()}
                         </span>
                         <span className="flex items-center gap-1">
                           <Share2 className="h-3 w-3" />
-                          {(post.forwards || 0).toLocaleString()}
+                          {(post.shares || 0).toLocaleString()}
                         </span>
-                        {post.date && (
+                        {post.engagement_rate > 0 && (
+                          <span className="font-medium text-green-600">{post.engagement_rate.toFixed(2)}% ER</span>
+                        )}
+                        {post.published_date && (
                           <span className="text-muted-foreground/70">
-                            {formatDistanceToNow(new Date(post.date), { addSuffix: true, locale: ru })}
+                            {formatDistanceToNow(new Date(post.published_date), { addSuffix: true, locale: ru })}
                           </span>
                         )}
-                        {post.platform && (
-                          <Badge variant="outline" className="text-xs py-0">
-                            {post.platform}
-                          </Badge>
+                        {!post.channel_name && post.platform && (
+                          <PlatformBadge platform={post.platform} />
                         )}
                       </div>
+                      {post.hashtags && post.hashtags.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1.5">
+                          {post.hashtags.slice(0, 5).map(tag => (
+                            <span key={tag} className="text-xs text-blue-500">{tag}</span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     {post.url && (
                       <a
@@ -250,13 +435,12 @@ export function ScraperAnalyticsPanel({ campaignId }: Props) {
         </div>
       )}
 
+      {/* Hashtags tab */}
       {activeTab === 'hashtags' && (
         <div>
           {hashtagsLoading ? (
             <div className="flex flex-wrap gap-2">
-              {Array.from({ length: 12 }).map((_, i) => (
-                <Skeleton key={i} className="h-8 w-24 rounded-full" />
-              ))}
+              {Array.from({ length: 12 }).map((_, i) => <Skeleton key={i} className="h-8 w-24 rounded-full" />)}
             </div>
           ) : hashtags.length === 0 ? (
             <Card>
@@ -267,23 +451,42 @@ export function ScraperAnalyticsPanel({ campaignId }: Props) {
             </Card>
           ) : (
             <div className="space-y-4">
-              <div className="flex flex-wrap gap-2">
-                {hashtags.slice(0, 20).map((h, i) => (
-                  <div
-                    key={`${h.hashtag}-${i}`}
-                    className="flex items-center gap-1.5 bg-muted px-3 py-1.5 rounded-full text-sm hover:bg-muted/80 cursor-default"
-                  >
-                    <Hash className="h-3 w-3 text-blue-500" />
-                    <span className="font-medium">{h.hashtag.replace(/^#/, '')}</span>
-                    <Badge variant="secondary" className="text-xs py-0 px-1.5 ml-1">
-                      {h.count}
-                    </Badge>
-                  </div>
-                ))}
+              <div className="space-y-2">
+                {hashtags.slice(0, 25).map((h, i) => {
+                  const maxScore = hashtags[0]?.trend_score || 1;
+                  return (
+                    <div
+                      key={`${h.hashtag}-${i}`}
+                      className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors"
+                    >
+                      <span className="text-xs text-muted-foreground w-5 text-right shrink-0">{i + 1}</span>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-medium text-sm text-blue-600 dark:text-blue-400">{h.hashtag}</span>
+                          <Badge variant="secondary" className="text-xs py-0 px-1.5">
+                            {h.posts_count} постов
+                          </Badge>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 bg-muted rounded-full h-1.5 overflow-hidden">
+                            <div
+                              className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full"
+                              style={{ width: `${(h.trend_score / maxScore) * 100}%` }}
+                            />
+                          </div>
+                          <span className="text-xs text-muted-foreground shrink-0">
+                            {h.total_reach > 0 && <>{h.total_reach.toLocaleString()} охват · </>}
+                            score: {h.trend_score.toFixed(1)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-              {hashtags.length > 20 && (
+              {hashtags.length > 25 && (
                 <p className="text-xs text-muted-foreground">
-                  Показаны топ-20 из {hashtags.length} хэштегов
+                  Показаны топ-25 из {hashtags.length} хэштегов
                 </p>
               )}
             </div>
@@ -291,12 +494,11 @@ export function ScraperAnalyticsPanel({ campaignId }: Props) {
         </div>
       )}
 
+      {/* Channels tab */}
       {activeTab === 'channels' && (
         <div className="space-y-3">
           {channelsLoading ? (
-            Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-16 w-full rounded-lg" />
-            ))
+            Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-16 w-full rounded-lg" />)
           ) : channels.length === 0 ? (
             <Card>
               <CardContent className="flex flex-col items-center py-10 gap-3 text-center">
@@ -311,25 +513,58 @@ export function ScraperAnalyticsPanel({ campaignId }: Props) {
             channels.map(channel => (
               <Card key={channel.id} className="hover:shadow-sm transition-shadow">
                 <CardContent className="pt-3 pb-3">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-3 min-w-0">
                       <div className={`w-2 h-2 rounded-full shrink-0 ${channel.is_active ? 'bg-green-500' : 'bg-gray-400'}`} />
-                      <div>
-                        <p className="font-medium text-sm">{channel.name || channel.platform_channel_id}</p>
+                      <div className="min-w-0">
+                        <p className="font-medium text-sm truncate">{channel.name || channel.platform_channel_id}</p>
                         <p className="text-xs text-muted-foreground">
-                          {channel.platform} · @{channel.platform_channel_id}
+                          <PlatformBadge platform={channel.platform} /> · @{channel.platform_channel_id}
                           {channel.metadata?.subscribers_count != null && (
                             <> · {Number(channel.metadata.subscribers_count).toLocaleString()} подписчиков</>
                           )}
                         </p>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-1.5 shrink-0">
                       {channel.last_parsed_at && (
                         <span className="text-xs text-muted-foreground hidden sm:block">
                           {formatDistanceToNow(new Date(channel.last_parsed_at), { addSuffix: true, locale: ru })}
                         </span>
                       )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-blue-500"
+                        title="Лучшее время"
+                        onClick={() => setSelectedChannelId(channel.id)}
+                      >
+                        <Clock className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-orange-500"
+                        title="Принудительный парсинг"
+                        disabled={forceParseMutation.isPending}
+                        onClick={() => forceParseMutation.mutate(channel.id)}
+                      >
+                        <Zap className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-red-500"
+                        title="Удалить"
+                        disabled={deleteChannelMutation.isPending}
+                        onClick={() => {
+                          if (confirm(`Удалить канал ${channel.name || channel.platform_channel_id}?`)) {
+                            deleteChannelMutation.mutate(channel.id);
+                          }
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
                       <Badge variant={channel.is_active ? 'default' : 'secondary'} className="text-xs">
                         {channel.is_active ? 'Активен' : 'Неактивен'}
                       </Badge>
@@ -338,6 +573,61 @@ export function ScraperAnalyticsPanel({ campaignId }: Props) {
                 </CardContent>
               </Card>
             ))
+          )}
+        </div>
+      )}
+
+      {/* Engagement tab */}
+      {activeTab === 'engagement' && (
+        <div className="space-y-3">
+          {engagementLoading ? (
+            Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-14 w-full rounded-lg" />)
+          ) : engagementChannels.length === 0 ? (
+            <Card>
+              <CardContent className="flex flex-col items-center py-10 gap-3 text-center">
+                <BarChart2 className="h-10 w-10 text-muted-foreground" />
+                <p className="text-sm text-muted-foreground">Нет данных об engagement</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              {engagementChannels.map((ch, i) => {
+                const maxEng = engagementChannels[0]?.avg_engagement || 1;
+                return (
+                  <div
+                    key={`${ch.channel_id}-${i}`}
+                    className="flex items-center gap-3 p-3 rounded-lg border bg-card hover:shadow-sm transition-shadow"
+                  >
+                    <span className="text-xs text-muted-foreground w-5 text-right shrink-0 font-medium">
+                      {i + 1}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <p className="font-medium text-sm truncate">{ch.channel_name}</p>
+                        <PlatformBadge platform={ch.platform} />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="flex-1 bg-muted rounded-full h-1.5 overflow-hidden">
+                          <div
+                            className="h-full bg-gradient-to-r from-green-500 to-emerald-400 rounded-full"
+                            style={{ width: `${(ch.avg_engagement / maxEng) * 100}%` }}
+                          />
+                        </div>
+                        <span className="text-xs text-muted-foreground shrink-0">{ch.posts_count} постов</span>
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <EngagementBadge value={ch.avg_engagement} />
+                      {ch.url && (
+                        <a href={ch.url} target="_blank" rel="noopener noreferrer" className="block text-muted-foreground hover:text-primary mt-0.5">
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </>
           )}
         </div>
       )}

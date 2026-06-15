@@ -1,10 +1,12 @@
 import { directusApi } from '../directus';
 import { log } from '../utils/logger';
+import axios from 'axios';
 
 export class AnalyticsService {
   /**
-   * Получение агрегированной аналитики для кампании
-   * @param period Период (7days, 30days, thisMonth)
+   * Получение агрегированной аналитики для кампании.
+   * Читает опубликованные посты из Directus.
+   * Если views = 0, дополняет данными из скрейпера для каналов кампании.
    */
   static async getCampaignAnalytics(campaignId: string, period: string, token: string) {
     let dateFrom: Date;
@@ -49,11 +51,7 @@ export class AnalyticsService {
 
         let platforms = post.social_platforms;
         if (typeof platforms === 'string') {
-          try {
-            platforms = JSON.parse(platforms);
-          } catch {
-            return;
-          }
+          try { platforms = JSON.parse(platforms); } catch { return; }
         }
 
         if (platforms && typeof platforms === 'object') {
@@ -73,11 +71,9 @@ export class AnalyticsService {
               totalComments += comments;
 
               const platformName = (platformData.platform || platformKey).toLowerCase();
-
               if (!platformStatsMap.has(platformName)) {
                 platformStatsMap.set(platformName, { name: platformName, posts: 0, views: 0, likes: 0, shares: 0, comments: 0 });
               }
-
               const stats = platformStatsMap.get(platformName);
               stats.posts++;
               stats.views += views;
@@ -88,6 +84,19 @@ export class AnalyticsService {
           });
         }
       });
+
+      // Если нет данных о просмотрах в Directus — пробуем скрейпер для каналов кампании
+      if (totalViews === 0 && totalPosts > 0) {
+        try {
+          await AnalyticsService.supplementFromScraper(
+            campaignId, dateFrom, now,
+            platformStatsMap,
+            (v, l, c, s) => { totalViews += v; totalLikes += l; totalComments += c; totalShares += s; }
+          );
+        } catch (scraperErr: any) {
+          log(`[AnalyticsService] Scraper supplement failed (non-critical): ${scraperErr.message}`, 'warn');
+        }
+      }
 
       const result = {
         success: true,
@@ -103,21 +112,146 @@ export class AnalyticsService {
       return result;
 
     } catch (error: any) {
-      log(`[AnalyticsService] ❌ Ошибка при получении данных: ${error.message}`, 'error');
+      log(`[AnalyticsService] ❌ Ошибка: ${error.message}`, 'error');
       if (error.response) {
-        log(`[AnalyticsService] ❌ Ответ Directus: ${error.response.status} - ${JSON.stringify(error.response.data)}`, 'error');
+        log(`[AnalyticsService] ❌ Directus: ${error.response.status} - ${JSON.stringify(error.response.data)}`, 'error');
+      }
+      return { success: true, totalPosts: 0, totalViews: 0, totalLikes: 0, totalShares: 0, totalComments: 0, platforms: [], error: error.message };
+    }
+  }
+
+  /**
+   * Дополняет статистику из скрейпер-аналитики для собственных каналов кампании.
+   * Ищет каналы кампании (TG chatId, VK groupId) в мониторинге скрейпера
+   * и берёт агрегированные просмотры/лайки за период.
+   */
+  private static async supplementFromScraper(
+    campaignId: string,
+    fromDate: Date,
+    toDate: Date,
+    platformStatsMap: Map<string, any>,
+    addTotals: (views: number, likes: number, comments: number, shares: number) => void
+  ): Promise<void> {
+    const adminToken = process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN || '';
+    if (!adminToken) return;
+
+    const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
+
+    // Получаем настройки кампании
+    const campaignResp = await axios.get(`${directusUrl}/items/user_campaigns/${campaignId}`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+      timeout: 10000
+    });
+    const campaign = campaignResp.data?.data;
+    if (!campaign) return;
+
+    let socialSettings = campaign.social_media_settings || {};
+    if (typeof socialSettings === 'string') {
+      try { socialSettings = JSON.parse(socialSettings); } catch { return; }
+    }
+
+    // Каналы которые нужно искать в скрейпере
+    const channelsToLookup: Array<{ platform: string; platformId: string }> = [];
+    if (socialSettings.telegram?.chatId) {
+      channelsToLookup.push({ platform: 'telegram', platformId: String(socialSettings.telegram.chatId) });
+    }
+    if (socialSettings.vk?.groupId) {
+      channelsToLookup.push({ platform: 'vk', platformId: String(socialSettings.vk.groupId) });
+    }
+
+    if (channelsToLookup.length === 0) return;
+
+    const { getMonitoredChannels, getChannelAnalytics } = await import('./scraper-analytics');
+    const monitored = await getMonitoredChannels({ page_size: 100 });
+    if (!monitored.items.length) return;
+
+    const fromStr = fromDate.toISOString().split('T')[0];
+    const toStr = toDate.toISOString().split('T')[0];
+
+    for (const ch of channelsToLookup) {
+      const found = monitored.items.find(m =>
+        m.platform === ch.platform && m.platform_channel_id === ch.platformId
+      );
+      if (!found) continue;
+
+      const analytics = await getChannelAnalytics(found.id, { from_date: fromStr, to_date: toStr });
+      if (!analytics) continue;
+
+      addTotals(analytics.total_views, analytics.total_likes, analytics.total_comments, analytics.total_shares);
+      log(`[AnalyticsService] 📡 Скрейпер ${ch.platform}: ${analytics.total_views} просмотров за период`, 'info');
+
+      if (platformStatsMap.has(ch.platform)) {
+        const stats = platformStatsMap.get(ch.platform);
+        stats.views = analytics.total_views;
+        stats.likes = analytics.total_likes;
+        stats.comments = analytics.total_comments;
+        stats.shares = analytics.total_shares;
+      }
+    }
+  }
+
+  /**
+   * Обновляет кеш аналитики для каналов кампании через скрейпер.
+   * Вызывается по /api/analytics/update вместо n8n.
+   */
+  static async refreshCampaignAnalytics(campaignId: string): Promise<{ success: boolean; message: string }> {
+    const adminToken = process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN || '';
+    if (!adminToken) return { success: false, message: 'Нет токена для Directus' };
+
+    const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
+
+    try {
+      const campaignResp = await axios.get(`${directusUrl}/items/user_campaigns/${campaignId}`, {
+        headers: { Authorization: `Bearer ${adminToken}` },
+        timeout: 10000
+      });
+      const campaign = campaignResp.data?.data;
+      if (!campaign) return { success: false, message: 'Кампания не найдена' };
+
+      let socialSettings = campaign.social_media_settings || {};
+      if (typeof socialSettings === 'string') {
+        try { socialSettings = JSON.parse(socialSettings); } catch {}
       }
 
-      return {
-        success: true,
-        totalPosts: 0,
-        totalViews: 0,
-        totalLikes: 0,
-        totalShares: 0,
-        totalComments: 0,
-        platforms: [],
-        error: error.message
-      };
+      const channelsToLookup: Array<{ platform: string; platformId: string }> = [];
+      if (socialSettings.telegram?.chatId) {
+        channelsToLookup.push({ platform: 'telegram', platformId: String(socialSettings.telegram.chatId) });
+      }
+      if (socialSettings.vk?.groupId) {
+        channelsToLookup.push({ platform: 'vk', platformId: String(socialSettings.vk.groupId) });
+      }
+
+      if (channelsToLookup.length === 0) {
+        return { success: true, message: 'Каналы кампании не зарегистрированы в скрейпере' };
+      }
+
+      const { getMonitoredChannels, refreshChannelMetrics, ensureChannelsRegistered } = await import('./scraper-analytics');
+
+      // Регистрируем если не зарегистрированы
+      await ensureChannelsRegistered(channelsToLookup.map(ch => ({
+        platform: ch.platform,
+        id: ch.platformId
+      })));
+
+      const monitored = await getMonitoredChannels({ page_size: 100 });
+      const channelIds: string[] = [];
+
+      for (const ch of channelsToLookup) {
+        const found = monitored.items.find(m =>
+          m.platform === ch.platform && m.platform_channel_id === ch.platformId
+        );
+        if (found) channelIds.push(found.id);
+      }
+
+      if (channelIds.length > 0) {
+        await refreshChannelMetrics({ channel_ids: channelIds, days: 30, force: true });
+        log(`[AnalyticsService] 🔄 Обновление метрик запрошено для ${channelIds.length} каналов кампании ${campaignId}`, 'info');
+      }
+
+      return { success: true, message: `Обновление аналитики запущено для ${channelIds.length} канала(ов)` };
+    } catch (err: any) {
+      log(`[AnalyticsService] ❌ refreshCampaignAnalytics error: ${err.message}`, 'error');
+      return { success: false, message: err.message };
     }
   }
 }

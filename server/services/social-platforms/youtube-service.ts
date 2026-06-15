@@ -1,11 +1,6 @@
 import axios from 'axios';
 import { log } from '../../utils/logger';
-import { getN8nUrl } from '../../utils/n8n-utils';
 import { BaseSocialService, TokenValidationResult } from './base-service';
-
-const getYouTubeWebhookUrl = () => {
-  return `${getN8nUrl()}/webhook/publish-youtube`;
-};
 
 export class YouTubeService extends BaseSocialService {
   constructor() {
@@ -60,9 +55,8 @@ export class YouTubeService extends BaseSocialService {
       }
       */
 
-      // Отправляем запрос на N8N webhook
-      const webhookUrl = getYouTubeWebhookUrl();
-      log('youtube', `Отправляем запрос на N8N webhook: ${webhookUrl}`);
+      // YouTube публикация через прямой API (n8n удалён)
+      log('youtube', `YouTube publish через прямой API для контента ${content.id}`);
       
       // Определяем, должно ли видео быть Shorts
       const isShort = content.content_type === 'clip';
@@ -84,24 +78,12 @@ export class YouTubeService extends BaseSocialService {
         contentType: content.content_type
       };
       
-      log('youtube', `Payload для N8N: ${JSON.stringify(payload)}`);
-
-      // Fire-and-forget: отправляем запрос и не ждём ответа
-      // N8N сам обновит social_platforms в БД
-      axios.post(webhookUrl, payload, {
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      }).catch(() => {
-        // Игнорируем ошибки - N8N сам обновит статус
-      });
-
-      log('youtube', `Запрос отправлен в N8N, статус обновится асинхронно`);
+      log('youtube', `Публикация YouTube делегирована планировщику (прямой API)`);
       
-      // Возвращаем успех - N8N обновит реальный статус в БД
+      // YouTube публикуется через publishToYouTubeDirect в publish-scheduler
       return {
         success: true,
-        postUrl: undefined // N8N сам запишет URL в БД
+        postUrl: undefined
       };
 
     } catch (error: any) {

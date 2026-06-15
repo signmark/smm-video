@@ -369,24 +369,19 @@ router.post('/process-video-from-url', authMiddleware, async (req, res) => {
 
               console.log('[VIDEO] Successfully saved video URL to Directus additional_media');
 
-              // Отправляем на публикацию через n8n webhook (fire-and-forget, не ждём ответа)
-              const publishAfter = req.body.publishAfter !== false; // По умолчанию публикуем
+              // Публикуем через прямой Instagram API (fire-and-forget)
+              const publishAfter = req.body.publishAfter !== false;
               if (publishAfter) {
-                const { getN8nUrl } = await import('../utils/n8n-utils');
-                const n8nUrl = getN8nUrl();
-                const webhookUrl = `${n8nUrl}/webhook/publish-stories`;
-
-                console.log('[VIDEO] Sending to n8n webhook for publication (fire-and-forget):', webhookUrl);
-
-                fetch(webhookUrl, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ contentId: storyId })
+                const adminToken = process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN || '';
+                import('../services/social-platforms/instagram-stories-service').then(({ publishInstagramStory }) => {
+                  return publishInstagramStory(storyId, adminToken);
+                }).then(result => {
+                  console.log('[VIDEO] Instagram Stories publication result:', result.success ? 'success' : result.error);
                 }).catch((err: any) => {
-                  console.error('[VIDEO] n8n webhook error (non-blocking):', err?.message);
+                  console.error('[VIDEO] Instagram Stories publication error (non-blocking):', err?.message);
                 });
               } else {
-                console.log('[VIDEO] publishAfter=false, skipping n8n webhook');
+                console.log('[VIDEO] publishAfter=false, skipping Instagram publication');
               }
             } catch (directusError: any) {
               console.error('[VIDEO] Failed to save to Directus:', directusError?.response?.data || directusError?.message);

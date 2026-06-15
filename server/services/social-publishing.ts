@@ -1471,11 +1471,9 @@ export class SocialPublishingService {
   }
 
   async publishThroughN8nWebhook(content: any, platform: string, settings: any): Promise<any> {
-    const { getN8nUrl } = require('../utils/n8n-utils');
-    const baseN8nUrl = getN8nUrl();
-    if (!baseN8nUrl) {
-      throw new Error('N8N_URL не настроен');
-    }
+    throw new Error(`[social-publishing] n8n удалён: публикация ${platform} через webhook недоступна. Используйте /api/social/publish/now`);
+    if (false) {
+    const baseN8nUrl = '';
     
     // Проверка аргументов
     if (typeof platform !== 'string') {
@@ -1536,6 +1534,7 @@ export class SocialPublishingService {
     } catch (error: any) {
       return { platform, status: 'failed', error: `Webhook exception: ${error.message}` };
     }
+    } // end if (false)
   }
 
   /**
@@ -1552,9 +1551,14 @@ export class SocialPublishingService {
   ): Promise<SocialPublication> {
     log(`Публикация контента "${content.title}" в ${platform}`, 'social-publishing');
 
-    // Если платформа не Facebook, используем n8n
+    // Все платформы кроме Facebook
     if (platform !== 'facebook') {
-      return await this.publishThroughN8nWebhook(content, platform, settings);
+      return {
+        platform: platform as any,
+        status: 'failed',
+        publishedAt: null,
+        error: `Используйте /api/social/publish/now для публикации в ${platform}`
+      };
     }
 
     switch (platform) {

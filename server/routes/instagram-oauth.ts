@@ -1,7 +1,6 @@
 import express from 'express';
 import axios from 'axios';
 import { log } from '../utils/logger';
-import { getN8nUrl } from '../utils/n8n-utils';
 
 const router = express.Router();
 
@@ -33,9 +32,7 @@ router.post('/instagram/auth/start', async (req, res) => {
       }
     }
 
-    // Используем N8N_URL из env если webhook URL не передан
-    const n8nBaseUrl = getN8nUrl();
-    const finalWebhookUrl = webhookUrl || `${n8nBaseUrl}/webhook/instagram-auth`;
+    const finalWebhookUrl = webhookUrl || process.env.INSTAGRAM_WEBHOOK_URL || '';
 
     // Генерируем уникальный state для безопасности
     const state = Math.random().toString(36).substring(2, 15);

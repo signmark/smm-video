@@ -38,15 +38,7 @@ healthRouter.get('/health', async (req, res) => {
     results.services.s3 = { status: 'unhealthy' };
   }
 
-  // 3. n8n Check
-  try {
-    const { getN8nUrl } = await import('../utils/n8n-utils');
-    const n8nUrl = getN8nUrl();
-    const n8nRes = await axios.get(`${n8nUrl}/healthz`, { timeout: 2000 }).catch(() => null);
-    results.services.n8n = { status: n8nRes ? 'healthy' : 'unreachable' };
-  } catch (err) {
-    results.services.n8n = { status: 'unhealthy' };
-  }
+  results.services.n8n = { status: 'removed' };
 
   const duration = Date.now() - startTime;
   results.duration_ms = duration;

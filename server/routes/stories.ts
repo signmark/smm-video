@@ -452,8 +452,6 @@ router.post('/story/:id/publish', authenticateUser, async (req, res) => {
 
     // Публикация Stories по платформам
     try {
-      const { getN8nUrl } = await import('../utils/n8n-utils');
-      const n8nUrl = getN8nUrl();
       const userToken = req.headers.authorization?.replace('Bearer ', '');
 
       // Разделяем платформы
@@ -480,14 +478,12 @@ router.post('/story/:id/publish', authenticateUser, async (req, res) => {
         );
       }
 
-      // Instagram Stories через webhook
+      // Instagram Stories через прямой API
       if (instagramPlatforms.length > 0) {
-        const instagramWebhookUrl = `${n8nUrl}/webhook/publish-stories`;
         let instagramImageUrl = updatedStory.image_url;
 
         // Генерируем картинку с текстом на сервере
         try {
-          // Извлекаем textOverlays из metadata
           let textOverlays: any[] = [];
           if (updatedStory.metadata) {
             const meta = typeof updatedStory.metadata === 'string'
@@ -496,7 +492,6 @@ router.post('/story/:id/publish', authenticateUser, async (req, res) => {
             textOverlays = meta.textOverlays || [];
           }
 
-          // Определяем фоновое изображение из разных источников
           let backgroundUrl = updatedStory.image_url;
           if (!backgroundUrl && updatedStory.additional_media) {
             const additionalMedia = typeof updatedStory.additional_media === 'string'
@@ -507,23 +502,16 @@ router.post('/story/:id/publish', authenticateUser, async (req, res) => {
             }
           }
 
-
           if (textOverlays.length > 0 && backgroundUrl) {
-
             const imageBuffer = await generateStoriesImageServer({
               backgroundUrl: backgroundUrl,
               textOverlays: textOverlays,
               width: 1080,
               height: 1920
             });
-
-
-            // Загружаем на Cloudinary (Meta-доступный CDN)
             const uploadResult = await uploadToExternalHost(imageBuffer, `story-${updatedStory.id}.jpg`);
             instagramImageUrl = uploadResult.url;
-
           } else if (backgroundUrl) {
-            // Нет текста, но нужно загрузить фон на Cloudinary для Instagram
             try {
               const response = await axios.get(backgroundUrl, { responseType: 'arraybuffer' });
               const imageBuffer = Buffer.from(response.data);
@@ -536,18 +524,22 @@ router.post('/story/:id/publish', authenticateUser, async (req, res) => {
           // Продолжаем с оригинальным изображением
         }
 
-        const instagramPayload = {
-          contentId: updatedStory.id,
-          image_url: instagramImageUrl
-        };
+        // Если изображение изменилось — сохраняем в Directus перед публикацией
+        if (instagramImageUrl && instagramImageUrl !== updatedStory.image_url) {
+          try {
+            await directus.request(updateItem('campaign_content', updatedStory.id, { image_url: instagramImageUrl }));
+          } catch (updateErr) {
+            // продолжаем с тем, что есть
+          }
+        }
 
+        const adminToken = process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN || '';
+        const { publishInstagramStory } = await import('../services/social-platforms/instagram-stories-service');
 
         webhookPromises.push(
-          fetch(instagramWebhookUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(instagramPayload)
-          }).then(response => ({ type: 'instagram', response, success: response.ok }))
+          publishInstagramStory(updatedStory.id, adminToken)
+            .then(result => ({ type: 'instagram', success: result.success, result }))
+            .catch(err => ({ type: 'instagram', success: false, error: err.message }))
         );
       }
 
@@ -569,19 +561,9 @@ router.post('/story/:id/publish', authenticateUser, async (req, res) => {
         );
       }
 
-      // Остальные платформы через общий Stories webhook
+      // Остальные платформы — Stories пока не поддерживаются напрямую
       if (otherPlatforms.length > 0) {
-        const generalWebhookUrl = `${n8nUrl}/webhook/publish-stories`;
-        const generalPayload = { contentId: updatedStory.id };
-
-
-        webhookPromises.push(
-          fetch(generalWebhookUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(generalPayload)
-          }).then(response => ({ type: 'general', response, success: response.ok }))
-        );
+        console.log(`[STORIES] Платформы ${otherPlatforms.join(', ')} не поддерживают Stories через прямой API`);
       }
 
       // Ждем все вызовы
@@ -707,24 +689,10 @@ router.post('/convert-and-publish', authenticateUser, async (req, res) => {
 
     const savedStory = createResponse.data.data;
 
-    // STEP 3: Send to N8N webhook for publication
-
-    const { getN8nUrl } = await import('../utils/n8n-utils');
-    const n8nUrl = getN8nUrl();
-    const webhookUrl = `${n8nUrl}/webhook/publish-stories`;
-
-    const webhookPayload = {
-      contentId: savedStory.id
-    };
-
-
-    const webhookResponse = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(webhookPayload)
-    });
-
-    const webhookSuccess = webhookResponse.ok;
+    // STEP 3: Publish to Instagram directly
+    const adminToken = process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN || '';
+    const { publishInstagramStory } = await import('../services/social-platforms/instagram-stories-service');
+    const storyResult = await publishInstagramStory(savedStory.id, adminToken);
 
     // FINAL RESPONSE
     const result = {
@@ -734,10 +702,10 @@ router.post('/convert-and-publish', authenticateUser, async (req, res) => {
         originalVideoUrl: videoUrl,
         convertedVideoUrl: convertedVideoUrl,
         conversionMetadata: conversionResult.metadata,
-        webhookStatus: webhookResponse.status,
-        webhookSuccess: webhookSuccess
+        publishSuccess: storyResult.success,
+        publishError: storyResult.error || null
       },
-      message: `Story converted, saved and ${webhookSuccess ? 'published' : 'saved (webhook failed)'} successfully`
+      message: `Story converted, saved and ${storyResult.success ? 'published' : 'saved (publication failed)'} successfully`
     };
 
     res.json(result);
@@ -879,49 +847,12 @@ router.post('/publish-video/:id', authenticateUser, async (req, res) => {
     };
 
 
-    const { getN8nUrl } = await import('../utils/n8n-utils');
-    const n8nBaseUrl = getN8nUrl();
-    const webhookAttempts = [
-      {
-        name: 'Primary Instagram Stories',
-        url: `${n8nBaseUrl}/webhook/publish-stories`,
-        payload: { contentId: storyId || n8nPayload.contentId }
-      }
-    ];
+    // Publish to Instagram directly
+    const adminToken = process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN || '';
+    const { publishInstagramStory } = await import('../services/social-platforms/instagram-stories-service');
+    const storyResult = await publishInstagramStory(id, adminToken);
 
-    let successfulAttempt = null;
-    const axios = await import('axios');
-
-    for (const attempt of webhookAttempts) {
-      try {
-
-        const webhookResponse = await axios.default.post(attempt.url, attempt.payload, {
-          timeout: 30000,
-          headers: {
-            'Content-Type': 'application/json'
-          }
-        });
-
-        successfulAttempt = {
-          name: attempt.name,
-          status: webhookResponse.status,
-          data: webhookResponse.data
-        };
-        break; // Exit loop on first success
-
-      } catch (webhookError: any) {
-
-        // Log detailed error for debugging
-        if (webhookError.response?.data) {
-        }
-
-        // Continue to next attempt
-        continue;
-      }
-    }
-
-    if (successfulAttempt) {
-
+    if (storyResult.success) {
       return res.json({
         success: true,
         message: 'Video story converted and published successfully',
@@ -931,16 +862,14 @@ router.post('/publish-video/:id', authenticateUser, async (req, res) => {
           convertedUrl: conversionResult.convertedUrl,
           conversionTime: conversionResult.duration,
           metadata: conversionResult.metadata,
-          webhookStatus: successfulAttempt.status
+          postId: storyResult.postId,
+          postUrl: storyResult.postUrl
         }
       });
     } else {
-      // All webhook attempts failed
-
-      // Story was converted successfully, but all webhooks failed
       return res.status(207).json({
         success: true,
-        warning: 'Video converted successfully but all publication attempts failed',
+        warning: 'Video converted successfully but publication failed',
         data: {
           storyId: id,
           originalUrl: story.video_url,
@@ -948,7 +877,7 @@ router.post('/publish-video/:id', authenticateUser, async (req, res) => {
           conversionTime: conversionResult.duration,
           metadata: conversionResult.metadata
         },
-        error: 'All N8N webhook endpoints failed - check N8N workflows and Instagram API configuration'
+        error: storyResult.error || 'Instagram publication failed'
       });
     }
 
@@ -1192,44 +1121,23 @@ router.post('/publish', authenticateUser, async (req, res) => {
       );
     }
 
-    // Send to webhooks
-    const { getN8nUrl } = await import('../utils/n8n-utils');
-    const n8nUrl = getN8nUrl();
+    // Publish to platforms
     const webhookResults = [];
     const selectedPlatforms = Array.isArray(platforms) ? platforms : [platforms];
+    const adminToken = process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN || '';
     console.log('[STORIES-PUBLISH] 🚀 Начинаем цикл публикации по платформам:', selectedPlatforms);
 
     for (const platform of selectedPlatforms) {
       console.log(`[STORIES-PUBLISH] 📦 Обработка платформы: ${platform}`);
       if (platform === 'instagram') {
-        const webhookUrl = `${n8nUrl}/webhook/publish-stories`;
-
-        // Для картинок и видео теперь используем единую логику: 
-        // n8n получает contentId и сам берет медиа из additional_media[0]
-        console.log(`[STORIES-PUBLISH] ✅ Отправляем webhook для ${platform}...`);
-        console.log('[STORIES-PUBLISH] Webhook URL:', webhookUrl);
-
-        const webhookPayload = { contentId };
-
+        const { publishInstagramStory } = await import('../services/social-platforms/instagram-stories-service');
         try {
-          const webhookResponse = await fetch(webhookUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(webhookPayload)
-          });
-
-          let responseData = null;
-          const responseText = await webhookResponse.text();
-          if (responseText && responseText.trim()) {
-            try {
-              responseData = JSON.parse(responseText);
-            } catch (parseError) { }
-          }
-
+          const storyResult = await publishInstagramStory(contentId, adminToken);
           webhookResults.push({
             platform: 'instagram',
-            success: webhookResponse.ok,
-            data: responseData
+            success: storyResult.success,
+            data: { postId: storyResult.postId, postUrl: storyResult.postUrl },
+            error: storyResult.error
           });
         } catch (error: any) {
           webhookResults.push({

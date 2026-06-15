@@ -24,42 +24,27 @@ export default function YouTubeCallbackPage() {
     if (success === 'true') {
       setStatus('success');
       setMessage(message ? decodeURIComponent(message) : 'YouTube успешно подключен!');
-      
-      // Если получили токены, сохраняем их в localStorage для передачи мастеру
+
+      // Сохраняем флаг успешного подключения (токены уже сохранены сервером)
+      const saved = urlParams.get('saved');
+      const flagData = { timestamp: Date.now(), campaignId: campaignId || null, saved: saved === 'true' };
+      localStorage.setItem('youtubeOAuthSuccess', JSON.stringify(flagData));
+      console.log('✅ [YouTube Callback] Флаг успеха сохранён в localStorage:', flagData);
+
+      // Обратная совместимость: если токены переданы через URL (старый flow)
       if (accessToken && refreshToken) {
-        const tokenData = {
-          accessToken,
-          refreshToken,
-          timestamp: Date.now()
-        };
-        
-        // Добавляем campaignId если он есть в URL
-        if (campaignId) {
-          tokenData.campaignId = campaignId;
-          console.log('🎯 [YouTube Callback] Campaign ID найден:', campaignId);
-        } else {
-          console.warn('⚠️ [YouTube Callback] Campaign ID не найден в URL параметрах');
-        }
-        
+        const tokenData = { accessToken, refreshToken, timestamp: Date.now(), campaignId: campaignId || null };
         localStorage.setItem('youtubeOAuthTokens', JSON.stringify(tokenData));
-        console.log('🔑 [YouTube Callback] Токены сохранены в localStorage:', tokenData);
-        
-        // Если это popup окно, закрываем его через короткое время
-        if (window.opener) {
-          console.log('🪟 [YouTube Callback] Detected popup window, closing in 2 seconds...');
-          setTimeout(() => {
-            window.close();
-          }, 2000);
-        } else {
-          // Если это обычное окно, переходим к настройкам кампании
-          setTimeout(() => {
-            if (campaignId) {
-              window.location.href = `/campaigns/${campaignId}?openYouTube=true`;
-            } else {
-              window.location.href = '/';
-            }
-          }, 2000);
-        }
+        console.log('🔑 [YouTube Callback] Токены сохранены в localStorage (legacy)');
+      }
+
+      if (window.opener) {
+        console.log('🪟 [YouTube Callback] Popup window — closing in 2 seconds...');
+        setTimeout(() => { window.close(); }, 2000);
+      } else {
+        setTimeout(() => {
+          window.location.href = campaignId ? `/campaigns/${campaignId}?openYouTube=true` : '/';
+        }, 2000);
       }
     } else {
       setStatus('error');

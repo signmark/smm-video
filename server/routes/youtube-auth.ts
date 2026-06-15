@@ -161,19 +161,51 @@ router.get('/youtube/auth/callback', async (req, res) => {
 
     // Обмениваем code на токены
     const tokens = await youtubeOAuth.exchangeCodeForTokens(code as string);
-
-    // Токены будут сохранены через frontend после возврата к мастеру
-    // Здесь только логируем успешное получение токенов
     console.log(`[youtube-auth] OAuth токены успешно получены для пользователя ${userId}`);
 
-    // campaignId уже извлечен выше при декодировании state
-    console.log(`[youtube-auth] Using campaignId from state: ${campaignId}`);
+    // Получаем информацию о канале
+    const channelInfo = await youtubeOAuth.getChannelInfo(tokens.accessToken);
+    console.log(`[youtube-auth] Канал: ${channelInfo.channelTitle} (${channelInfo.channelId})`);
+
+    // Сохраняем токены напрямую в Directus (не через frontend)
+    if (campaignId) {
+      try {
+        const adminToken = process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
+        const directusUrl = process.env.DIRECTUS_URL;
+        if (adminToken && directusUrl) {
+          const axios = (await import('axios')).default;
+          const getCamp = await axios.get(`${directusUrl}/items/user_campaigns/${campaignId}`, {
+            headers: { Authorization: `Bearer ${adminToken}` }
+          });
+          const existing = getCamp.data?.data?.social_media_settings || {};
+          const updatedSettings = {
+            ...existing,
+            youtube: {
+              ...(existing.youtube || {}),
+              accessToken: tokens.accessToken,
+              refreshToken: tokens.refreshToken,
+              channelId: channelInfo.channelId,
+              channelTitle: channelInfo.channelTitle,
+              setupCompletedAt: new Date().toISOString(),
+              configured: true
+            }
+          };
+          await axios.patch(`${directusUrl}/items/user_campaigns/${campaignId}`, {
+            social_media_settings: updatedSettings
+          }, {
+            headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json' }
+          });
+          console.log(`[youtube-auth] ✅ Токены сохранены в Directus для кампании ${campaignId}`);
+        }
+      } catch (saveErr: any) {
+        console.error(`[youtube-auth] ❌ Ошибка сохранения в Directus: ${saveErr.message}`);
+      }
+    }
 
     const params = new URLSearchParams({
       success: 'true',
-      message: 'YouTube успешно подключен',
-      accessToken: tokens.accessToken,
-      refreshToken: tokens.refreshToken
+      message: `YouTube подключен: ${channelInfo.channelTitle}`,
+      saved: 'true'
     });
 
     if (campaignId) {

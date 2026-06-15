@@ -230,11 +230,13 @@ async function analyticsPost<T = any>(path: string, body: Record<string, any> = 
   const apiKey = getAnalyticsApiKey();
   try {
     const url = `${ANALYTICS_BASE}${path}`;
+    log(`[ScraperAnalytics] → POST ${url} body=${JSON.stringify(body)}`, 'info');
     const response = await axios.post(url, body, {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
       params,
       timeout: 60000
     });
+    log(`[ScraperAnalytics] ← POST ${path} status=${response.status} response=${JSON.stringify(response.data)}`, 'info');
     return response.data as T;
   } catch (err: any) {
     log(`[ScraperAnalytics] POST ${path} error: ${err.response?.status} ${err.message}`, 'error');

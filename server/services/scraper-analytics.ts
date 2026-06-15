@@ -238,7 +238,7 @@ async function analyticsPost<T = any>(path: string, body: Record<string, any> = 
     return response.data as T;
   } catch (err: any) {
     log(`[ScraperAnalytics] POST ${path} error: ${err.response?.status} ${err.message}`, 'error');
-    if (err.response?.data?.detail) log(`[ScraperAnalytics] detail: ${err.response.data.detail}`, 'error');
+    if (err.response?.data) log(`[ScraperAnalytics] response body: ${JSON.stringify(err.response.data)}`, 'error');
     return null;
   }
 }
@@ -383,13 +383,15 @@ export async function refreshChannelMetrics(params: {
   days?: number;
   force?: boolean;
 }): Promise<MetricsRefreshResponse | null> {
+  const body = {
+    channels: params.channels,
+    days: params.days ?? 7,
+    force: params.force ?? false
+  };
+  log(`[ScraperAnalytics] metrics-refresh request body: ${JSON.stringify(body)}`, 'info');
   return analyticsPost<MetricsRefreshResponse>(
     '/api/v1/monitoring/scheduler/metrics-refresh',
-    {
-      channels: params.channels,
-      days: params.days ?? 7,
-      force: params.force ?? false
-    }
+    body
   );
 }
 

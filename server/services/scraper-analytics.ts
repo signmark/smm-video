@@ -379,14 +379,14 @@ export async function getEngagementComparison(params?: {
 // ─── Шедулер ─────────────────────────────────────────────────────────────────
 
 export async function refreshChannelMetrics(params: {
-  channel_ids: string[];
+  channels: Array<{ id: string; platform: string; platform_channel_id: string }>;
   days?: number;
   force?: boolean;
 }): Promise<MetricsRefreshResponse | null> {
   return analyticsPost<MetricsRefreshResponse>(
     '/api/v1/monitoring/scheduler/metrics-refresh',
     {
-      channel_ids: params.channel_ids,
+      channels: params.channels,
       days: params.days ?? 7,
       force: params.force ?? false
     }

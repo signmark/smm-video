@@ -2040,16 +2040,16 @@ ${trendSummaries.length > 0 ? `ВЫВОДЫ ПО ТРЕНДАМ:\n${trendSummari
 
   /**
    * POST /api/scraper/monitoring/scheduler/metrics-refresh — ручное обновление метрик
-   * Query: channel_ids (comma-separated), days, force
+   * Body: { channels: [{id, platform, platform_channel_id}], days?, force? }
    */
   app.post('/api/scraper/monitoring/scheduler/metrics-refresh', authenticateUser, async (req: Request, res: Response) => {
     try {
-      const { channel_ids, days, force } = req.body;
-      if (!channel_ids || !Array.isArray(channel_ids) || channel_ids.length === 0) {
-        return res.status(400).json({ success: false, error: 'channel_ids (массив) обязателен' });
+      const { channels, days, force } = req.body;
+      if (!channels || !Array.isArray(channels) || channels.length === 0) {
+        return res.status(400).json({ success: false, error: 'channels (массив объектов {id, platform, platform_channel_id}) обязателен' });
       }
       const { refreshChannelMetrics } = await import('../services/scraper-analytics');
-      const result = await refreshChannelMetrics({ channel_ids, days, force: force === true });
+      const result = await refreshChannelMetrics({ channels, days, force: force === true });
       if (!result) return res.status(502).json({ success: false, error: 'Скрейпер не ответил' });
       res.json({ success: true, data: result });
     } catch (err: any) {

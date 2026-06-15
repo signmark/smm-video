@@ -385,9 +385,8 @@ export async function refreshChannelMetrics(params: {
 }): Promise<MetricsRefreshResponse | null> {
   return analyticsPost<MetricsRefreshResponse>(
     '/api/v1/monitoring/scheduler/metrics-refresh',
-    {},
     {
-      channel_ids: params.channel_ids.join(','),
+      channel_ids: params.channel_ids,
       days: params.days ?? 7,
       force: params.force ?? false
     }

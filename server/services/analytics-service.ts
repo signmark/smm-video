@@ -225,7 +225,7 @@ export class AnalyticsService {
         return { success: true, message: 'Каналы кампании не зарегистрированы в скрейпере' };
       }
 
-      const { getMonitoredChannels, refreshChannelMetrics, ensureChannelsRegistered } = await import('./scraper-analytics');
+      const { getMonitoredChannels, refreshChannelMetrics, ensureChannelsRegistered, forceParseChannel } = await import('./scraper-analytics');
 
       // Регистрируем если не зарегистрированы
       await ensureChannelsRegistered(channelsToLookup.map(ch => ({
@@ -242,7 +242,13 @@ export class AnalyticsService {
         );
         if (found) {
           if (!found.last_parsed_at) {
-            log(`[AnalyticsService] ⏳ Канал ${found.platform}:${found.platform_channel_id} ещё не спарсен (last_parsed_at=null) — пропускаем metrics-refresh`, 'info');
+            log(`[AnalyticsService] ⏳ Канал ${found.platform}:${found.platform_channel_id} ещё не спарсен — вызываем force-parse`, 'info');
+            try {
+              await forceParseChannel(found.id);
+              log(`[AnalyticsService] ✅ force-parse triggered for ${found.platform}:${found.platform_channel_id}`, 'info');
+            } catch (parseErr: any) {
+              log(`[AnalyticsService] ⚠️ force-parse failed for ${found.id}: ${parseErr.message}`, 'warn');
+            }
             continue;
           }
           channelObjects.push({

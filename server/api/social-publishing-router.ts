@@ -257,10 +257,7 @@ router.post('/stories/publish', authMiddleware, async (req, res) => {
       });
 
 
-      // Отправляем Stories на соответствующие N8N webhooks
-      const { getN8nUrl } = await import('../utils/n8n-utils');
-      const n8nUrl = getN8nUrl();
-      const webhookPromises = [];
+      const webhookPromises: Promise<any>[] = [];
 
       for (const platform of selectedPlatforms) {
         // VK Stories - прямая публикация через сервис (без n8n)
@@ -293,7 +290,37 @@ router.post('/stories/publish', authMiddleware, async (req, res) => {
           continue;
         }
 
-        // Остальные платформы через n8n webhooks
+        // Instagram Stories → прямая публикация через Instagram Graph API
+        if (platform === 'instagram') {
+          webhookPromises.push(
+            (async () => {
+              const { publishInstagramStory } = await import('../services/social-platforms/instagram-stories-service');
+              const overrideImageUrl: string | undefined = (generatedImageUrl || storyContent?.image_url) || undefined;
+              const overrideVideoUrl: string | undefined = (generatedVideoUrl || storyContent?.video_url || storyContent?.backgroundVideoUrl) || undefined;
+              const adminTok = process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN || '';
+              const result = await publishInstagramStory(contentId, adminTok, { imageUrl: overrideImageUrl, videoUrl: overrideVideoUrl });
+              return { platform: 'instagram', success: result.success, status: result.success ? 200 : 500, data: result, error: result.error };
+            })().catch((err: any) => ({ platform: 'instagram', success: false, error: err.message }))
+          );
+          continue;
+        }
+
+        // Telegram Stories → Bot API не поддерживает Stories
+        if (platform === 'telegram') {
+          webhookPromises.push(Promise.resolve({
+            platform: 'telegram',
+            success: false,
+            error: 'Telegram Stories публикуются через мобильное приложение — Bot API не поддерживает публикацию Stories'
+          }));
+          continue;
+        }
+
+        // Прочие платформы — не поддерживают Stories
+        webhookPromises.push(Promise.resolve({ platform, success: false, error: `Платформа ${platform} не поддерживает Stories` }));
+        continue;
+
+        // Устаревший код (недостижим после continue выше)
+        const n8nUrl = '';
         let webhookUrl = '';
 
         if (platform === 'instagram') {
@@ -1223,14 +1250,12 @@ router.post('/publish/now', authMiddleware, async (req, res) => {
             continue;
           }
 
-          // Все остальные платформы через N8N вебхуки
-          log(`[Social Publishing] Публикация ${platform} через N8N вебхук`);
-          const result = await publishViaN8nAsync(contentId, platform);
-
+          // Платформа не поддерживается напрямую
+          log(`[Social Publishing] Платформа ${platform} не поддерживается для прямой публикации`);
           publishResults.push({
             platform,
-            success: true,
-            result
+            success: false,
+            error: `Платформа ${platform} не поддерживается`
           });
 
           // Освобождаем блокировку после успешной публикации
@@ -1380,17 +1405,13 @@ router.post('/publish', authMiddleware, async (req, res) => {
     // Маршрутизация запросов в зависимости от платформы
     switch (platform.toLowerCase()) {
       case 'telegram':
-        // Для Telegram используем n8n вебхук
-        return publishViaN8n(contentId, 'telegram', req, res);
+        return res.status(501).json({ success: false, error: 'Используйте /api/social/publish/now для публикации в Telegram' });
 
       case 'vk':
-        // Для VK используем n8n вебхук
-        return publishViaN8n(contentId, 'vk', req, res);
+        return res.status(501).json({ success: false, error: 'Используйте /api/social/publish/now для публикации в VK' });
 
       case 'instagram':
-        // Для Instagram теперь всегда используем n8n вебхук
-        log(`[Social Publishing] Instagram публикации перенаправляются через n8n`);
-        return publishViaN8n(contentId, 'instagram', req, res);
+        return res.status(501).json({ success: false, error: 'Используйте /api/social/publish/now для публикации в Instagram' });
 
       case 'facebook':
         // Для Facebook используем прямую публикацию через API
@@ -1424,9 +1445,7 @@ router.post('/publish', authMiddleware, async (req, res) => {
         }
 
       case 'youtube':
-        // Публикация YouTube через N8N webhook
-        log(`[Social Publishing] YouTube публикация через N8N webhook`);
-        return publishViaN8n(contentId, 'youtube', req, res);
+        return res.status(501).json({ success: false, error: 'Используйте /api/social/publish/now для публикации в YouTube' });
 
       case 'threads': {
         log(`[Social Publishing] Threads публикация через прямой API`);
@@ -2494,9 +2513,8 @@ router.post('/retry-platform', authMiddleware, async (req, res) => {
       }
     }
 
-    // Facebook и прочие — через N8N вебхук
-    const publishResult = await publishViaN8nAsync(contentId, platform);
-    return res.json({ success: true, platform, result: publishResult });
+    // Прочие платформы не поддерживаются через этот эндпоинт
+    return res.status(501).json({ success: false, error: `Используйте /api/social/publish/now для платформы ${platform}` });
 
   } catch (err: any) {
     log(`[Retry] Ошибка при повторной публикации в ${platform}: ${err.message}`);

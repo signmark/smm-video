@@ -236,24 +236,6 @@ export function registerTrendsRoutes(app: Express) {
           });
           log(`[Trends Route] ✅ Прямой сбор завершён: TG=${result.telegram}, VK=${result.vk}, YT=${result.youtube}, IG=${result.instagram}, total=${result.total}`, 'info');
 
-          // Дополнительно уведомляем N8N если настроен (для совместимости с обработчиком комментариев)
-          const n8nWebhookUrl = process.env.N8N_TRENDS_COLLECT_WEBHOOK;
-          if (n8nWebhookUrl && result.total > 0) {
-            axios.post(n8nWebhookUrl, {
-              campaignId,
-              userID: userId,
-              collectionDays,
-              minViews,
-              maxTrendsPerSource,
-              maxSourcesPerPlatform,
-              minFollowers,
-              platforms,
-              collectSources: false,
-              collectComments
-            }, { timeout: 10000 }).catch((e: any) => {
-              log(`[Trends Route] N8N notify failed (non-critical): ${e.message}`, 'warn');
-            });
-          }
         } catch (err: any) {
           log(`[Trends Route] ❌ Ошибка прямого сбора трендов: ${err.message}`, 'error');
         }

@@ -7,7 +7,6 @@ import { isUserAdmin } from '../routes-global-api-keys';
 import { directusAuthManager } from '../services/directus-auth-manager';
 import { geminiVertexDirect } from '../services/gemini-vertex-direct';
 import { AnalyticsService } from '../services/analytics-service';
-import { getN8nUrl } from '../utils/n8n-utils';
 import axios from 'axios';
 
 export function registerAnalyticsRoutes(app: Express) {
@@ -21,16 +20,13 @@ export function registerAnalyticsRoutes(app: Express) {
 
       log(`[Analytics Route] Запрос на обновление данных для кампании ${campaignId}`, 'info');
 
-      // Вызов n8n вебхука для сбора данных из соцсетей
-      const webhookUrl = process.env.N8N_ANALYTICS_WEBHOOK || `${getN8nUrl()}/webhook/posts-to-analytics`;
-      log(`[Analytics Route] 🚀 Вызов n8n вебхука (принудительное обновление): ${webhookUrl}`, 'info');
+      log(`[Analytics Route] 🚀 Запрос на обновление аналитики через скрейпер для кампании ${campaignId}`, 'info');
 
-      // Отправляем запрос без await, так как сбор данных может занять много времени
-      axios.post(webhookUrl, {
-        campaignId,
-        days: days || 7
+      // Запускаем обновление метрик через скрейпер асинхронно
+      AnalyticsService.refreshCampaignAnalytics(campaignId).then(result => {
+        log(`[Analytics Route] 🔄 refreshCampaignAnalytics: ${result.message}`, 'info');
       }).catch(err => {
-        log(`[Analytics Route] ⚠️ Ошибка при вызове n8n вебхука: ${err.message}`, 'error');
+        log(`[Analytics Route] ⚠️ refreshCampaignAnalytics error: ${err.message}`, 'warn');
       });
 
       res.json({

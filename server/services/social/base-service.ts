@@ -236,14 +236,10 @@ export abstract class BaseSocialService {
    * @returns Базовый URL приложения
    */
   protected getAppBaseUrl(): string {
-    // Приоритет имеют явно указанные URL
-    // Сначала проверяем наличие переменных окружения
-    const { getN8nUrl } = require('../../utils/n8n-utils');
-    const n8nUrl = getN8nUrl();
-    if (n8nUrl) {
-      return n8nUrl.endsWith('/') ? n8nUrl.slice(0, -1) : n8nUrl;
-    }
-    return null;
+    const appUrl = process.env.APP_URL || process.env.REPLIT_DEV_DOMAIN
+      ? `https://${process.env.REPLIT_DEV_DOMAIN}`
+      : `http://0.0.0.0:${process.env.PORT || 5000}`;
+    return appUrl.endsWith('/') ? appUrl.slice(0, -1) : appUrl;
   }
   
   /**

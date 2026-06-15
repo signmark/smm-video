@@ -40,9 +40,7 @@ router.post('/save-config', async (req, res) => {
     console.log('🔥 Instagram Setup Save Config - Headers:', JSON.stringify(req.headers, null, 2));
     
     const { appId, appSecret, instagramId, userId, state } = req.body;
-    const { getN8nUrl } = require('../utils/n8n-utils');
-    const n8nBaseUrl = getN8nUrl();
-    const webhookUrl = `${n8nBaseUrl}/webhook/authorize-ig`;
+    const webhookUrl = process.env.INSTAGRAM_WEBHOOK_URL || '';
     
     console.log('🔥 Extracted data:', { appId, appSecret, instagramId, userId, state });
 
@@ -156,8 +154,7 @@ router.post('/start', async (req, res) => {
     }
 
     // Используем webhook URL из конфигурации
-    const { getN8nUrl } = require('../utils/n8n-utils');
-    const finalWebhookUrl = webhookUrl || process.env.INSTAGRAM_WEBHOOK_URL || `${getN8nUrl()}/webhook/instagram`;
+    const finalWebhookUrl = webhookUrl || process.env.INSTAGRAM_WEBHOOK_URL || '';
 
     // Генерируем уникальный state для безопасности
     const state = `${userId}_${Math.random().toString(36).substring(2, 15)}`;

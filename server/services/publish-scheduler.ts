@@ -1556,8 +1556,12 @@ ${text}
           log(`TikTok публикация отключена для ${content.id} — платформа временно недоступна`, 'scheduler');
           await mergeAndSavePlatformStatus('tiktok', { status: 'failed', error: 'TikTok временно отключён', failedAt: new Date().toISOString() });
         } else {
-          await this.publishThroughN8nWebhook(content, platform);
-          log(`🔓 Планировщик: N8N fallback для ${platform} ${content.id}`, 'scheduler', 'debug');
+          log(`[Планировщик] Платформа ${platform} не поддерживается для прямой публикации, контент ${content.id}`, 'scheduler', 'warn');
+          await mergeAndSavePlatformStatus(platform, {
+            status: 'failed',
+            error: `Платформа ${platform} не поддерживает автоматическую публикацию`,
+            failedAt: new Date().toISOString()
+          });
         }
 
         await publicationLockManager.releaseLock(content.id, platform);

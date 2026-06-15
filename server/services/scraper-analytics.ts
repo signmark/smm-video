@@ -383,14 +383,16 @@ export async function getEngagementComparison(params?: {
 export async function refreshChannelMetrics(params: {
   channels: Array<{ id: string; platform: string; platform_channel_id: string }>;
   days?: number;
+  force?: boolean;
 }): Promise<MetricsRefreshResponse | null> {
   const channelIds = params.channels.map(c => c.id).join(',');
   const days = params.days ?? 7;
-  log(`[ScraperAnalytics] metrics-refresh query: channel_ids=${channelIds}&days=${days}`, 'info');
+  const force = params.force ?? true;
+  log(`[ScraperAnalytics] metrics-refresh query: channel_ids=${channelIds}&days=${days}&force=${force}`, 'info');
   return analyticsPost<MetricsRefreshResponse>(
     '/api/v1/monitoring/scheduler/metrics-refresh',
     {},
-    { channel_ids: channelIds, days }
+    { channel_ids: channelIds, days, force }
   );
 }
 

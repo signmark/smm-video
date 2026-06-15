@@ -420,6 +420,12 @@ export async function ensureChannelsRegistered(
       if (created?.id) {
         idMap.set(key, created.id);
         log(`[ScraperAnalytics] Registered channel ${ch.platform}:${ch.id} → ${created.id}`, 'info');
+        try {
+          await forceParseChannel(created.id);
+          log(`[ScraperAnalytics] force-parse triggered for channel ${created.id}`, 'info');
+        } catch (parseErr: any) {
+          log(`[ScraperAnalytics] force-parse failed for ${created.id}: ${parseErr.message}`, 'warn');
+        }
       }
     } catch (err: any) {
       log(`[ScraperAnalytics] Failed to register channel ${key}: ${err.message}`, 'warn');

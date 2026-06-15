@@ -1731,14 +1731,69 @@ ${trendSummaries.length > 0 ? `ВЫВОДЫ ПО ТРЕНДАМ:\n${trendSummari
 
   /**
    * GET /api/scraper/monitoring/channels — список зарегистрированных каналов
+   * Query: platform, is_active, page, page_size
    */
   app.get('/api/scraper/monitoring/channels', authenticateUser, async (req: Request, res: Response) => {
     try {
+      const { platform, is_active, page, page_size } = req.query as Record<string, string>;
       const { getMonitoredChannels } = await import('../services/scraper-analytics');
-      const channels = await getMonitoredChannels();
-      res.json({ success: true, data: channels });
+      const result = await getMonitoredChannels({
+        platform: platform || undefined,
+        is_active: is_active !== undefined ? is_active === 'true' : undefined,
+        page: page ? Number(page) : undefined,
+        page_size: page_size ? Number(page_size) : 100
+      });
+      res.json({ success: true, data: result.items, total: result.total, page: result.page, page_size: result.page_size });
     } catch (err: any) {
       log(`[ScraperAnalytics] GET monitoring/channels error: ${err.message}`, 'error');
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  /**
+   * DELETE /api/scraper/monitoring/channels/:channelId — удалить канал из мониторинга
+   */
+  app.delete('/api/scraper/monitoring/channels/:channelId', authenticateUser, async (req: Request, res: Response) => {
+    try {
+      const { channelId } = req.params;
+      const { deleteMonitoringChannel } = await import('../services/scraper-analytics');
+      const ok = await deleteMonitoringChannel(channelId);
+      if (!ok) return res.status(502).json({ success: false, error: 'Не удалось удалить канал' });
+      res.json({ success: true });
+    } catch (err: any) {
+      log(`[ScraperAnalytics] DELETE monitoring/channels error: ${err.message}`, 'error');
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  /**
+   * GET /api/scraper/monitoring/channels/:channelId/parse-status — статус парсинга
+   */
+  app.get('/api/scraper/monitoring/channels/:channelId/parse-status', authenticateUser, async (req: Request, res: Response) => {
+    try {
+      const { channelId } = req.params;
+      const { getChannelParseStatus } = await import('../services/scraper-analytics');
+      const status = await getChannelParseStatus(channelId);
+      if (!status) return res.status(404).json({ success: false, error: 'Канал не найден' });
+      res.json({ success: true, data: status });
+    } catch (err: any) {
+      log(`[ScraperAnalytics] GET parse-status error: ${err.message}`, 'error');
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  /**
+   * POST /api/scraper/monitoring/channels/:channelId/force-parse — принудительный парсинг
+   */
+  app.post('/api/scraper/monitoring/channels/:channelId/force-parse', authenticateUser, async (req: Request, res: Response) => {
+    try {
+      const { channelId } = req.params;
+      const { forceParseChannel } = await import('../services/scraper-analytics');
+      const result = await forceParseChannel(channelId);
+      if (!result) return res.status(502).json({ success: false, error: 'Скрейпер не ответил' });
+      res.json({ success: true, data: result });
+    } catch (err: any) {
+      log(`[ScraperAnalytics] POST force-parse error: ${err.message}`, 'error');
       res.status(500).json({ success: false, error: err.message });
     }
   });
@@ -1790,12 +1845,73 @@ ${trendSummaries.length > 0 ? `ВЫВОДЫ ПО ТРЕНДАМ:\n${trendSummari
       const data = await getChannelAnalytics(channelId, {
         from_date,
         to_date,
-        granularity: (granularity as any) || 'day'
+        granularity: (granularity as 'day' | 'week' | 'month') || 'day'
       });
       if (!data) return res.status(404).json({ success: false, error: 'Нет данных аналитики' });
       res.json({ success: true, data });
     } catch (err: any) {
       log(`[ScraperAnalytics] GET analytics error: ${err.message}`, 'error');
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  /**
+   * GET /api/scraper/channels/:channelId/posts — посты канала
+   * Query: page, page_size, from_date, to_date
+   */
+  app.get('/api/scraper/channels/:channelId/posts', authenticateUser, async (req: Request, res: Response) => {
+    try {
+      const { channelId } = req.params;
+      const { page, page_size, from_date, to_date } = req.query as Record<string, string>;
+      const { getChannelPosts } = await import('../services/scraper-analytics');
+      const data = await getChannelPosts(channelId, {
+        page: page ? Number(page) : 1,
+        page_size: page_size ? Number(page_size) : 20,
+        from_date,
+        to_date
+      });
+      if (!data) return res.status(404).json({ success: false, error: 'Нет данных' });
+      res.json({ success: true, data: data.items, total: data.total, page: data.page, has_next_page: data.has_next_page });
+    } catch (err: any) {
+      log(`[ScraperAnalytics] GET channel posts error: ${err.message}`, 'error');
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  /**
+   * GET /api/scraper/channels/:channelId/best-times — лучшее время для публикаций
+   */
+  app.get('/api/scraper/channels/:channelId/best-times', authenticateUser, async (req: Request, res: Response) => {
+    try {
+      const { channelId } = req.params;
+      const { getChannelBestTimes } = await import('../services/scraper-analytics');
+      const data = await getChannelBestTimes(channelId);
+      if (!data) return res.status(404).json({ success: false, error: 'Нет данных' });
+      res.json({ success: true, data });
+    } catch (err: any) {
+      log(`[ScraperAnalytics] GET best-times error: ${err.message}`, 'error');
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  /**
+   * GET /api/scraper/channels/:channelId/posts/dynamics — динамика постов
+   * Query: days, min_views, limit
+   */
+  app.get('/api/scraper/channels/:channelId/posts/dynamics', authenticateUser, async (req: Request, res: Response) => {
+    try {
+      const { channelId } = req.params;
+      const { days, min_views, limit } = req.query as Record<string, string>;
+      const { getChannelPostsDynamics } = await import('../services/scraper-analytics');
+      const data = await getChannelPostsDynamics(channelId, {
+        days: days ? Number(days) : 7,
+        min_views: min_views ? Number(min_views) : undefined,
+        limit: limit ? Number(limit) : undefined
+      });
+      if (!data) return res.status(404).json({ success: false, error: 'Нет данных' });
+      res.json({ success: true, data });
+    } catch (err: any) {
+      log(`[ScraperAnalytics] GET posts/dynamics error: ${err.message}`, 'error');
       res.status(500).json({ success: false, error: err.message });
     }
   });
@@ -1845,21 +1961,42 @@ ${trendSummaries.length > 0 ? `ВЫВОДЫ ПО ТРЕНДАМ:\n${trendSummari
 
   /**
    * GET /api/scraper/analytics/engagement — сравнительный engagement
-   * Query: platform, channel_ids (comma-separated), from_date, to_date
+   * Query: platform, channel_ids (comma-separated), from_date, to_date, limit
    */
   app.get('/api/scraper/analytics/engagement', authenticateUser, async (req: Request, res: Response) => {
     try {
-      const { platform, channel_ids, from_date, to_date } = req.query as Record<string, string>;
+      const { platform, channel_ids, from_date, to_date, limit } = req.query as Record<string, string>;
       const { getEngagementComparison } = await import('../services/scraper-analytics');
       const data = await getEngagementComparison({
         platform,
         from_date,
         to_date,
+        limit: limit ? Number(limit) : undefined,
         channel_ids: channel_ids ? channel_ids.split(',') : undefined
       });
-      res.json({ success: true, data, total: data.length });
+      res.json({ success: true, data: data.channels, best_performer: data.best_performer, from_date: data.from_date, to_date: data.to_date, total: data.channels.length });
     } catch (err: any) {
       log(`[ScraperAnalytics] GET analytics/engagement error: ${err.message}`, 'error');
+      res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  /**
+   * POST /api/scraper/monitoring/scheduler/metrics-refresh — ручное обновление метрик
+   * Query: channel_ids (comma-separated), days, force
+   */
+  app.post('/api/scraper/monitoring/scheduler/metrics-refresh', authenticateUser, async (req: Request, res: Response) => {
+    try {
+      const { channel_ids, days, force } = req.body;
+      if (!channel_ids || !Array.isArray(channel_ids) || channel_ids.length === 0) {
+        return res.status(400).json({ success: false, error: 'channel_ids (массив) обязателен' });
+      }
+      const { refreshChannelMetrics } = await import('../services/scraper-analytics');
+      const result = await refreshChannelMetrics({ channel_ids, days, force: force === true });
+      if (!result) return res.status(502).json({ success: false, error: 'Скрейпер не ответил' });
+      res.json({ success: true, data: result });
+    } catch (err: any) {
+      log(`[ScraperAnalytics] POST metrics-refresh error: ${err.message}`, 'error');
       res.status(500).json({ success: false, error: err.message });
     }
   });

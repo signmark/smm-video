@@ -234,21 +234,27 @@ export class AnalyticsService {
       })));
 
       const monitored = await getMonitoredChannels({ page_size: 100 });
-      const channelIds: string[] = [];
+      const channelObjects: Array<{ id: string; platform: string; platform_channel_id: string }> = [];
 
       for (const ch of channelsToLookup) {
         const found = monitored.items.find(m =>
           m.platform === ch.platform && m.platform_channel_id === ch.platformId
         );
-        if (found) channelIds.push(found.id);
+        if (found) {
+          channelObjects.push({
+            id: found.id,
+            platform: found.platform,
+            platform_channel_id: found.platform_channel_id
+          });
+        }
       }
 
-      if (channelIds.length > 0) {
-        await refreshChannelMetrics({ channel_ids: channelIds, days: 30, force: true });
-        log(`[AnalyticsService] 🔄 Обновление метрик запрошено для ${channelIds.length} каналов кампании ${campaignId}`, 'info');
+      if (channelObjects.length > 0) {
+        await refreshChannelMetrics({ channels: channelObjects, days: 30, force: true });
+        log(`[AnalyticsService] 🔄 Обновление метрик запрошено для ${channelObjects.length} каналов кампании ${campaignId}`, 'info');
       }
 
-      return { success: true, message: `Обновление аналитики запущено для ${channelIds.length} канала(ов)` };
+      return { success: true, message: `Обновление аналитики запущено для ${channelObjects.length} канала(ов)` };
     } catch (err: any) {
       log(`[AnalyticsService] ❌ refreshCampaignAnalytics error: ${err.message}`, 'error');
       return { success: false, message: err.message };

@@ -400,6 +400,65 @@ export function registerTrendsRoutes(app: Express) {
   });
 
   /**
+   * POST /api/trends/vk-webhook
+   * Скрейпер POSTит сюда результат VK-задачи когда готово.
+   * Формат: { task_id, status, result: { posts: [...] }, error }
+   * Задача была зарегистрирована в pendingVkTasks в trend-collector.ts.
+   */
+  app.post("/api/trends/vk-webhook", async (req: Request, res: Response) => {
+    res.json({ success: true });
+
+    try {
+      const body = req.body;
+      console.log(`[VK Webhook] 📥 Получен колбэк: ${JSON.stringify(body).substring(0, 800)}`);
+
+      const taskId = body?.task_id || body?.taskId || body?.job_id || body?.id || body?.result?.task_id;
+      const status = (body?.status ?? body?.result?.status ?? '').toString().toLowerCase();
+      const errorMsg = body?.error || body?.result?.error;
+
+      const isFailure = !!errorMsg || ['error', 'failed', 'failure'].includes(status);
+      if (isFailure) {
+        console.error(`[VK Webhook] ❌ Задача ${taskId} с ошибкой: ${errorMsg || status}`);
+        if (taskId) {
+          const { pendingVkTasks } = await import('../services/trend-collector');
+          pendingVkTasks.delete(String(taskId));
+        }
+        return;
+      }
+
+      const result = body?.result || body;
+      const posts: any[] = result?.posts || result?.items || result?.data || body?.posts || [];
+
+      console.log(`[VK Webhook] task_id=${taskId} | status=${status || '—'} | posts=${posts.length}`);
+
+      if (!taskId) {
+        console.warn(`[VK Webhook] ⚠️ Нет task_id в теле — невозможно найти кампанию`);
+        return;
+      }
+
+      const { pendingVkTasks, saveTrendPosts } = await import('../services/trend-collector');
+      const task = pendingVkTasks.get(String(taskId));
+
+      if (!task) {
+        console.warn(`[VK Webhook] ⚠️ task_id=${taskId} НЕ найден в реестре (истёк TTL или неизвестный id)`);
+        return;
+      }
+
+      if (posts.length === 0) {
+        console.log(`[VK Webhook] ℹ️ Нет постов в колбэке для кампании ${task.campaignId}`);
+        pendingVkTasks.delete(String(taskId));
+        return;
+      }
+
+      const saved = await saveTrendPosts(posts, 'vk', task.campaignId, task.sourceIdMap);
+      console.log(`[VK Webhook] ✅ Сохранено ${saved} VK-постов для кампании ${task.campaignId}`);
+      pendingVkTasks.delete(String(taskId));
+    } catch (error: any) {
+      console.error(`[VK Webhook] 💥 Критическая ошибка: ${error.message}`);
+    }
+  });
+
+  /**
    * POST /api/trends/collect-trends-callback
    * Легаси-эндпоинт (для старых вызовов через callTelegramTrendsCollectDirect).
    * Поддерживает как старый формат { posts, metadata } так и новый { task_id, status, result }.
@@ -1730,12 +1789,13 @@ ${trendSummaries.length > 0 ? `ВЫВОДЫ ПО ТРЕНДАМ:\n${trendSummari
   // ──────────────────────────────────────────────────────────────────────────
 
   /**
-   * GET /api/scraper/monitoring/channels — список зарегистрированных каналов
-   * Query: platform, is_active, page, page_size
+   * GET /api/scraper/monitoring/channels — список каналов мониторинга
+   * Query: platform, is_active, page, page_size, campaignId
+   * Если campaignId указан — возвращает только каналы, принадлежащие кампании (Telegram + VK)
    */
   app.get('/api/scraper/monitoring/channels', authenticateUser, async (req: Request, res: Response) => {
     try {
-      const { platform, is_active, page, page_size } = req.query as Record<string, string>;
+      const { platform, is_active, page, page_size, campaignId } = req.query as Record<string, string>;
       const { getMonitoredChannels } = await import('../services/scraper-analytics');
       const result = await getMonitoredChannels({
         platform: platform || undefined,
@@ -1743,6 +1803,21 @@ ${trendSummaries.length > 0 ? `ВЫВОДЫ ПО ТРЕНДАМ:\n${trendSummari
         page: page ? Number(page) : undefined,
         page_size: page_size ? Number(page_size) : 100
       });
+
+      // Если campaignId передан — фильтруем только собственные каналы кампании
+      if (campaignId) {
+        const campaign = await directusCrud.getById('user_campaigns', campaignId, { useAdminToken: true }) as any;
+        const ownIds = new Set<string>();
+        if (campaign?.social_media_settings?.telegram?.chatId) {
+          ownIds.add(String(campaign.social_media_settings.telegram.chatId));
+        }
+        if (campaign?.social_media_settings?.vk?.groupId) {
+          ownIds.add(String(campaign.social_media_settings.vk.groupId));
+        }
+        const filtered = result.items.filter(ch => ownIds.has(ch.platform_channel_id));
+        return res.json({ success: true, data: filtered, total: filtered.length, page: 1, page_size: filtered.length });
+      }
+
       res.json({ success: true, data: result.items, total: result.total, page: result.page, page_size: result.page_size });
     } catch (err: any) {
       log(`[ScraperAnalytics] GET monitoring/channels error: ${err.message}`, 'error');
@@ -2010,35 +2085,50 @@ ${trendSummaries.length > 0 ? `ВЫВОДЫ ПО ТРЕНДАМ:\n${trendSummari
       const { campaignId } = req.body;
       if (!campaignId) return res.status(400).json({ success: false, error: 'campaignId обязателен' });
 
-      const sources = await directusCrud.list('campaign_content_sources', {
-        filter: { campaign_id: { _eq: campaignId } },
-        fields: ['id', 'type', 'TgId', 'vkId', 'name', 'url'],
-        limit: -1,
+      // Регистрируем только СОБСТВЕННЫЕ каналы кампании (куда публикуем)
+      // Анализ источников/трендов реализован отдельно
+      const campaign = await directusCrud.getById('user_campaigns', campaignId, {
         useAdminToken: true
-      }) as any[];
+      }) as any;
+
+      if (!campaign) {
+        return res.status(404).json({ success: false, error: 'Кампания не найдена' });
+      }
 
       const channels: Array<{ platform: string; id: string; name?: string }> = [];
-      for (const s of sources || []) {
-        const type = (s.type || '').toLowerCase();
-        if (type === 'telegram' && s.TgId) {
-          channels.push({ platform: 'telegram', id: s.TgId, name: s.name });
-        } else if (type === 'vk' && s.vkId) {
-          channels.push({ platform: 'vk', id: String(s.vkId), name: s.name });
-        }
+      const sms = campaign.social_media_settings || {};
+
+      if (sms.telegram?.chatId) {
+        channels.push({
+          platform: 'telegram',
+          id: String(sms.telegram.chatId),
+          name: sms.telegram.username ? `@${sms.telegram.username}` : campaign.name
+        });
+      }
+      if (sms.vk?.groupId) {
+        channels.push({
+          platform: 'vk',
+          id: String(sms.vk.groupId),
+          name: campaign.name
+        });
       }
 
       if (channels.length === 0) {
-        return res.json({ success: true, registered: 0, message: 'Нет TG/VK каналов в кампании' });
+        return res.json({ success: true, registered: 0, message: 'Telegram и VK не настроены в кампании' });
       }
 
-      const { ensureChannelsRegistered } = await import('../services/scraper-analytics');
-      const idMap = await ensureChannelsRegistered(channels);
-
+      // Отвечаем сразу — регистрация идёт фоново (скрейпер асинхронный)
       res.json({
         success: true,
-        registered: idMap.size,
         total: channels.length,
-        message: `Зарегистрировано/найдено ${idMap.size} из ${channels.length} каналов`
+        message: `Запрос на регистрацию ${channels.length} каналов отправлен`
+      });
+
+      // Фоновая регистрация без блокировки HTTP-ответа
+      import('../services/scraper-analytics').then(({ ensureChannelsRegistered }) => {
+        ensureChannelsRegistered(channels).catch((err: any) => {
+          log(`[ScraperAnalytics] background sync-campaign error: ${err.message}`, 'warn');
+        });
       });
     } catch (err: any) {
       log(`[ScraperAnalytics] sync-campaign error: ${err.message}`, 'error');

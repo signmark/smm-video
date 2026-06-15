@@ -8,35 +8,11 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 import {
-  Hash, TrendingUp, Eye, MessageCircle, Share2, RefreshCw,
-  Layers, Radio, AlertCircle, ExternalLink, ThumbsUp, BarChart2,
-  Clock, Trash2, Zap, ChevronLeft, TrendingDown, Minus
+  Radio, RefreshCw, AlertCircle, ExternalLink, BarChart2,
+  Clock, Trash2, Zap, ChevronLeft, Layers
 } from 'lucide-react';
-import { formatDistanceToNow, format } from 'date-fns';
+import { formatDistanceToNow } from 'date-fns';
 import { ru } from 'date-fns/locale';
-
-interface TrendPost {
-  id: string;
-  platform: string;
-  platform_post_id: string;
-  published_date: string;
-  views: number;
-  likes: number;
-  comments: number;
-  shares: number;
-  engagement_rate: number;
-  text: string;
-  url?: string;
-  channel_name?: string;
-  hashtags?: string[];
-}
-
-interface TrendHashtag {
-  hashtag: string;
-  posts_count: number;
-  total_reach: number;
-  trend_score: number;
-}
 
 interface MonitoredChannel {
   id: string;
@@ -81,8 +57,6 @@ function PlatformBadge({ platform }: { platform: string }) {
   const colors: Record<string, string> = {
     telegram: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
     vk: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400',
-    instagram: 'bg-pink-100 text-pink-700 dark:bg-pink-900/30 dark:text-pink-400',
-    youtube: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400',
   };
   return (
     <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${colors[platform] ?? 'bg-muted text-muted-foreground'}`}>
@@ -102,7 +76,9 @@ function ChannelBestTimes({ channelId, onBack }: { channelId: string; onBack: ()
     queryFn: async () => {
       const resp = await apiRequest(`/api/scraper/channels/${channelId}/best-times`);
       return resp?.data as BestTimesData | null;
-    }
+    },
+    staleTime: 30 * 60 * 1000,
+    refetchOnWindowFocus: false,
   });
 
   if (isLoading) return <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}</div>;
@@ -177,42 +153,26 @@ export function ScraperAnalyticsPanel({ campaignId }: Props) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [platform, setPlatform] = useState('all');
-  const [activeTab, setActiveTab] = useState<'posts' | 'hashtags' | 'channels' | 'engagement'>('posts');
+  const [activeTab, setActiveTab] = useState<'channels' | 'engagement'>('channels');
   const [selectedChannelId, setSelectedChannelId] = useState<string | null>(null);
 
   const platformParam = platform !== 'all' ? platform : undefined;
 
-  const { data: postsData, isLoading: postsLoading, error: postsError } = useQuery({
-    queryKey: ['scraper-trend-posts', platform],
-    queryFn: async () => {
-      const params = new URLSearchParams({ limit: '20' });
-      if (platformParam) params.set('platform', platformParam);
-      const resp = await apiRequest(`/api/scraper/trends/posts?${params}`);
-      return (resp?.data ?? []) as TrendPost[];
-    },
-    staleTime: 5 * 60 * 1000
-  });
-
-  const { data: hashtagsData, isLoading: hashtagsLoading } = useQuery({
-    queryKey: ['scraper-trend-hashtags', platform],
-    queryFn: async () => {
-      const params = new URLSearchParams({ limit: '30' });
-      if (platformParam) params.set('platform', platformParam);
-      const resp = await apiRequest(`/api/scraper/trends/hashtags?${params}`);
-      return (resp?.data ?? []) as TrendHashtag[];
-    },
-    staleTime: 5 * 60 * 1000
-  });
-
+  // Каналы — только собственные каналы кампании (фильтрация на сервере по campaignId)
   const { data: channelsData, isLoading: channelsLoading } = useQuery({
-    queryKey: ['scraper-monitoring-channels'],
+    queryKey: ['scraper-monitoring-channels', campaignId],
     queryFn: async () => {
-      const resp = await apiRequest('/api/scraper/monitoring/channels?page_size=100');
+      const params = new URLSearchParams({ page_size: '100' });
+      if (campaignId) params.set('campaignId', campaignId);
+      const resp = await apiRequest(`/api/scraper/monitoring/channels?${params}`);
       return (resp?.data ?? []) as MonitoredChannel[];
     },
-    staleTime: 2 * 60 * 1000
+    staleTime: 15 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    retry: 1,
   });
 
+  // Engagement — только когда открыта эта вкладка, не поллим
   const { data: engagementData, isLoading: engagementLoading } = useQuery({
     queryKey: ['scraper-engagement', platform],
     queryFn: async () => {
@@ -221,8 +181,10 @@ export function ScraperAnalyticsPanel({ campaignId }: Props) {
       const resp = await apiRequest(`/api/scraper/analytics/engagement?${params}`);
       return (resp?.data ?? []) as EngagementChannel[];
     },
-    staleTime: 5 * 60 * 1000,
-    enabled: activeTab === 'engagement'
+    staleTime: 15 * 60 * 1000,
+    refetchOnWindowFocus: false,
+    retry: 1,
+    enabled: activeTab === 'engagement',
   });
 
   const syncMutation = useMutation({
@@ -234,8 +196,10 @@ export function ScraperAnalyticsPanel({ campaignId }: Props) {
       });
     },
     onSuccess: (data: any) => {
-      toast({ title: '✅ Синхронизация завершена', description: data?.message || 'Каналы зарегистрированы в системе мониторинга' });
-      queryClient.invalidateQueries({ queryKey: ['scraper-monitoring-channels'] });
+      toast({ title: '✅ Синхронизация запущена', description: data?.message || 'Регистрация каналов идёт в фоне' });
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['scraper-monitoring-channels'] });
+      }, 5000);
     },
     onError: (err: any) => {
       toast({ title: '❌ Ошибка', description: err?.message || 'Не удалось синхронизировать каналы', variant: 'destructive' });
@@ -267,14 +231,10 @@ export function ScraperAnalyticsPanel({ campaignId }: Props) {
     }
   });
 
-  const posts = postsData ?? [];
-  const hashtags = hashtagsData ?? [];
   const channels = channelsData ?? [];
   const engagementChannels = engagementData ?? [];
 
   const tabs = [
-    { key: 'posts' as const, label: 'Топ постов', count: posts.length, icon: TrendingUp },
-    { key: 'hashtags' as const, label: 'Хэштеги', count: hashtags.length, icon: Hash },
     { key: 'channels' as const, label: 'Каналы', count: channels.length, icon: Radio },
     { key: 'engagement' as const, label: 'Engagement', count: engagementChannels.length, icon: BarChart2 },
   ];
@@ -293,7 +253,7 @@ export function ScraperAnalyticsPanel({ campaignId }: Props) {
         <div>
           <h2 className="text-xl font-semibold flex items-center gap-2">
             <Layers className="h-5 w-5 text-blue-500" />
-            Аналитика из скрейпера
+            Аналитика каналов
           </h2>
           <p className="text-sm text-muted-foreground mt-0.5">
             Данные из системы мониторинга
@@ -325,7 +285,7 @@ export function ScraperAnalyticsPanel({ campaignId }: Props) {
       </div>
 
       {/* Tabs */}
-      <div className="flex border-b overflow-x-auto">
+      <div className="flex border-b">
         {tabs.map(tab => {
           const Icon = tab.icon;
           return (
@@ -347,152 +307,6 @@ export function ScraperAnalyticsPanel({ campaignId }: Props) {
           );
         })}
       </div>
-
-      {/* Posts tab */}
-      {activeTab === 'posts' && (
-        <div className="space-y-3">
-          {postsLoading ? (
-            Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-24 w-full rounded-lg" />)
-          ) : postsError ? (
-            <div className="flex items-center gap-2 text-muted-foreground p-4 bg-muted/30 rounded-lg">
-              <AlertCircle className="h-5 w-5 text-yellow-500 shrink-0" />
-              <span className="text-sm">Нет данных о постах — возможно каналы ещё не зарегистрированы в системе мониторинга</span>
-            </div>
-          ) : posts.length === 0 ? (
-            <Card>
-              <CardContent className="flex flex-col items-center py-10 gap-3 text-center">
-                <TrendingUp className="h-10 w-10 text-muted-foreground" />
-                <p className="text-sm text-muted-foreground">Нет трендовых постов. Зарегистрируйте каналы через кнопку «Синхронизировать».</p>
-              </CardContent>
-            </Card>
-          ) : (
-            posts.map((post, i) => (
-              <Card key={`${post.id}-${i}`} className="hover:shadow-md transition-shadow">
-                <CardContent className="pt-4 pb-3">
-                  <div className="flex items-start gap-3">
-                    <div className="flex-1 min-w-0">
-                      {post.channel_name && (
-                        <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1.5">
-                          <PlatformBadge platform={post.platform} />
-                          {post.channel_name}
-                        </p>
-                      )}
-                      <p className="text-sm line-clamp-3 text-foreground">
-                        {post.text || '(без текста)'}
-                      </p>
-                      <div className="flex flex-wrap items-center gap-3 mt-2 text-xs text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <Eye className="h-3 w-3" />
-                          {(post.views || 0).toLocaleString()}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <ThumbsUp className="h-3 w-3" />
-                          {(post.likes || 0).toLocaleString()}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <MessageCircle className="h-3 w-3" />
-                          {(post.comments || 0).toLocaleString()}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <Share2 className="h-3 w-3" />
-                          {(post.shares || 0).toLocaleString()}
-                        </span>
-                        {post.engagement_rate > 0 && (
-                          <span className="font-medium text-green-600">{post.engagement_rate.toFixed(2)}% ER</span>
-                        )}
-                        {post.published_date && (
-                          <span className="text-muted-foreground/70">
-                            {formatDistanceToNow(new Date(post.published_date), { addSuffix: true, locale: ru })}
-                          </span>
-                        )}
-                        {!post.channel_name && post.platform && (
-                          <PlatformBadge platform={post.platform} />
-                        )}
-                      </div>
-                      {post.hashtags && post.hashtags.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-1.5">
-                          {post.hashtags.slice(0, 5).map(tag => (
-                            <span key={tag} className="text-xs text-blue-500">{tag}</span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    {post.url && (
-                      <a
-                        href={post.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-muted-foreground hover:text-primary shrink-0 mt-1"
-                      >
-                        <ExternalLink className="h-4 w-4" />
-                      </a>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            ))
-          )}
-        </div>
-      )}
-
-      {/* Hashtags tab */}
-      {activeTab === 'hashtags' && (
-        <div>
-          {hashtagsLoading ? (
-            <div className="flex flex-wrap gap-2">
-              {Array.from({ length: 12 }).map((_, i) => <Skeleton key={i} className="h-8 w-24 rounded-full" />)}
-            </div>
-          ) : hashtags.length === 0 ? (
-            <Card>
-              <CardContent className="flex flex-col items-center py-10 gap-3 text-center">
-                <Hash className="h-10 w-10 text-muted-foreground" />
-                <p className="text-sm text-muted-foreground">Нет данных о хэштегах</p>
-              </CardContent>
-            </Card>
-          ) : (
-            <div className="space-y-4">
-              <div className="space-y-2">
-                {hashtags.slice(0, 25).map((h, i) => {
-                  const maxScore = hashtags[0]?.trend_score || 1;
-                  return (
-                    <div
-                      key={`${h.hashtag}-${i}`}
-                      className="flex items-center gap-3 p-2 rounded-lg hover:bg-muted/50 transition-colors"
-                    >
-                      <span className="text-xs text-muted-foreground w-5 text-right shrink-0">{i + 1}</span>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-medium text-sm text-blue-600 dark:text-blue-400">{h.hashtag}</span>
-                          <Badge variant="secondary" className="text-xs py-0 px-1.5">
-                            {h.posts_count} постов
-                          </Badge>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 bg-muted rounded-full h-1.5 overflow-hidden">
-                            <div
-                              className="h-full bg-gradient-to-r from-blue-500 to-purple-500 rounded-full"
-                              style={{ width: `${(h.trend_score / maxScore) * 100}%` }}
-                            />
-                          </div>
-                          <span className="text-xs text-muted-foreground shrink-0">
-                            {h.total_reach > 0 && <>{h.total_reach.toLocaleString()} охват · </>}
-                            score: {h.trend_score.toFixed(1)}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-              {hashtags.length > 25 && (
-                <p className="text-xs text-muted-foreground">
-                  Показаны топ-25 из {hashtags.length} хэштегов
-                </p>
-              )}
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Channels tab */}
       {activeTab === 'channels' && (
@@ -585,49 +399,47 @@ export function ScraperAnalyticsPanel({ campaignId }: Props) {
           ) : engagementChannels.length === 0 ? (
             <Card>
               <CardContent className="flex flex-col items-center py-10 gap-3 text-center">
-                <BarChart2 className="h-10 w-10 text-muted-foreground" />
+                <AlertCircle className="h-5 w-5 text-yellow-500" />
                 <p className="text-sm text-muted-foreground">Нет данных об engagement</p>
               </CardContent>
             </Card>
           ) : (
-            <>
-              {engagementChannels.map((ch, i) => {
-                const maxEng = engagementChannels[0]?.avg_engagement || 1;
-                return (
-                  <div
-                    key={`${ch.channel_id}-${i}`}
-                    className="flex items-center gap-3 p-3 rounded-lg border bg-card hover:shadow-sm transition-shadow"
-                  >
-                    <span className="text-xs text-muted-foreground w-5 text-right shrink-0 font-medium">
-                      {i + 1}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <p className="font-medium text-sm truncate">{ch.channel_name}</p>
-                        <PlatformBadge platform={ch.platform} />
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="flex-1 bg-muted rounded-full h-1.5 overflow-hidden">
-                          <div
-                            className="h-full bg-gradient-to-r from-green-500 to-emerald-400 rounded-full"
-                            style={{ width: `${(ch.avg_engagement / maxEng) * 100}%` }}
-                          />
-                        </div>
-                        <span className="text-xs text-muted-foreground shrink-0">{ch.posts_count} постов</span>
-                      </div>
+            engagementChannels.map((ch, i) => {
+              const maxEng = engagementChannels[0]?.avg_engagement || 1;
+              return (
+                <div
+                  key={`${ch.channel_id}-${i}`}
+                  className="flex items-center gap-3 p-3 rounded-lg border bg-card hover:shadow-sm transition-shadow"
+                >
+                  <span className="text-xs text-muted-foreground w-5 text-right shrink-0 font-medium">
+                    {i + 1}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <p className="font-medium text-sm truncate">{ch.channel_name}</p>
+                      <PlatformBadge platform={ch.platform} />
                     </div>
-                    <div className="text-right shrink-0">
-                      <EngagementBadge value={ch.avg_engagement} />
-                      {ch.url && (
-                        <a href={ch.url} target="_blank" rel="noopener noreferrer" className="block text-muted-foreground hover:text-primary mt-0.5">
-                          <ExternalLink className="h-3 w-3" />
-                        </a>
-                      )}
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 bg-muted rounded-full h-1.5 overflow-hidden">
+                        <div
+                          className="h-full bg-gradient-to-r from-green-500 to-emerald-400 rounded-full"
+                          style={{ width: `${(ch.avg_engagement / maxEng) * 100}%` }}
+                        />
+                      </div>
+                      <span className="text-xs text-muted-foreground shrink-0">{ch.posts_count} постов</span>
                     </div>
                   </div>
-                );
-              })}
-            </>
+                  <div className="text-right shrink-0">
+                    <EngagementBadge value={ch.avg_engagement} />
+                    {ch.url && (
+                      <a href={ch.url} target="_blank" rel="noopener noreferrer" className="block text-muted-foreground hover:text-primary mt-0.5">
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    )}
+                  </div>
+                </div>
+              );
+            })
           )}
         </div>
       )}

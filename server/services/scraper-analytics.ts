@@ -404,11 +404,11 @@ export async function ensureChannelsRegistered(
   const existing = await getMonitoredChannels({ page_size: 100 });
   const existingMap = new Map(existing.items.map(c => [`${c.platform}:${c.platform_channel_id}`, c.id]));
 
-  await Promise.all(channels.map(async ch => {
+  for (const ch of channels) {
     const key = `${ch.platform}:${ch.id}`;
     if (existingMap.has(key)) {
       idMap.set(key, existingMap.get(key)!);
-      return;
+      continue;
     }
     try {
       const created = await createMonitoringChannel({
@@ -423,7 +423,7 @@ export async function ensureChannelsRegistered(
     } catch (err: any) {
       log(`[ScraperAnalytics] Failed to register channel ${key}: ${err.message}`, 'warn');
     }
-  }));
+  }
 
   return idMap;
 }

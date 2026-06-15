@@ -12,7 +12,7 @@ const SCRAPER_API_KEY_FALLBACK = 'c1f2e8ad-61c5-450a-b301-12690e9e1112';
 // Алиас для обратной совместимости
 const SCRAPER_OLD_BASE = SCRAPER_BASE;
 
-// ─── Webhook-реестр TG-задач ──────────────────────────────────────────────────
+// ─── Webhook-реестр задач ─────────────────────────────────────────────────────
 // task_id → метаданные задачи, нужные при получении колбэка от скрейпера
 export interface PendingTgTask {
   campaignId: string;
@@ -21,11 +21,21 @@ export interface PendingTgTask {
 }
 export const pendingTgTasks = new Map<string, PendingTgTask>();
 
+export interface PendingVkTask {
+  campaignId: string;
+  sourceIdMap: Map<string, string>; // vkId → Directus record id
+  createdAt: number;
+}
+export const pendingVkTasks = new Map<string, PendingVkTask>();
+
 // Автоочистка устаревших задач (>2ч) чтобы не копить память
 setInterval(() => {
   const cutoff = Date.now() - 2 * 3600_000;
   for (const [id, task] of pendingTgTasks) {
     if (task.createdAt < cutoff) pendingTgTasks.delete(id);
+  }
+  for (const [id, task] of pendingVkTasks) {
+    if (task.createdAt < cutoff) pendingVkTasks.delete(id);
   }
 }, 600_000).unref();
 
@@ -574,8 +584,8 @@ async function fetchTrendingPosts(
       limit: postsPerGroup * groupIds.length,
       days_back: daysBack,
       min_views: minViews,
-      merge_results: true, // новый параметр контракта (06.2026): топ limit со всех групп
-      async_mode: true
+      merge_results: true,
+      async_mode: true,
     };
   }
 
@@ -587,7 +597,7 @@ async function fetchTrendingPosts(
   const directPosts = extractPostsFromResponse(data);
   if (directPosts !== null && directPosts.length > 0) return directPosts;
 
-  // Async паттерн: скрейпер вернул task_id → поллим статус
+  // Async паттерн: скрейпер вернул task_id — поллим статус
   const taskId = data?.task_id || data?.job_id || data?.id || data?.taskId;
   if (taskId) {
     const status = (data?.status || '').toLowerCase();
@@ -848,38 +858,43 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
       });
 
       // НОВЫЙ КОНТРАКТ (Roman, 06.2026): для >5 каналов скрейпер требует batch-эндпоинт
-      // + ОБЯЗАТЕЛЬНЫЙ callback_url, иначе задача не уходит в работу. Он сам режет на
-      // батчи по 5 и возвращает несколько task_id; результаты приходят колбэками на
-      // /api/trends/tg-webhook отдельно по каждому task_id. saveTrendPosts дедуплицирует
-      // по urlPost, поэтому инкрементальное сохранение по колбэкам безопасно.
+      // + ОБЯЗАТЕЛЬНЫЙ callback_url; результаты приходят колбэками на /api/trends/tg-webhook.
+      // Лимит скрейпера: max 50 каналов на один запрос → режем на чанки по 50.
       if (channelIds.length > 5) {
         const callbackUrl = `${getPublicBaseUrl()}/api/trends/tg-webhook`;
-        const batchBody = {
-          channel_ids: channelIds,
-          limit: postsPerGroup * channelIds.length,
-          fetch_limit: 100,
-          merge_results: true,
-          days_back: daysBack,
-          min_views: 100,
-          async_mode: true,
-          max_concurrent: 1,
-          callback_url: callbackUrl,
-        };
-        log(`[TrendCollector][TG] POST /api/telegram/trending-posts-batch | channels=${channelIds.length} | callback=${callbackUrl}`, 'info');
-        const data = await callScraper('/api/telegram/trending-posts-batch', batchBody, apiKey);
-        if (!data) {
-          log(`[TrendCollector][TG] batch: пустой ответ скрейпера`, 'warn');
-          return;
+        const CHUNK_SIZE = 50;
+        const chunks: string[][] = [];
+        for (let i = 0; i < channelIds.length; i += CHUNK_SIZE) {
+          chunks.push(channelIds.slice(i, i + CHUNK_SIZE));
         }
-        const taskIds = extractTaskIds(data);
-        if (taskIds.length === 0) {
-          log(`[TrendCollector][TG] batch: не нашли task_id в ответе: ${JSON.stringify(data).substring(0, 300)}`, 'warn');
-          return;
+        log(`[TrendCollector][TG] batch: ${channelIds.length} каналов → ${chunks.length} чанк(ов) по ≤${CHUNK_SIZE} | callback=${callbackUrl}`, 'info');
+        for (const chunk of chunks) {
+          const batchBody = {
+            channel_ids: chunk,
+            limit: postsPerGroup * chunk.length,
+            fetch_limit: 100,
+            merge_results: true,
+            days_back: daysBack,
+            min_views: 100,
+            async_mode: true,
+            max_concurrent: 1,
+            callback_url: callbackUrl,
+          };
+          const data = await callScraper('/api/telegram/trending-posts-batch', batchBody, apiKey);
+          if (!data) {
+            log(`[TrendCollector][TG] batch chunk[${chunk.length}]: пустой ответ скрейпера`, 'warn');
+            continue;
+          }
+          const taskIds = extractTaskIds(data);
+          if (taskIds.length === 0) {
+            log(`[TrendCollector][TG] batch chunk: не нашли task_id: ${JSON.stringify(data).substring(0, 300)}`, 'warn');
+            continue;
+          }
+          for (const tid of taskIds) {
+            pendingTgTasks.set(String(tid), { campaignId, sourceIdMap, createdAt: Date.now() });
+          }
+          log(`[TrendCollector][TG] ✅ chunk[${chunk.length}] принят: ${taskIds.length} задач(и). ids=${taskIds.slice(0, 5).join(',')}`, 'info');
         }
-        for (const tid of taskIds) {
-          pendingTgTasks.set(String(tid), { campaignId, sourceIdMap, createdAt: Date.now() });
-        }
-        log(`[TrendCollector][TG] ✅ batch принят: ${taskIds.length} задач(и) зарегистрировано, ждём колбэки. ids=${taskIds.slice(0, 10).join(',')}`, 'info');
         return;
       }
 
@@ -957,14 +972,37 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
         return;
       }
 
-      log(`[TrendCollector][VK] Сбор трендов из ${vkIds.length} групп`, 'info');
+      log(`[TrendCollector][VK] Сбор трендов из ${vkIds.length} групп (async+callback)`, 'info');
       const postsPerGroup = Math.max(Math.ceil(limit / vkIds.length), 3);
-      const posts = await fetchTrendingPosts('vk', vkIds, daysBack, postsPerGroup, 300, apiKey);
-      log(`[TrendCollector][VK] Получено постов: ${posts.length}`, 'info');
-
-      if (posts.length > 0) {
-        results.vk = await saveTrendPosts(posts, 'vk', campaignId, sourceIdMap);
-        log(`[TrendCollector][VK] ✅ Сохранено: ${results.vk}`, 'info');
+      const callbackUrl = `${getPublicBaseUrl()}/api/trends/vk-webhook`;
+      const vkBody = {
+        group_ids: vkIds.map(String),
+        limit: postsPerGroup * vkIds.length,
+        days_back: daysBack,
+        min_views: 300,
+        merge_results: true,
+        async_mode: true,
+        callback_url: callbackUrl,
+      };
+      const data = await callScraper('/api/vk/trending-posts', vkBody, apiKey);
+      if (!data) {
+        log(`[TrendCollector][VK] Скрейпер вернул пустой ответ`, 'warn');
+        return;
+      }
+      // Редкий случай: синхронный ответ с постами
+      const directPosts = extractPostsFromResponse(data);
+      if (directPosts && directPosts.length > 0) {
+        results.vk = await saveTrendPosts(directPosts, 'vk', campaignId, sourceIdMap);
+        log(`[TrendCollector][VK] ✅ Синхронный ответ: сохранено ${results.vk}`, 'info');
+        return;
+      }
+      // Async: регистрируем task_id, результат придёт по callback
+      const taskId = data?.task_id || data?.job_id || data?.id || data?.taskId;
+      if (taskId) {
+        pendingVkTasks.set(String(taskId), { campaignId, sourceIdMap, createdAt: Date.now() });
+        log(`[TrendCollector][VK] 🔄 task=${taskId} зарегистрирован, ждём колбэк на ${callbackUrl}`, 'info');
+      } else {
+        log(`[TrendCollector][VK] ⚠️ Нет task_id в ответе: ${JSON.stringify(data).substring(0, 200)}`, 'warn');
       }
     })());
   }

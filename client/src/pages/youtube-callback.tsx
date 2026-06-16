@@ -38,24 +38,19 @@ export default function YouTubeCallbackPage() {
         console.log('🔑 [YouTube Callback] Токены сохранены в localStorage (legacy)');
       }
 
-      if (window.opener) {
-        console.log('🪟 [YouTube Callback] Popup window — closing in 2 seconds...');
-        setTimeout(() => { window.close(); }, 2000);
-      } else {
-        setTimeout(() => {
-          window.location.href = campaignId ? `/campaigns/${campaignId}?openYouTube=true` : '/';
-        }, 2000);
-      }
+      // Всегда пытаемся закрыть окно — window.opener может быть null из-за COOP (Google)
+      // но window.close() работает если окно открыто через window.open()
+      console.log('🪟 [YouTube Callback] Closing popup window in 2 seconds...');
+      setTimeout(() => {
+        window.close();
+        // Если окно не закрылось (маловероятно), показываем сообщение
+      }, 2000);
     } else {
       setStatus('error');
       setMessage('Неожиданная ошибка обработки авторизации');
       
-      // Если это popup окно с ошибкой, закрываем его
-      if (window.opener) {
-        setTimeout(() => {
-          window.close();
-        }, 3000);
-      }
+      // Закрываем popup через 3 секунды (даже если window.opener null из-за COOP)
+      setTimeout(() => { window.close(); }, 3000);
       return;
     }
   }, [search]);

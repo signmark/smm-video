@@ -75,7 +75,8 @@ export async function sendPurchasePostback(
   partnerCode: string,
   paymentId: string,
   amount: number,
-  buyerTelegramId?: string | null
+  buyerTelegramId?: string | null,
+  buyerEmail?: string | null
 ): Promise<void> {
   const cfg = await loadConfig();
   if (!cfg) return;
@@ -87,6 +88,7 @@ export async function sendPurchasePostback(
     amount,
   };
   if (buyerTelegramId) payload.buyer_telegram_id = String(buyerTelegramId);
+  if (buyerEmail) payload.buyer_email = buyerEmail;
 
   try {
     const res = await fetch(`${cfg.apiUrl}/api/v1/postback`, {

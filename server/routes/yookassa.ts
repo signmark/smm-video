@@ -79,7 +79,7 @@ async function activateSubscription(userId: string, plan: string, paymentId?: st
   console.log(`[yookassa] Подписка активирована: userId=${userId} plan=${planKey} до ${expireDateStr}`);
 
   try {
-    const userResp = await fetch(`${DIRECTUS_URL}/users/${userId}?fields=telegram_chat_id,first_name,last_name,omemo_partner_code`, {
+    const userResp = await fetch(`${DIRECTUS_URL}/users/${userId}?fields=telegram_chat_id,first_name,last_name,omemo_partner_code,email`, {
       headers: { 'Authorization': `Bearer ${ADMIN_TOKEN}` },
     });
     if (userResp.ok) {
@@ -103,7 +103,7 @@ async function activateSubscription(userId: string, plan: string, paymentId?: st
       if (partnerCode && paymentId && amountStr) {
         const amount = parseFloat(amountStr);
         if (!isNaN(amount)) {
-          sendPurchasePostback(partnerCode, paymentId, amount, chatId).catch(() => {});
+          sendPurchasePostback(partnerCode, paymentId, amount, chatId, data?.email).catch(() => {});
         }
       }
     }

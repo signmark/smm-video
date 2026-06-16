@@ -48,14 +48,23 @@ export function YouTubeSetupWizard({ campaignId, initialSettings, onComplete }: 
           fetch(`/api/campaigns/${campaignId}/youtube-settings`, {
             headers: { 'Authorization': `Bearer ${localStorage.getItem('auth_token')}` }
           }).then(r => r.json()).then(data => {
-            const settings = data.settings;
-            if (settings?.accessToken) {
-              setAuthTokens({ accessToken: settings.accessToken, refreshToken: settings.refreshToken || '' });
-              setStep(2);
-              fetchChannelInfo(settings.accessToken, {
-                accessToken: settings.accessToken,
-                refreshToken: settings.refreshToken || ''
-              });
+            const s = data.settings;
+            if (s?.channelId && s?.accessToken) {
+              setAuthTokens({ accessToken: s.accessToken, refreshToken: s.refreshToken || '' });
+              const chInfo: YouTubeChannelInfo = {
+                channelId: s.channelId,
+                channelTitle: s.channelTitle || '',
+                channelDescription: '',
+                thumbnails: null,
+                subscriberCount: '0',
+                viewCount: '0',
+                videoCount: '0',
+                publishedAt: ''
+              };
+              setChannelInfo(chInfo);
+              setStep(3);
+              onComplete({ channelId: s.channelId, channelTitle: s.channelTitle || '', accessToken: s.accessToken, refreshToken: s.refreshToken || '', channelInfo: chInfo });
+              setIsLoading(false);
             }
           }).catch(e => console.error('❌ [YouTube Wizard] Error reloading settings:', e));
           return;
@@ -83,25 +92,34 @@ export function YouTubeSetupWizard({ campaignId, initialSettings, onComplete }: 
       }
     }
     
-    // Используем свежие токены или существующие настройки
-    const tokensToUse = freshTokens || initialSettings?.youtube;
-    
+    // Если уже настроен (есть channelId) — не вызываем YouTube API, берём из настроек
+    const existingYT = initialSettings?.youtube;
+    if (existingYT?.channelId && !freshTokens) {
+      setAuthTokens({ accessToken: existingYT.accessToken || '', refreshToken: existingYT.refreshToken || '' });
+      const chInfo: YouTubeChannelInfo = {
+        channelId: existingYT.channelId,
+        channelTitle: existingYT.channelTitle || '',
+        channelDescription: '',
+        thumbnails: null,
+        subscriberCount: '0',
+        viewCount: '0',
+        videoCount: '0',
+        publishedAt: ''
+      };
+      setChannelInfo(chInfo);
+      setStep(3);
+      return;
+    }
+
+    // Свежие токены из OAuth — получаем данные о канале
+    const tokensToUse = freshTokens;
     if (tokensToUse?.accessToken) {
-      setAuthTokens({
+      setAuthTokens({ accessToken: tokensToUse.accessToken, refreshToken: tokensToUse.refreshToken || '' });
+      setStep(2);
+      fetchChannelInfo(tokensToUse.accessToken, {
         accessToken: tokensToUse.accessToken,
         refreshToken: tokensToUse.refreshToken || ''
       });
-      
-      if (initialSettings?.youtube?.channelId && !freshTokens) {
-        setStep(3);
-        fetchChannelInfo(tokensToUse.accessToken);
-      } else {
-        setStep(2);
-        fetchChannelInfo(tokensToUse.accessToken, {
-          accessToken: tokensToUse.accessToken,
-          refreshToken: tokensToUse.refreshToken || ''
-        });
-      }
     }
   }, [initialSettings]);
 
@@ -143,27 +161,36 @@ export function YouTubeSetupWizard({ campaignId, initialSettings, onComplete }: 
         const handlePopupDone = async () => {
           clearInterval(checkClosed);
 
-          // Новый flow: сервер сохранил токены сам, проверяем флаг
+          // Новый flow: сервер сохранил токены сам — берём данные из Directus напрямую
           const successFlag = localStorage.getItem('youtubeOAuthSuccess');
           if (successFlag) {
             try {
               const flagData = JSON.parse(successFlag);
               localStorage.removeItem('youtubeOAuthSuccess');
               if (flagData.saved) {
-                console.log('🎉 [YouTube Wizard] Server saved tokens — reloading settings from server');
-                // Перезагружаем настройки с сервера
+                console.log('🎉 [YouTube Wizard] Server saved tokens — loading settings from Directus');
                 const resp = await fetch(`/api/campaigns/${campaignId}/youtube-settings`, {
                   headers: { 'Authorization': `Bearer ${localStorage.getItem('auth_token')}` }
                 });
                 if (resp.ok) {
                   const data = await resp.json();
-                  const settings = data.settings;
-                  if (settings?.accessToken) {
-                    setAuthTokens({ accessToken: settings.accessToken, refreshToken: settings.refreshToken || '' });
-                    fetchChannelInfo(settings.accessToken, {
-                      accessToken: settings.accessToken,
-                      refreshToken: settings.refreshToken || ''
-                    });
+                  const s = data.settings;
+                  if (s?.channelId && s?.accessToken) {
+                    setAuthTokens({ accessToken: s.accessToken, refreshToken: s.refreshToken || '' });
+                    const chInfo: YouTubeChannelInfo = {
+                      channelId: s.channelId,
+                      channelTitle: s.channelTitle || '',
+                      channelDescription: '',
+                      thumbnails: null,
+                      subscriberCount: '0',
+                      viewCount: '0',
+                      videoCount: '0',
+                      publishedAt: ''
+                    };
+                    setChannelInfo(chInfo);
+                    setStep(3);
+                    onComplete({ channelId: s.channelId, channelTitle: s.channelTitle || '', accessToken: s.accessToken, refreshToken: s.refreshToken || '', channelInfo: chInfo });
+                    setIsLoading(false);
                     return;
                   }
                 }
@@ -195,13 +222,19 @@ export function YouTubeSetupWizard({ campaignId, initialSettings, onComplete }: 
           }
         };
 
+        const popupOpenedAt = Date.now();
+        const MIN_WAIT_MS = 5000; // минимум 5 секунд — popup должен успеть загрузить Google
+
         const checkClosed = setInterval(() => {
+          // Не проверяем первые 5 секунд — popup ещё грузит страницу Google
+          if (Date.now() - popupOpenedAt < MIN_WAIT_MS) return;
+
           try {
             if (popup.closed) {
               handlePopupDone();
             }
           } catch (error) {
-            // COOP ошибка — проверяем флаги немедленно
+            // COOP ошибка — проверяем флаги только если они уже есть
             const successFlag = localStorage.getItem('youtubeOAuthSuccess');
             const oauthTokens = localStorage.getItem('youtubeOAuthTokens');
             if (successFlag || oauthTokens) {

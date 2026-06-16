@@ -103,7 +103,7 @@ async function activateSubscription(userId: string, plan: string, paymentId?: st
       if (partnerCode && paymentId && amountStr) {
         const amount = parseFloat(amountStr);
         if (!isNaN(amount)) {
-          sendPurchasePostback(partnerCode, paymentId, amount, chatId, data?.email).catch(() => {});
+          sendPurchasePostback(partnerCode, paymentId, amount, chatId, data?.email, planKey).catch(() => {});
         }
       }
     }

@@ -192,6 +192,28 @@ export default function PricingPage() {
       .then(r => r.json())
       .then(d => setYookassaAvailable(!!d.available))
       .catch(() => setYookassaAvailable(false));
+
+    // Авто-применение промокода из ?ref= или localStorage
+    const params = new URLSearchParams(window.location.search);
+    const ref = params.get('ref') || params.get('partner_code') || '';
+    if (ref) {
+      const code = ref.trim().toUpperCase();
+      localStorage.setItem('smm_partner_code', code);
+      setPromoInput(code);
+      if (authenticated && token) {
+        fetch('/api/promo/validate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ code }),
+        })
+          .then(r => r.ok ? r.json() : null)
+          .then(data => { if (data?.valid) { setAppliedPromo(data.promo); setPromoInput(''); } })
+          .catch(() => {});
+      }
+    } else if (!authenticated) {
+      const saved = localStorage.getItem('smm_partner_code') || '';
+      if (saved) setPromoInput(saved);
+    }
   }, []);
 
   // Уровень текущего тарифа пользователя (null = не авторизован)

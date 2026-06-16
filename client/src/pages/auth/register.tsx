@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -74,6 +74,20 @@ export default function Register() {
   const { setAuth } = useAuthStore();
 
   const [step, setStep] = useState(1);
+  const [partnerCode, setPartnerCode] = useState<string>('');
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const ref = params.get('ref') || params.get('partner_code') || '';
+    if (ref) {
+      const code = ref.trim().toUpperCase();
+      setPartnerCode(code);
+      localStorage.setItem('smm_partner_code', code);
+    } else {
+      const saved = localStorage.getItem('smm_partner_code') || '';
+      if (saved) setPartnerCode(saved);
+    }
+  }, []);
   const [userId, setUserId] = useState<string | null>(null);
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [campaignId, setCampaignId] = useState<string | null>(null);
@@ -112,6 +126,7 @@ export default function Register() {
           firstName: values.firstName,
           lastName: values.lastName,
           jobTitle: values.jobTitle,
+          ...(partnerCode ? { partnerCode } : {}),
         }),
       });
 

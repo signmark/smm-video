@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
+import { sendPurchasePostback } from '../services/omemo-postback.js';
 
 const router = Router();
 
@@ -54,7 +55,7 @@ async function yookassaRequest(method: string, path: string, body?: object): Pro
   return res.json();
 }
 
-async function activateSubscription(userId: string, plan: string): Promise<void> {
+async function activateSubscription(userId: string, plan: string, paymentId?: string, amountStr?: string): Promise<void> {
   const days = PLAN_DURATIONS[plan] || 30;
   const planKey = PLAN_KEYS[plan] || 'basic';
   const expireDate = new Date();
@@ -78,7 +79,7 @@ async function activateSubscription(userId: string, plan: string): Promise<void>
   console.log(`[yookassa] Подписка активирована: userId=${userId} plan=${planKey} до ${expireDateStr}`);
 
   try {
-    const userResp = await fetch(`${DIRECTUS_URL}/users/${userId}?fields=telegram_chat_id,first_name,last_name`, {
+    const userResp = await fetch(`${DIRECTUS_URL}/users/${userId}?fields=telegram_chat_id,first_name,last_name,omemo_partner_code`, {
       headers: { 'Authorization': `Bearer ${ADMIN_TOKEN}` },
     });
     if (userResp.ok) {
@@ -96,6 +97,14 @@ async function activateSubscription(userId: string, plan: string): Promise<void>
             parse_mode: 'HTML',
           }),
         }).catch(() => {});
+      }
+
+      const partnerCode = data?.omemo_partner_code;
+      if (partnerCode && paymentId && amountStr) {
+        const amount = parseFloat(amountStr);
+        if (!isNaN(amount)) {
+          sendPurchasePostback(partnerCode, paymentId, amount, chatId).catch(() => {});
+        }
       }
     }
   } catch (_) {}
@@ -213,7 +222,7 @@ router.post('/payments/:paymentId/activate', async (req: Request, res: Response)
       return res.status(400).json({ error: 'Нет данных пользователя в платеже' });
     }
 
-    await activateSubscription(metaUserId, metaPlan);
+    await activateSubscription(metaUserId, metaPlan, paymentId, payment.amount?.value);
     return res.json({ ok: true, plan: metaPlan });
   } catch (err: any) {
     console.error('[yookassa/activate] Ошибка:', err?.message);
@@ -281,7 +290,7 @@ router.post('/yookassa/webhook', async (req: Request, res: Response) => {
         return res.json({ ok: true });
       }
 
-      await activateSubscription(metaUserId, metaPlan);
+      await activateSubscription(metaUserId, metaPlan, paymentId, paymentObj.amount?.value);
     }
 
     return res.json({ ok: true });

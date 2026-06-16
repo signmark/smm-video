@@ -74,7 +74,7 @@ export function registerAuthRoutes(app: Express): void {
   // Маршрут для регистрации
   app.post('/api/auth/register', async (req: Request, res: Response) => {
     try {
-      const { email, password, firstName, lastName, jobTitle } = req.body;
+      const { email, password, firstName, lastName, jobTitle, partnerCode } = req.body;
 
       if (!email || !password || !firstName || !lastName) {
         return res.status(400).json({ 
@@ -134,6 +134,25 @@ export function registerAuthRoutes(app: Express): void {
 
         const newUserId = response.data.data.id;
         log(`User created successfully: ${newUserId}`, 'auth');
+
+        // Сохраняем партнёрский код и отправляем postback
+        if (partnerCode && typeof partnerCode === 'string' && partnerCode.trim()) {
+          const cleanCode = partnerCode.trim().toUpperCase();
+          try {
+            await axios.patch(`${directusUrl}/users/${newUserId}`, {
+              omemo_partner_code: cleanCode,
+            }, {
+              headers: { 'Authorization': `Bearer ${adminToken}`, 'Content-Type': 'application/json' },
+            });
+            log(`Partner code saved for user ${newUserId}: ${cleanCode}`, 'auth');
+          } catch (pcErr: any) {
+            console.warn('[auth/register] Не удалось сохранить partner_code:', pcErr?.message);
+          }
+          // Fire and forget — не блокируем регистрацию
+          import('../services/omemo-postback.js').then(({ sendRegistrationPostback }) => {
+            sendRegistrationPostback(cleanCode, newUserId).catch(() => {});
+          }).catch(() => {});
+        }
 
         // Активируем пробный период Pro на 14 дней
         try {

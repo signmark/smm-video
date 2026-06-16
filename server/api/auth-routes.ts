@@ -135,7 +135,7 @@ export function registerAuthRoutes(app: Express): void {
         const newUserId = response.data.data.id;
         log(`User created successfully: ${newUserId}`, 'auth');
 
-        // Сохраняем партнёрский код и отправляем postback
+        // Сохраняем партнёрский код, применяем промокод и отправляем postback
         if (partnerCode && typeof partnerCode === 'string' && partnerCode.trim()) {
           const cleanCode = partnerCode.trim().toUpperCase();
           try {
@@ -148,6 +148,49 @@ export function registerAuthRoutes(app: Express): void {
           } catch (pcErr: any) {
             console.warn('[auth/register] Не удалось сохранить partner_code:', pcErr?.message);
           }
+
+          // Применяем промокод (extra_days / pro_upgrade) как скидку при регистрации
+          try {
+            const promoRes = await axios.get(
+              `${directusUrl}/items/promo_codes?filter[code][_eq]=${encodeURIComponent(cleanCode)}&limit=1`,
+              { headers: { 'Authorization': `Bearer ${adminToken}` } }
+            );
+            const promo = promoRes.data?.data?.[0];
+            if (promo && promo.is_active &&
+                (!promo.expires_at || new Date(promo.expires_at) > new Date()) &&
+                (promo.max_uses === null || promo.used_count < promo.max_uses)) {
+
+              const now = new Date();
+              if (promo.type === 'extra_days' || promo.type === 'pro_upgrade') {
+                // Получаем текущий план пользователя (только что создан — trial 14 дней)
+                const userRes = await axios.get(`${directusUrl}/users/${newUserId}?fields=plan,expire_date`, {
+                  headers: { 'Authorization': `Bearer ${adminToken}` }
+                });
+                const user = userRes.data?.data;
+                const currentExpire = user?.expire_date ? new Date(user.expire_date) : now;
+                const baseDate = currentExpire > now ? currentExpire : now;
+                const newExpire = new Date(baseDate.getTime() + promo.value * 24 * 60 * 60 * 1000);
+                const userUpdates: Record<string, any> = { expire_date: newExpire.toISOString() };
+                if (promo.type === 'pro_upgrade') userUpdates.plan = 'pro';
+
+                await axios.patch(`${directusUrl}/users/${newUserId}`, userUpdates, {
+                  headers: { 'Authorization': `Bearer ${adminToken}`, 'Content-Type': 'application/json' }
+                });
+                await axios.post(`${directusUrl}/items/promo_code_uses`, {
+                  promo_code_id: promo.id, user_id: newUserId, used_at: now.toISOString(),
+                  plan_before: user?.plan, expire_before: user?.expire_date,
+                }, { headers: { 'Authorization': `Bearer ${adminToken}`, 'Content-Type': 'application/json' } });
+                await axios.patch(`${directusUrl}/items/promo_codes/${promo.id}`,
+                  { used_count: (promo.used_count || 0) + 1 },
+                  { headers: { 'Authorization': `Bearer ${adminToken}`, 'Content-Type': 'application/json' } }
+                );
+                log(`Promo code ${cleanCode} (${promo.type}) applied for new user ${newUserId}`, 'auth');
+              }
+            }
+          } catch (redeemErr: any) {
+            console.warn('[auth/register] Не удалось применить промокод:', redeemErr?.message);
+          }
+
           // Fire and forget — не блокируем регистрацию
           import('../services/omemo-postback.js').then(({ sendRegistrationPostback }) => {
             sendRegistrationPostback(cleanCode, newUserId).catch(() => {});

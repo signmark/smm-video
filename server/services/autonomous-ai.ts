@@ -22,6 +22,7 @@ function stateToRecord(state: AutonomousState): Record<string, any> {
     with_images: state.withImages,
     pipeline_mode: (state as any).pipelineMode || 'full_auto',
     started_at: state.startedAt.toISOString(),
+    last_cycle_at: state.lastCycleAt ? state.lastCycleAt.toISOString() : null,
     is_active: true,
     launch_command: state.launchCommand || null,
   };
@@ -31,7 +32,7 @@ function activateRestoredState(saved: {
   campaignId: string; userId: string; authToken?: string; refreshToken?: string;
   interval: number; postsPerCycle: number; autoSchedule: boolean;
   platforms: string[]; withImages: boolean; pipelineMode?: string; startedAt: string;
-  launchCommand?: string;
+  lastCycleAt?: string; launchCommand?: string;
 }) {
   if (autonomousStates.has(saved.campaignId)) return;
   const state: AutonomousState = {
@@ -41,6 +42,7 @@ function activateRestoredState(saved: {
     refreshToken: saved.refreshToken,
     isActive: true,
     startedAt: new Date(saved.startedAt),
+    lastCycleAt: saved.lastCycleAt ? new Date(saved.lastCycleAt) : undefined,
     interval: saved.interval,
     postsPerCycle: saved.postsPerCycle,
     autoSchedule: saved.autoSchedule,
@@ -61,13 +63,25 @@ function activateRestoredState(saved: {
       state.errors.push(e.message);
     });
   }, intervalMs);
+
+  // Вычисляем задержку первого цикла: если lastCycleAt известен —
+  // ждём оставшееся время до следующего планового запуска.
+  // Это предотвращает немедленный старт и двойную генерацию при ребуте.
+  let firstCycleDelay = 60_000; // минимум 1 мин на случай нет истории
+  if (saved.lastCycleAt) {
+    const elapsed = Date.now() - new Date(saved.lastCycleAt).getTime();
+    const remaining = intervalMs - elapsed;
+    firstCycleDelay = remaining > 60_000 ? remaining : 60_000;
+  }
   setTimeout(() => {
     runAutonomousCycle(state).catch(e => {
       console.error(`[AUTONOMOUS] ❌ Ошибка первого цикла после восстановления:`, e);
       state.errors.push(e.message);
     });
-  }, 5000);
-  console.log(`[AUTONOMOUS] ♻️ Восстановлен режим для кампании ${saved.campaignId}, первый цикл через 5 сек`);
+  }, firstCycleDelay);
+  const delaySec = Math.round(firstCycleDelay / 1000);
+  const delayMin = Math.round(delaySec / 60);
+  console.log(`[AUTONOMOUS] ♻️ Восстановлен режим для кампании ${saved.campaignId}, первый цикл через ${delayMin} мин`);
 }
 
 // ── File persistence (dev / local fallback) ────────────────────────────────
@@ -90,6 +104,7 @@ function saveAutonomousPersistenceFile() {
         withImages: state.withImages,
         pipelineMode: (state as any).pipelineMode || 'full_auto',
         startedAt: state.startedAt.toISOString(),
+        lastCycleAt: state.lastCycleAt ? state.lastCycleAt.toISOString() : undefined,
         launchCommand: state.launchCommand,
       };
     });
@@ -212,6 +227,7 @@ export async function restoreAutonomousStates() {
         withImages: rec.with_images !== false,
         pipelineMode: rec.pipeline_mode || 'full_auto',
         startedAt: rec.started_at,
+        lastCycleAt: rec.last_cycle_at || undefined,
         launchCommand: rec.launch_command || undefined,
       });
     }

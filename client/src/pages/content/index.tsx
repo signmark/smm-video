@@ -1774,26 +1774,6 @@ export default function ContentPage() {
                     ) : (
                       <>
                         <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-7 text-xs gap-1"
-                          data-testid="button-bulk-editor-pass"
-                          onClick={bulkEditorPass}
-                        >
-                          <Wand2 className="h-3.5 w-3.5" />
-                          Редактура
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="h-7 text-xs gap-1"
-                          data-testid="button-bulk-adapt"
-                          onClick={bulkAdapt}
-                        >
-                          <Share className="h-3.5 w-3.5" />
-                          Адаптация
-                        </Button>
-                        <Button
                           variant="destructive"
                           size="sm"
                           className="h-7 text-xs gap-1"

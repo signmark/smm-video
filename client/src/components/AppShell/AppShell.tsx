@@ -30,6 +30,14 @@ export function AppShell({ children, onNavigate, onLogout, userIsAdmin }: AppShe
     onNavigate(path);
   };
 
+  const handleMenuClick = () => {
+    if (window.innerWidth >= 1024) {
+      setIsSidebarCollapsed((v) => !v);
+    } else {
+      setIsSidebarOpen((v) => !v);
+    }
+  };
+
   // Нормализуем location (убираем trailing слэши)
   const normalizedLocation = location.replace(/\/+$/, '') || '/';
   
@@ -55,21 +63,12 @@ export function AppShell({ children, onNavigate, onLogout, userIsAdmin }: AppShe
         className={`flex flex-1 flex-col transition-all duration-300 min-w-0 ${
           isSidebarCollapsed ? 'lg:ml-16' : 'lg:ml-64'
         }`}
-        onClick={(e) => {
-          // Автоматически сворачиваем sidebar при клике в основной области на десктопе
-          // Но только если клик не на интерактивных элементах
-          const target = e.target as HTMLElement;
-          const isInteractive = target.closest('button, input, select, textarea, a, [role="button"], [role="tab"], .clickable');
-          
-          if (window.innerWidth >= 1024 && !isSidebarCollapsed && !isInteractive) {
-            setIsSidebarCollapsed(true);
-          }
-        }}
       >
         {/* Topbar - только на страницах с кампаниями */}
         {showTopbar && (
           <Topbar
-            onMenuClick={() => setIsSidebarOpen(true)}
+            onMenuClick={handleMenuClick}
+            isSidebarCollapsed={isSidebarCollapsed}
             onLogout={onLogout}
             onOpenProfile={() => setIsProfileDialogOpen(true)}
             onOpenAIChat={() => setIsAIChatOpen(true)}

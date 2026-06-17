@@ -1,6 +1,6 @@
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { FileText, Search, TrendingUp, PenTool, Clock, Calendar, BarChart, Key, Users, LogOut, Home, Video, Send, Zap, Ticket, AlertCircle } from "lucide-react";
+import { FileText, Search, TrendingUp, PenTool, Clock, Calendar, BarChart, Key, Users, LogOut, Home, Video, Send, Zap, Ticket, AlertCircle, ChevronLeft, ChevronRight } from "lucide-react";
 import { useTranslation } from 'react-i18next';
 import { usePlan } from '@/hooks/use-plan';
 import { Link } from 'wouter';
@@ -69,15 +69,30 @@ function SidebarContent({ location, onNavigate, onLogout, userIsAdmin, isCollaps
       role="navigation"
       aria-label="Main navigation"
     >
-      {/* Logo */}
+      {/* Logo + collapse toggle */}
       <div className={`${isCollapsed ? 'p-1.5' : 'p-2'} transition-all duration-300 border-b border-sidebar-border/30`}>
-        <div className="flex items-center justify-center">
-          <img 
-            src="/smm-logo.png" 
-            alt="SMM Manager" 
-            className={`${isCollapsed ? 'h-6' : 'h-8'} w-auto select-none transition-all duration-300`}
-            style={{ userSelect: 'none' }}
-          />
+        <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'}`}>
+          {!isCollapsed && (
+            <img 
+              src="/smm-logo.png" 
+              alt="SMM Manager" 
+              className="h-8 w-auto select-none"
+              style={{ userSelect: 'none' }}
+            />
+          )}
+          <button
+            type="button"
+            onClick={(e) => { e.stopPropagation(); onToggleCollapse?.(); }}
+            className="flex items-center justify-center h-7 w-7 rounded-md text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent/50 transition-colors"
+            title={isCollapsed ? "Развернуть меню" : "Свернуть меню"}
+            aria-label={isCollapsed ? "Развернуть меню" : "Свернуть меню"}
+          >
+            {isCollapsed ? (
+              <ChevronRight className="h-4 w-4" />
+            ) : (
+              <ChevronLeft className="h-4 w-4" />
+            )}
+          </button>
         </div>
       </div>
 
@@ -311,12 +326,6 @@ export function Sidebar(props: SidebarProps) {
         className={`hidden lg:flex lg:flex-col lg:fixed lg:inset-y-0 transition-all duration-300 ${
           props.isCollapsed ? 'lg:w-16' : 'lg:w-64'
         }`}
-        onClick={() => {
-          // Разворачиваем при клике в зоне sidebar (интерактивные элементы блокируют всплытие)
-          if (props.isCollapsed && props.onToggleCollapse) {
-            props.onToggleCollapse();
-          }
-        }}
       >
         <SidebarContent {...props} />
       </div>

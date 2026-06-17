@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Menu, User, LogOut, Settings, Sun, Moon, Sparkles, Send, CreditCard, Bot, Zap, SlidersHorizontal, GitMerge, ClipboardList } from "lucide-react";
+import { Menu, X, User, LogOut, Settings, Sun, Moon, Sparkles, Send, CreditCard, Bot, Zap, SlidersHorizontal, GitMerge, ClipboardList } from "lucide-react";
 import { CampaignSelector } from "../CampaignSelector";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -17,6 +17,7 @@ type PipelineMode = 'full_auto' | 'controlled' | 'mixed';
 
 interface TopbarProps {
   onMenuClick: () => void;
+  isSidebarCollapsed?: boolean;
   onLogout: () => void;
   onOpenProfile: () => void;
   onOpenAIChat?: () => void;
@@ -32,7 +33,7 @@ interface UserProfile {
   is_smm_admin: boolean;
 }
 
-export function Topbar({ onMenuClick, onLogout, onOpenProfile, onOpenAIChat, onOpenTGBot, location }: TopbarProps) {
+export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfile, onOpenAIChat, onOpenTGBot, location }: TopbarProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [showModeDialog, setShowModeDialog] = useState(false);
@@ -178,13 +179,14 @@ export function Topbar({ onMenuClick, onLogout, onOpenProfile, onOpenAIChat, onO
     <>
     <header className="h-16 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between px-4 lg:px-6 lg:pl-6 shadow-sm safe-area-top safe-area-left safe-area-right">
       <div className="flex items-center gap-4">
-        {/* Mobile menu button - показывается только на мобильных */}
+        {/* Menu button - гамбургер на мобильных, toggle коллапса на десктопе */}
         <Button
           variant="ghost"
           size="icon"
           data-testid="button-menu"
-          className="h-9 w-9 lg:hidden"
+          className="h-9 w-9"
           onClick={onMenuClick}
+          title={isSidebarCollapsed ? "Развернуть меню" : "Свернуть меню"}
         >
           <Menu className="h-4 w-4" />
         </Button>

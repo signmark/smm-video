@@ -374,8 +374,7 @@ export default function Trends() {
   const [sentimentData, setSentimentData] = useState<SentimentAnalysis | null>(null);
   const [isAnalyzingSentiment, setIsAnalyzingSentiment] = useState(false);
 
-  // Состояние для глобальных трендов (AI)
-  const [isGlobalTrendsExpanded, setIsGlobalTrendsExpanded] = useState(false);
+
 
   // Состояние для результатов анализа комментариев
   const [commentsAnalysisData, setCommentsAnalysisData] = useState<{
@@ -1350,48 +1349,6 @@ export default function Trends() {
     setIsSocialNetworkDialogOpen(true);
   };
 
-  // Мутация для сбора глобальных трендов через AI
-  const { mutate: collectGlobalTrends, isPending: isCollectingGlobal } = useMutation({
-    mutationFn: async () => {
-      if (!selectedCampaignId) throw new Error(t("trends.toasts.selectCampaign"));
-      const authToken = localStorage.getItem('auth_token');
-      if (!authToken) throw new Error(t("trends.toasts.authRequired"));
-
-      const response = await fetch('/api/trends/global', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`
-        },
-        body: JSON.stringify({
-          campaignId: selectedCampaignId,
-          language: i18n.language || 'ru'
-        })
-      });
-
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.error || t("trends.toasts.launchCollectionError"));
-      }
-
-      return response.json();
-    },
-    onSuccess: (data) => {
-      toast({
-        title: t('trends.toasts.globalTrendsDone'),
-        description: t('trends.toasts.globalTrendsDoneDesc', { count: data.count || 0 })
-      });
-      queryClient.invalidateQueries({ queryKey: ["trends", selectedPeriod, selectedCampaignId] });
-      setIsGlobalTrendsExpanded(true);
-    },
-    onError: (error: Error) => {
-      toast({
-        variant: "destructive",
-        title: t('trends.toasts.error'),
-        description: error.message
-      });
-    }
-  });
 
   // Мониторинг данных о постах из источников (только для диагностики)
   useEffect(() => {
@@ -3493,104 +3450,6 @@ export default function Trends() {
               </Collapsible>
             </Card>
 
-            {/* Глобальные тренды (AI) */}
-            <Card className="bg-card text-card-foreground shadow-md border border-border">
-              <Collapsible open={isGlobalTrendsExpanded} onOpenChange={setIsGlobalTrendsExpanded}>
-                <CardContent className="p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <Globe className="h-5 w-5 text-violet-500" />
-                      <h2 className="text-lg font-semibold">{t('trends.globalTrends.title')}</h2>
-                      {(() => {
-                        const globalCount = trends.filter((t: any) =>
-                          (t.sourceType || '').toString().startsWith('AI:')
-                        ).length;
-                        return globalCount > 0 ? (
-                          <Badge variant="secondary" className="ml-1">{globalCount}</Badge>
-                        ) : null;
-                      })()}
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => collectGlobalTrends()}
-                        disabled={isCollectingGlobal || !isValidCampaignSelected}
-                      >
-                        {isCollectingGlobal ? (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : (
-                          <RefreshCw className="mr-2 h-4 w-4" />
-                        )}
-                        {isCollectingGlobal ? t('trends.globalTrends.collecting') : t('trends.globalTrends.refresh')}
-                      </Button>
-                      <CollapsibleTrigger asChild>
-                        <Button variant="ghost" size="sm" className="p-1 h-auto">
-                          {isGlobalTrendsExpanded ?
-                            <ChevronUp className="h-4 w-4" /> :
-                            <ChevronDown className="h-4 w-4" />
-                          }
-                        </Button>
-                      </CollapsibleTrigger>
-                    </div>
-                  </div>
-                  <p className="text-xs text-muted-foreground mb-2">
-                    {t('trends.globalTrends.description')}
-                  </p>
-                  <CollapsibleContent>
-                    <div className="space-y-3 mt-4">
-                      {(() => {
-                        const globalTrends = trends.filter((t: any) =>
-                          (t.sourceType || '').toString().startsWith('AI:')
-                        );
-                        if (globalTrends.length === 0) {
-                          return (
-                            <div className="text-center py-6 text-muted-foreground">
-                              <Globe className="h-10 w-10 mx-auto mb-3 opacity-30" />
-                              <p className="text-sm">{t('trends.globalTrends.notCollected')}</p>
-                              <p className="text-xs mt-1">{t('trends.globalTrends.notCollectedHint')}</p>
-                            </div>
-                          );
-                        }
-                        return globalTrends.map((trend: any) => (
-                          <div
-                            key={trend.id}
-                            className="flex items-start gap-3 p-3 rounded-lg border bg-muted/30 hover:bg-muted/50 transition-colors cursor-pointer"
-                            onClick={() => {
-                              setSelectedTrendTopic(trend);
-                              setPreviewTrendTopic(trend);
-                            }}
-                          >
-                            <div className="flex-1 min-w-0">
-                              <p className="text-sm font-medium leading-tight">{trend.title}</p>
-                              {(trend.description) && (
-                                <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{trend.description}</p>
-                              )}
-                              <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground">
-                                <span className="inline-flex items-center gap-1">
-                                  <Badge variant="outline" className="text-[10px] px-1.5 py-0">
-                                    {(trend.sourceType || 'AI').replace('AI: ', '')}
-                                  </Badge>
-                                </span>
-                                {(trend.views > 0) && <span>👁 {formatNumber(trend.views)}</span>}
-                                {(trend.reactions > 0) && <span>❤️ {formatNumber(trend.reactions)}</span>}
-                              </div>
-                            </div>
-                            <Checkbox
-                              checked={selectedTopics.some(t => t.id === trend.id)}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleTopicSelection(trend);
-                              }}
-                            />
-                          </div>
-                        ));
-                      })()}
-                    </div>
-                  </CollapsibleContent>
-                </CardContent>
-              </Collapsible>
-            </Card>
           </>
         )}
       </div>

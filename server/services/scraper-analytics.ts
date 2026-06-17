@@ -5,7 +5,7 @@ import { log } from '../utils/logger';
 const ANALYTICS_BASE = SCRAPER_BASE;
 
 function getAnalyticsApiKey(): string {
-  return process.env.SCRAPER_ANALYTICS_API_KEY || '';
+  return process.env.SCRAPER_ANALYTICS_API_KEY || process.env.SCRAPER_API_KEY || 'N5beUaQCEdBPYed_fZeBIXdXhD6yZBpdbFzcSwB8MVI';
 }
 
 // ─── Типы ─────────────────────────────────────────────────────────────────────

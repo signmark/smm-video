@@ -6,8 +6,8 @@ import { ApiServiceName } from './api-keys';
 
 // Скрейпер-сервер (Telegram, VK, YouTube, Instagram + аналитика)
 export const SCRAPER_BASE = 'http://217.26.25.95:3030';
-// Фоллбэк api-key для скрейпера (обновлён 2026-06-08)
-const SCRAPER_API_KEY_FALLBACK = 'c1f2e8ad-61c5-450a-b301-12690e9e1112';
+// Фоллбэк api-key для скрейпера
+const SCRAPER_API_KEY_FALLBACK = process.env.SCRAPER_API_KEY || 'N5beUaQCEdBPYed_fZeBIXdXhD6yZBpdbFzcSwB8MVI';
 
 // Алиас для обратной совместимости
 const SCRAPER_OLD_BASE = SCRAPER_BASE;

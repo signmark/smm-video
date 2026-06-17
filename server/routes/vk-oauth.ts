@@ -235,6 +235,12 @@ router.options('/vk/token-webhook/:campaignId', (req, res) => {
   res.status(204).end();
 });
 
+// GET — проверка доступности endpoint (needanapp делает GET перед отправкой токена)
+router.get('/vk/token-webhook/:campaignId', (req, res) => {
+  setCorsHeaders(req, res);
+  res.json({ ok: true, endpoint: 'vk-token-webhook', campaignId: req.params.campaignId });
+});
+
 /**
  * POST /api/vk/token-webhook/:campaignId
  * Body: { access_token, refresh_token, device_id, client_id }

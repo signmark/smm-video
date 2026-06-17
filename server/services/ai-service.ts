@@ -94,14 +94,18 @@ export class AiService {
       let modelId = inputModel || "gemini-2.5-flash";
       const serviceName = params.service || '';
 
+      // Модели gemini-3.5+ передаём без изменений — пусть API отвечает сам
+      const passThroughPattern = /gemini-3\.[5-9]|gemini-[4-9]\./;
+      if (passThroughPattern.test(modelId) || passThroughPattern.test(serviceName)) {
+        // modelId остаётся как есть
       // pro / 2.5-pro / 3-pro → gemini-2.5-pro (самая мощная из доступных)
-      if (
+      } else if (
         serviceName.includes('2.5-pro') || modelId.includes('2.5-pro') ||
         serviceName.includes('gemini-3-pro') || modelId.includes('gemini-3-pro') ||
         serviceName.includes('gemini-3.0-pro') || modelId.includes('gemini-3.0-pro')
       ) {
         modelId = "gemini-2.5-pro";
-      // flash / 2.5-flash / 3-flash → gemini-2.5-flash
+      // flash / 2.5-flash / 3.0-flash / 3-flash → gemini-2.5-flash
       } else if (
         serviceName.includes('2.5-flash') || modelId.includes('2.5-flash') ||
         serviceName.includes('gemini-3-flash') || modelId.includes('gemini-3-flash') ||

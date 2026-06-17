@@ -91,7 +91,7 @@ export class GeminiProxyService {
       'gemini-2.0-flash-lite': 'gemini-2.5-flash'
     };
 
-    return modelMap[model] || 'gemini-2.5-flash';
+    return modelMap[model] || model;
   }
   
   /**

@@ -287,7 +287,7 @@ export function ContentGenerationDialog({ campaignId, keywords, onClose }: Conte
               </div>
             </div>
 
-            {(selectedService === 'deepseek' || selectedService === 'qwen' || selectedService === 'gemini-2.5-flash' || selectedService === 'gemini-2.5-pro' || selectedService === 'gemini-3.0-pro') && (
+            {(selectedService === 'deepseek' || selectedService === 'qwen' || selectedService === 'gemini-2.5-flash' || selectedService === 'gemini-2.5-pro' || selectedService === 'gemini-3.0-pro' || selectedService === 'gemini-3.5-flash') && (
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="platform" className="text-right">
                   Платформа

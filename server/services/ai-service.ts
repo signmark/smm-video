@@ -97,7 +97,10 @@ export class AiService {
       // Модели gemini-3.5+ передаём без изменений — пусть API отвечает сам
       const passThroughPattern = /gemini-3\.[5-9]|gemini-[4-9]\./;
       if (passThroughPattern.test(modelId) || passThroughPattern.test(serviceName)) {
-        // modelId остаётся как есть
+        // если model не передан, но service содержит новую модель — используем service как modelId
+        if (!passThroughPattern.test(modelId) && passThroughPattern.test(serviceName)) {
+          modelId = serviceName;
+        }
       // pro / 2.5-pro / 3-pro → gemini-2.5-pro (самая мощная из доступных)
       } else if (
         serviceName.includes('2.5-pro') || modelId.includes('2.5-pro') ||

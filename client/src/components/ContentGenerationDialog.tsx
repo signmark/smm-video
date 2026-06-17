@@ -24,7 +24,7 @@ interface ContentGenerationDialogProps {
   onClose: () => void;
 }
 
-type ApiService = 'apiservice' | 'deepseek' | 'qwen' | 'gemini-2.5-flash' | 'gemini-2.5-pro' | 'gemini-3.0-pro';
+type ApiService = 'apiservice' | 'deepseek' | 'qwen' | 'gemini-2.5-flash' | 'gemini-2.5-pro' | 'gemini-3.0-pro' | 'gemini-3.5-flash';
 
 // UPDATED: 2025-11-22 15:13 - Added Gemini 3.0 Pro
 export function ContentGenerationDialog({ campaignId, keywords, onClose }: ContentGenerationDialogProps) {
@@ -37,7 +37,7 @@ export function ContentGenerationDialog({ campaignId, keywords, onClose }: Conte
   const [title, setTitle] = useState('');
   const [tone, setTone] = useState('informative');
   const [platform, setPlatform] = useState('facebook');
-  const [selectedService, setSelectedService] = useState<ApiService>('gemini-3.0-pro');
+  const [selectedService, setSelectedService] = useState<ApiService>('gemini-3.5-flash');
   const [useCampaignData, setUseCampaignData] = useState(false);
 
   const { mutate: generateContent, isPending } = useMutation({
@@ -276,7 +276,8 @@ export function ContentGenerationDialog({ campaignId, keywords, onClose }: Conte
                     <SelectValue placeholder="Выберите API Сервис" />
                   </SelectTrigger>
                   <SelectContent className="z-[9999] !bg-white dark:!bg-gray-800 !text-black dark:!text-white !border-gray-300 dark:!border-gray-600">
-                    <SelectItem data-testid="model-gemini-3.0-pro" value="gemini-3.0-pro" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Gemini 3.0 Pro ⚡</SelectItem>
+                    <SelectItem data-testid="model-gemini-3.5-flash" value="gemini-3.5-flash" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Gemini 3.5 Flash ⚡</SelectItem>
+                    <SelectItem data-testid="model-gemini-3.0-pro" value="gemini-3.0-pro" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Gemini 3.0 Pro</SelectItem>
                     <SelectItem data-testid="model-gemini-2.5-pro" value="gemini-2.5-pro" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Gemini 2.5 Pro</SelectItem>
                     <SelectItem data-testid="model-gemini-2.5-flash" value="gemini-2.5-flash" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Gemini 2.5 Flash</SelectItem>
                     <SelectItem data-testid="model-deepseek" value="deepseek" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">DeepSeek</SelectItem>

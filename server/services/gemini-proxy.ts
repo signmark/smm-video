@@ -83,6 +83,7 @@ export class GeminiProxyService {
       'gemini-3.0-flash': 'gemini-2.5-flash',
       'gemini-3.0-flash-preview': 'gemini-2.5-flash',
       // Актуальные модели (прямое использование)
+      'gemini-3.5-flash': 'gemini-2.5-flash',
       'gemini-2.5-pro': 'gemini-2.5-pro',
       'gemini-2.5-flash': 'gemini-2.5-flash',
       'gemini-2.5-flash-lite': 'gemini-2.5-flash-lite',

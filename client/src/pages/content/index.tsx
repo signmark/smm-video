@@ -320,7 +320,7 @@ export default function ContentPage() {
 
   // Inline AI generation в форме создания/редактирования
   const [showAiPanel, setShowAiPanel] = useState(false);
-  const [aiModel, setAiModel] = useState<'gemini-2.5-flash' | 'gemini-2.5-pro' | 'gemini-3.0-pro' | 'deepseek' | 'qwen'>('gemini-2.5-flash');
+  const [aiModel, setAiModel] = useState<'gemini-3.5-flash' | 'gemini-2.5-flash' | 'gemini-2.5-pro' | 'deepseek' | 'qwen'>('gemini-3.5-flash');
   const [aiPromptText, setAiPromptText] = useState('');
   const [isAiGenerating, setIsAiGenerating] = useState(false);
   const [showAiImagePanel, setShowAiImagePanel] = useState(false);
@@ -2271,9 +2271,9 @@ export default function ContentPage() {
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
+                                <SelectItem value="gemini-3.5-flash">Gemini 3.5 Flash ⚡</SelectItem>
                                 <SelectItem value="gemini-2.5-flash">Gemini 2.5 Flash</SelectItem>
                                 <SelectItem value="gemini-2.5-pro">Gemini 2.5 Pro</SelectItem>
-                                <SelectItem value="gemini-3.0-pro">Gemini 3.0 Pro</SelectItem>
                                 <SelectItem value="deepseek">DeepSeek</SelectItem>
                                 <SelectItem value="qwen">Qwen</SelectItem>
                               </SelectContent>
@@ -2362,9 +2362,9 @@ export default function ContentPage() {
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
+                              <SelectItem value="gemini-3.5-flash">Gemini 3.5 Flash ⚡</SelectItem>
                               <SelectItem value="gemini-2.5-flash">Gemini 2.5 Flash</SelectItem>
                               <SelectItem value="gemini-2.5-pro">Gemini 2.5 Pro</SelectItem>
-                              <SelectItem value="gemini-3.0-pro">Gemini 3.0 Pro</SelectItem>
                               <SelectItem value="deepseek">DeepSeek</SelectItem>
                               <SelectItem value="qwen">Qwen</SelectItem>
                             </SelectContent>
@@ -2429,9 +2429,9 @@ export default function ContentPage() {
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
+                              <SelectItem value="gemini-3.5-flash">Gemini 3.5 Flash ⚡</SelectItem>
                               <SelectItem value="gemini-2.5-flash">Gemini 2.5 Flash</SelectItem>
                               <SelectItem value="gemini-2.5-pro">Gemini 2.5 Pro</SelectItem>
-                              <SelectItem value="gemini-3.0-pro">Gemini 3.0 Pro</SelectItem>
                               <SelectItem value="deepseek">DeepSeek</SelectItem>
                               <SelectItem value="qwen">Qwen</SelectItem>
                             </SelectContent>

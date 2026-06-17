@@ -101,9 +101,10 @@ export class AiService {
         serviceName.includes('gemini-3.0-pro') || modelId.includes('gemini-3.0-pro')
       ) {
         modelId = "gemini-2.5-pro";
-      // flash / 2.5-flash / 3-flash → gemini-2.5-flash
+      // flash / 2.5-flash / 3.5-flash / 3-flash → gemini-2.5-flash
       } else if (
         serviceName.includes('2.5-flash') || modelId.includes('2.5-flash') ||
+        serviceName.includes('3.5-flash') || modelId.includes('3.5-flash') ||
         serviceName.includes('gemini-3-flash') || modelId.includes('gemini-3-flash') ||
         serviceName.includes('gemini-3.0-flash') || modelId.includes('gemini-3.0-flash') ||
         serviceName.includes('flash') || modelId.includes('flash')

@@ -24,9 +24,8 @@ interface ContentGenerationDialogProps {
   onClose: () => void;
 }
 
-type ApiService = 'apiservice' | 'deepseek' | 'qwen' | 'gemini-2.5-flash' | 'gemini-2.5-pro' | 'gemini-3.0-pro';
+type ApiService = 'apiservice' | 'deepseek' | 'qwen' | 'gemini-2.5-flash' | 'gemini-2.5-pro' | 'gemini-3.5-flash';
 
-// UPDATED: 2025-11-22 15:13 - Added Gemini 3.0 Pro
 export function ContentGenerationDialog({ campaignId, keywords, onClose }: ContentGenerationDialogProps) {
   const { toast } = useToast();
   const { isExpired } = usePlan();
@@ -37,7 +36,7 @@ export function ContentGenerationDialog({ campaignId, keywords, onClose }: Conte
   const [title, setTitle] = useState('');
   const [tone, setTone] = useState('informative');
   const [platform, setPlatform] = useState('facebook');
-  const [selectedService, setSelectedService] = useState<ApiService>('gemini-3.0-pro');
+  const [selectedService, setSelectedService] = useState<ApiService>('gemini-3.5-flash');
   const [useCampaignData, setUseCampaignData] = useState(false);
 
   const { mutate: generateContent, isPending } = useMutation({
@@ -276,9 +275,9 @@ export function ContentGenerationDialog({ campaignId, keywords, onClose }: Conte
                     <SelectValue placeholder="Выберите API Сервис" />
                   </SelectTrigger>
                   <SelectContent className="z-[9999] !bg-white dark:!bg-gray-800 !text-black dark:!text-white !border-gray-300 dark:!border-gray-600">
-                    <SelectItem data-testid="model-gemini-3.0-pro" value="gemini-3.0-pro" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Gemini 3.0 Pro ⚡</SelectItem>
-                    <SelectItem data-testid="model-gemini-2.5-pro" value="gemini-2.5-pro" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Gemini 2.5 Pro</SelectItem>
+                    <SelectItem data-testid="model-gemini-3.5-flash" value="gemini-3.5-flash" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Gemini 3.5 Flash ⚡</SelectItem>
                     <SelectItem data-testid="model-gemini-2.5-flash" value="gemini-2.5-flash" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Gemini 2.5 Flash</SelectItem>
+                    <SelectItem data-testid="model-gemini-2.5-pro" value="gemini-2.5-pro" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Gemini 2.5 Pro</SelectItem>
                     <SelectItem data-testid="model-deepseek" value="deepseek" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">DeepSeek</SelectItem>
                     <SelectItem data-testid="model-qwen" value="qwen" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Qwen</SelectItem>
                   </SelectContent>
@@ -286,7 +285,7 @@ export function ContentGenerationDialog({ campaignId, keywords, onClose }: Conte
               </div>
             </div>
 
-            {(selectedService === 'deepseek' || selectedService === 'qwen' || selectedService === 'gemini-2.5-flash' || selectedService === 'gemini-2.5-pro' || selectedService === 'gemini-3.0-pro') && (
+            {(selectedService === 'deepseek' || selectedService === 'qwen' || selectedService === 'gemini-2.5-flash' || selectedService === 'gemini-2.5-pro' || selectedService === 'gemini-3.5-flash') && (
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="platform" className="text-right">
                   Платформа
@@ -361,39 +360,6 @@ export function ContentGenerationDialog({ campaignId, keywords, onClose }: Conte
               />
             </div>
 
-            <div className="grid grid-cols-4 items-start gap-3">
-              <Label className="text-right pt-2 text-sm">
-                Ключевые слова
-              </Label>
-              <div className="col-span-3 grid grid-cols-2 gap-1 max-h-[150px] overflow-y-auto !border !border-gray-300 dark:!border-gray-600 rounded p-1 !bg-white dark:!bg-gray-800">
-                {keywords.length === 0 ? (
-                  <p className="text-xs text-muted-foreground col-span-2">
-                    Нет доступных ключевых слов. Добавьте их в раздел "Ключевые слова".
-                  </p>
-                ) : (
-                  // Отфильтруем ключевые слова, оставив непустые
-                  keywords
-                    .filter(kw => kw.keyword && kw.keyword.trim() !== '')
-                    .map((kw) => (
-                      <div key={kw.id} className="flex items-start space-x-1">
-                        <Checkbox
-                          id={`keyword-${kw.id}`}
-                          data-testid={`keyword-checkbox-${kw.id}`}
-                          checked={selectedKeywords.includes(kw.keyword)}
-                          onCheckedChange={() => handleKeywordToggle(kw.keyword)}
-                          className="mt-0.5 !border-gray-300 dark:!border-gray-600 data-[state=checked]:!bg-blue-600 data-[state=checked]:!text-white"
-                        />
-                        <Label
-                          htmlFor={`keyword-${kw.id}`}
-                          className="cursor-pointer text-xs"
-                        >
-                          {kw.keyword} ({kw.trendScore})
-                        </Label>
-                      </div>
-                    ))
-                )}
-              </div>
-            </div>
             <div className="flex justify-end space-x-2 mt-2">
               <Button variant="outline" onClick={onClose} size="sm" className="w-[100px] !bg-white dark:!bg-gray-700 !text-black dark:!text-white !border-gray-300 dark:!border-gray-600 hover:!bg-gray-100 dark:hover:!bg-gray-600">
                 Отмена

@@ -1,11 +1,14 @@
 import axios from 'axios';
-import { SCRAPER_BASE } from './trend-collector';
+import { SCRAPER_BASE, getScraperApiKey } from './trend-collector';
 import { log } from '../utils/logger';
 
 const ANALYTICS_BASE = SCRAPER_BASE;
 
-function getAnalyticsApiKey(): string {
-  return process.env.SCRAPER_ANALYTICS_API_KEY || process.env.SCRAPER_API_KEY || 'N5beUaQCEdBPYed_fZeBIXdXhD6yZBpdbFzcSwB8MVI';
+async function getAnalyticsApiKey(): Promise<string> {
+  // Приоритет: SCRAPER_ANALYTICS_API_KEY → SCRAPER_API_KEY → Directus (trends_scraper / telegram_collect_comments) → захардкоженный fallback
+  if (process.env.SCRAPER_ANALYTICS_API_KEY) return process.env.SCRAPER_ANALYTICS_API_KEY;
+  if (process.env.SCRAPER_API_KEY) return process.env.SCRAPER_API_KEY;
+  return getScraperApiKey();
 }
 
 // ─── Типы ─────────────────────────────────────────────────────────────────────
@@ -210,7 +213,7 @@ export interface MetricsRefreshResponse {
 // ─── Вспомогательные функции запроса ──────────────────────────────────────────
 
 async function analyticsGet<T = any>(path: string, params?: Record<string, any>): Promise<T | null> {
-  const apiKey = getAnalyticsApiKey();
+  const apiKey = await getAnalyticsApiKey();
   try {
     const url = `${ANALYTICS_BASE}${path}`;
     const response = await axios.get(url, {
@@ -227,7 +230,7 @@ async function analyticsGet<T = any>(path: string, params?: Record<string, any>)
 }
 
 async function analyticsPost<T = any>(path: string, body: Record<string, any> = {}, params?: Record<string, any>): Promise<T | null> {
-  const apiKey = getAnalyticsApiKey();
+  const apiKey = await getAnalyticsApiKey();
   try {
     const url = `${ANALYTICS_BASE}${path}`;
     log(`[ScraperAnalytics] → POST ${url} body=${JSON.stringify(body)}`, 'info');
@@ -246,7 +249,7 @@ async function analyticsPost<T = any>(path: string, body: Record<string, any> = 
 }
 
 async function analyticsDelete(path: string): Promise<boolean> {
-  const apiKey = getAnalyticsApiKey();
+  const apiKey = await getAnalyticsApiKey();
   try {
     const url = `${ANALYTICS_BASE}${path}`;
     await axios.delete(url, {

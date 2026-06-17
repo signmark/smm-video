@@ -1133,7 +1133,8 @@ export default function ContentPage() {
       targetSetter(html || `<p>${cleaned}</p>`);
       setShowAiPanel(false);
       setAiPromptText('');
-      toast({ title: 'Готово', description: `Текст сгенерирован (${data.service || aiModel})` });
+      const svcLabel = (data.service || aiModel || '').replace(/gemini-proxy.*|gemini-vertex.*/i, 'Gemini');
+      toast({ title: 'Готово', description: `Текст сгенерирован (${svcLabel})` });
     } catch (err: any) {
       toast({ description: err.message || 'Ошибка генерации', variant: 'destructive' });
     } finally {

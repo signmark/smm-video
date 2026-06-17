@@ -105,7 +105,7 @@ export function ContentGenerationDialog({ campaignId, keywords, onClose }: Conte
 
 
       const content = data.content || '';
-      const service = data.service || 'AI';
+      const service = (data.service || 'AI').replace(/gemini-proxy.*|gemini-vertex.*/i, 'Gemini');
 
 
 

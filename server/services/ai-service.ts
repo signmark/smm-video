@@ -393,29 +393,8 @@ export class AiService {
           log(`[AiService] Vertex AI API Key logic failed: ${vertexApiKeyError.message}`, 'error');
         }
       } else {
-        // Пытаемся использовать Vertex AI Service Account (если ключ не AQ.)
-        try {
-          log(`[AiService] Attempting Vertex AI Service Account for model ${modelId}`, 'info');
-          const vertexContent = await geminiVertexDirect.generateContent({
-            prompt: fullPrompt,
-            model: modelId
-          });
-          
-          if (vertexContent) {
-            log(`[AiService] Content successfully generated via Vertex AI Service Account`, 'info');
-            return {
-              success: true,
-              content: vertexContent.trim(),
-              model: modelId,
-              service: 'gemini-vertex'
-            };
-          }
-        } catch (vertexError: any) {
-          log(`[AiService] Vertex AI Service Account failed: ${vertexError.message}`, 'warn');
-        }
-
-        // Вызов API Google AI Studio через американский прокси (обязательно для AIzaSy ключей)
-        logger.log(`[AiService] Using Gemini Proxy for AIzaSy key`, 'gemini');
+        // Сначала пробуем Gemini Proxy (Google AI Studio, AIzaSy ключ) — быстрее и надёжнее в dev
+        logger.log(`[AiService] Using Gemini Proxy (primary)`, 'gemini');
         try {
           geminiProxyService.setApiKey(apiKey);
           const generatedText = await geminiProxyService.generateText({

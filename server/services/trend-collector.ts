@@ -212,7 +212,7 @@ async function findGroups(
   const all: (TgGroup | VkGroup)[] = [];
   for (const chunk of chunks) {
     const data = await callScraper(endpoint, {
-      query: chunk,
+      query: chunk.join(', '),
       min_members: minMembers,
       max_groups: maxGroups
     }, apiKey);

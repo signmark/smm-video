@@ -232,6 +232,10 @@ export class GeminiProxyService {
         }
       } catch (error) {
         lastError = error as Error;
+        // 404 — модель не существует, retry бессмысленен
+        if (lastError.message?.includes('404') || lastError.message?.includes('NOT_FOUND')) {
+          break;
+        }
         retries++;
         
         if (retries < this.maxRetries) {

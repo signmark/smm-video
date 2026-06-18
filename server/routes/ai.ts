@@ -124,11 +124,21 @@ export function registerAiRoutes(app: Express) {
         console.error('Response Data:', JSON.stringify(error.response.data, null, 2));
       }
       console.error('--- AI GENERATION ERROR END ---');
-      
+
+      const rawMsg: string = error.message || '';
+      let userMessage = rawMsg;
+      if (rawMsg.includes('429') || rawMsg.includes('RESOURCE_EXHAUSTED') || rawMsg.includes('quota') || rawMsg.includes('rate limit')) {
+        userMessage = 'Лимит Gemini исчерпан. Квота бесплатного тарифа на сегодня закончилась. Переключитесь на DeepSeek или Qwen.';
+      } else if (rawMsg.includes('503') || rawMsg.includes('UNAVAILABLE') || rawMsg.includes('high demand')) {
+        userMessage = 'Gemini временно перегружен (503). Попробуйте через минуту или выберите DeepSeek / Qwen.';
+      } else if (rawMsg.includes('404') || rawMsg.includes('NOT_FOUND')) {
+        userMessage = 'Выбранная модель недоступна. Попробуйте другую модель.';
+      }
+
       res.status(error.response?.status || 500).json({ 
         success: false, 
-        error: error.message,
-        message: error.message // Добавляем message для совместимости с фронтендом
+        error: userMessage,
+        message: userMessage
       });
     }
   });

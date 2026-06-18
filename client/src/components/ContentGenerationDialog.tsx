@@ -32,6 +32,7 @@ export function ContentGenerationDialog({ campaignId, keywords, onClose }: Conte
   const { isExpired } = usePlan();
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationResult, setGenerationResult] = useState<string | null>(null);
+  const [usedModel, setUsedModel] = useState<string | null>(null);
   const [selectedKeywords, setSelectedKeywords] = useState<string[]>([]);
   const [prompt, setPrompt] = useState('');
   const [title, setTitle] = useState('');
@@ -121,12 +122,15 @@ export function ContentGenerationDialog({ campaignId, keywords, onClose }: Conte
         return m;
       };
 
+      // Сохраняем модель, которая реально ответила
+      setUsedModel(data.model || null);
+
       // Если сработал fallback — уведомляем и переключаем дропдаун; обычный тост не показываем
       if (data.isFallback && data.model) {
         const fallbackValue = data.model.includes('1.5') ? 'gemini-1.5-flash' : 'gemini-2.5-flash';
         toast({
           title: 'Модель переключена автоматически',
-          description: `Выбранная модель временно недоступна (503). Ответ сгенерирован через ${modelLabel(data.model)}. Дропдаун обновлён.`,
+          description: `Выбранная модель временно недоступна (503). Ответ сгенерирован через ${modelLabel(data.model)}.`,
         });
         setSelectedService(fallbackValue as any);
       } else {
@@ -256,7 +260,25 @@ export function ContentGenerationDialog({ campaignId, keywords, onClose }: Conte
     <Dialog open={true} onOpenChange={() => onClose()} modal={true}>
       <DialogContent className={`ai-dialog bg-card text-card-foreground ${!generationResult ? "sm:max-w-[600px] max-h-[95vh] overflow-y-auto" : "sm:max-w-[600px] max-h-[600px] overflow-y-auto"}`}>
         <DialogHeader className="mb-0 pb-1">
-          <DialogTitle>{generationResult ? "Результат генерации контента" : "Генерация контента"}</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            {generationResult ? "Результат генерации контента" : "Генерация контента"}
+            {generationResult && usedModel && (
+              <span className="text-xs font-normal text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
+                {(() => {
+                  const m = usedModel;
+                  if (m.includes('8b')) return 'Gemini 1.5 Flash 8B';
+                  if (m.includes('1.5')) return 'Gemini 1.5 Flash';
+                  if (m.includes('2.5-flash')) return 'Gemini 2.5 Flash';
+                  if (m.includes('2.5-pro')) return 'Gemini 2.5 Pro';
+                  if (m.includes('3.0-pro') || m.includes('3-pro')) return 'Gemini 3.0 Pro';
+                  if (m.includes('3.5') || m.includes('3-flash')) return 'Gemini 3.5 Flash';
+                  if (m.includes('deepseek')) return 'DeepSeek';
+                  if (m.includes('qwen')) return 'Qwen';
+                  return m;
+                })()}
+              </span>
+            )}
+          </DialogTitle>
           {!generationResult && (
             <DialogDescription className="text-xs">
               Используйте AI для генерации контента на основе ключевых слов и промта

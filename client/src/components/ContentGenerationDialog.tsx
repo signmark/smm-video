@@ -97,15 +97,27 @@ export function ContentGenerationDialog({ campaignId, keywords, onClose }: Conte
 
       return {
         content: text,
-        service: data.service || selectedService
+        service: data.service || selectedService,
+        model: data.model || null,
+        isFallback: (data.service || '').includes('fallback')
       };
     },
     onSuccess: (data) => {
       // Преобразуем контент в формат, подходящий для редактора
 
-
       const content = data.content || '';
       const service = (data.service || 'AI').replace(/gemini-proxy.*|gemini-vertex.*/i, 'Gemini');
+
+      // Если сработал fallback — уведомляем и переключаем дропдаун
+      if (data.isFallback && data.model) {
+        const fallbackValue = data.model.includes('1.5') ? 'gemini-1.5-flash' : 'gemini-2.5-flash';
+        const fallbackLabel = data.model.includes('8b') ? 'Gemini 1.5 Flash 8B' : data.model.includes('1.5') ? 'Gemini 1.5 Flash' : 'Gemini 2.5 Flash';
+        toast({
+          title: 'Модель переключена автоматически',
+          description: `Выбранная модель временно недоступна (503). Ответ сгенерирован через ${fallbackLabel}. Модель в меню обновлена.`,
+        });
+        setSelectedService(fallbackValue as any);
+      }
 
 
 
@@ -280,6 +292,7 @@ export function ContentGenerationDialog({ campaignId, keywords, onClose }: Conte
                     <SelectItem data-testid="model-gemini-3.0-pro" value="gemini-3.0-pro" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Gemini 3.0 Pro</SelectItem>
                     <SelectItem data-testid="model-gemini-2.5-pro" value="gemini-2.5-pro" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Gemini 2.5 Pro</SelectItem>
                     <SelectItem data-testid="model-gemini-2.5-flash" value="gemini-2.5-flash" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Gemini 2.5 Flash</SelectItem>
+                    <SelectItem data-testid="model-gemini-1.5-flash" value="gemini-1.5-flash" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Gemini 1.5 Flash</SelectItem>
                     <SelectItem data-testid="model-deepseek" value="deepseek" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">DeepSeek</SelectItem>
                     <SelectItem data-testid="model-qwen" value="qwen" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Qwen</SelectItem>
                   </SelectContent>
@@ -287,7 +300,7 @@ export function ContentGenerationDialog({ campaignId, keywords, onClose }: Conte
               </div>
             </div>
 
-            {(selectedService === 'deepseek' || selectedService === 'qwen' || selectedService === 'gemini-2.5-flash' || selectedService === 'gemini-2.5-pro' || selectedService === 'gemini-3.0-pro' || selectedService === 'gemini-3.5-flash') && (
+            {(selectedService === 'deepseek' || selectedService === 'qwen' || selectedService === 'gemini-1.5-flash' || selectedService === 'gemini-2.5-flash' || selectedService === 'gemini-2.5-pro' || selectedService === 'gemini-3.0-pro' || selectedService === 'gemini-3.5-flash') && (
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="platform" className="text-right">
                   Платформа

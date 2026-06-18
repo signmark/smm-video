@@ -424,7 +424,7 @@ export class AiService {
             proxyError.message?.includes('high demand') ||
             proxyError.message?.includes('temporarily');
           // Цепочка fallback: 2.5-flash → 1.5-flash → 1.5-flash-8b
-          const fallbackChain = ['gemini-1.5-flash', 'gemini-1.5-flash-8b'];
+          const fallbackChain = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-1.5-flash-8b'];
           const fallbackModels = fallbackChain.filter(m => m !== modelId);
           if (isTransient && fallbackModels.length > 0) {
             for (const fallbackModel of fallbackModels) {

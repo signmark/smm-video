@@ -1133,7 +1133,19 @@ export default function ContentPage() {
       targetSetter(html || `<p>${cleaned}</p>`);
       setShowAiPanel(false);
       setAiPromptText('');
-      const svcLabel = (data.service || aiModel || '').replace(/gemini-proxy.*|gemini-vertex.*/i, 'Gemini');
+      const modelLabel = (m: string) => {
+        if (!m) return 'Gemini';
+        if (m.includes('1.5')) return 'Gemini 1.5 Flash';
+        if (m.includes('2.5-flash')) return 'Gemini 2.5 Flash';
+        if (m.includes('2.5-pro')) return 'Gemini 2.5 Pro';
+        if (m.includes('3.0-pro') || m.includes('3-pro')) return 'Gemini 3.0 Pro';
+        if (m.includes('3.5') || m.includes('3-flash')) return 'Gemini 3.5 Flash';
+        if (m.includes('deepseek')) return 'DeepSeek';
+        if (m.includes('qwen')) return 'Qwen';
+        if (m.includes('gemini')) return 'Gemini';
+        return m;
+      };
+      const svcLabel = modelLabel(data.model || data.service || aiModel || '');
       toast({ title: 'Готово', description: `Текст сгенерирован (${svcLabel})` });
     } catch (err: any) {
       toast({ description: err.message || 'Ошибка генерации', variant: 'destructive' });

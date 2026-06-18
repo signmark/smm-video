@@ -233,7 +233,13 @@ export class GeminiProxyService {
       } catch (error) {
         lastError = error as Error;
         // 404 — модель не существует, retry бессмысленен
-        if (lastError.message?.includes('404') || lastError.message?.includes('NOT_FOUND')) {
+        // 429 / RESOURCE_EXHAUSTED — квота исчерпана (дневной лимит), ждать бесполезно
+        if (
+          lastError.message?.includes('404') ||
+          lastError.message?.includes('NOT_FOUND') ||
+          lastError.message?.includes('429') ||
+          lastError.message?.includes('RESOURCE_EXHAUSTED')
+        ) {
           break;
         }
         retries++;

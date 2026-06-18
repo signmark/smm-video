@@ -1133,19 +1133,20 @@ export default function ContentPage() {
       targetSetter(html || `<p>${cleaned}</p>`);
       setShowAiPanel(false);
       setAiPromptText('');
-      const modelLabel = (m: string) => {
-        if (!m) return 'Gemini';
-        if (m.includes('1.5')) return 'Gemini 1.5 Flash';
-        if (m.includes('2.5-flash')) return 'Gemini 2.5 Flash';
-        if (m.includes('2.5-pro')) return 'Gemini 2.5 Pro';
-        if (m.includes('3.0-pro') || m.includes('3-pro')) return 'Gemini 3.0 Pro';
-        if (m.includes('3.5') || m.includes('3-flash')) return 'Gemini 3.5 Flash';
-        if (m.includes('deepseek')) return 'DeepSeek';
-        if (m.includes('qwen')) return 'Qwen';
-        if (m.includes('gemini')) return 'Gemini';
-        return m;
+      const MODEL_NAMES: Record<string, string> = {
+        'gemini-3.5-flash': 'Gemini 3.5 Flash',
+        'gemini-3.0-pro': 'Gemini 3.0 Pro',
+        'gemini-2.5-pro': 'Gemini 2.5 Pro',
+        'gemini-2.5-flash': 'Gemini 2.5 Flash',
+        'gemini-2.5-flash-lite': 'Gemini 2.5 Flash Lite',
+        'gemini-1.5-flash': 'Gemini 1.5 Flash',
+        'gemini-proxy': 'Gemini',
+        'gemini-proxy-fallback': 'Gemini (fallback)',
+        'deepseek-chat': 'DeepSeek',
+        'deepseek': 'DeepSeek',
+        'qwen': 'Qwen',
       };
-      const svcLabel = modelLabel(data.model || data.service || aiModel || '');
+      const svcLabel = MODEL_NAMES[data.model] ?? MODEL_NAMES[data.service] ?? MODEL_NAMES[aiModel] ?? data.model ?? data.service ?? aiModel ?? 'Gemini';
       toast({ title: 'Готово', description: `Текст сгенерирован (${svcLabel})` });
     } catch (err: any) {
       toast({ description: err.message || 'Ошибка генерации', variant: 'destructive' });

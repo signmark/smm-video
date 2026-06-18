@@ -108,19 +108,21 @@ export function ContentGenerationDialog({ campaignId, keywords, onClose }: Conte
 
       const content = data.content || '';
 
-      // Человекочитаемое название модели
-      const modelLabel = (m: string) => {
-        if (!m) return 'Gemini';
-        if (m.includes('8b')) return 'Gemini 1.5 Flash 8B';
-        if (m.includes('1.5')) return 'Gemini 1.5 Flash';
-        if (m.includes('2.5-flash')) return 'Gemini 2.5 Flash';
-        if (m.includes('2.5-pro')) return 'Gemini 2.5 Pro';
-        if (m.includes('3.0-pro') || m.includes('3-pro')) return 'Gemini 3.0 Pro';
-        if (m.includes('3.5') || m.includes('3-flash')) return 'Gemini 3.5 Flash';
-        if (m.includes('deepseek')) return 'DeepSeek';
-        if (m.includes('qwen')) return 'Qwen';
-        return m;
+      // Человекочитаемое название модели — точный lookup, без includes()
+      const MODEL_NAMES: Record<string, string> = {
+        'gemini-3.5-flash': 'Gemini 3.5 Flash',
+        'gemini-3.0-pro': 'Gemini 3.0 Pro',
+        'gemini-2.5-pro': 'Gemini 2.5 Pro',
+        'gemini-2.5-flash': 'Gemini 2.5 Flash',
+        'gemini-2.5-flash-lite': 'Gemini 2.5 Flash Lite',
+        'gemini-1.5-flash': 'Gemini 1.5 Flash',
+        'gemini-proxy': 'Gemini',
+        'gemini-proxy-fallback': 'Gemini (fallback)',
+        'deepseek-chat': 'DeepSeek',
+        'deepseek': 'DeepSeek',
+        'qwen': 'Qwen',
       };
+      const modelLabel = (m: string) => MODEL_NAMES[m] ?? m ?? 'Gemini';
 
       // Сохраняем модель, которая реально ответила
       setUsedModel(data.model || null);

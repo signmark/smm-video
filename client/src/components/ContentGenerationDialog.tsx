@@ -199,11 +199,20 @@ export function ContentGenerationDialog({ campaignId, keywords, onClose }: Conte
     },
     onError: (error: Error) => {
       setIsGenerating(false);
-      toast({
-        variant: 'destructive',
-        title: 'Ошибка',
-        description: error.message || 'Ошибка при генерации контента'
-      });
+      const msg = error.message || '';
+      const is503 = msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('high demand') || msg.includes('исчерпано');
+      if (is503) {
+        toast({
+          title: 'Gemini временно перегружен',
+          description: 'Все модели Gemini сейчас недоступны (503). Попробуйте через минуту или выберите DeepSeek / Qwen.'
+        });
+      } else {
+        toast({
+          variant: 'destructive',
+          title: 'Ошибка',
+          description: msg || 'Ошибка при генерации контента'
+        });
+      }
     }
   });
 

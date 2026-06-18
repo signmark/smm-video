@@ -202,11 +202,17 @@ export function ContentGenerationDialog({ campaignId, keywords, onClose }: Conte
     onError: (error: Error) => {
       setIsGenerating(false);
       const msg = error.message || '';
-      const is503 = msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('high demand') || msg.includes('исчерпано');
-      if (is503) {
+      const isQuota = msg.includes('429') || msg.includes('quota') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('rate limit') || msg.includes('исчерпано');
+      const is503 = msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('high demand');
+      if (isQuota) {
+        toast({
+          title: 'Лимит Gemini исчерпан',
+          description: 'Квота бесплатного тарифа Gemini на сегодня закончилась. Переключитесь на DeepSeek или Qwen.'
+        });
+      } else if (is503) {
         toast({
           title: 'Gemini временно перегружен',
-          description: 'Все модели Gemini сейчас недоступны (503). Попробуйте через минуту или выберите DeepSeek / Qwen.'
+          description: 'Все модели Gemini сейчас недоступны. Попробуйте через минуту или выберите DeepSeek / Qwen.'
         });
       } else {
         toast({

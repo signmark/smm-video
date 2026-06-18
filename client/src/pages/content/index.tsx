@@ -1149,7 +1149,16 @@ export default function ContentPage() {
       const svcLabel = MODEL_NAMES[data.model] ?? MODEL_NAMES[data.service] ?? MODEL_NAMES[aiModel] ?? data.model ?? data.service ?? aiModel ?? 'Gemini';
       toast({ title: 'Готово', description: `Текст сгенерирован (${svcLabel})` });
     } catch (err: any) {
-      toast({ description: err.message || 'Ошибка генерации', variant: 'destructive' });
+      const msg = err.message || '';
+      const isQuota = msg.includes('429') || msg.includes('quota') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('rate limit');
+      const is503 = msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('high demand');
+      if (isQuota) {
+        toast({ title: 'Лимит Gemini исчерпан', description: 'Квота бесплатного тарифа Gemini на сегодня закончилась. Переключитесь на DeepSeek или Qwen.' });
+      } else if (is503) {
+        toast({ title: 'Gemini временно перегружен', description: 'Попробуйте через минуту или переключитесь на DeepSeek / Qwen.' });
+      } else {
+        toast({ description: msg || 'Ошибка генерации', variant: 'destructive' });
+      }
     } finally {
       setIsAiGenerating(false);
     }

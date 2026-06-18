@@ -423,8 +423,8 @@ export class AiService {
             proxyError.message?.includes('rate limit') ||
             proxyError.message?.includes('high demand') ||
             proxyError.message?.includes('temporarily');
-          // Цепочка fallback: 2.5-flash → 1.5-flash (8b снят с API — 404)
-          const fallbackChain = ['gemini-2.5-flash', 'gemini-1.5-flash'];
+          // Цепочка fallback: 2.5-flash (1.5-flash и 8b сняты с API — 404)
+          const fallbackChain = ['gemini-2.5-flash'];
           const fallbackModels = fallbackChain.filter(m => m !== modelId);
           if (isTransient && fallbackModels.length > 0) {
             for (const fallbackModel of fallbackModels) {

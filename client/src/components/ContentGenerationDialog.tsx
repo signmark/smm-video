@@ -106,17 +106,34 @@ export function ContentGenerationDialog({ campaignId, keywords, onClose }: Conte
       // Преобразуем контент в формат, подходящий для редактора
 
       const content = data.content || '';
-      const service = (data.service || 'AI').replace(/gemini-proxy.*|gemini-vertex.*/i, 'Gemini');
 
-      // Если сработал fallback — уведомляем и переключаем дропдаун
+      // Человекочитаемое название модели
+      const modelLabel = (m: string) => {
+        if (!m) return 'Gemini';
+        if (m.includes('8b')) return 'Gemini 1.5 Flash 8B';
+        if (m.includes('1.5')) return 'Gemini 1.5 Flash';
+        if (m.includes('2.5-flash')) return 'Gemini 2.5 Flash';
+        if (m.includes('2.5-pro')) return 'Gemini 2.5 Pro';
+        if (m.includes('3.0-pro') || m.includes('3-pro')) return 'Gemini 3.0 Pro';
+        if (m.includes('3.5') || m.includes('3-flash')) return 'Gemini 3.5 Flash';
+        if (m.includes('deepseek')) return 'DeepSeek';
+        if (m.includes('qwen')) return 'Qwen';
+        return m;
+      };
+
+      // Если сработал fallback — уведомляем и переключаем дропдаун; обычный тост не показываем
       if (data.isFallback && data.model) {
         const fallbackValue = data.model.includes('1.5') ? 'gemini-1.5-flash' : 'gemini-2.5-flash';
-        const fallbackLabel = data.model.includes('8b') ? 'Gemini 1.5 Flash 8B' : data.model.includes('1.5') ? 'Gemini 1.5 Flash' : 'Gemini 2.5 Flash';
         toast({
           title: 'Модель переключена автоматически',
-          description: `Выбранная модель временно недоступна (503). Ответ сгенерирован через ${fallbackLabel}. Модель в меню обновлена.`,
+          description: `Выбранная модель временно недоступна (503). Ответ сгенерирован через ${modelLabel(data.model)}. Дропдаун обновлён.`,
         });
         setSelectedService(fallbackValue as any);
+      } else {
+        toast({
+          title: 'Успешно',
+          description: `Контент сгенерирован с помощью ${modelLabel(data.model || '')}`
+        });
       }
 
 
@@ -175,10 +192,6 @@ export function ContentGenerationDialog({ campaignId, keywords, onClose }: Conte
       }
 
       setIsGenerating(false);
-      toast({
-        title: 'Успешно',
-        description: `Контент сгенерирован с помощью ${service}`
-      });
     },
     onError: (error: Error) => {
       setIsGenerating(false);

@@ -9,6 +9,7 @@ import { directusAuthManager } from '../services/directus-auth-manager';
 import { log } from '../utils/logger';
 import { isUserAdmin } from '../routes-global-api-keys';
 import { detectEnvironment } from '../utils/environment-detector';
+import { sendRegistrationPostback } from '../services/partner-postback';
 
 /**
  * Регистрирует маршруты для авторизации
@@ -74,7 +75,7 @@ export function registerAuthRoutes(app: Express): void {
   // Маршрут для регистрации
   app.post('/api/auth/register', async (req: Request, res: Response) => {
     try {
-      const { email, password, firstName, lastName, jobTitle } = req.body;
+      const { email, password, firstName, lastName, jobTitle, partnerCode } = req.body;
 
       if (!email || !password || !firstName || !lastName) {
         return res.status(400).json({ 
@@ -153,6 +154,25 @@ export function registerAuthRoutes(app: Express): void {
           log(`Trial Pro (14 days) activated for new user: ${newUserId} until ${trialExpireDateStr}`, 'auth');
         } catch (trialErr: any) {
           console.warn('[auth/register] Не удалось активировать пробный период Pro:', trialErr?.message);
+        }
+
+        // Сохраняем партнёрский код и отправляем registration postback (не блокирует ответ)
+        if (partnerCode) {
+          try {
+            await axios.patch(`${directusUrl}/users/${newUserId}`, {
+              omemo_partner_code: partnerCode.trim().toUpperCase(),
+            }, {
+              headers: { 'Authorization': `Bearer ${adminToken}`, 'Content-Type': 'application/json' },
+            });
+            log(`[auth/register] partnerCode=${partnerCode} сохранён для user ${newUserId}`, 'auth');
+          } catch (pcErr: any) {
+            console.warn('[auth/register] Не удалось сохранить partnerCode:', pcErr?.message);
+          }
+          sendRegistrationPostback({
+            partnerCode: partnerCode.trim().toUpperCase(),
+            userId: newUserId,
+            email,
+          }).catch(() => {});
         }
 
         // Auto-login после регистрации, чтобы фронтенд мог продолжить onboarding

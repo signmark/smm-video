@@ -2,3 +2,4 @@
 - [Comment collector scraper](comment-collector-scraper.md) — новый скрейпер 31.129.109.216:3030, Bearer токен, пакетный API; ключ в Directus collect_comments_bearer
 - [Analytics API auth](analytics-api-auth.md) — scraper-analytics.ts использует Bearer токен из env SCRAPER_ANALYTICS_API_KEY (не api-key header); base URL тот же SCRAPER_BASE
 - [N8n removal](n8n-removal.md) — n8n полностью удалён; все вебхуки заменены прямыми сервисами; publish-scheduler.ts — главный путь публикации
+- [Vite build memory](vite-build-memory.md) — vite build падает с exit -1 без вывода; нужно NODE_OPTIONS="--max-old-space-size=1024" npx vite build

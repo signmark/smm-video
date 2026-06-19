@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
+import { sendPurchasePostback } from '../services/partner-postback';
 
 const router = Router();
 
@@ -282,6 +283,26 @@ router.post('/yookassa/webhook', async (req: Request, res: Response) => {
       }
 
       await activateSubscription(metaUserId, metaPlan);
+
+      // Отправляем purchase postback если у пользователя есть партнёрский код
+      try {
+        const userResp2 = await fetch(`${DIRECTUS_URL}/users/${metaUserId}?fields=omemo_partner_code,email,telegram_chat_id`, {
+          headers: { 'Authorization': `Bearer ${ADMIN_TOKEN}` },
+        });
+        if (userResp2.ok) {
+          const { data: ud } = await userResp2.json();
+          if (ud?.omemo_partner_code) {
+            sendPurchasePostback({
+              partnerCode: ud.omemo_partner_code,
+              userId: metaUserId,
+              paymentId,
+              amount: parseFloat(paymentObj.amount?.value || '0'),
+              email: ud.email,
+              telegramId: ud.telegram_chat_id,
+            }).catch(() => {});
+          }
+        }
+      } catch (_) {}
     }
 
     return res.json({ ok: true });

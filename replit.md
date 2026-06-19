@@ -10,6 +10,7 @@
 - **Frontend build**: `npx vite build` (only client → dist/public/)
 
 Required env vars: все секреты уже настроены в Replit Secrets (DIRECTUS_URL, DIRECTUS_ADMIN_TOKEN, GEMINI_API_KEY, ANTHROPIC_API_KEY, BEGET_S3_*, DATABASE_URL и др.)
+Partner postback (опционально): OMEMO_POSTBACK_URL (default: https://omemo.tech/api/v1/postback), OMEMO_POSTBACK_SECRET (Bearer shared secret)
 
 ## Stack
 

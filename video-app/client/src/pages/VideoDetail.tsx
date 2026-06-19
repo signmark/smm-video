@@ -1250,62 +1250,98 @@ export default function VideoDetail({ id }: { id: string }) {
       {/* Script display (after generation / during) */}
       {project.script && !isScriptReady && (
         <div>
-          <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>
-            📝 Скрипт: {project.script.title}
-          </h2>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 8 }}>
+            <h2 style={{ fontSize: 18, fontWeight: 700 }}>
+              📝 Скрипт: {project.script.title}
+            </h2>
+            {isDone && (
+              <button
+                onClick={handleResume}
+                disabled={resuming}
+                title="Пересобрать финальное видео с текущими субтитрами (используются готовые клипы)"
+                style={{ padding: '7px 16px', borderRadius: 'var(--radius-sm)', border: 'none', background: resuming ? '#1e3a5f' : '#0f4c8a', color: 'white', fontSize: 13, fontWeight: 600, cursor: resuming ? 'not-allowed' : 'pointer', opacity: resuming ? 0.7 : 1 }}
+              >
+                {resuming ? '⏳ Пересобираем...' : '🔄 Пересобрать субтитры'}
+              </button>
+            )}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {project.script.scenes.map((scene, i) => {
               const isT2VScene = project.animationModel === 'chain' ? i === 0 : !!scene.t2vPrompt;
-              const hasImage = !isT2VScene && typeof scene.selectedVariant === 'number';
+              const clipUrl = `${API}/videos/${project.id}/clips/${i}`;
+              const isEditingThis = editingScene === scene.id;
               return (
                 <div
                   key={scene.id}
-                  style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '14px 16px', display: 'flex', gap: 14 }}
+                  style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}
                 >
-                  {/* Selected image or stock clip thumbnail */}
-                  {scene.videoSource === 'stock' && scene.stockAvailable ? (
-                    <div style={{ width: 80, flexShrink: 0, borderRadius: 6, overflow: 'hidden', background: '#000', alignSelf: 'flex-start' }}>
-                      <video
-                        src={`${API}/videos/${project.id}/clips/${i}`}
-                        style={{ width: '100%', display: 'block' }}
-                        muted
-                        playsInline
-                        preload="metadata"
-                        controls
-                      />
+                  {/* Per-scene video player */}
+                  <video
+                    src={clipUrl}
+                    style={{ width: '100%', maxHeight: 320, background: '#000', display: 'block' }}
+                    controls
+                    playsInline
+                    preload="metadata"
+                    onError={(e) => { (e.target as HTMLVideoElement).style.display = 'none'; }}
+                  />
+
+                  <div style={{ padding: '12px 14px' }}>
+                    {/* Scene header */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                      <div style={{ width: 24, height: 24, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                        {i + 1}
+                      </div>
+                      <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>
+                        {project.clipDuration ?? scene.duration}с
+                        {isT2VScene
+                          ? <span style={{ marginLeft: 6, color: '#86efac' }}>Текст→Видео</span>
+                          : <span style={{ marginLeft: 6, color: '#93c5fd' }}>Картинка→Видео</span>}
+                      </span>
                     </div>
-                  ) : hasImage && (
-                    <div style={{ width: 54, flexShrink: 0, borderRadius: 6, overflow: 'hidden', background: 'var(--bg-card2)', aspectRatio: '9/16', alignSelf: 'flex-start' }}>
-                      <img
-                        src={`${API}/videos/${project.id}/images/${i}/${scene.selectedVariant}`}
-                        alt=""
-                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-                        onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                      />
+
+                    {/* Subtitle editor */}
+                    <div style={{ marginBottom: 6 }}>
+                      <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>📝 Субтитры</div>
+                      {isEditingThis ? (
+                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                          <input
+                            value={editText}
+                            onChange={(e) => setEditText(e.target.value)}
+                            autoFocus
+                            style={{ flex: 1, background: 'var(--bg-card2)', border: '1.5px solid #7c3aed', borderRadius: 'var(--radius-sm)', color: 'var(--text)', padding: '6px 10px', fontSize: 14, outline: 'none' }}
+                            onKeyDown={(e) => { if (e.key === 'Enter') handleSaveScene(scene.id); if (e.key === 'Escape') setEditingScene(null); }}
+                          />
+                          <button onClick={() => handleSaveScene(scene.id)} style={{ padding: '6px 12px', border: 'none', borderRadius: 'var(--radius-sm)', background: '#7c3aed', color: 'white', fontSize: 12, cursor: 'pointer' }}>✓</button>
+                          <button onClick={() => setEditingScene(null)} style={{ padding: '6px 10px', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', background: 'transparent', color: 'var(--text-muted)', fontSize: 12, cursor: 'pointer' }}>✕</button>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ fontWeight: 600, fontSize: 14 }}>{scene.text}</span>
+                          <button
+                            onClick={() => { setEditingScene(scene.id); setEditText(scene.text); }}
+                            style={{ padding: '2px 8px', border: '1px solid var(--border)', borderRadius: 4, background: 'transparent', color: 'var(--text-muted)', fontSize: 11, cursor: 'pointer', flexShrink: 0 }}
+                          >✏️</button>
+                        </div>
+                      )}
                     </div>
-                  )}
-                  <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, flexShrink: 0 }}>
-                    {i + 1}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 600, marginBottom: 4 }}>{scene.text}</div>
-                    {(scene.narration || scene.text) && (
-                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 6, lineHeight: 1.5, borderLeft: '2px solid rgba(167,139,250,0.3)', paddingLeft: 8 }}>
-                        {scene.narration || scene.text}
+
+                    {scene.narration && scene.narration !== scene.text && (
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5, borderLeft: '2px solid rgba(167,139,250,0.3)', paddingLeft: 8, marginBottom: 6 }}>
+                        🎙️ {scene.narration}
                       </div>
                     )}
-                    <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 4 }}>
-                      {project.clipDuration ?? scene.duration}с
-                      {isT2VScene
-                        ? <span style={{ marginLeft: 8, color: '#86efac' }}>T2V</span>
-                        : <span style={{ marginLeft: 8, color: '#93c5fd' }}>I2V</span>}
-                    </div>
+
                     <SceneAudioPlayer projectId={project.id} sceneIndex={i} />
                   </div>
                 </div>
               );
             })}
           </div>
+          {isDone && (
+            <div style={{ marginTop: 12, padding: '10px 14px', background: 'rgba(15,76,138,0.15)', border: '1px solid rgba(59,130,246,0.2)', borderRadius: 'var(--radius-sm)', fontSize: 12, color: '#93c5fd' }}>
+              💡 Отредактируйте субтитры нужных сцен → нажмите «Пересобрать субтитры» — клипы не перегенерируются, только финальное видео переклеится с новыми подписями.
+            </div>
+          )}
         </div>
       )}
     </div>

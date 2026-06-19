@@ -637,6 +637,10 @@ public isTokenValid(token: string): boolean {
    * @param userId ID пользователя
    * @returns Информация о сессии или null, если сессия не найдена
    */
+  getUserData(userId: string): any | null {
+    return this.sessionCache[userId]?.user || null;
+  }
+
   getSession(userId: string): SessionInfo | null {
     const session = this.sessionCache[userId];
     

@@ -83,8 +83,7 @@ export function registerAdminRoutes(app: Express) {
   app.get('/api/admin/users', authenticateUser, async (req: Request, res: Response) => {
     try {
       if (!req.user?.is_smm_admin) {
-        const isAdmin = await isUserAdmin(req);
-        if (!isAdmin) return res.status(403).json({ error: 'Доступ запрещен' });
+        return res.status(403).json({ error: 'Доступ запрещен' });
       }
 
       const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;

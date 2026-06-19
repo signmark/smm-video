@@ -1,6 +1,58 @@
 import { Request, Response, NextFunction } from 'express';
 import { directusApi, directusApiManager } from '../directus';
 
+const adminStatusCache = new Map<string, { is_smm_admin: boolean; cachedAt: number }>();
+const ADMIN_CACHE_TTL = 5 * 60 * 1000;
+
+async function fetchAdminStatus(userId: string): Promise<boolean> {
+  const cached = adminStatusCache.get(userId);
+  if (cached && Date.now() - cached.cachedAt < ADMIN_CACHE_TTL) {
+    return cached.is_smm_admin;
+  }
+
+  // Сначала пробуем из кэша сессий (нет сетевого вызова)
+  try {
+    const { directusAuthManager } = await import('../services/directus-auth-manager');
+    const userData = directusAuthManager.getUserData(userId);
+    if (userData && userData.is_smm_admin !== undefined) {
+      const val = userData.is_smm_admin;
+      const isAdmin = val === true || val === 1 || val === '1' || val === 'true';
+      adminStatusCache.set(userId, { is_smm_admin: isAdmin, cachedAt: Date.now() });
+      return isAdmin;
+    }
+  } catch {}
+
+  // Фолбэк: нативный fetch с admin-токеном (без axios interceptors)
+  try {
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
+    if (!adminToken) {
+      console.error('[user-auth] fetchAdminStatus: нет admin-токена в env');
+      return false;
+    }
+    const directusUrl = (process.env.DIRECTUS_URL || '').replace(/\/$/, '');
+    const url = `${directusUrl}/users/${userId}?fields=is_smm_admin`;
+    console.log(`[user-auth] fetchAdminStatus: GET ${url}`);
+    const resp = await fetch(url, {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    console.log(`[user-auth] fetchAdminStatus: status=${resp.status}`);
+    if (!resp.ok) {
+      const errText = await resp.text();
+      console.error(`[user-auth] fetchAdminStatus: ошибка ${resp.status}: ${errText}`);
+      return false;
+    }
+    const data = await resp.json() as any;
+    const val = data?.data?.is_smm_admin;
+    console.log(`[user-auth] fetchAdminStatus: userId=${userId}, is_smm_admin=${val}`);
+    const isAdmin = val === true || val === 1 || val === '1' || val === 'true';
+    adminStatusCache.set(userId, { is_smm_admin: isAdmin, cachedAt: Date.now() });
+    return isAdmin;
+  } catch (e: any) {
+    console.error('[user-auth] fetchAdminStatus: исключение:', e?.message);
+    return false;
+  }
+}
+
 export const authenticateUser = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const authHeader = req.headers.authorization;
@@ -26,7 +78,8 @@ export const authenticateUser = async (req: Request, res: Response, next: NextFu
           token: token,
           email: 'lbrspb@gmail.com',
           firstName: 'Admin',
-          lastName: 'NPlanner'
+          lastName: 'NPlanner',
+          is_smm_admin: true
         };
         (req as any).userId = realAdminId;
         next();
@@ -57,12 +110,14 @@ export const authenticateUser = async (req: Request, res: Response, next: NextFu
             const refreshedSession = await directusAuthManager.refreshSession(userId);
 
             if (refreshedSession && refreshedSession.token) {
+              const isAdmin = await fetchAdminStatus(userId);
               req.user = {
                 id: userId,
                 token: refreshedSession.token,
                 email: payload.email || '',
                 firstName: payload.first_name || '',
-                lastName: payload.last_name || ''
+                lastName: payload.last_name || '',
+                is_smm_admin: isAdmin
               };
               (req as any).userId = userId;
               next();
@@ -72,15 +127,52 @@ export const authenticateUser = async (req: Request, res: Response, next: NextFu
             console.error('[AUTH] Ошибка обновления токена:', refreshError);
           }
 
-          return res.status(401).json({ error: 'Не авторизован: Токен истек и требует обновления' });
+          // Токен истёк и refreshSession не дал новый — пробуем getValidToken (загружает из БД, сбрасывает backoff)
+          try {
+            const freshToken = await directusAuthManager.getValidToken(userId);
+            if (freshToken) {
+              const isAdmin = await fetchAdminStatus(userId);
+              req.user = {
+                id: userId,
+                token: freshToken,
+                email: payload.email || '',
+                firstName: payload.first_name || '',
+                lastName: payload.last_name || '',
+                is_smm_admin: isAdmin
+              };
+              (req as any).userId = userId;
+              next();
+              return;
+            }
+          } catch (getValidTokenError) {
+            console.error('[AUTH] getValidToken тоже не дал токен:', getValidTokenError);
+          }
+
+          // Все попытки исчерпаны — токен полностью истёк и рефреш недоступен.
+          // Продолжаем с флагом tokenExpired=true — admin-роуты продолжат работать через admin-token,
+          // user-data роуты получат 401 и покажут "войдите заново".
+          const isAdminExpired = await fetchAdminStatus(userId);
+          req.user = {
+            id: userId,
+            token: token,
+            email: payload.email || '',
+            firstName: payload.first_name || '',
+            lastName: payload.last_name || '',
+            is_smm_admin: isAdminExpired,
+            tokenExpired: true
+          };
+          (req as any).userId = userId;
+          next();
         }
 
+        const isAdmin = await fetchAdminStatus(userId);
         req.user = {
           id: userId,
           token: token,
           email: payload.email || '',
           firstName: payload.first_name || '',
-          lastName: payload.last_name || ''
+          lastName: payload.last_name || '',
+          is_smm_admin: isAdmin
         };
         (req as any).userId = userId;
 

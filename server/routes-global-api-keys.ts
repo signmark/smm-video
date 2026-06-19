@@ -51,48 +51,48 @@ export async function isUserAdmin(req: Request, directusToken?: string): Promise
     }
 
     log(`Проверка прав администратора с токеном: ${token.substring(0, 10)}...`, 'admin');
-    
-    // Получаем данные пользователя из Directus используя пользовательский токен
+
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
+    const directusUrl = (process.env.DIRECTUS_URL || '').replace(/\/$/, '');
+
+    // Пробуем через пользовательский токен (/users/me)
     try {
-      const directusUrl = process.env.DIRECTUS_URL?.replace(/\/$/, ''); // Убираем слэш в конце
       const response = await axios.get(`${directusUrl}/users/me`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
+        headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
       });
-      
-    const currentUser = response.data.data;
-
-    if (!currentUser) {
-      log('Не удалось получить данные пользователя', 'admin');
-      return false;
-    }
-
-    // Проверяем поле is_smm_admin из реальных данных пользователя - любой админ с этим полем
-    const isAdmin = currentUser.is_smm_admin === true || 
-                   currentUser.is_smm_admin === 1 || 
-                   currentUser.is_smm_admin === '1' || 
-                   currentUser.is_smm_admin === 'true';
-    
-    // Дополнительная проверка роли если is_smm_admin не задан
-    const isRoleAdmin = currentUser.role === 'admin' || 
-                       (typeof currentUser.role === 'object' && (currentUser.role?.name === 'Administrator' || currentUser.role?.admin_access === true));
-    
-    const finalResult = isAdmin || isRoleAdmin;
-    
-    if (finalResult) {
-      log(`Пользователь ${currentUser.email} признан администратором (is_smm_admin: ${isAdmin}, isRoleAdmin: ${isRoleAdmin})`, 'admin');
-    }
-    
-    return finalResult;
+      const currentUser = response.data.data;
+      if (!currentUser) return false;
+      const isAdmin = currentUser.is_smm_admin === true || currentUser.is_smm_admin === 1 || currentUser.is_smm_admin === '1' || currentUser.is_smm_admin === 'true';
+      const isRoleAdmin = currentUser.role === 'admin' || (typeof currentUser.role === 'object' && (currentUser.role?.name === 'Administrator' || currentUser.role?.admin_access === true));
+      const finalResult = isAdmin || isRoleAdmin;
+      if (finalResult) log(`Пользователь ${currentUser.email} признан администратором`, 'admin');
+      return finalResult;
     } catch (innerError: any) {
-      // Минимальное логирование для 401 ошибок (истекшие токены)
-      if (innerError?.response?.status === 401) {
-        log(`Токен истек для проверки админа - требуется обновление`, 'admin');
-      } else {
+      // Токен истёк или недействителен — пробуем через admin-токен по userId из JWT
+      if (innerError?.response?.status !== 401 && innerError?.response?.status !== 403) {
         log(`Ошибка при получении данных пользователя: ${innerError instanceof Error ? innerError.message : 'Unknown error'}`, 'admin');
+        return false;
       }
+    }
+
+    // Фолбэк: парсим userId из JWT и проверяем через admin-токен
+    if (!adminToken) return false;
+    try {
+      const parts = token.split('.');
+      if (parts.length !== 3) return false;
+      const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString());
+      const userId = payload.id;
+      if (!userId) return false;
+      const resp = await fetch(`${directusUrl}/users/${userId}?fields=is_smm_admin,email`, {
+        headers: { Authorization: `Bearer ${adminToken}` }
+      });
+      if (!resp.ok) return false;
+      const data = await resp.json() as any;
+      const val = data?.data?.is_smm_admin;
+      const isAdmin = val === true || val === 1 || val === '1' || val === 'true';
+      if (isAdmin) log(`Пользователь ${data?.data?.email || userId} признан администратором (via admin-token)`, 'admin');
+      return isAdmin;
+    } catch {
       return false;
     }
   } catch (error: any) {

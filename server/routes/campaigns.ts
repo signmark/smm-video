@@ -185,31 +185,32 @@ export function registerCampaignRoutes(app: Express) {
       const { id } = req.params;
       const userId = req.user?.id;
       const token = req.user?.token;
-      
+
       console.log(`[CAMPAIGN_GET] Fetching campaign ${id} for user ${userId}`);
-      
+
       if (!userId || !token) return res.status(401).json({ error: "Не авторизован" });
-      
+
+      if (req.user?.tokenExpired) {
+        console.warn(`[CAMPAIGN_GET] User ${userId} has expired token — требуется повторный вход`);
+        return res.status(401).json({ error: "Сессия истекла. Пожалуйста, войдите заново.", sessionExpired: true });
+      }
+
       const response = await directusApi.get(`/items/user_campaigns/${id}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      
+
       const item = response.data.data;
       if (!item) {
         console.error(`[CAMPAIGN_GET] Campaign ${id} not found in Directus`);
         return res.status(404).json({ error: "Campaign not found" });
       }
-      
-      
+
       // Soft binding check: allow access if user_id matches OR user_created matches (migration fallback)
       if (item.user_id !== userId && item.user_created !== userId) {
         console.error(`[CAMPAIGN_GET_DENIED] User ${userId} attempted to access campaign ${id} (owner: ${item.user_id}, creator: ${item.user_created})`);
-        
-        // Временное решение для отладки: разрешаем доступ, но логируем
         console.warn(`[CAMPAIGN_GET_BYPASS] Bypassing ownership check for campaign ${id} and user ${userId}`);
-        // return res.status(403).json({ error: "Доступ запрещен: вы не являетесь владельцем этой кампании" });
       }
-      
+
       const campaign = {
         id: item.id,
         name: item.name || item.title,
@@ -218,15 +219,18 @@ export function registerCampaignRoutes(app: Express) {
         userId: item.user_id,
         createdAt: item.created_at,
         socialMediaSettings: item.social_media_settings || {},
-        // Fix: Return snake_case fields expected by frontend
         social_media_settings: item.social_media_settings || {},
         trend_analysis_settings: item.trend_analysis_settings || {},
         autonomous_settings: item.autonomous_settings || null
       };
-      
+
       res.json({ success: true, data: campaign });
     } catch (error: any) {
+      const status = error.response?.status;
       console.error(`[CAMPAIGN_GET_ERROR] Error fetching campaign ${req.params.id}:`, error.response?.data || error.message);
+      if (status === 401 || status === 403) {
+        return res.status(401).json({ error: "Сессия истекла. Пожалуйста, войдите заново.", sessionExpired: true });
+      }
       res.status(404).json({ error: "Campaign not found" });
     }
   });

@@ -41,6 +41,8 @@ declare global {
         email?: string;
         firstName?: string;
         lastName?: string;
+        is_smm_admin?: boolean;
+        tokenExpired?: boolean;
       };
     }
   }

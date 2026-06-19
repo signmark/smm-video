@@ -505,7 +505,8 @@
       "plans": {
         "basic": "Básico",
         "pro": "Profesional",
-        "enterprise": "Empresarial"
+        "enterprise": "Empresarial",
+        "trial": "Prueba"
       },
       "planOptions": {
         "basic": "Básico — 990 ₽/mes",

@@ -106,12 +106,19 @@ export default function UserManagement() {
     return new Date(dateString).toLocaleDateString();
   };
 
-  const isExpiredDate = (expireDate?: string) =>
-    expireDate ? new Date(expireDate) < new Date() : false;
+  const isExpiredDate = (expireDate?: string) => {
+    if (!expireDate) return false;
+    // Сравниваем только даты (без времени), чтобы избежать проблем с UTC/локальным временем
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const exp = new Date(expireDate);
+    exp.setHours(0, 0, 0, 0);
+    return exp < today;
+  };
 
   const getUserStatus = (user: User) => {
     if (user.status === 'suspended') return { label: um('status.suspended'), variant: 'destructive' as const };
-    if (isExpiredDate(user.expire_date)) return { label: um('status.expired'), variant: 'secondary' as const };
+    if (isExpiredDate(user.expire_date)) return { label: um('status.expired'), variant: 'destructive' as const };
     if (user.is_smm_admin) return { label: um('status.admin'), variant: 'default' as const };
     return { label: um('status.active'), variant: 'default' as const };
   };

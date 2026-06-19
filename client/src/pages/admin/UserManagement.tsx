@@ -119,7 +119,7 @@ export default function UserManagement() {
     if (user.expire_date) return false;
     if (!user.last_access) return false;
     const daysSinceActive = (Date.now() - new Date(user.last_access).getTime()) / (1000 * 60 * 60 * 24);
-    return daysSinceActive > 180;
+    return daysSinceActive > 150;
   };
 
   const getUserStatus = (user: User) => {

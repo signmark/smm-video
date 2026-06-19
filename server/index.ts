@@ -169,7 +169,7 @@ app.use((req, res, next) => {
   next();
 });
 const corsOrigin = process.env.NODE_ENV === 'production'
-  ? ['https://smm.omemo.tech', 'https://t.me']
+  ? ['https://smm.omemo.tech', 'https://t.me', 'https://vk.needanapp.ru', 'https://needanapp.ru']
   : true;
 
 app.use(cors({

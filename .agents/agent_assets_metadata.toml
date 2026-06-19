@@ -59,10 +59,22 @@ title = "ТЗ SMM Manager"
 id = "G587P75ckAvwEwWWdwbYt"
 uri = "file://attached_assets/video-tz.pdf"
 type = "pdf"
-title = "ТЗ: Модуль генерации видео (исправленный PDF)"
+title = "ТЗ: Модуль генерации видео (PDF)"
 
 [[outputs]]
 id = "qRTcM8hhepZnbgvbiuw7M"
 uri = "file://attached_assets/video-pipeline.svg"
 type = "image"
 title = "Схема пайплайна (SVG)"
+
+[[outputs]]
+id = "V3dFN4o7cuL_3lPtqo_b1"
+uri = "file://docs/PRODUCT_VISION.md"
+type = "text"
+title = "PRODUCT_VISION.md"
+
+[[outputs]]
+id = "oW4cXKYiiLenFSbGMIlua"
+uri = "file://docs/REDESIGN_CONCEPT.md"
+type = "text"
+title = "REDESIGN_CONCEPT.md"

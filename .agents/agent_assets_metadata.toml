@@ -54,3 +54,15 @@ id = "u9JSTTiJyuib6Bq5sxfQG"
 uri = "file://docs/ТЗ_SMM_Manager.md"
 type = "text"
 title = "ТЗ SMM Manager"
+
+[[outputs]]
+id = "G587P75ckAvwEwWWdwbYt"
+uri = "file://attached_assets/video-tz.pdf"
+type = "pdf"
+title = "ТЗ: Модуль генерации видео (PDF)"
+
+[[outputs]]
+id = "qRTcM8hhepZnbgvbiuw7M"
+uri = "file://attached_assets/video-pipeline.svg"
+type = "image"
+title = "Схема пайплайна (SVG)"

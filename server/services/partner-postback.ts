@@ -84,7 +84,6 @@ export async function sendRegistrationPostback(opts: {
     partner_code: opts.partnerCode,
     transaction_id: `smmhub-registration-${opts.userId}`,
     product_id: opts.productId ?? DEFAULT_PRODUCT_ID,
-    buyer_user_id: opts.telegramId,
     buyer_email: opts.email,
     buyer_telegram_id: opts.telegramId,
   });
@@ -108,7 +107,6 @@ export async function sendPurchasePostback(opts: {
     transaction_id: `smmhub-purchase-${opts.paymentId}`,
     amount: opts.amount,
     product_id: opts.productId ?? DEFAULT_PRODUCT_ID,
-    buyer_user_id: opts.telegramId,
     buyer_email: opts.email,
     buyer_telegram_id: opts.telegramId,
   });

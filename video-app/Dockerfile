@@ -3,7 +3,7 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm install
+RUN npm install --registry https://registry.npmjs.org
 
 COPY . .
 
@@ -26,7 +26,7 @@ ENV LC_ALL=en_US.UTF-8
 ENV NODE_ENV=production
 
 COPY package*.json ./
-RUN npm install --omit=dev
+RUN npm install --omit=dev --registry https://registry.npmjs.org
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/server ./server

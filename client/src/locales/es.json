@@ -492,6 +492,7 @@
       "users": "Usuarios",
       "status": {
         "active": "Activo",
+        "inactive": "Inactivo",
         "suspended": "Bloqueado",
         "expired": "Suscripción Expirada",
         "admin": "Administrador"

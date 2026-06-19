@@ -108,7 +108,6 @@ export default function UserManagement() {
 
   const isExpiredDate = (expireDate?: string) => {
     if (!expireDate) return false;
-    // Сравниваем только даты (без времени), чтобы избежать проблем с UTC/локальным временем
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const exp = new Date(expireDate);
@@ -116,9 +115,17 @@ export default function UserManagement() {
     return exp < today;
   };
 
+  const isInactiveUser = (user: User) => {
+    if (user.expire_date) return false;
+    if (!user.last_access) return false;
+    const daysSinceActive = (Date.now() - new Date(user.last_access).getTime()) / (1000 * 60 * 60 * 24);
+    return daysSinceActive > 180;
+  };
+
   const getUserStatus = (user: User) => {
     if (user.status === 'suspended') return { label: um('status.suspended'), variant: 'destructive' as const };
     if (isExpiredDate(user.expire_date)) return { label: um('status.expired'), variant: 'destructive' as const };
+    if (isInactiveUser(user)) return { label: um('status.inactive'), variant: 'secondary' as const };
     if (user.is_smm_admin) return { label: um('status.admin'), variant: 'default' as const };
     return { label: um('status.active'), variant: 'default' as const };
   };

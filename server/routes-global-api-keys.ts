@@ -20,6 +20,13 @@ import axios from 'axios';
  */
 export async function isUserAdmin(req: Request, directusToken?: string): Promise<boolean> {
   try {
+    // Быстрая проверка из сессии — не идём в Directus если уже знаем ответ
+    const sessionUser = (req as any).user;
+    if (sessionUser?.is_smm_admin === true || sessionUser?.is_smm_admin === 1 || sessionUser?.is_smm_admin === '1' || sessionUser?.is_smm_admin === 'true') {
+      log(`Пользователь ${sessionUser.email || sessionUser.id} признан администратором (из сессии)`, 'admin');
+      return true;
+    }
+
     // Если токен не передан, пытаемся извлечь из заголовка или cookie
     let token = directusToken;
     

@@ -5,6 +5,15 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { CookieBanner } from "@/components/CookieBanner";
 
+// Глобальный перехват ?ref= — сохраняем при любом переходе
+const captureRefCode = () => {
+  const params = new URLSearchParams(window.location.search);
+  const ref = params.get('ref');
+  if (ref && ref.trim()) {
+    localStorage.setItem('smm_partner_code', ref.trim().toUpperCase());
+  }
+};
+
 // Принудительная очистка истекшего токена
 const clearExpiredToken = () => {
   const currentPath = window.location.pathname;
@@ -242,6 +251,9 @@ function AppWithWebSocket() {
 
 function App() {
   useEffect(() => {
+    // Перехватываем ?ref= на любом URL при загрузке
+    captureRefCode();
+
     // Первоначальная проверка при загрузке страницы
     clearExpiredToken();
 

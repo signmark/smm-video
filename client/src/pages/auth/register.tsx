@@ -81,11 +81,12 @@ export default function Register() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const ref = params.get("ref");
-    if (ref) {
-      setPartnerCode(ref.trim().toUpperCase());
-      sessionStorage.setItem("smm_partner_code", ref.trim().toUpperCase());
+    if (ref && ref.trim()) {
+      const code = ref.trim().toUpperCase();
+      setPartnerCode(code);
+      localStorage.setItem("smm_partner_code", code);
     } else {
-      const stored = sessionStorage.getItem("smm_partner_code");
+      const stored = localStorage.getItem("smm_partner_code");
       if (stored) setPartnerCode(stored);
     }
   }, []);
@@ -137,6 +138,9 @@ export default function Register() {
 
       const result = await response.json();
       setUserId(result.userId);
+
+      // Код использован — удаляем чтобы не прилип к следующему пользователю
+      localStorage.removeItem("smm_partner_code");
 
       if (result.token && result.userId) {
         setAuthToken(result.token);

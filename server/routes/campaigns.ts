@@ -131,17 +131,15 @@ export function registerCampaignRoutes(app: Express) {
       }
       
       try {
-        const response = await directusApi.get('/items/user_campaigns', {
-          params: {
-            filter: JSON.stringify({ 
-              user_id: { _eq: userId }
-            }),
-            sort: '-created_at'
-          },
-          headers: { 'Authorization': `Bearer ${token}` }
+        const campaignsData = await directusCrud.list<any>('user_campaigns', {
+          filter: { user_id: { _eq: userId } },
+          sort: ['-created_at'],
+          limit: 500,
+          useAdminToken: true,
         });
+        const responseData = campaignsData ?? [];
         
-        log(`[CAMPAIGNS] Directus response: ${response.data?.data?.length || 0} campaigns found`, 'info');
+        log(`[CAMPAIGNS] Directus response: ${responseData.length} campaigns found`, 'info');
         
         // Получаем активные автономные сессии для этого пользователя
         let activeSessionIds = new Set<string>();
@@ -155,7 +153,7 @@ export function registerCampaignRoutes(app: Express) {
           (sessionsResp ?? []).forEach(s => s.campaign_id && activeSessionIds.add(s.campaign_id));
         } catch (_) {}
 
-        const campaigns = response.data.data.map((item: any) => ({
+        const campaigns = responseData.map((item: any) => ({
           id: item.id,
           name: item.name || item.title || "Без названия",
           description: cleanupText(item.description),

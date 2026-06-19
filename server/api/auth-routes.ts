@@ -158,20 +158,36 @@ export function registerAuthRoutes(app: Express): void {
 
         // Сохраняем партнёрский код и отправляем registration postback (не блокирует ответ)
         if (partnerCode) {
+          const normalizedCode = partnerCode.trim().toUpperCase();
           try {
             await axios.patch(`${directusUrl}/users/${newUserId}`, {
-              omemo_partner_code: partnerCode.trim().toUpperCase(),
+              omemo_partner_code: normalizedCode,
             }, {
               headers: { 'Authorization': `Bearer ${adminToken}`, 'Content-Type': 'application/json' },
             });
-            log(`[auth/register] partnerCode=${partnerCode} сохранён для user ${newUserId}`, 'auth');
+            log(`[auth/register] partnerCode=${normalizedCode} сохранён для user ${newUserId}`, 'auth');
           } catch (pcErr: any) {
             console.warn('[auth/register] Не удалось сохранить partnerCode:', pcErr?.message);
           }
+
+          // Читаем актуальные данные юзера из Directus для постбека (email, telegram_chat_id)
+          let postbackEmail: string | undefined = email;
+          let postbackTelegramId: string | undefined;
+          try {
+            const userResp = await axios.get(
+              `${directusUrl}/users/${newUserId}?fields=email,telegram_chat_id`,
+              { headers: { 'Authorization': `Bearer ${adminToken}` } }
+            );
+            const ud = userResp.data?.data;
+            if (ud?.email) postbackEmail = ud.email;
+            if (ud?.telegram_chat_id) postbackTelegramId = String(ud.telegram_chat_id);
+          } catch (_) {}
+
           sendRegistrationPostback({
-            partnerCode: partnerCode.trim().toUpperCase(),
+            partnerCode: normalizedCode,
             userId: newUserId,
-            email,
+            email: postbackEmail,
+            telegramId: postbackTelegramId,
           }).catch(() => {});
         }
 

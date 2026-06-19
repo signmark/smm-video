@@ -10,6 +10,7 @@ const POSTBACK_URL = process.env.OMEMO_POSTBACK_URL || 'https://omemo.tech/api/v
 const POSTBACK_SECRET = process.env.OMEMO_POSTBACK_SECRET || '';
 const SOURCE_APP = 'smmhub';
 const SCHEMA_VERSION = '1.0';
+const DEFAULT_PRODUCT_ID = 5;
 
 interface PostbackBase {
   partner_code: string;
@@ -82,7 +83,7 @@ export async function sendRegistrationPostback(opts: {
     event_type: 'registration',
     partner_code: opts.partnerCode,
     transaction_id: `smmhub-registration-${opts.userId}`,
-    product_id: opts.productId,
+    product_id: opts.productId ?? DEFAULT_PRODUCT_ID,
     buyer_user_id: opts.userId,
     buyer_email: opts.email,
     buyer_telegram_id: opts.telegramId,
@@ -106,7 +107,7 @@ export async function sendPurchasePostback(opts: {
     partner_code: opts.partnerCode,
     transaction_id: `smmhub-purchase-${opts.paymentId}`,
     amount: opts.amount,
-    product_id: opts.productId,
+    product_id: opts.productId ?? DEFAULT_PRODUCT_ID,
     buyer_user_id: opts.userId,
     buyer_email: opts.email,
     buyer_telegram_id: opts.telegramId,

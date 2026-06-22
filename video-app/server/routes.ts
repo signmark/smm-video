@@ -9,6 +9,7 @@ import {
   updateProject,
   deleteProject,
   DATA_PATHS,
+  type Scene,
   type VideoFormat,
   type AnimationModel,
   type SubtitleStyle,
@@ -165,7 +166,7 @@ router.get('/music/preview', async (req, res) => {
         baseAudio,
       ].filter((u, i, a) => a.indexOf(u) === i); // deduplicate
 
-      let audioFetch: Response | null = null;
+      let audioFetch: globalThis.Response | null = null;
       let usedUrl = '';
       for (const audioUrl of audioUrls) {
         try {
@@ -1067,7 +1068,7 @@ async function runStockPrecheck(projectId: string, script: Script, format: Video
   const updatedScenes = fresh.script.scenes.map((s, i) => {
     const r = results.find((x) => x.i === i);
     if (!r) return s;
-    const videoSource = r.available ? 'stock' : r.photoAvailable ? 'stock-animated' : 'ai';
+    const videoSource: Scene['videoSource'] = r.available ? 'stock' : r.photoAvailable ? 'stock-animated' : 'ai';
     return {
       ...s,
       stockAvailable: r.available,

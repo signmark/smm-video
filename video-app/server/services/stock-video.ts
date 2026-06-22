@@ -152,7 +152,7 @@ export async function searchAndDownloadStockPhoto(options: {
 
   async function fetchPhotos(q: string): Promise<any[]> {
     const url = `https://api.pexels.com/v1/search?query=${encodeURIComponent(q)}&orientation=${orientation}&per_page=5`;
-    const resp = await fetch(url, { headers: { Authorization: apiKey }, signal: AbortSignal.timeout(15000) });
+    const resp = await fetch(url, { headers: { Authorization: apiKey! }, signal: AbortSignal.timeout(15000) });
     if (!resp.ok) throw new Error(`Pexels Photos API error: ${resp.status}`);
     const data = await resp.json() as any;
     return data.photos || [];
@@ -196,7 +196,7 @@ export async function searchStockVideos(query: string, format: VideoFormat, limi
 
   const orientation = getOrientation(format);
   const searchUrl = `https://api.pexels.com/videos/search?query=${encodeURIComponent(query)}&orientation=${orientation}&per_page=${limit}`;
-  const resp = await fetch(searchUrl, { headers: { Authorization: apiKey }, signal: AbortSignal.timeout(15000) });
+  const resp = await fetch(searchUrl, { headers: { Authorization: apiKey! }, signal: AbortSignal.timeout(15000) });
   if (!resp.ok) throw new Error(`Pexels API error: ${resp.status}`);
   const data = await resp.json() as any;
 

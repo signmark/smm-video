@@ -280,6 +280,7 @@ function SceneAudioPlayer({ projectId, sceneIndex }: { projectId: string; sceneI
 
 interface Scene {
   id: string;
+  role?: 'hook' | 'body' | 'cta';
   text: string;
   narration?: string;
   imagePrompt: string;
@@ -289,7 +290,7 @@ interface Scene {
   t2vPrompt?: string;
   duration: number;
   selectedVariant?: number;
-  videoSource?: 'ai' | 'stock';
+  videoSource?: 'ai' | 'stock' | 'stock-animated';
   stockAvailable?: boolean;
   stockPhotoAvailable?: boolean;
   stockQuery?: string;

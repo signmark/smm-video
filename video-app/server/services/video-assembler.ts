@@ -5,6 +5,7 @@ import path from 'path';
 import { execFile, execFileSync } from 'child_process';
 import { promisify } from 'util';
 import type { VideoFormat, SubtitleStyle } from '../db.js';
+import { DATA_DIR } from '../db.js';
 
 // Prefer system ffmpeg (works on Alpine/musl in Docker); fall back to installer binary (Replit/glibc)
 function resolveFfmpegPath(): string {

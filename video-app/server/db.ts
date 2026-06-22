@@ -22,6 +22,7 @@ export interface Scene {
   t2vPrompt?: string;
   imagePath?: string;
   duration: number;
+  selectedVariant?: number;         // UI-selected image variant index (0-2 = AI variants, 3 = custom upload)
   videoSource?: 'ai' | 'stock' | 'stock-animated'; // 'ai' = generate via FAL/Imagen (default), 'stock' = Pexels stock clip, 'stock-animated' = Pexels photo animated via FAL
   stockQuery?: string;          // custom search query for Pexels (defaults to imagePrompt)
   stockAvailable?: boolean;     // set by precheck: true = clip found & downloaded, false = not found

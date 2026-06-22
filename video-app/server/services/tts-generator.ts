@@ -123,7 +123,7 @@ export async function generateAudio(params: {
   if (!res || openAiQuotaExceeded) {
     console.warn(`[tts] OpenAI unavailable — trying Edge TTS fallback`);
 
-    let fallbackOk = await generateWithEdgeTTS(text, lang, outputPath);
+    let fallbackOk = await generateWithEdgeTTS(text, lang, outputPath, params.voice);
 
     if (!fallbackOk) {
       console.warn(`[tts] Edge TTS failed — trying HuggingFace`);
@@ -262,14 +262,44 @@ async function padWithSilence(filePath: string, silenceSec: number): Promise<boo
 }
 
 // ─── Microsoft Edge TTS (free, no API key required) ───────────────────────────
+// Маппинг голосов OpenAI → Edge TTS (мужские/женские различаются)
+const EDGE_TTS_VOICE_MAP: Record<string, Record<string, string>> = {
+  ru: {
+    alloy:   'ru-RU-DmitryNeural',    // мужской нейтральный
+    ash:     'ru-RU-DmitryNeural',
+    ballad:  'ru-RU-SvetlanaNeural',
+    coral:   'ru-RU-DariyaNeural',    // женский мягкий
+    echo:    'ru-RU-DmitryNeural',    // мужской
+    fable:   'ru-RU-SvetlanaNeural',  // женский выразительный
+    nova:    'ru-RU-SvetlanaNeural',  // женский тёплый
+    onyx:    'ru-RU-DmitryNeural',    // мужской глубокий
+    sage:    'ru-RU-DariyaNeural',
+    shimmer: 'ru-RU-DariyaNeural',   // женский мягкий
+  },
+  en: {
+    alloy:   'en-US-DavisNeural',
+    ash:     'en-US-GuyNeural',
+    ballad:  'en-US-JaneNeural',
+    coral:   'en-US-AriaNeural',
+    echo:    'en-US-GuyNeural',
+    fable:   'en-US-JaneNeural',
+    nova:    'en-US-JennyNeural',
+    onyx:    'en-US-DavisNeural',
+    sage:    'en-US-AriaNeural',
+    shimmer: 'en-US-JennyNeural',
+  },
+};
+
 const EDGE_TTS_VOICES: Record<string, string> = {
   ru: 'ru-RU-SvetlanaNeural',
   en: 'en-US-JennyNeural',
 };
 
-async function generateWithEdgeTTS(text: string, lang: string, outputPath: string): Promise<boolean> {
+async function generateWithEdgeTTS(text: string, lang: string, outputPath: string, openaiVoice?: string): Promise<boolean> {
   try {
-    const voice = EDGE_TTS_VOICES[lang] ?? EDGE_TTS_VOICES.en;
+    const voice = (openaiVoice && EDGE_TTS_VOICE_MAP[lang]?.[openaiVoice])
+      ? EDGE_TTS_VOICE_MAP[lang][openaiVoice]
+      : (EDGE_TTS_VOICES[lang] ?? EDGE_TTS_VOICES.en);
     console.log(`[tts] Edge TTS voice=${voice} lang=${lang} text_len=${text.length}`);
 
     const tts = new MsEdgeTTS();

@@ -112,7 +112,7 @@ router.get('/tts-preview/:voice', async (req, res) => {
   try {
     await fs.access(cacheFile);
     res.setHeader('Content-Type', 'audio/mpeg');
-    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.setHeader('Cache-Control', 'no-cache, no-store');
     const buf = await fs.readFile(cacheFile);
     return res.send(buf);
   } catch {}
@@ -132,7 +132,7 @@ router.get('/tts-preview/:voice', async (req, res) => {
     });
     if (!result) return res.status(502).json({ error: 'TTS unavailable' });
     res.setHeader('Content-Type', 'audio/mpeg');
-    res.setHeader('Cache-Control', 'public, max-age=86400');
+    res.setHeader('Cache-Control', 'no-cache, no-store');
     const buf = await fs.readFile(cacheFile);
     return res.send(buf);
   } catch (err: any) {

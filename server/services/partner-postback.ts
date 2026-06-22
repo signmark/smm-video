@@ -34,7 +34,7 @@ type PostbackPayload = RegistrationPostback | PurchasePostback;
 
 async function send(payload: PostbackPayload): Promise<void> {
   if (!POSTBACK_SECRET) {
-    console.warn('[partner-postback] OMEMO_POSTBACK_SECRET не задан — postback не отправлен');
+    console.log('[partner-postback] OMEMO_POSTBACK_SECRET не задан — postback пропущен');
     return;
   }
   if (!payload.partner_code) {

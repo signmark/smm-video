@@ -799,7 +799,7 @@ async function runResumePipeline(projectId: string) {
         })
       );
 
-      await assembleFromClips({
+      const resumeActualDurations = await assembleFromClips({
         scenes: clipsWithAudio,
         outputPath: videoPath,
         tempDir,
@@ -819,6 +819,7 @@ async function runResumePipeline(projectId: string) {
           sizeMultiplier: subtitleSizeMultiplier((project as any).subtitleSize),
           color: (project as any).subtitleColor,
         },
+        actualDurations: resumeActualDurations,
       });
 
       await update({ progress: 98, progressMessage: 'Добавляю фоновую музыку...' });
@@ -1311,7 +1312,7 @@ async function runGenerationPipeline(projectId: string) {
       }));
 
       await update({ status: 'assembling', progress: 75, progressMessage: 'Chain: склеиваю клипы...' });
-      await assembleFromClips({
+      const chainActualDurations = await assembleFromClips({
         scenes: clipsWithAudio,
         outputPath: videoPath,
         tempDir,
@@ -1332,6 +1333,7 @@ async function runGenerationPipeline(projectId: string) {
           sizeMultiplier: subtitleSizeMultiplier(latestProject?.subtitleSize ?? project.subtitleSize),
           color: latestProject?.subtitleColor ?? project.subtitleColor,
         },
+        actualDurations: chainActualDurations,
       });
 
       await update({ progress: 98, progressMessage: 'Добавляю фоновую музыку...' });
@@ -1420,7 +1422,7 @@ async function runGenerationPipeline(projectId: string) {
 
       await update({ status: 'assembling', progress: 75, progressMessage: 'Склеиваю клипы...' });
 
-      await assembleFromClips({
+      const i2vActualDurations = await assembleFromClips({
         scenes: clipsWithAudio,
         outputPath: videoPath,
         tempDir,
@@ -1440,6 +1442,7 @@ async function runGenerationPipeline(projectId: string) {
           sizeMultiplier: subtitleSizeMultiplier(project.subtitleSize),
           color: project.subtitleColor,
         },
+        actualDurations: i2vActualDurations,
       });
 
       await update({ progress: 98, progressMessage: 'Добавляю фоновую музыку...' });
@@ -1652,7 +1655,7 @@ async function runGenerationPipeline(projectId: string) {
 
         await update({ status: 'assembling', progress: 78, progressMessage: 'Склеиваю клипы...' });
 
-        await assembleFromClips({
+        const parallelActualDurations = await assembleFromClips({
           scenes: clipsWithAudio,
           outputPath: videoPath,
           tempDir,
@@ -1672,6 +1675,7 @@ async function runGenerationPipeline(projectId: string) {
             sizeMultiplier: subtitleSizeMultiplier(project.subtitleSize),
             color: project.subtitleColor,
           },
+          actualDurations: parallelActualDurations,
         });
 
         chainSucceeded = true;

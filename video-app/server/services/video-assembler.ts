@@ -12,8 +12,28 @@ function resolveFfmpegPath(): string {
   return ffmpegInstaller.path;
 }
 const FFMPEG_BIN = resolveFfmpegPath();
+const FFPROBE_BIN = FFMPEG_BIN === 'ffmpeg' ? 'ffprobe' : FFMPEG_BIN.replace(/ffmpeg([^/]*)$/, 'ffprobe$1');
 ffmpeg.setFfmpegPath(FFMPEG_BIN);
 const execFileAsync = promisify(execFile);
+
+/**
+ * Returns the actual duration of a media file in seconds via ffprobe.
+ * Falls back to 0 on error.
+ */
+export async function probeActualDuration(filePath: string): Promise<number> {
+  try {
+    const { stdout } = await execFileAsync(FFPROBE_BIN, [
+      '-v', 'quiet',
+      '-show_entries', 'format=duration',
+      '-of', 'default=noprint_wrappers=1:nokey=1',
+      filePath,
+    ], { timeout: 15_000 });
+    const d = parseFloat(stdout.trim());
+    return isNaN(d) ? 0 : d;
+  } catch {
+    return 0;
+  }
+}
 
 export interface SubtitleOptions {
   font?: string;
@@ -483,6 +503,9 @@ function generateSubtitleASS(scenes: KaraokeSceneEntry[], format: VideoFormat, s
 /**
  * Burns subtitles into an already-assembled video.
  * Replaces videoPath in-place. Pass style='none' to skip.
+ *
+ * Pass `actualDurations` (returned by assembleFromClips) to align subtitles
+ * to real clip lengths instead of the planned durations — prevents timing drift.
  */
 export async function burnSubtitles(params: {
   videoPath: string;
@@ -490,8 +513,9 @@ export async function burnSubtitles(params: {
   format: VideoFormat;
   style: SubtitleStyle;
   options?: SubtitleOptions;
+  actualDurations?: number[];
 }): Promise<void> {
-  const { videoPath, scenes, format, style, options = {} } = params;
+  const { videoPath, scenes, format, style, options = {}, actualDurations } = params;
 
   if (style === 'none') return;
 
@@ -503,14 +527,16 @@ export async function burnSubtitles(params: {
   const tmpOut = videoPath.replace(/\.mp4$/, '_subs.mp4');
 
   let currentTime = 0;
-  const entries: KaraokeSceneEntry[] = scenes.map(s => {
+  const entries: KaraokeSceneEntry[] = scenes.map((s, i) => {
+    // Use probed actual duration when available; fall back to planned duration
+    const dur = (actualDurations && actualDurations[i] > 0) ? actualDurations[i] : s.duration;
     const entry: KaraokeSceneEntry = {
       narration: s.narration || '',
       text: s.text || s.narration || '',
       startTime: currentTime,
-      duration: s.duration,
+      duration: dur,
     };
-    currentTime += s.duration;
+    currentTime += dur;
     return entry;
   });
 
@@ -551,26 +577,29 @@ export async function assembleFromClips(params: {
   outputPath: string;
   tempDir: string;
   onProgress?: (pct: number, msg: string) => void;
-}): Promise<void> {
-  const { scenes, outputPath, tempDir, onProgress } = params;
+  /**
+   * Crossfade duration in seconds between clips.
+   * 0 = hard cut (default). Use 0.3–0.5 for smooth dissolve transitions.
+   * Requires re-encoding, so it's slower than stream copy.
+   */
+  crossfadeDuration?: number;
+}): Promise<number[]> {
+  const { scenes, outputPath, tempDir, onProgress, crossfadeDuration = 0 } = params;
   const ffmpegPath = FFMPEG_BIN;
 
   await fs.mkdir(tempDir, { recursive: true });
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
 
   const muxedPaths: string[] = [];
+  const actualDurations: number[] = [];
 
   for (let i = 0; i < scenes.length; i++) {
     const scene = scenes[i];
     const muxed = path.join(tempDir, `muxed_${i}.mp4`);
-    onProgress?.(Math.round((i / scenes.length) * 80), `Микширование сцены ${i + 1}/${scenes.length}...`);
+    onProgress?.(Math.round((i / scenes.length) * 75), `Микширование сцены ${i + 1}/${scenes.length}...`);
 
     if (scene.audioPath) {
-      // Clip video to exactly scene.duration — TTS is already sped-up to fit.
-      // Do NOT extend beyond scene.duration: stock clips are trimmed to that length,
-      // and extending would freeze on the last frame AND break subtitle timing.
       const clipDur = scene.duration;
-
       const args = [
         '-i', scene.clipPath,
         '-i', scene.audioPath,
@@ -585,7 +614,6 @@ export async function assembleFromClips(params: {
       ];
       await execFileAsync(ffmpegPath, args);
     } else {
-      // Add silent audio track so all clips are concat-compatible
       const args = [
         '-i', scene.clipPath,
         '-f', 'lavfi', '-t', String(scene.duration), '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
@@ -598,27 +626,97 @@ export async function assembleFromClips(params: {
       await execFileAsync(ffmpegPath, args);
     }
 
+    // Probe actual muxed duration (may differ from scene.duration due to keyframe rounding,
+    // FAL clip length, etc.) — used to keep subtitle timing accurate.
+    const probed = await probeActualDuration(muxed);
+    actualDurations.push(probed > 0 ? probed : scene.duration);
     muxedPaths.push(muxed);
   }
 
-  onProgress?.(85, 'Сборка финального видео...');
+  onProgress?.(80, 'Сборка финального видео...');
 
-  const concatFile = path.join(tempDir, 'concat.txt');
-  await fs.writeFile(concatFile, muxedPaths.map((p) => `file '${p}'`).join('\n'));
+  if (crossfadeDuration > 0 && muxedPaths.length > 1) {
+    // ── Crossfade assembly via xfade + acrossfade filter_complex ─────────────
+    await assemblWithCrossfade({
+      muxedPaths,
+      actualDurations,
+      outputPath,
+      crossfadeDuration,
+      ffmpegPath,
+    });
+  } else {
+    // ── Fast hard-cut concat (stream copy) ───────────────────────────────────
+    const concatFile = path.join(tempDir, 'concat.txt');
+    await fs.writeFile(concatFile, muxedPaths.map((p) => `file '${p}'`).join('\n'));
 
-  await new Promise<void>((resolve, reject) => {
-    ffmpeg()
-      .input(concatFile)
-      .inputOptions(['-f concat', '-safe 0'])
-      .outputOptions(['-c:v copy', '-c:a aac', '-b:a 128k'])
-      .output(outputPath)
-      .on('end', () => resolve())
-      .on('error', (err) => reject(new Error(`FFmpeg concat error: ${err.message}`)))
-      .run();
-  });
+    await new Promise<void>((resolve, reject) => {
+      ffmpeg()
+        .input(concatFile)
+        .inputOptions(['-f concat', '-safe 0'])
+        .outputOptions(['-c:v copy', '-c:a aac', '-b:a 128k'])
+        .output(outputPath)
+        .on('end', () => resolve())
+        .on('error', (err) => reject(new Error(`FFmpeg concat error: ${err.message}`)))
+        .run();
+    });
+  }
 
   onProgress?.(95, 'Очистка временных файлов...');
   await fs.rm(tempDir, { recursive: true, force: true });
+
+  return actualDurations;
+}
+
+/**
+ * Assemble muxed clips with xfade (video) + acrossfade (audio) transitions.
+ * Requires re-encoding. Offsets are computed from actual probed durations.
+ */
+async function assemblWithCrossfade(params: {
+  muxedPaths: string[];
+  actualDurations: number[];
+  outputPath: string;
+  crossfadeDuration: number;
+  ffmpegPath: string;
+}): Promise<void> {
+  const { muxedPaths, actualDurations, outputPath, crossfadeDuration, ffmpegPath } = params;
+  const n = muxedPaths.length;
+  const cf = crossfadeDuration;
+
+  // Build filter_complex for N clips with xfade + acrossfade
+  const filterParts: string[] = [];
+
+  // Video xfade chain
+  let vOffset = 0;
+  let prevVLabel = '[0:v]';
+  for (let i = 1; i < n; i++) {
+    vOffset += actualDurations[i - 1] - cf;
+    const outLabel = i === n - 1 ? '[vout]' : `[v${i}]`;
+    filterParts.push(`${prevVLabel}[${i}:v]xfade=transition=fade:duration=${cf}:offset=${vOffset.toFixed(3)}${outLabel}`);
+    prevVLabel = outLabel;
+    if (i < n - 1) vOffset += cf; // adjust for next offset calculation — xfade consumes cf from next start
+  }
+
+  // Audio acrossfade chain
+  let prevALabel = '[0:a]';
+  for (let i = 1; i < n; i++) {
+    const outLabel = i === n - 1 ? '[aout]' : `[a${i}]`;
+    filterParts.push(`${prevALabel}[${i}:a]acrossfade=d=${cf}:o=1${outLabel}`);
+    prevALabel = outLabel;
+  }
+
+  const filterComplex = filterParts.join(';');
+  const inputArgs: string[] = [];
+  for (const p of muxedPaths) inputArgs.push('-i', p);
+
+  await execFileAsync(ffmpegPath, [
+    '-y', '-loglevel', 'error',
+    ...inputArgs,
+    '-filter_complex', filterComplex,
+    '-map', '[vout]', '-map', '[aout]',
+    '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
+    '-c:a', 'aac', '-b:a', '128k',
+    outputPath,
+  ], { timeout: 600_000, maxBuffer: 50 * 1024 * 1024 });
 }
 
 // ── Image-based assembly ──────────────────────────────────────────────────────

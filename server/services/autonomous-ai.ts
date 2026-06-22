@@ -24,6 +24,7 @@ function stateToRecord(state: AutonomousState): Record<string, any> {
     started_at: state.startedAt.toISOString(),
     is_active: true,
     launch_command: state.launchCommand || null,
+    last_cycle_at: state.lastCycleAt ? state.lastCycleAt.toISOString() : null,
   };
 }
 
@@ -31,7 +32,7 @@ function activateRestoredState(saved: {
   campaignId: string; userId: string; authToken?: string; refreshToken?: string;
   interval: number; postsPerCycle: number; autoSchedule: boolean;
   platforms: string[]; withImages: boolean; pipelineMode?: string; startedAt: string;
-  launchCommand?: string;
+  launchCommand?: string; lastCycleAt?: string;
 }) {
   if (autonomousStates.has(saved.campaignId)) return;
   const state: AutonomousState = {
@@ -52,6 +53,7 @@ function activateRestoredState(saved: {
     postsCreated: 0,
     cycleRunning: false,
     errors: [],
+    lastCycleAt: saved.lastCycleAt ? new Date(saved.lastCycleAt) : undefined,
   } as any;
   autonomousStates.set(saved.campaignId, state);
   const intervalMs = saved.interval * 60 * 60 * 1000;
@@ -61,13 +63,24 @@ function activateRestoredState(saved: {
       state.errors.push(e.message);
     });
   }, intervalMs);
+
+  // Вычисляем задержку до первого цикла после восстановления:
+  // если lastCycleAt известен — ждём оставшееся время интервала (мин. 5 сек),
+  // иначе — запускаем через 5 сек (первый запуск вообще).
+  let firstCycleDelayMs = 5000;
+  if (saved.lastCycleAt) {
+    const elapsed = Date.now() - new Date(saved.lastCycleAt).getTime();
+    const remaining = intervalMs - elapsed;
+    firstCycleDelayMs = Math.max(5000, remaining);
+  }
+  const firstCycleMinutes = Math.round(firstCycleDelayMs / 60000);
+  console.log(`[AUTONOMOUS] ♻️ Восстановлен режим для кампании ${saved.campaignId}, следующий цикл через ${firstCycleMinutes} мин`);
   setTimeout(() => {
     runAutonomousCycle(state).catch(e => {
       console.error(`[AUTONOMOUS] ❌ Ошибка первого цикла после восстановления:`, e);
       state.errors.push(e.message);
     });
-  }, 5000);
-  console.log(`[AUTONOMOUS] ♻️ Восстановлен режим для кампании ${saved.campaignId}, первый цикл через 5 сек`);
+  }, firstCycleDelayMs);
 }
 
 // ── File persistence (dev / local fallback) ────────────────────────────────
@@ -91,6 +104,7 @@ function saveAutonomousPersistenceFile() {
         pipelineMode: (state as any).pipelineMode || 'full_auto',
         startedAt: state.startedAt.toISOString(),
         launchCommand: state.launchCommand,
+        lastCycleAt: state.lastCycleAt ? state.lastCycleAt.toISOString() : undefined,
       };
     });
     writeFileSync(AUTONOMOUS_PERSIST_FILE, JSON.stringify(toSave, null, 2));
@@ -213,6 +227,7 @@ export async function restoreAutonomousStates() {
         pipelineMode: rec.pipeline_mode || 'full_auto',
         startedAt: rec.started_at,
         launchCommand: rec.launch_command || undefined,
+        lastCycleAt: rec.last_cycle_at || undefined,
       });
     }
     console.log(`[AUTONOMOUS] БД: восстановлено ${(sessions || []).length} сессий`);

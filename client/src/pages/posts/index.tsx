@@ -306,6 +306,11 @@ export default function Posts() {
         try { publishedDates.push(new Date(post.scheduledAt)); } catch (e) {}
       }
 
+      // Fallback: дата создания поста (напр. посты из video-app без scheduled/published дат)
+      if (publishedDates.length === 0 && post.createdAt) {
+        try { publishedDates.push(new Date(post.createdAt)); } catch (e) {}
+      }
+
       // Если нет ни одной даты — пропускаем: такие посты показываются в отдельной секции
       if (publishedDates.length === 0) continue;
 
@@ -362,6 +367,7 @@ export default function Posts() {
       if (post.status !== 'published' && post.status !== 'partially_published' && post.status !== 'partial') return false;
       if (post.publishedAt) return false;
       if (post.scheduledAt) return false;
+      if (post.createdAt) return false; // посты с датой создания показываются в календаре
       const hasPlatformDate = post.socialPlatforms && Object.values(post.socialPlatforms).some((p: any) => p?.publishedAt);
       if (hasPlatformDate) return false;
       return true;

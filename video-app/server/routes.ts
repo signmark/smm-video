@@ -806,6 +806,7 @@ async function runResumePipeline(projectId: string) {
         outputPath: videoPath,
         tempDir,
         format: project.format,
+        flashCut: true,
         onProgress: async (pct, msg) => {
           await updateProject(projectId, { progress: 78 + Math.round(pct * 0.18), progressMessage: msg });
         },
@@ -1321,6 +1322,7 @@ async function runGenerationPipeline(projectId: string) {
         outputPath: videoPath,
         tempDir,
         format: project.format,
+        flashCut: true,
         onProgress: async (pct, msg) => {
           await updateProject(projectId, { progress: 75 + Math.round(pct * 0.20), progressMessage: msg });
         },
@@ -1433,6 +1435,7 @@ async function runGenerationPipeline(projectId: string) {
         outputPath: videoPath,
         tempDir,
         format: project.format,
+        flashCut: true,
         onProgress: async (pct, msg) => {
           await updateProject(projectId, { progress: 75 + Math.round(pct * 0.20), progressMessage: msg });
         },
@@ -1680,6 +1683,7 @@ async function runGenerationPipeline(projectId: string) {
           outputPath: videoPath,
           tempDir,
           format: project.format,
+          flashCut: true,
           onProgress: async (pct, msg) => {
             await updateProject(projectId, { progress: 78 + Math.round(pct * 0.18), progressMessage: msg });
           },

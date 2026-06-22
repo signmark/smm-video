@@ -280,10 +280,10 @@ const EDGE_TTS_VOICE_MAP: Record<string, Record<string, { voice: string; semiton
   en: {
     alloy:   { voice: 'en-US-GuyNeural',   semitones:  0  },
     ash:     { voice: 'en-US-GuyNeural',   semitones: -1  },
-    ballad:  { voice: 'en-US-JaneNeural',  semitones: +1  },
+    ballad:  { voice: 'en-US-JennyNeural', semitones:  0  },
     coral:   { voice: 'en-US-AriaNeural',  semitones: +2  },
     echo:    { voice: 'en-US-GuyNeural',   semitones: -1  },
-    fable:   { voice: 'en-US-JaneNeural',  semitones:  0  },
+    fable:   { voice: 'en-US-AriaNeural',  semitones:  0  },
     nova:    { voice: 'en-US-JennyNeural', semitones: +1  },
     onyx:    { voice: 'en-US-GuyNeural',   semitones: -3  },
     sage:    { voice: 'en-US-AriaNeural',  semitones: +1  },

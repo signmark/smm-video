@@ -97,7 +97,7 @@ const ALL_MODELS: AnimationModel[] = ['wan', 'kling', 'kling-pro', 'minimax', 's
 
 const VALID_VOICES = new Set(['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer']);
 
-// TTS preview: generate short sample, cache in data/previews/
+// TTS preview: serve pre-generated static file (baked into Docker image), fallback to dynamic generation
 router.get('/tts-preview/:voice', async (req, res) => {
   await ensureKeysLoaded();
   const voice = req.params.voice;
@@ -105,10 +105,20 @@ router.get('/tts-preview/:voice', async (req, res) => {
     return res.status(400).json({ error: 'Invalid voice' });
   }
   const lang = (req.query.lang === 'en') ? 'en' : 'ru';
-  const cacheDir = path.join(path.dirname(new URL(import.meta.url).pathname), '../data/previews');
-  const cacheFile = path.join(cacheDir, `${voice}_${lang}_v3.mp3`);
+  const fileName = `${voice}_${lang}_v3.mp3`;
 
-  // Serve from cache if exists
+  // 1. Serve pre-generated static file baked into Docker image (always available, no API needed)
+  const staticFile = path.join(path.dirname(new URL(import.meta.url).pathname), 'assets/previews', fileName);
+  try {
+    await fs.access(staticFile);
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    return res.sendFile(staticFile);
+  } catch {}
+
+  // 2. Fallback: dynamic generation + cache in data/previews/
+  const cacheDir = path.join(path.dirname(new URL(import.meta.url).pathname), '../data/previews');
+  const cacheFile = path.join(cacheDir, fileName);
   try {
     await fs.access(cacheFile);
     res.setHeader('Content-Type', 'audio/mpeg');

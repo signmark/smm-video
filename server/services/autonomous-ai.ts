@@ -3551,6 +3551,14 @@ async function runAutonomousCycle(state: AutonomousState) {
     // ──────────────────────────────────────────────────────────────
     // ФАЗА 5: Написание постов по контент-плану
     // ──────────────────────────────────────────────────────────────
+
+    // Проверяем, что режим не был остановлен пока мы готовили план
+    if (!autonomousStates.has(state.campaignId)) {
+      console.log(`[AUTONOMOUS-CYCLE] 🛑 Режим остановлен во время подготовки — прерываем цикл перед созданием контента`);
+      state.cycleRunning = false;
+      return;
+    }
+
     for (let i = 0; i < contentPlan.length; i++) {
       const planItem = contentPlan[i];
       try {
@@ -3718,6 +3726,14 @@ async function runAutonomousCycle(state: AutonomousState) {
     }
 
     // 5. Автопланирование (если включено) — оптимальное время по МСК с учётом типа контента
+
+    // Проверяем, что режим не был остановлен пока мы писали посты
+    if (!autonomousStates.has(state.campaignId)) {
+      console.log(`[AUTONOMOUS-CYCLE] 🛑 Режим остановлен во время написания постов — пропускаем публикацию (${createdPosts.length} черновиков остаются в базе)`);
+      state.cycleRunning = false;
+      return;
+    }
+
     if (state.autoSchedule && createdPosts.length > 0) {
       console.log(`[AUTONOMOUS-CYCLE] 📅 Автопланирование ${createdPosts.length} постов с учётом МСК...`);
       

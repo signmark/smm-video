@@ -347,6 +347,56 @@ async function generateWithHuggingFace(text: string, lang: string, outputPath: s
   }
 }
 
+/**
+ * Transcribes an audio file with OpenAI Whisper and returns word-level timestamps.
+ * Uses verbose_json + timestamp_granularities=['word'] to get per-word start/end times.
+ * Returns null when OpenAI is unavailable or transcription fails (caller should handle gracefully).
+ */
+export async function getWordTimestamps(
+  audioPath: string,
+): Promise<{ word: string; start: number; end: number }[] | null> {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    console.warn('[tts:whisper] No OPENAI_API_KEY — skipping word timestamps');
+    return null;
+  }
+
+  try {
+    const audioBuf = await fs.readFile(audioPath);
+    const blob = new Blob([audioBuf], { type: 'audio/mpeg' });
+
+    const form = new FormData();
+    form.append('file', blob, path.basename(audioPath));
+    form.append('model', 'whisper-1');
+    form.append('response_format', 'verbose_json');
+    form.append('timestamp_granularities[]', 'word');
+
+    const res = await fetch('https://api.openai.com/v1/audio/transcriptions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}` },
+      body: form,
+      signal: AbortSignal.timeout(60_000),
+    });
+
+    if (!res.ok) {
+      console.warn(`[tts:whisper] Transcription failed: ${res.status} ${(await res.text()).slice(0, 200)}`);
+      return null;
+    }
+
+    const data = await res.json() as { words?: { word: string; start: number; end: number }[] };
+    if (!Array.isArray(data.words) || data.words.length === 0) {
+      console.warn('[tts:whisper] Transcription returned no word timestamps');
+      return null;
+    }
+
+    console.log(`[tts:whisper] Got ${data.words.length} word timestamps from ${path.basename(audioPath)}`);
+    return data.words;
+  } catch (err: any) {
+    console.warn(`[tts:whisper] getWordTimestamps error: ${err.message}`);
+    return null;
+  }
+}
+
 async function getAudioDuration(filePath: string): Promise<number> {
   // Try system ffprobe first (available in Nix/PATH), fallback to ffmpeg-installer sibling
   const candidates = ['ffprobe', FFMPEG.replace(/ffmpeg(\.exe)?$/, 'ffprobe')];

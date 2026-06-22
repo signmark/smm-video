@@ -31,7 +31,7 @@ async function waitForFile(filePath: string, maxMs = 10000): Promise<void> {
 import { generateScript } from './services/script-generator.js';
 import { generateImage, generateLayeredImage } from './services/image-generator.js';
 import { generateAudio } from './services/tts-generator.js';
-import { assembleVideo, assembleFromClips, extractLastFrame, burnSubtitles, subtitleSizeMultiplier, mixBackgroundMusic, mixWhooshSFX, makeStaticClipFromImage } from './services/video-assembler.js';
+import { assembleVideo, assembleFromClips, extractLastFrame, burnSubtitles, subtitleSizeMultiplier, mixBackgroundMusic, mixWhooshSFX, makeStaticClipFromImage, makeTitleCardClip } from './services/video-assembler.js';
 import { generateBackgroundMusic, getMusicStyle } from './services/music-generator.js';
 
 import { animateFrame, animateText, isT2VModel } from './services/fal-animator.js';
@@ -796,6 +796,7 @@ async function runResumePipeline(projectId: string) {
             audioDuration: undefined as number | undefined,
             narration: s.narration || s.text,
             text: s.text,
+            role: s.role,
           };
         })
       );
@@ -1311,6 +1312,7 @@ async function runGenerationPipeline(projectId: string) {
         audioDuration: audioResults[i]?.duration,
         text: script.scenes[i]?.text,
         narration: script.scenes[i]?.narration || script.scenes[i]?.text,
+        role: script.scenes[i]?.role,
       }));
 
       await update({ status: 'assembling', progress: 75, progressMessage: 'Chain: склеиваю клипы...' });
@@ -1421,6 +1423,7 @@ async function runGenerationPipeline(projectId: string) {
         audioDuration: audioResults[i]?.duration,
         text: script.scenes[i]?.text,
         narration: script.scenes[i]?.narration || script.scenes[i]?.text,
+        role: script.scenes[i]?.role,
       }));
 
       await update({ status: 'assembling', progress: 75, progressMessage: 'Склеиваю клипы...' });
@@ -1648,7 +1651,7 @@ async function runGenerationPipeline(projectId: string) {
                 });
                 const framePath = path.join(framesDir, `frame_${i}.jpg`);
                 const clipDur = project.clipDuration ?? scene.duration;
-                await makeStaticClipFromImage({ imagePath: framePath, durationSeconds: clipDur, outputPath: clipPath });
+                await makeStaticClipFromImage({ imagePath: framePath, durationSeconds: clipDur, outputPath: clipPath, format: project.format, sceneIndex: i });
               }
             }
             completedClips++;
@@ -1667,6 +1670,7 @@ async function runGenerationPipeline(projectId: string) {
           audioDuration: audioResults[i]?.duration,
           text: script.scenes[i]?.text,
           narration: script.scenes[i]?.narration || script.scenes[i]?.text,
+          role: script.scenes[i]?.role,
         }));
 
         await update({ status: 'assembling', progress: 78, progressMessage: 'Склеиваю клипы...' });

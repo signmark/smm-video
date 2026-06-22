@@ -227,14 +227,103 @@ export async function makeStaticClipFromImage(params: {
   imagePath: string;
   durationSeconds: number;
   outputPath: string;
+  /** Apply Ken Burns zoom/pan effect (default: true). */
+  kenBurns?: boolean;
+  /** Target format for scale filter. When provided, output is scaled to match. */
+  format?: VideoFormat;
+  /** Scene index — selects Ken Burns preset (0=zoom-in-center, 1=zoom-in-up, 2=zoom-in-corner). */
+  sceneIndex?: number;
 }): Promise<void> {
-  const { imagePath, durationSeconds, outputPath } = params;
+  const { imagePath, durationSeconds, outputPath, kenBurns = true, format, sceneIndex = 0 } = params;
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
+
+  const totalFrames = Math.ceil(durationSeconds * 25);
+  const { w: targetW, h: targetH } = format ? FORMAT_SIZES[format] : { w: 1080, h: 1920 };
+  const scaleStr = `scale=${targetW}:${targetH}:force_original_aspect_ratio=decrease,pad=${targetW}:${targetH}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1`;
+
+  // 3 Ken Burns presets cycled by scene index
+  const preset = sceneIndex % 3;
+  const kbFilters: string[] = [
+    // 0: slow zoom-in from center
+    `zoompan=z='min(zoom+0.0015,1.5)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${totalFrames}:fps=25`,
+    // 1: zoom-in with upward pan
+    `zoompan=z='min(zoom+0.0015,1.5)':x='iw/2-(iw/zoom/2)':y='ih*0.60-(ih/zoom/2)':d=${totalFrames}:fps=25`,
+    // 2: zoom-in from upper-left corner
+    `zoompan=z='min(zoom+0.0015,1.5)':x='iw*0.30-(iw/zoom/2)':y='ih*0.30-(ih/zoom/2)':d=${totalFrames}:fps=25`,
+  ];
+  const vfFilter = kenBurns
+    ? `${kbFilters[preset]},${scaleStr}`
+    : scaleStr;
+
   const args = [
     '-y', '-loglevel', 'error',
     '-loop', '1', '-t', String(durationSeconds), '-i', imagePath,
     '-f', 'lavfi', '-t', String(durationSeconds), '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
     '-t', String(durationSeconds),
+    '-vf', vfFilter,
+    '-c:v', 'libx264', '-preset', 'fast', '-crf', '23', '-r', '25', '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac', '-b:a', '128k',
+    outputPath,
+  ];
+  await execFileAsync(FFMPEG_BIN, args, { timeout: 120_000 });
+}
+
+/**
+ * Creates a title-card clip — solid-colour background with centred text overlay.
+ * Useful as a 0.5–1s opener before scene 1 (hook moment).
+ *
+ * @param style
+ *   'white-on-black' — white text on black background (default)
+ *   'black-on-white' — black text on white background
+ *   'accent'         — white text on deep navy (#0d1117) — cinematic look
+ */
+export async function makeTitleCardClip(params: {
+  text: string;
+  durationSeconds: number;
+  outputPath: string;
+  format: VideoFormat;
+  style?: 'white-on-black' | 'black-on-white' | 'accent';
+}): Promise<void> {
+  const { text, durationSeconds, outputPath, format, style = 'white-on-black' } = params;
+  await fs.mkdir(path.dirname(outputPath), { recursive: true });
+
+  const { w, h } = FORMAT_SIZES[format];
+  const bgColors: Record<string, string> = {
+    'white-on-black': '0x0d0d0d',
+    'black-on-white': '0xf5f5f5',
+    'accent':         '0x0d1117',
+  };
+  const textColors: Record<string, string> = {
+    'white-on-black': 'white',
+    'black-on-white': 'black',
+    'accent':         'white',
+  };
+  const bg = bgColors[style];
+  const tc = textColors[style];
+
+  // Escape text: colons, backslashes, single-quotes for ffmpeg drawtext
+  const safeText = text
+    .replace(/\\/g, '\\\\')
+    .replace(/:/g, '\\:')
+    .replace(/'/g, "\\'");
+
+  const fontSize = Math.round(w * 0.072);
+  const shadowColor = style === 'black-on-white' ? 'white' : 'black';
+
+  const vf = [
+    `drawtext=fontsize=${fontSize}:fontcolor=${tc}:shadowcolor=${shadowColor}:shadowx=3:shadowy=3`,
+    `fontfile=/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf`,
+    `text='${safeText}'`,
+    `x=(w-text_w)/2`,
+    `y=(h-text_h)/2`,
+  ].join(':');
+
+  const args = [
+    '-y', '-loglevel', 'error',
+    '-f', 'lavfi', '-t', String(durationSeconds), '-i', `color=c=${bg}:s=${w}x${h}:rate=25`,
+    '-f', 'lavfi', '-t', String(durationSeconds), '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
+    '-t', String(durationSeconds),
+    '-vf', vf,
     '-c:v', 'libx264', '-preset', 'fast', '-crf', '23', '-r', '25', '-pix_fmt', 'yuv420p',
     '-c:a', 'aac', '-b:a', '128k',
     outputPath,
@@ -250,6 +339,18 @@ export interface VeoScene {
   audioPath?: string;
   audioDuration?: number;
   narration?: string;
+  text?: string;
+  /** Viral structure role — drives per-scene colour grading. */
+  role?: 'hook' | 'body' | 'cta';
+}
+
+/** Word-level timestamp returned by OpenAI Whisper transcription. */
+export interface WordTimestamp {
+  word: string;
+  /** Start time in seconds relative to the audio clip. */
+  start: number;
+  /** End time in seconds relative to the audio clip. */
+  end: number;
 }
 
 // ── Karaoke subtitle generation ───────────────────────────────────────────────
@@ -425,6 +526,43 @@ function generateWordByWordASS(scenes: KaraokeSceneEntry[], format: VideoFormat,
   return header + '\n' + lines.join('\n') + '\n';
 }
 
+/**
+ * Style: word-timed — each word appears at its exact spoken timestamp (from Whisper).
+ * `wordTimestamps[i]` is the array of word timestamps for scene i, where each `start`/`end`
+ * is relative to the beginning of that scene's audio clip.
+ * `sceneStartTimes[i]` is the absolute start time of scene i in the final video.
+ */
+function generateWordTimedASS(
+  wordTimestamps: WordTimestamp[][],
+  sceneStartTimes: number[],
+  format: VideoFormat,
+  options: SubtitleOptions = {},
+): string {
+  const { w, h } = FORMAT_SIZES[format];
+  const font = options.font ?? 'DejaVu Sans';
+  const fontSize = Math.round(Math.round(w * 0.072) * (options.sizeMultiplier ?? 1));
+  const primaryColor = hexToAssColor(options.color ?? '#ffffff');
+  const marginV = Math.round(h * 0.10);
+  const styleLine = `Style: WordTimed,${font},${fontSize},${primaryColor},${primaryColor},&H00000000,&H00000000,1,0,0,0,100,100,0,0,1,4,0,2,40,40,${marginV},1`;
+  const header = makeAssHeader(w, h, styleLine);
+
+  const lines: string[] = [];
+  for (let si = 0; si < wordTimestamps.length; si++) {
+    const sceneOffset = sceneStartTimes[si] ?? 0;
+    for (const wt of wordTimestamps[si]) {
+      const absStart = sceneOffset + wt.start;
+      const absEnd = sceneOffset + wt.end;
+      if (absEnd <= absStart) continue;
+      // Pop-in fade: 60ms fade-in, 60ms fade-out; highlight colour on current word
+      lines.push(
+        `Dialogue: 0,${formatAssTime(absStart)},${formatAssTime(absEnd)},WordTimed,,0,0,0,,{\\fad(60,60)\\c&H0000FFFF&}${wt.word}{\\c&H00FFFFFF&}`,
+      );
+    }
+  }
+
+  return header + '\n' + lines.join('\n') + '\n';
+}
+
 /** Style: cinematic — large uppercase text, center-screen, blur-reveal + scale animation — real movie trailer look */
 function generateCinematicASS(scenes: KaraokeSceneEntry[], format: VideoFormat, options: SubtitleOptions = {}): string {
   const { w, h } = FORMAT_SIZES[format];
@@ -520,6 +658,9 @@ function generateSubtitleASS(scenes: KaraokeSceneEntry[], format: VideoFormat, s
     case 'cinematic':      return generateCinematicASS(scenes, format, options);
     case 'cinematic-full': return generateCinematicFullASS(scenes, format, options);
     case 'bar':            return generateBarASS(scenes, format, options);
+    // 'word-timed' is handled directly in burnSubtitles (needs wordTimestamps).
+    // Fallback to tiktok here if called without them.
+    case 'word-timed': return generateTiktokASS(scenes, format, options);
     case 'karaoke':
     default:            return generateKaraokeASS(scenes, format, options);
   }
@@ -539,8 +680,14 @@ export async function burnSubtitles(params: {
   style: SubtitleStyle;
   options?: SubtitleOptions;
   actualDurations?: number[];
+  /**
+   * Word-level timestamps per scene (from getWordTimestamps in tts-generator).
+   * Required for style='word-timed'. Each inner array corresponds to one scene.
+   * `start`/`end` values are relative to the scene's audio clip start.
+   */
+  wordTimestamps?: WordTimestamp[][];
 }): Promise<void> {
-  const { videoPath, scenes, format, style, options = {}, actualDurations } = params;
+  const { videoPath, scenes, format, style, options = {}, actualDurations, wordTimestamps } = params;
 
   if (style === 'none') return;
 
@@ -565,7 +712,14 @@ export async function burnSubtitles(params: {
     return entry;
   });
 
-  const assContent = generateSubtitleASS(entries, format, style, options);
+  // word-timed: use Whisper word timestamps with absolute scene offsets
+  let assContent: string;
+  if (style === 'word-timed' && wordTimestamps && wordTimestamps.length > 0) {
+    const sceneStartTimes = entries.map(e => e.startTime);
+    assContent = generateWordTimedASS(wordTimestamps, sceneStartTimes, format, options);
+  } else {
+    assContent = generateSubtitleASS(entries, format, style, options);
+  }
   await fs.writeFile(assPath, assContent, 'utf-8');
 
   // Escape path for ffmpeg ass filter (colons are special chars in filtergraph)
@@ -597,6 +751,15 @@ export const burnKaraokeSubtitles = (params: {
   format: VideoFormat;
 }) => burnSubtitles({ ...params, style: 'karaoke' });
 
+/** Per-role colour grading filters applied in the mux step of assembleFromClips. */
+const ROLE_COLOR_FILTERS: Partial<Record<NonNullable<VeoScene['role']>, string>> = {
+  // hook: cold/dramatic — slight blue push, boosted contrast, desaturated
+  hook: 'colorchannelmixer=rr=0.92:gg=0.95:bb=1.10,eq=contrast=1.25:saturation=0.80',
+  // cta: warm/golden — red/green lift, contrast + saturation boost (reward signal)
+  cta:  'colorchannelmixer=rr=1.10:gg=1.03:bb=0.88,eq=contrast=1.10:saturation=1.15',
+  // body: neutral — no extra filter
+};
+
 export async function assembleFromClips(params: {
   scenes: VeoScene[];
   outputPath: string;
@@ -614,8 +777,14 @@ export async function assembleFromClips(params: {
    * Requires re-encoding, so it's slower than stream copy.
    */
   crossfadeDuration?: number;
+  /**
+   * Insert a 3-frame (0.12 s) white flash between every scene transition.
+   * Creates a "pattern interrupt" that keeps attention in viral Reels/TikTok.
+   * Incompatible with crossfadeDuration > 0 (crossfade takes precedence).
+   */
+  flashCut?: boolean;
 }): Promise<number[]> {
-  const { scenes, outputPath, tempDir, format, onProgress, crossfadeDuration = 0 } = params;
+  const { scenes, outputPath, tempDir, format, onProgress, crossfadeDuration = 0, flashCut = false } = params;
   const { w: targetW, h: targetH } = FORMAT_SIZES[format];
   const scaleFilter = `scale=${targetW}:${targetH}:force_original_aspect_ratio=decrease,pad=${targetW}:${targetH}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1`;
   const ffmpegPath = FFMPEG_BIN;
@@ -638,6 +807,11 @@ export async function assembleFromClips(params: {
     //     differences — Seedance 720p, WAN 480p, stock 1080p all become the same canvas)
     //   • all clips leave this step at the same codec/fps, making concat stream-copy safe
     const clipDur = scene.duration;
+
+    // Build -vf chain: scale/pad normalisation + optional per-role colour grade
+    const colorGrade = scene.role ? (ROLE_COLOR_FILTERS[scene.role] ?? '') : '';
+    const vf = colorGrade ? `${scaleFilter},${colorGrade}` : scaleFilter;
+
     if (scene.audioPath) {
       const args = [
         '-y', '-loglevel', 'error',
@@ -646,7 +820,7 @@ export async function assembleFromClips(params: {
         '-t', String(clipDur),                         // exact output length
         '-map', '0:v:0',
         '-map', '1:a:0',
-        '-vf', scaleFilter,                            // normalise to targetW×targetH
+        '-vf', vf,                                     // normalise + colour grade
         '-c:v', 'libx264', '-preset', 'fast', '-crf', '23', '-r', '25', '-pix_fmt', 'yuv420p',
         '-c:a', 'aac', '-b:a', '128k',
         '-af', `apad=whole_dur=${clipDur}`,            // pad audio silence to clipDur
@@ -661,7 +835,7 @@ export async function assembleFromClips(params: {
         '-t', String(clipDur),
         '-map', '0:v:0',
         '-map', '1:a:0',
-        '-vf', scaleFilter,                            // normalise to targetW×targetH
+        '-vf', vf,                                     // normalise + colour grade
         '-c:v', 'libx264', '-preset', 'fast', '-crf', '23', '-r', '25', '-pix_fmt', 'yuv420p',
         '-c:a', 'aac', '-b:a', '128k',
         muxed,
@@ -688,9 +862,36 @@ export async function assembleFromClips(params: {
       ffmpegPath,
     });
   } else {
-    // ── Fast hard-cut concat (stream copy) ───────────────────────────────────
+    // ── Fast hard-cut concat (stream copy, optional flash-cut between scenes) ─
+    // When flashCut=true, generate a single white flash clip (3 frames = 0.12 s)
+    // and insert it between every pair of scene clips in the concat list.
+    let concatEntries = muxedPaths;
+
+    if (flashCut && muxedPaths.length > 1) {
+      const flashPath = path.join(tempDir, 'flash.mp4');
+      const flashDur = '0.12';
+      await execFileAsync(ffmpegPath, [
+        '-y', '-loglevel', 'error',
+        '-f', 'lavfi', '-t', flashDur, '-i', `color=c=white:s=${targetW}x${targetH}:rate=25`,
+        '-f', 'lavfi', '-t', flashDur, '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
+        '-t', flashDur,
+        '-map', '0:v:0', '-map', '1:a:0',
+        '-c:v', 'libx264', '-preset', 'fast', '-crf', '23', '-r', '25', '-pix_fmt', 'yuv420p',
+        '-c:a', 'aac', '-b:a', '128k',
+        flashPath,
+      ], { timeout: 30_000 });
+
+      // Interleave: [scene0, flash, scene1, flash, scene2, ...]
+      concatEntries = [];
+      for (let fi = 0; fi < muxedPaths.length; fi++) {
+        concatEntries.push(muxedPaths[fi]);
+        if (fi < muxedPaths.length - 1) concatEntries.push(flashPath);
+      }
+      console.log(`[assembleFromClips] Flash-cut inserted at ${muxedPaths.length - 1} transitions`);
+    }
+
     const concatFile = path.join(tempDir, 'concat.txt');
-    await fs.writeFile(concatFile, muxedPaths.map((p) => `file '${p}'`).join('\n'));
+    await fs.writeFile(concatFile, concatEntries.map((p) => `file '${p}'`).join('\n'));
 
     await new Promise<void>((resolve, reject) => {
       ffmpeg()

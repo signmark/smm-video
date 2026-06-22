@@ -40,6 +40,34 @@ import { ensureKeysLoaded } from './load-keys.js';
 
 const VALID_SUBTITLE_STYLES: SubtitleStyle[] = ['none', 'plain', 'fade', 'karaoke', 'tiktok', 'word-by-word', 'cinematic', 'cinematic-full', 'bar'];
 
+/**
+ * If the scene list contains a hook-role scene with text, prepend a 0.7 s
+ * title card as scene[0]. The card has no narration, so burnSubtitles skips
+ * generating a subtitle for it but correctly offsets all subsequent scenes.
+ * Returns the original array unchanged when no hook scene is found.
+ */
+type AssembledScene = { clipPath: string; duration: number; narration?: string; text?: string; role?: 'hook' | 'body' | 'cta'; audioPath?: string; audioDuration?: number };
+async function maybeWithTitleCard(scenes: AssembledScene[], format: VideoFormat, tempDir: string): Promise<AssembledScene[]> {
+  const hookScene = scenes.find(s => s.role === 'hook' && s.text?.trim());
+  if (!hookScene) return scenes;
+  try {
+    const cardPath = path.join(tempDir, `title_card_${Date.now()}.mp4`);
+    await fs.mkdir(tempDir, { recursive: true });
+    await makeTitleCardClip({
+      text: hookScene.text!.trim().slice(0, 80),
+      durationSeconds: 0.7,
+      outputPath: cardPath,
+      format,
+      style: 'accent',
+    });
+    console.log(`[title-card] Prepended 0.7s title card: "${hookScene.text!.trim().slice(0, 40)}"`);
+    return [{ clipPath: cardPath, duration: 0.7 }, ...scenes];
+  } catch (e: any) {
+    console.warn('[title-card] Could not prepend title card:', e.message);
+    return scenes;
+  }
+}
+
 const router = Router();
 
 router.get('/health', (_req, res) => {
@@ -230,6 +258,15 @@ router.post('/videos', async (req, res) => {
     const validFormats: VideoFormat[] = ['9:16', '16:9', '1:1'];
     if (!validFormats.includes(format)) {
       return res.status(400).json({ error: 'format must be one of: 9:16, 16:9, 1:1' });
+    }
+    if (hasTopic && String(topic).trim().length > 500) {
+      return res.status(400).json({ error: 'topic must be 500 characters or less' });
+    }
+    if (hasScenario && String(customScenario).trim().length > 5000) {
+      return res.status(400).json({ error: 'customScenario must be 5000 characters or less' });
+    }
+    if (additionalDetails && String(additionalDetails).trim().length > 1000) {
+      return res.status(400).json({ error: 'additionalDetails must be 1000 characters or less' });
     }
     const effectiveTopic = hasTopic ? String(topic).trim() : 'Пользовательский сценарий';
     const project = await createProject({
@@ -432,6 +469,13 @@ router.patch('/videos/:id/scenes/:sceneId', async (req, res) => {
     if (!project.script) return res.status(400).json({ error: 'No script' });
 
     const { text, t2vPrompt, imagePrompt, narration, selectedVariant, videoSource, stockQuery, imagePromptRu, t2vPromptRu } = req.body;
+
+    if (selectedVariant !== undefined) {
+      const sv = Number(selectedVariant);
+      if (!Number.isInteger(sv) || sv < 0 || sv > 3) {
+        return res.status(400).json({ error: 'selectedVariant must be 0, 1, 2, or 3' });
+      }
+    }
 
     let translatedImagePrompt: string | undefined;
     let translatedT2vPrompt: string | undefined;
@@ -801,12 +845,14 @@ async function runResumePipeline(projectId: string) {
         })
       );
 
+      const resumeScenes = await maybeWithTitleCard(clipsWithAudio, project.format, tempDir);
       const resumeActualDurations = await assembleFromClips({
-        scenes: clipsWithAudio,
+        scenes: resumeScenes,
         outputPath: videoPath,
         tempDir,
         format: project.format,
         flashCut: true,
+        hookTextOverlay: true,
         onProgress: async (pct, msg) => {
           await updateProject(projectId, { progress: 78 + Math.round(pct * 0.18), progressMessage: msg });
         },
@@ -815,7 +861,7 @@ async function runResumePipeline(projectId: string) {
       await update({ progress: 96, progressMessage: 'Накладываю субтитры...' });
       await burnSubtitles({
         videoPath,
-        scenes: clipsWithAudio,
+        scenes: resumeScenes,
         format: project.format,
         style: project.subtitleStyle ?? 'karaoke',
         options: {
@@ -1317,12 +1363,14 @@ async function runGenerationPipeline(projectId: string) {
       }));
 
       await update({ status: 'assembling', progress: 75, progressMessage: 'Chain: склеиваю клипы...' });
+      const chainScenes = await maybeWithTitleCard(clipsWithAudio, project.format, tempDir);
       const chainActualDurations = await assembleFromClips({
-        scenes: clipsWithAudio,
+        scenes: chainScenes,
         outputPath: videoPath,
         tempDir,
         format: project.format,
         flashCut: true,
+        hookTextOverlay: true,
         onProgress: async (pct, msg) => {
           await updateProject(projectId, { progress: 75 + Math.round(pct * 0.20), progressMessage: msg });
         },
@@ -1332,7 +1380,7 @@ async function runGenerationPipeline(projectId: string) {
       const latestProject = await getProject(projectId);
       await burnSubtitles({
         videoPath,
-        scenes: clipsWithAudio,
+        scenes: chainScenes,
         format: project.format,
         style: latestProject?.subtitleStyle ?? project.subtitleStyle ?? 'karaoke',
         options: {
@@ -1430,12 +1478,14 @@ async function runGenerationPipeline(projectId: string) {
 
       await update({ status: 'assembling', progress: 75, progressMessage: 'Склеиваю клипы...' });
 
+      const t2vScenes = await maybeWithTitleCard(clipsWithAudio, project.format, tempDir);
       const i2vActualDurations = await assembleFromClips({
-        scenes: clipsWithAudio,
+        scenes: t2vScenes,
         outputPath: videoPath,
         tempDir,
         format: project.format,
         flashCut: true,
+        hookTextOverlay: true,
         onProgress: async (pct, msg) => {
           await updateProject(projectId, { progress: 75 + Math.round(pct * 0.20), progressMessage: msg });
         },
@@ -1444,7 +1494,7 @@ async function runGenerationPipeline(projectId: string) {
       await update({ progress: 95, progressMessage: 'Накладываю субтитры...' });
       await burnSubtitles({
         videoPath,
-        scenes: clipsWithAudio,
+        scenes: t2vScenes,
         format: project.format,
         style: project.subtitleStyle ?? 'karaoke',
         options: {
@@ -1678,12 +1728,14 @@ async function runGenerationPipeline(projectId: string) {
 
         await update({ status: 'assembling', progress: 78, progressMessage: 'Склеиваю клипы...' });
 
+        const i2vScenes = await maybeWithTitleCard(clipsWithAudio, project.format, tempDir);
         const parallelActualDurations = await assembleFromClips({
-          scenes: clipsWithAudio,
+          scenes: i2vScenes,
           outputPath: videoPath,
           tempDir,
           format: project.format,
           flashCut: true,
+          hookTextOverlay: true,
           onProgress: async (pct, msg) => {
             await updateProject(projectId, { progress: 78 + Math.round(pct * 0.18), progressMessage: msg });
           },
@@ -1692,7 +1744,7 @@ async function runGenerationPipeline(projectId: string) {
         await update({ progress: 96, progressMessage: 'Накладываю субтитры...' });
         await burnSubtitles({
           videoPath,
-          scenes: clipsWithAudio,
+          scenes: i2vScenes,
           format: project.format,
           style: project.subtitleStyle ?? 'karaoke',
           options: {

@@ -79,6 +79,17 @@ function escapeText(t: string): string {
     .replace(/\]/g, '\\]');
 }
 
+/**
+ * Format-aware font size for subtitle ASS styles.
+ * 16:9 videos have much wider frames (w=1920 vs 1080) so a naive w*factor gives
+ * huge text in landscape mode. Scale down by 0.58× for 16:9 to keep absolute
+ * pixel size comparable across all three formats.
+ */
+function formatAwareFontSize(w: number, format: VideoFormat, baseFactor: number, sizeMultiplier = 1.0): number {
+  const scale = format === '16:9' ? 0.58 : 1.0;
+  return Math.round(Math.round(w * baseFactor * scale) * sizeMultiplier);
+}
+
 async function makeClip(
   scene: AssemblerScene,
   format: VideoFormat,
@@ -373,7 +384,7 @@ function formatAssTime(sec: number): string {
 function generateKaraokeASS(scenes: KaraokeSceneEntry[], format: VideoFormat, options: SubtitleOptions = {}): string {
   const { w, h } = FORMAT_SIZES[format];
   const font = options.font ?? 'DejaVu Sans';
-  const fontSize = Math.round(Math.round(w * 0.040) * (options.sizeMultiplier ?? 1));
+  const fontSize = formatAwareFontSize(w, format, 0.040, options.sizeMultiplier ?? 1);
   const primaryColor = hexToAssColor(options.color ?? '#ffffff');
   const marginV = Math.round(h * 0.07);
 
@@ -435,7 +446,7 @@ function makeAssHeader(w: number, h: number, styleLine: string): string {
 function generatePlainASS(scenes: KaraokeSceneEntry[], format: VideoFormat, options: SubtitleOptions = {}): string {
   const { w, h } = FORMAT_SIZES[format];
   const font = options.font ?? 'DejaVu Sans';
-  const fontSize = Math.round(Math.round(w * 0.038) * (options.sizeMultiplier ?? 1));
+  const fontSize = formatAwareFontSize(w, format, 0.038, options.sizeMultiplier ?? 1);
   const primaryColor = hexToAssColor(options.color ?? '#ffffff');
   const marginV = Math.round(h * 0.07);
   const styleLine = `Style: Plain,${font},${fontSize},${primaryColor},${primaryColor},&H00000000,&HA0000000,1,0,0,0,100,100,1,0,1,3,1,2,40,40,${marginV},1`;
@@ -453,7 +464,7 @@ function generatePlainASS(scenes: KaraokeSceneEntry[], format: VideoFormat, opti
 function generateFadeASS(scenes: KaraokeSceneEntry[], format: VideoFormat, options: SubtitleOptions = {}): string {
   const { w, h } = FORMAT_SIZES[format];
   const font = options.font ?? 'DejaVu Sans';
-  const fontSize = Math.round(Math.round(w * 0.038) * (options.sizeMultiplier ?? 1));
+  const fontSize = formatAwareFontSize(w, format, 0.038, options.sizeMultiplier ?? 1);
   const primaryColor = hexToAssColor(options.color ?? '#ffffff');
   const marginV = Math.round(h * 0.07);
   const styleLine = `Style: Fade,${font},${fontSize},${primaryColor},${primaryColor},&H00000000,&HA0000000,1,0,0,0,100,100,1,0,1,3,1,2,40,40,${marginV},1`;
@@ -474,7 +485,7 @@ function generateFadeASS(scenes: KaraokeSceneEntry[], format: VideoFormat, optio
 function generateTiktokASS(scenes: KaraokeSceneEntry[], format: VideoFormat, options: SubtitleOptions = {}): string {
   const { w, h } = FORMAT_SIZES[format];
   const font = options.font ?? 'DejaVu Sans';
-  const fontSize = Math.round(Math.round(w * 0.070) * (options.sizeMultiplier ?? 1));
+  const fontSize = formatAwareFontSize(w, format, 0.070, options.sizeMultiplier ?? 1);
   const primaryColor = hexToAssColor(options.color ?? '#ffffff');
   const marginV = Math.round(h * 0.10);
   // BorderStyle=1 (outline only, no background box), bold, large
@@ -500,7 +511,7 @@ function generateTiktokASS(scenes: KaraokeSceneEntry[], format: VideoFormat, opt
 function generateWordByWordASS(scenes: KaraokeSceneEntry[], format: VideoFormat, options: SubtitleOptions = {}): string {
   const { w, h } = FORMAT_SIZES[format];
   const font = options.font ?? 'DejaVu Sans';
-  const fontSize = Math.round(Math.round(w * 0.038) * (options.sizeMultiplier ?? 1));
+  const fontSize = formatAwareFontSize(w, format, 0.038, options.sizeMultiplier ?? 1);
   const primaryColor = hexToAssColor(options.color ?? '#ffffff');
   const marginV = Math.round(h * 0.07);
   const styleLine = `Style: WordByWord,${font},${fontSize},${primaryColor},&H0000FFFF,&H00000000,&HA0000000,1,0,0,0,100,100,1,0,1,3,1,2,40,40,${marginV},1`;
@@ -540,7 +551,7 @@ function generateWordTimedASS(
 ): string {
   const { w, h } = FORMAT_SIZES[format];
   const font = options.font ?? 'DejaVu Sans';
-  const fontSize = Math.round(Math.round(w * 0.072) * (options.sizeMultiplier ?? 1));
+  const fontSize = formatAwareFontSize(w, format, 0.072, options.sizeMultiplier ?? 1);
   const primaryColor = hexToAssColor(options.color ?? '#ffffff');
   const marginV = Math.round(h * 0.10);
   const styleLine = `Style: WordTimed,${font},${fontSize},${primaryColor},${primaryColor},&H00000000,&H00000000,1,0,0,0,100,100,0,0,1,4,0,2,40,40,${marginV},1`;
@@ -567,7 +578,7 @@ function generateWordTimedASS(
 function generateCinematicASS(scenes: KaraokeSceneEntry[], format: VideoFormat, options: SubtitleOptions = {}): string {
   const { w, h } = FORMAT_SIZES[format];
   const font = options.font ?? 'DejaVu Sans';
-  const fontSize = Math.round(Math.round(w * 0.068) * (options.sizeMultiplier ?? 1));
+  const fontSize = formatAwareFontSize(w, format, 0.068, options.sizeMultiplier ?? 1);
   const primaryColor = hexToAssColor(options.color ?? '#ffffff');
   const spacing = Math.round(w * 0.020);
   const styleLine = `Style: Cinematic,${font},${fontSize},${primaryColor},${primaryColor},&H00000000,&HAA000000,1,0,0,0,100,100,${spacing},0,1,1,5,5,60,60,0,1`;
@@ -606,7 +617,7 @@ function generateCinematicASS(scenes: KaraokeSceneEntry[], format: VideoFormat, 
 function generateCinematicFullASS(scenes: KaraokeSceneEntry[], format: VideoFormat, options: SubtitleOptions = {}): string {
   const { w, h } = FORMAT_SIZES[format];
   const font = options.font ?? 'DejaVu Sans';
-  const fontSize = Math.round(Math.round(w * 0.042) * (options.sizeMultiplier ?? 1));
+  const fontSize = formatAwareFontSize(w, format, 0.042, options.sizeMultiplier ?? 1);
   const primaryColor = hexToAssColor(options.color ?? '#ffffff');
   const spacing = Math.round(w * 0.008);
   const marginV = Math.round(h * 0.06);
@@ -634,7 +645,7 @@ function generateCinematicFullASS(scenes: KaraokeSceneEntry[], format: VideoForm
 function generateBarASS(scenes: KaraokeSceneEntry[], format: VideoFormat, options: SubtitleOptions = {}): string {
   const { w, h } = FORMAT_SIZES[format];
   const font = options.font ?? 'DejaVu Sans';
-  const fontSize = Math.round(Math.round(w * 0.036) * (options.sizeMultiplier ?? 1));
+  const fontSize = formatAwareFontSize(w, format, 0.036, options.sizeMultiplier ?? 1);
   const primaryColor = hexToAssColor(options.color ?? '#ffffff');
   const marginV = Math.round(h * 0.06);
   // BorderStyle=3: opaque box; BackColour = 75% opaque black (&HC0000000)
@@ -783,8 +794,14 @@ export async function assembleFromClips(params: {
    * Incompatible with crossfadeDuration > 0 (crossfade takes precedence).
    */
   flashCut?: boolean;
+  /**
+   * Burn scene.text as a large centered overlay on every scene whose role='hook'.
+   * Mimics TikTok-style text-on-video for maximum hook impact.
+   * Skipped silently for scenes without text or role.
+   */
+  hookTextOverlay?: boolean;
 }): Promise<number[]> {
-  const { scenes, outputPath, tempDir, format, onProgress, crossfadeDuration = 0, flashCut = false } = params;
+  const { scenes, outputPath, tempDir, format, onProgress, crossfadeDuration = 0, flashCut = false, hookTextOverlay = false } = params;
   const { w: targetW, h: targetH } = FORMAT_SIZES[format];
   const scaleFilter = `scale=${targetW}:${targetH}:force_original_aspect_ratio=decrease,pad=${targetW}:${targetH}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1`;
   const ffmpegPath = FFMPEG_BIN;
@@ -808,9 +825,13 @@ export async function assembleFromClips(params: {
     //   • all clips leave this step at the same codec/fps, making concat stream-copy safe
     const clipDur = scene.duration;
 
-    // Build -vf chain: scale/pad normalisation + optional per-role colour grade
+    // Build -vf chain: scale/pad normalisation + optional colour grade + optional hook text overlay
     const colorGrade = scene.role ? (ROLE_COLOR_FILTERS[scene.role] ?? '') : '';
-    const vf = colorGrade ? `${scaleFilter},${colorGrade}` : scaleFilter;
+    // Hook overlay: burn scene.text as large centered text for hook scenes (TikTok-style)
+    const hookOverlayFilter = (hookTextOverlay && scene.role === 'hook' && scene.text?.trim())
+      ? `drawtext=text='${escapeText(scene.text.trim().slice(0, 60))}':fontsize=${Math.round(targetW * 0.060)}:fontcolor=white:x=(w-text_w)/2:y=${Math.round(targetH * 0.15)}:box=1:boxcolor=black@0.55:boxborderw=${Math.round(targetW * 0.012)}`
+      : '';
+    const vf = [scaleFilter, colorGrade, hookOverlayFilter].filter(Boolean).join(',');
 
     if (scene.audioPath) {
       const args = [

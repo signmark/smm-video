@@ -5,11 +5,12 @@
  *
  * Groups:
  *   A01-A06   HTTP API: project CRUD + validation
- *   B07-B12   HTTP API: scene patching + error handling
- *   C13-C17   Assembly e2e: flash-cut, colour grading, format normalisation
- *   D18-D21   Ken Burns e2e: real JPEG → looped clip → verify properties
- *   E22-E24   Title card e2e: ffmpeg drawtext → verify MP4 file
- *   F25-F28   Viral pipeline e2e: assemble 3-role scenes → verify duration + audio
+ *   B07-B14   HTTP API: scene patching + error handling + field storage
+ *   C15-C20   Assembly e2e: flash-cut, colour grading, format normalisation
+ *   D21-D25   Ken Burns e2e: real JPEG → animated static clip → verify properties
+ *   E26-E28   Title card e2e: ffmpeg drawtext → verify MP4 file
+ *   F29-F32   Viral pipeline e2e: assemble 3-role scenes → subtitle burn
+ *   G33-G38   Input validation: topic/scenario length limits + selectedVariant range
  *
  * Prerequisites:
  *   • Video App server running on port 3001  (cd video-app && npx tsx server/index.ts)
@@ -488,6 +489,49 @@ section('F29-F32  Viral pipeline e2e: hook/body/cta roles + subtitle burn');
   const durAfterWordTimed = await probe(outViral);
   ok('F32 word-timed subtitle burn: video still valid', durAfterWordTimed > 10,
     `dur=${durAfterWordTimed.toFixed(3)}s`);
+}
+
+// ── G: Input validation (HTTP) ────────────────────────────────────────────────
+
+section('G33-G38  Input validation: length limits + selectedVariant range');
+
+{
+  // G33: topic > 500 chars → 400
+  const longTopic = 'А'.repeat(501);
+  const r1 = await apiPost('/videos', { topic: longTopic, format: '9:16', duration: 15 });
+  ok('G33 POST /videos topic>500 chars → 400', r1.status === 400, `got ${r1.status}: ${r1.body?.error}`);
+
+  // G34: topic exactly 500 chars → 201 (boundary OK)
+  const exactTopic = 'Б'.repeat(500);
+  const r2 = await apiPost('/videos', { topic: exactTopic, format: '9:16', duration: 15 });
+  ok('G34 POST /videos topic=500 chars → 201 (boundary OK)', r2.status === 201, `got ${r2.status}`);
+  if (r2.body?.id) await apiDelete(`/videos/${r2.body.id}`);
+
+  // G35: customScenario > 5000 chars → 400
+  const longScenario = 'В '.repeat(2501);  // 5002 chars
+  const r3 = await apiPost('/videos', { customScenario: longScenario, format: '9:16', duration: 15 });
+  ok('G35 POST /videos customScenario>5000 chars → 400', r3.status === 400, `got ${r3.status}: ${r3.body?.error}`);
+
+  // G36: additionalDetails > 1000 chars → 400
+  const longDetails = 'Г'.repeat(1001);
+  const r4 = await apiPost('/videos', { topic: 'test', additionalDetails: longDetails, format: '9:16', duration: 15 });
+  ok('G36 POST /videos additionalDetails>1000 chars → 400', r4.status === 400, `got ${r4.status}: ${r4.body?.error}`);
+
+  // G37: PATCH scene selectedVariant=-1 → 400
+  if (createdId) {
+    const r5 = await apiPatch(`/videos/${createdId}/scenes/fakeid`, { selectedVariant: -1 });
+    ok('G37 PATCH scene selectedVariant=-1 → 400', r5.status === 400, `got ${r5.status}: ${r5.body?.error}`);
+  } else {
+    ok('G37 PATCH scene selectedVariant=-1 → 400', false, 'no project id');
+  }
+
+  // G38: PATCH scene selectedVariant=1.5 → 400
+  if (createdId) {
+    const r6 = await apiPatch(`/videos/${createdId}/scenes/fakeid`, { selectedVariant: 1.5 });
+    ok('G38 PATCH scene selectedVariant=1.5 (float) → 400', r6.status === 400, `got ${r6.status}: ${r6.body?.error}`);
+  } else {
+    ok('G38 PATCH scene selectedVariant=1.5 (float) → 400', false, 'no project id');
+  }
 }
 
 // ── Cleanup ───────────────────────────────────────────────────────────────────

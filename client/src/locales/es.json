@@ -535,7 +535,7 @@
   "support": {
     "title": "Soporte",
     "supportBot": "Bot de Soporte",
-    "telegramBot": "@SMM_Manager_official_Bot"
+    "telegramBot": "@smm_nplanner_sup_bot"
   },
   "errors": {
     "generic": "Ocurrió un error",

@@ -252,7 +252,7 @@ function SidebarContent({ location, onNavigate, onLogout, userIsAdmin, isCollaps
               <span className="truncate">{t('support.supportBot')}</span>
             </a>
             <a 
-              href="https://t.me/SMM_Manager_official_Bot" 
+              href="https://t.me/smm_nplanner_sup_bot" 
               target="_blank" 
               rel="noopener noreferrer"
               className="flex items-center gap-2 text-xs text-sidebar-foreground/70 hover:text-sidebar-foreground transition-colors px-1"
@@ -292,7 +292,7 @@ function SidebarContent({ location, onNavigate, onLogout, userIsAdmin, isCollaps
             <Tooltip delayDuration={100}>
               <TooltipTrigger asChild>
                 <a 
-                  href="https://t.me/SMM_Manager_official_Bot" 
+                  href="https://t.me/smm_nplanner_sup_bot" 
                   target="_blank" 
                   rel="noopener noreferrer"
                   className="flex items-center justify-center p-2 text-sidebar-foreground/70 hover:text-sidebar-foreground transition-colors rounded-md hover:bg-sidebar-accent/50"

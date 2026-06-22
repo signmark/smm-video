@@ -108,9 +108,7 @@ export function AppShell({ children, onNavigate, onLogout, userIsAdmin }: AppShe
       {isTGBotOpen && (
         <>
           {(() => {
-            const botName = import.meta.env.MODE === 'production' 
-              ? 'SMM_Manager_official_Bot' 
-              : 'SMM_Manager_NIAP_Bot';
+            const botName = 'smm_nplanner_sup_bot';
             window.open(`https://t.me/${botName}`, '_blank');
             setIsTGBotOpen(false);
             return null;

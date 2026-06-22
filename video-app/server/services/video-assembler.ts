@@ -600,6 +600,12 @@ export async function assembleFromClips(params: {
   scenes: VeoScene[];
   outputPath: string;
   tempDir: string;
+  /**
+   * Target format — ALL clips are normalised to FORMAT_SIZES[format] during
+   * the mux step so that different-resolution FAL/stock clips can be safely
+   * stream-copy concatenated afterwards.
+   */
+  format: VideoFormat;
   onProgress?: (pct: number, msg: string) => void;
   /**
    * Crossfade duration in seconds between clips.
@@ -608,7 +614,9 @@ export async function assembleFromClips(params: {
    */
   crossfadeDuration?: number;
 }): Promise<number[]> {
-  const { scenes, outputPath, tempDir, onProgress, crossfadeDuration = 0 } = params;
+  const { scenes, outputPath, tempDir, format, onProgress, crossfadeDuration = 0 } = params;
+  const { w: targetW, h: targetH } = FORMAT_SIZES[format];
+  const scaleFilter = `scale=${targetW}:${targetH}:force_original_aspect_ratio=decrease,pad=${targetW}:${targetH}:(ow-iw)/2:(oh-ih)/2:color=black,setsar=1`;
   const ffmpegPath = FFMPEG_BIN;
 
   await fs.mkdir(tempDir, { recursive: true });
@@ -625,6 +633,8 @@ export async function assembleFromClips(params: {
     // Re-encode with stream_loop so that:
     //   • clips shorter than clipDur (e.g. WAN 81-frame @ 24fps = 3.375s < 5s) are looped
     //   • output is frame-accurate (no keyframe-boundary frozen last-frame with stream copy)
+    //   • ALL clips are scaled/padded to exactly targetW×targetH (normalises FAL/stock resolution
+    //     differences — Seedance 720p, WAN 480p, stock 1080p all become the same canvas)
     //   • all clips leave this step at the same codec/fps, making concat stream-copy safe
     const clipDur = scene.duration;
     if (scene.audioPath) {
@@ -635,6 +645,7 @@ export async function assembleFromClips(params: {
         '-t', String(clipDur),                         // exact output length
         '-map', '0:v:0',
         '-map', '1:a:0',
+        '-vf', scaleFilter,                            // normalise to targetW×targetH
         '-c:v', 'libx264', '-preset', 'fast', '-crf', '23', '-r', '25', '-pix_fmt', 'yuv420p',
         '-c:a', 'aac', '-b:a', '128k',
         '-af', `apad=whole_dur=${clipDur}`,            // pad audio silence to clipDur
@@ -649,6 +660,7 @@ export async function assembleFromClips(params: {
         '-t', String(clipDur),
         '-map', '0:v:0',
         '-map', '1:a:0',
+        '-vf', scaleFilter,                            // normalise to targetW×targetH
         '-c:v', 'libx264', '-preset', 'fast', '-crf', '23', '-r', '25', '-pix_fmt', 'yuv420p',
         '-c:a', 'aac', '-b:a', '128k',
         muxed,

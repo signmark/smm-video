@@ -18,11 +18,12 @@ function getOrientation(format: VideoFormat): string {
 }
 
 function getTargetSize(format: VideoFormat): { width: number; height: number } {
-  // Must match FORMAT_DIMS in fal-animator.ts so that stream-copy concat
-  // doesn't produce resolution jumps when stock and AI scenes are mixed.
-  if (format === '9:16') return { width: 480, height: 832 };
-  if (format === '16:9') return { width: 832, height: 480 };
-  return { width: 576, height: 576 };
+  // Match FORMAT_SIZES used by burnSubtitles (1080p canvas) so that all clips
+  // enter assembleFromClips at a consistent high resolution and subtitle
+  // coordinates map correctly.
+  if (format === '9:16') return { width: 1080, height: 1920 };
+  if (format === '16:9') return { width: 1920, height: 1080 };
+  return { width: 1080, height: 1080 };
 }
 
 async function downloadFile(url: string, destPath: string): Promise<void> {

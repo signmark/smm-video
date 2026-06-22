@@ -3278,26 +3278,24 @@ Return ONLY the improved English prompt, nothing else. No explanations.`,
   }
 
   public async launch() {
-    try {
-      console.log('🔧 [TelegramBotService] Вызов this.bot.launch()...');
+    console.log('🔧 [TelegramBotService] Вызов this.bot.launch()...');
 
-      // Добавляем timeout на 30 секунд для запуска бота
-      const launchPromise = this.bot.launch();
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Bot launch timeout after 30 seconds')), 30000)
-      );
+    let startupError: Error | null = null;
 
-      await Promise.race([launchPromise, timeoutPromise]);
+    // bot.launch() в polling-режиме никогда не резолвится — запускаем в фоне
+    this.bot.launch().catch((err: Error) => {
+      startupError = err;
+      console.error('❌ Telegram bot crashed:', err.message);
+    });
 
-      console.log('✅ Telegram bot started successfully');
-    } catch (error) {
-      console.error('❌ Error starting Telegram bot:', error);
-      console.error('❌ Error details:', error instanceof Error ? error.message : String(error));
-      if (error instanceof Error && error.stack) {
-        console.error('❌ Stack trace:', error.stack);
-      }
-      throw error;
+    // Ждём 3 секунды — если не упал, значит успешно стартовал
+    await new Promise(r => setTimeout(r, 3000));
+
+    if (startupError) {
+      throw startupError;
     }
+
+    console.log('✅ Telegram bot started successfully');
   }
 
   public async launchWebhook(domain: string) {

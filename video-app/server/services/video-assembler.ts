@@ -217,6 +217,30 @@ export async function extractLastFrame(videoPath: string, outputPath: string): P
   return fs.readFile(outputPath);
 }
 
+/**
+ * Create a static (looped still-image) MP4 clip from a JPEG frame.
+ * Used as a fallback when FAL animation fails for a scene.
+ * Output is H.264/AAC silent clip at 25fps, exactly durationSeconds long.
+ */
+export async function makeStaticClipFromImage(params: {
+  imagePath: string;
+  durationSeconds: number;
+  outputPath: string;
+}): Promise<void> {
+  const { imagePath, durationSeconds, outputPath } = params;
+  await fs.mkdir(path.dirname(outputPath), { recursive: true });
+  const args = [
+    '-y', '-loglevel', 'error',
+    '-loop', '1', '-t', String(durationSeconds), '-i', imagePath,
+    '-f', 'lavfi', '-t', String(durationSeconds), '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
+    '-t', String(durationSeconds),
+    '-c:v', 'libx264', '-preset', 'fast', '-crf', '23', '-r', '25', '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac', '-b:a', '128k',
+    outputPath,
+  ];
+  await execFileAsync(FFMPEG_BIN, args, { timeout: 60_000 });
+}
+
 // ── Veo clip assembly (video clips + TTS audio → final mp4) ──────────────────
 
 export interface VeoScene {
@@ -598,36 +622,42 @@ export async function assembleFromClips(params: {
     const muxed = path.join(tempDir, `muxed_${i}.mp4`);
     onProgress?.(Math.round((i / scenes.length) * 75), `Микширование сцены ${i + 1}/${scenes.length}...`);
 
+    // Re-encode with stream_loop so that:
+    //   • clips shorter than clipDur (e.g. WAN 81-frame @ 24fps = 3.375s < 5s) are looped
+    //   • output is frame-accurate (no keyframe-boundary frozen last-frame with stream copy)
+    //   • all clips leave this step at the same codec/fps, making concat stream-copy safe
+    const clipDur = scene.duration;
     if (scene.audioPath) {
-      const clipDur = scene.duration;
       const args = [
-        '-i', scene.clipPath,
-        '-i', scene.audioPath,
+        '-y', '-loglevel', 'error',
+        '-stream_loop', '-1', '-i', scene.clipPath,   // loop video input
+        '-i', scene.audioPath,                         // audio input
+        '-t', String(clipDur),                         // exact output length
         '-map', '0:v:0',
         '-map', '1:a:0',
-        '-t', String(clipDur),
-        '-c:v', 'copy',
+        '-c:v', 'libx264', '-preset', 'fast', '-crf', '23', '-r', '25', '-pix_fmt', 'yuv420p',
         '-c:a', 'aac', '-b:a', '128k',
-        '-af', 'apad',
-        '-shortest',
-        '-y', muxed,
+        '-af', `apad=whole_dur=${clipDur}`,            // pad audio silence to clipDur
+        muxed,
       ];
-      await execFileAsync(ffmpegPath, args);
+      await execFileAsync(ffmpegPath, args, { timeout: 180_000 });
     } else {
       const args = [
-        '-i', scene.clipPath,
-        '-f', 'lavfi', '-t', String(scene.duration), '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
-        '-t', String(scene.duration),
-        '-c:v', 'copy',
+        '-y', '-loglevel', 'error',
+        '-stream_loop', '-1', '-i', scene.clipPath,
+        '-f', 'lavfi', '-t', String(clipDur), '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
+        '-t', String(clipDur),
+        '-map', '0:v:0',
+        '-map', '1:a:0',
+        '-c:v', 'libx264', '-preset', 'fast', '-crf', '23', '-r', '25', '-pix_fmt', 'yuv420p',
         '-c:a', 'aac', '-b:a', '128k',
-        '-shortest',
-        '-y', muxed,
+        muxed,
       ];
-      await execFileAsync(ffmpegPath, args);
+      await execFileAsync(ffmpegPath, args, { timeout: 180_000 });
     }
 
-    // Probe actual muxed duration (may differ from scene.duration due to keyframe rounding,
-    // FAL clip length, etc.) — used to keep subtitle timing accurate.
+    // After re-encode the probed duration should equal clipDur exactly.
+    // We still probe so subtitle timing stays correct if something unexpected happened.
     const probed = await probeActualDuration(muxed);
     actualDurations.push(probed > 0 ? probed : scene.duration);
     muxedPaths.push(muxed);

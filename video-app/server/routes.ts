@@ -30,7 +30,7 @@ async function waitForFile(filePath: string, maxMs = 10000): Promise<void> {
 import { generateScript } from './services/script-generator.js';
 import { generateImage, generateLayeredImage } from './services/image-generator.js';
 import { generateAudio } from './services/tts-generator.js';
-import { assembleVideo, assembleFromClips, extractLastFrame, burnSubtitles, subtitleSizeMultiplier, mixBackgroundMusic, mixWhooshSFX } from './services/video-assembler.js';
+import { assembleVideo, assembleFromClips, extractLastFrame, burnSubtitles, subtitleSizeMultiplier, mixBackgroundMusic, mixWhooshSFX, makeStaticClipFromImage } from './services/video-assembler.js';
 import { generateBackgroundMusic, getMusicStyle } from './services/music-generator.js';
 
 import { animateFrame, animateText, isT2VModel } from './services/fal-animator.js';
@@ -1614,26 +1614,38 @@ async function runGenerationPipeline(projectId: string) {
                 await searchAndDownloadStockClip({ query, outputPath: clipPath, durationSeconds: project.clipDuration ?? scene.duration, format: project.format });
               }
             } else {
-              await animateFrame({
-                imageBuffer: frameBuffers[i]!,
-                prompt: scene.motionPrompt || scene.imagePrompt,
-                format: project.format,
-                durationSeconds: scene.duration,
-                outputPath: clipPath,
-                model: project.animationModel,
-                clipDuration: project.clipDuration,
-                onWait: async (elapsedMs) => {
-                  await updateProject(projectId, {
-                    progressMessage: `Анимация: ${completedClips}/${total} готово, сцена ${i + 1} (${Math.round(elapsedMs / 1000)}с)...`,
-                  });
-                },
-                onFallback: async (fromModel, toModel, reason) => {
-                  console.warn(`[video-gen] Scene ${i + 1}: ${fromModel} failed (${reason.slice(0, 120)}), switching to ${toModel}`);
-                  await updateProject(projectId, {
-                    progressMessage: `⚠️ Сцена ${i + 1}: ${fromModel} недоступен → переключаюсь на ${toModel}...`,
-                  });
-                },
-              });
+              try {
+                await animateFrame({
+                  imageBuffer: frameBuffers[i]!,
+                  prompt: scene.motionPrompt || scene.imagePrompt,
+                  format: project.format,
+                  durationSeconds: scene.duration,
+                  outputPath: clipPath,
+                  model: project.animationModel,
+                  clipDuration: project.clipDuration,
+                  onWait: async (elapsedMs) => {
+                    await updateProject(projectId, {
+                      progressMessage: `Анимация: ${completedClips}/${total} готово, сцена ${i + 1} (${Math.round(elapsedMs / 1000)}с)...`,
+                    });
+                  },
+                  onFallback: async (fromModel, toModel, reason) => {
+                    console.warn(`[video-gen] Scene ${i + 1}: ${fromModel} failed (${reason.slice(0, 120)}), switching to ${toModel}`);
+                    await updateProject(projectId, {
+                      progressMessage: `⚠️ Сцена ${i + 1}: ${fromModel} недоступен → переключаюсь на ${toModel}...`,
+                    });
+                  },
+                });
+              } catch (animErr: any) {
+                // All FAL models failed for this scene — fall back to a static image clip
+                // so that the rest of the video is still assembled correctly.
+                console.warn(`[video-gen] Scene ${i + 1}: all animation models failed (${animErr.message}) — using static frame fallback`);
+                await updateProject(projectId, {
+                  progressMessage: `⚠️ Сцена ${i + 1}: анимация недоступна — использую статичный кадр`,
+                });
+                const framePath = path.join(framesDir, `frame_${i}.jpg`);
+                const clipDur = project.clipDuration ?? scene.duration;
+                await makeStaticClipFromImage({ imagePath: framePath, durationSeconds: clipDur, outputPath: clipPath });
+              }
             }
             completedClips++;
             await updateProject(projectId, {

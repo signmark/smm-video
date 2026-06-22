@@ -5,7 +5,8 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { CookieBanner } from "@/components/CookieBanner";
 
-// Глобальный перехват ?ref= — сохраняем при любом переходе
+// Глобальный перехват ?ref= — вызывается СИНХРОННО на уровне модуля,
+// до первого рендера React, пока URL ещё содержит ?ref=
 const captureRefCode = () => {
   const params = new URLSearchParams(window.location.search);
   const ref = params.get('ref');
@@ -13,6 +14,7 @@ const captureRefCode = () => {
     localStorage.setItem('smm_partner_code', ref.trim().toUpperCase());
   }
 };
+captureRefCode(); // ← выполняется сразу при импорте модуля, до рендера
 
 // Принудительная очистка истекшего токена
 const clearExpiredToken = () => {
@@ -251,9 +253,6 @@ function AppWithWebSocket() {
 
 function App() {
   useEffect(() => {
-    // Перехватываем ?ref= на любом URL при загрузке
-    captureRefCode();
-
     // Первоначальная проверка при загрузке страницы
     clearExpiredToken();
 

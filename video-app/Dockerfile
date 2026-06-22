@@ -30,9 +30,13 @@ RUN npm install --omit=dev --registry https://registry.npmjs.org
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/server ./server
+COPY --from=builder /app/scripts ./scripts
 COPY --from=builder /app/vite.config.ts ./vite.config.ts
 
-RUN mkdir -p data/videos data/images
+RUN mkdir -p data/videos data/images server/assets/previews
+
+# Generate voice preview MP3s during build (Edge TTS, no API key needed)
+RUN node scripts/gen-previews.mjs && rm -rf scripts
 
 RUN chown -R node:node /app
 USER node

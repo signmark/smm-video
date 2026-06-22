@@ -90,6 +90,7 @@ video-app/data/videos/
 video-app/data/audio/
 *.mp4
 *.mp3
+!video-app/server/assets/previews/*.mp3
 *.wav
 *.ogg
 *.webm

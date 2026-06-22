@@ -108,7 +108,7 @@ export function AppShell({ children, onNavigate, onLogout, userIsAdmin }: AppShe
       {isTGBotOpen && (
         <>
           {(() => {
-            const botName = 'smm_nplanner_sup_bot';
+            const botName = 'SMM_Manager_official_Bot';
             window.open(`https://t.me/${botName}`, '_blank');
             setIsTGBotOpen(false);
             return null;

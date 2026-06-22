@@ -131,6 +131,8 @@ async function directusFetch(
     },
     signal: AbortSignal.timeout(15000),
   });
+  // 204 No Content (DELETE) has no body — return empty object
+  if (res.status === 204) return {};
   const json = await res.json();
   if (!res.ok) {
     const msg = json?.errors?.[0]?.message || JSON.stringify(json);

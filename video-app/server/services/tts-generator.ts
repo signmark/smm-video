@@ -141,11 +141,8 @@ export async function generateAudio(params: {
             const finalDuration = await getAudioDuration(outputPath);
             return { path: outputPath, duration: finalDuration };
           }
-        } else if (ratio < 1.0) {
-          const silenceSec = targetDuration - rawDuration;
-          await padWithSilence(outputPath, silenceSec);
-          return { path: outputPath, duration: targetDuration };
         }
+        // No silence padding — clip duration is driven by audio, not the other way around
       }
       return { path: outputPath, duration: rawDuration };
     }
@@ -173,15 +170,8 @@ export async function generateAudio(params: {
       }
     } else if (ratio > 4.0) {
       console.warn(`[tts] Audio too long (ratio ${ratio.toFixed(2)}) — keeping original`);
-    } else if (ratio < 1.0) {
-      // Audio is shorter than clip — pad with silence at the end (never slow down voice)
-      const silenceSec = targetDuration - rawDuration;
-      const padded = await padWithSilence(outputPath, silenceSec);
-      if (padded) {
-        console.log(`[tts] Padded +${silenceSec.toFixed(2)}s silence → ${targetDuration.toFixed(2)}s (was ${rawDuration.toFixed(2)}s)`);
-        return { path: outputPath, duration: targetDuration };
-      }
     }
+    // No silence padding — clip duration is driven by audio, not the other way around
   }
 
   return { path: outputPath, duration: rawDuration };

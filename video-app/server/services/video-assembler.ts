@@ -823,7 +823,9 @@ export async function assembleFromClips(params: {
     //   • ALL clips are scaled/padded to exactly targetW×targetH (normalises FAL/stock resolution
     //     differences — Seedance 720p, WAN 480p, stock 1080p all become the same canvas)
     //   • all clips leave this step at the same codec/fps, making concat stream-copy safe
-    const clipDur = scene.duration;
+    // Use actual audio duration when available — this drives clip length so voice perfectly
+    // fills every scene with no trailing silence and subtitles stay in sync.
+    const clipDur = (scene.audioDuration && scene.audioDuration > 0.5) ? scene.audioDuration : scene.duration;
 
     // Build -vf chain: scale/pad normalisation + optional colour grade + optional hook text overlay
     const colorGrade = scene.role ? (ROLE_COLOR_FILTERS[scene.role] ?? '') : '';

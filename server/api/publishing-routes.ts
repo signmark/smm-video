@@ -1092,10 +1092,8 @@ export function registerPublishingRoutes(app: Express): void {
         }
       }
       
-      // Проверяем, что контент запланирован
-      if (content.status !== 'scheduled' || !content.scheduledAt) {
-        return res.status(400).json({ error: 'Для этого контента не запланирована публикация' });
-      }
+      // Разрешаем отмену для любого контента с scheduledAt или статусом scheduled/pending
+      // (пост мог сменить статус пока висел в списке — не блокируем отмену)
       
       // Создаем типизированную копию объекта socialPlatforms
       const typedPlatforms: Record<string, any> = content.socialPlatforms 

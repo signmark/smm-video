@@ -106,7 +106,7 @@ router.get('/tts-preview/:voice', async (req, res) => {
   }
   const lang = (req.query.lang === 'en') ? 'en' : 'ru';
   const cacheDir = path.join(path.dirname(new URL(import.meta.url).pathname), '../data/previews');
-  const cacheFile = path.join(cacheDir, `${voice}_${lang}_v2.mp3`);
+  const cacheFile = path.join(cacheDir, `${voice}_${lang}_v3.mp3`);
 
   // Serve from cache if exists
   try {

@@ -437,7 +437,7 @@ export default function Create() {
       return;
     }
     setPlayingVoice(v);
-    const audio = new Audio(`${API}/tts-preview/${v}?lang=${language}&v=2`);
+    const audio = new Audio(`${API}/tts-preview/${v}?lang=${language}&v=3`);
     audioRef.current = audio;
     audio.play().catch(() => {});
     audio.onended = () => { setPlayingVoice(null); audioRef.current = null; };

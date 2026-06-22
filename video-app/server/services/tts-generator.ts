@@ -262,50 +262,67 @@ async function padWithSilence(filePath: string, silenceSec: number): Promise<boo
 }
 
 // ─── Microsoft Edge TTS (free, no API key required) ───────────────────────────
-// Маппинг голосов OpenAI → Edge TTS (мужские/женские различаются)
-const EDGE_TTS_VOICE_MAP: Record<string, Record<string, string>> = {
+// Edge TTS: только подтверждённые голоса (Dmitry=мужской, Svetlana=женский)
+// Питч-сдвиг через ffmpeg делает каждый голос звучащим по-разному
+const EDGE_TTS_VOICE_MAP: Record<string, Record<string, { voice: string; semitones: number }>> = {
   ru: {
-    alloy:   'ru-RU-DmitryNeural',    // мужской нейтральный
-    ash:     'ru-RU-DmitryNeural',
-    ballad:  'ru-RU-SvetlanaNeural',
-    coral:   'ru-RU-DariyaNeural',    // женский мягкий
-    echo:    'ru-RU-DmitryNeural',    // мужской
-    fable:   'ru-RU-SvetlanaNeural',  // женский выразительный
-    nova:    'ru-RU-SvetlanaNeural',  // женский тёплый
-    onyx:    'ru-RU-DmitryNeural',    // мужской глубокий
-    sage:    'ru-RU-DariyaNeural',
-    shimmer: 'ru-RU-DariyaNeural',   // женский мягкий
+    alloy:   { voice: 'ru-RU-DmitryNeural',   semitones:  0  }, // мужской нейтральный
+    ash:     { voice: 'ru-RU-DmitryNeural',   semitones: -1  }, // мужской чуть ниже
+    ballad:  { voice: 'ru-RU-SvetlanaNeural', semitones: +1  }, // женский чуть выше
+    coral:   { voice: 'ru-RU-SvetlanaNeural', semitones: +2  }, // женский выше
+    echo:    { voice: 'ru-RU-DmitryNeural',   semitones: -1  }, // мужской мягкий
+    fable:   { voice: 'ru-RU-SvetlanaNeural', semitones:  0  }, // женский нейтральный
+    nova:    { voice: 'ru-RU-SvetlanaNeural', semitones: +1  }, // женский тёплый
+    onyx:    { voice: 'ru-RU-DmitryNeural',   semitones: -3  }, // мужской глубокий
+    sage:    { voice: 'ru-RU-SvetlanaNeural', semitones: +2  }, // женский мягкий
+    shimmer: { voice: 'ru-RU-SvetlanaNeural', semitones: +3  }, // женский высокий
   },
   en: {
-    alloy:   'en-US-DavisNeural',
-    ash:     'en-US-GuyNeural',
-    ballad:  'en-US-JaneNeural',
-    coral:   'en-US-AriaNeural',
-    echo:    'en-US-GuyNeural',
-    fable:   'en-US-JaneNeural',
-    nova:    'en-US-JennyNeural',
-    onyx:    'en-US-DavisNeural',
-    sage:    'en-US-AriaNeural',
-    shimmer: 'en-US-JennyNeural',
+    alloy:   { voice: 'en-US-GuyNeural',   semitones:  0  },
+    ash:     { voice: 'en-US-GuyNeural',   semitones: -1  },
+    ballad:  { voice: 'en-US-JaneNeural',  semitones: +1  },
+    coral:   { voice: 'en-US-AriaNeural',  semitones: +2  },
+    echo:    { voice: 'en-US-GuyNeural',   semitones: -1  },
+    fable:   { voice: 'en-US-JaneNeural',  semitones:  0  },
+    nova:    { voice: 'en-US-JennyNeural', semitones: +1  },
+    onyx:    { voice: 'en-US-GuyNeural',   semitones: -3  },
+    sage:    { voice: 'en-US-AriaNeural',  semitones: +1  },
+    shimmer: { voice: 'en-US-JennyNeural', semitones: +2  },
   },
 };
 
-const EDGE_TTS_VOICES: Record<string, string> = {
-  ru: 'ru-RU-SvetlanaNeural',
-  en: 'en-US-JennyNeural',
-};
+async function applyPitchShift(filePath: string, semitones: number): Promise<void> {
+  if (semitones === 0) return;
+  const factor = Math.pow(2, semitones / 12);
+  const baseRate = 24000;
+  const newRate = Math.round(baseRate * factor);
+  const tempo = 1 / factor; // корректируем темп чтобы длительность не изменилась
+  const tmpPath = filePath + '_pitch.mp3';
+  try {
+    await execFileAsync(FFMPEG, [
+      '-y', '-i', filePath,
+      '-af', `asetrate=${newRate},atempo=${tempo.toFixed(6)},aresample=${baseRate}`,
+      '-codec:a', 'libmp3lame', '-q:a', '4',
+      tmpPath
+    ]);
+    await fs.rename(tmpPath, filePath);
+  } catch (err: any) {
+    console.warn(`[tts] pitch shift failed (${semitones} st): ${err.message}`);
+    await fs.rm(tmpPath, { force: true }).catch(() => {});
+  }
+}
 
 async function generateWithEdgeTTS(text: string, lang: string, outputPath: string, openaiVoice?: string): Promise<boolean> {
+  const mapping = openaiVoice ? EDGE_TTS_VOICE_MAP[lang]?.[openaiVoice] : null;
+  const edgeVoice = mapping?.voice ?? (lang === 'ru' ? 'ru-RU-SvetlanaNeural' : 'en-US-JennyNeural');
+  const semitones = mapping?.semitones ?? 0;
+
   try {
-    const voice = (openaiVoice && EDGE_TTS_VOICE_MAP[lang]?.[openaiVoice])
-      ? EDGE_TTS_VOICE_MAP[lang][openaiVoice]
-      : (EDGE_TTS_VOICES[lang] ?? EDGE_TTS_VOICES.en);
-    console.log(`[tts] Edge TTS voice=${voice} lang=${lang} text_len=${text.length}`);
+    console.log(`[tts] Edge TTS voice=${edgeVoice} semitones=${semitones} lang=${lang}`);
 
     const tts = new MsEdgeTTS();
-    await tts.setMetadata(voice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
+    await tts.setMetadata(edgeVoice, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
 
-    // toFile() expects a directory — it saves audio.mp3 inside it
     const tmpDir = outputPath + '_edgetmp';
     await fs.mkdir(tmpDir, { recursive: true });
     await tts.toFile(tmpDir, text);
@@ -320,6 +337,10 @@ async function generateWithEdgeTTS(text: string, lang: string, outputPath: strin
 
     await fs.rename(tmpFile, outputPath);
     await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => {});
+
+    // Применяем питч-сдвиг для отличия голосов
+    await applyPitchShift(outputPath, semitones);
+
     return true;
   } catch (err: any) {
     console.warn(`[tts] Edge TTS error: ${err.message}`);

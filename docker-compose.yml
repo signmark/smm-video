@@ -150,6 +150,11 @@ services:
     build:
       context: ./smm
       dockerfile: Dockerfile
+      args:
+        VITE_PLAN_PRICE_PRO: ${VITE_PLAN_PRICE_PRO:-670}
+        VITE_PLAN_PRICE_PRO_ORIGINAL: ${VITE_PLAN_PRICE_PRO_ORIGINAL:-1990}
+        VITE_PLAN_PRICE_BASIC: ${VITE_PLAN_PRICE_BASIC:-390}
+        VITE_PLAN_PRICE_BASIC_ORIGINAL: ${VITE_PLAN_PRICE_BASIC_ORIGINAL:-990}
     container_name: smm
     restart: always
     env_file:

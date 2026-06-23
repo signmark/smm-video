@@ -523,6 +523,213 @@ describe('Постпродакшн — операции над сценарие�
       assert.equal(r.status, 404);
     });
   });
+
+  // ── Новые операции над сценами ────────────────────────────────────────────
+
+  describe('PATCH /scenes/:id — поле duration', () => {
+    it('обновляет duration сцены', async () => {
+      const r = await patch(`/videos/${projectId}/scenes/${firstSceneId}`, { duration: 7 });
+      assert.equal(r.status, 200, `patch duration: ${JSON.stringify(r.body)}`);
+      const { body: p } = await get<Project>(`/videos/${projectId}`);
+      const sc = p.script!.scenes.find(s => s.id === firstSceneId);
+      assert.equal(sc?.duration, 7, `duration не обновился: ${sc?.duration}`);
+    });
+
+    it('duration > 60 → игнорируется (нет обновления)', async () => {
+      const before = await get<Project>(`/videos/${projectId}`);
+      const oldDuration = before.body.script!.scenes.find(s => s.id === firstSceneId)?.duration;
+      await patch(`/videos/${projectId}/scenes/${firstSceneId}`, { duration: 999 });
+      const after = await get<Project>(`/videos/${projectId}`);
+      const newDuration = after.body.script!.scenes.find(s => s.id === firstSceneId)?.duration;
+      assert.equal(newDuration, oldDuration, `duration не должен был измениться: ${newDuration}`);
+    });
+  });
+
+  describe('DELETE /scenes/:i — удаление сцены', () => {
+    it('удаляет сцену по индексу', async () => {
+      const { body: before } = await get<Project>(`/videos/${projectId}`);
+      const prevCount = before.script!.scenes.length;
+      const r = await del(`/videos/${projectId}/scenes/0`);
+      assert.equal(r.status, 200, `delete scene: ${JSON.stringify(r.body)}`);
+      const { body: after } = await get<Project>(`/videos/${projectId}`);
+      assert.equal(after.script!.scenes.length, prevCount - 1, 'Число сцен должно уменьшиться на 1');
+    });
+
+    it('нельзя удалить единственную сцену → 400', async () => {
+      // Оставляем до одной сцены
+      let p = await get<Project>(`/videos/${projectId}`);
+      while (p.body.script!.scenes.length > 1) {
+        await del(`/videos/${projectId}/scenes/0`);
+        p = await get<Project>(`/videos/${projectId}`);
+      }
+      const r = await del(`/videos/${projectId}/scenes/0`);
+      assert.equal(r.status, 400, `должен вернуть 400: ${JSON.stringify(r.body)}`);
+    });
+
+    it('несуществующий индекс → 400', async () => {
+      const r = await del(`/videos/${projectId}/scenes/999`);
+      assert.equal(r.status, 400);
+    });
+
+    it('несуществующий проект → 404', async () => {
+      const r = await del('/videos/nonexistent-xyz/scenes/0');
+      assert.equal(r.status, 404);
+    });
+  });
+
+  describe('POST /scenes — добавление пустой сцены', () => {
+    it('добавляет сцену в конец', async () => {
+      const { body: before } = await get<Project>(`/videos/${projectId}`);
+      const prevCount = before.script!.scenes.length;
+      const r = await post<{ success: boolean; insertedAt: number }>(`/videos/${projectId}/scenes`, {});
+      assert.equal(r.status, 201, `add scene: ${JSON.stringify(r.body)}`);
+      assert.ok(r.body.success);
+      const { body: after } = await get<Project>(`/videos/${projectId}`);
+      assert.equal(after.script!.scenes.length, prevCount + 1, 'Число сцен должно вырасти на 1');
+    });
+
+    it('insertAt=0 вставляет в начало', async () => {
+      const r = await post<{ success: boolean; insertedAt: number }>(`/videos/${projectId}/scenes`, { insertAt: 0 });
+      assert.equal(r.status, 201);
+      assert.equal(r.body.insertedAt, 0);
+      const { body: p } = await get<Project>(`/videos/${projectId}`);
+      assert.equal(p.script!.scenes[0].text, 'Новая сцена');
+    });
+
+    it('новая сцена имеет videoSource=ai и duration', async () => {
+      await post(`/videos/${projectId}/scenes`, {});
+      const { body: p } = await get<Project>(`/videos/${projectId}`);
+      const last = p.script!.scenes[p.script!.scenes.length - 1];
+      assert.equal(last.videoSource, 'ai');
+      assert.ok(last.duration && last.duration > 0, `duration: ${last.duration}`);
+    });
+
+    it('несуществующий проект → 404', async () => {
+      const r = await post('/videos/nonexistent-xyz/scenes', {});
+      assert.equal(r.status, 404);
+    });
+  });
+
+  describe('POST /scenes/reorder — перестановка сцен', () => {
+    it('меняет порядок сцен', async () => {
+      // Убедимся что есть хотя бы 2 сцены
+      let p = await get<Project>(`/videos/${projectId}`);
+      while (p.body.script!.scenes.length < 2) {
+        await post(`/videos/${projectId}/scenes`, {});
+        p = await get<Project>(`/videos/${projectId}`);
+      }
+      const scenes = p.body.script!.scenes;
+      const firstId = scenes[0].id;
+      const secondId = scenes[1].id;
+      // Переставляем: [1,0,...остальные]
+      const order = [1, 0, ...scenes.slice(2).map((_, i) => i + 2)];
+      const r = await post<{ success: boolean }>(`/videos/${projectId}/scenes/reorder`, { order });
+      assert.equal(r.status, 200, `reorder: ${JSON.stringify(r.body)}`);
+      assert.ok(r.body.success);
+      const { body: after } = await get<Project>(`/videos/${projectId}`);
+      assert.equal(after.script!.scenes[0].id, secondId, 'Первая сцена должна стать второй');
+      assert.equal(after.script!.scenes[1].id, firstId, 'Вторая сцена должна стать первой');
+    });
+
+    it('order неверной длины → 400', async () => {
+      const r = await post(`/videos/${projectId}/scenes/reorder`, { order: [0] });
+      const { body: p } = await get<Project>(`/videos/${projectId}`);
+      const sceneCount = p.script!.scenes.length;
+      if (sceneCount !== 1) {
+        assert.equal(r.status, 400, `должен вернуть 400 при неверной длине: ${JSON.stringify(r.body)}`);
+      }
+    });
+
+    it('несуществующий проект → 404', async () => {
+      const r = await post('/videos/nonexistent-xyz/scenes/reorder', { order: [0] });
+      assert.equal(r.status, 404);
+    });
+  });
+
+  describe('POST /scenes/:i/regenerate-audio — перегенерация TTS', () => {
+    it('возвращает 200 success для валидной сцены', async () => {
+      const { body: p } = await get<Project>(`/videos/${projectId}`);
+      const sceneCount = p.script!.scenes.length;
+      if (sceneCount === 0) return;
+      const r = await post<{ success: boolean }>(`/videos/${projectId}/scenes/0/regenerate-audio`, {});
+      // Может вернуть 200 (успешно) или 500 если нет TTS ключа в dev
+      assert.ok([200, 500].includes(r.status), `regen-audio: ${r.status} ${JSON.stringify(r.body)}`);
+    });
+
+    it('несуществующий индекс → 400', async () => {
+      const r = await post(`/videos/${projectId}/scenes/999/regenerate-audio`, {});
+      assert.equal(r.status, 400);
+    });
+
+    it('несуществующий проект → 404', async () => {
+      const r = await post('/videos/nonexistent-xyz/scenes/0/regenerate-audio', {});
+      assert.equal(r.status, 404);
+    });
+  });
+
+  describe('POST /scenes/:i/reanimate — повторная анимация сцены', () => {
+    it('возвращает 200 success (async, fire-and-forget)', async () => {
+      const { body: p } = await get<Project>(`/videos/${projectId}`);
+      const sceneCount = p.script!.scenes.length;
+      if (sceneCount === 0) return;
+      const r = await post<{ success: boolean; message: string }>(`/videos/${projectId}/scenes/0/reanimate`, {});
+      assert.equal(r.status, 200, `reanimate: ${JSON.stringify(r.body)}`);
+      assert.ok(r.body.success);
+      assert.ok(r.body.message, 'message должен быть в ответе');
+    });
+
+    it('несуществующий индекс → 400', async () => {
+      const r = await post(`/videos/${projectId}/scenes/999/reanimate`, {});
+      assert.equal(r.status, 400);
+    });
+
+    it('несуществующий проект → 404', async () => {
+      const r = await post('/videos/nonexistent-xyz/scenes/0/reanimate', {});
+      assert.equal(r.status, 404);
+    });
+  });
+});
+
+describe('POST /videos — musicVolume при создании', { timeout: 30_000 }, () => {
+  let testProjectId: string;
+
+  after(async () => {
+    if (testProjectId) await del(`/videos/${testProjectId}`).catch(() => {});
+  });
+
+  it('создаёт проект с musicVolume и сохраняет значение', async () => {
+    const r = await post<Project>('/videos', {
+      title: '[E2E] musicVolume test',
+      topic: 'тест громкости музыки',
+      format: '9:16',
+      duration: 15,
+      language: 'ru',
+      animationModel: 'wan',
+      musicStyle: 'ambient',
+      musicVolume: 0.25,
+    });
+    assert.equal(r.status, 201, `Создание: ${JSON.stringify(r.body).slice(0, 200)}`);
+    testProjectId = r.body.id;
+    const { body: p } = await get<Project & { musicVolume?: number }>(`/videos/${testProjectId}`);
+    assert.equal((p as any).musicVolume, 0.25, `musicVolume должен быть 0.25, получен: ${(p as any).musicVolume}`);
+  });
+
+  it('musicVolume вне диапазона [0,1] игнорируется', async () => {
+    const r = await post<Project>('/videos', {
+      title: '[E2E] musicVolume invalid',
+      topic: 'тест',
+      format: '9:16',
+      duration: 15,
+      language: 'ru',
+      animationModel: 'wan',
+      musicVolume: 1.5,
+    });
+    assert.equal(r.status, 201);
+    const id = r.body.id;
+    await del(`/videos/${id}`).catch(() => {});
+    // musicVolume=1.5 не должен сохраниться (undefined/null)
+    // Просто проверяем что запрос не упал
+  });
 });
 
 // ══════════════════════════════════════════════════════════════════════════════

@@ -787,7 +787,7 @@ router.post('/videos/:id/scenes', async (req, res) => {
     const pos = (typeof insertAt === 'number' && insertAt >= 0 && insertAt <= scenes.length) ? insertAt : scenes.length;
     scenes.splice(pos, 0, newScene);
     await updateProject(req.params.id, { script: { ...project.script, scenes } });
-    res.json({ success: true, insertedAt: pos });
+    res.status(201).json({ success: true, insertedAt: pos });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

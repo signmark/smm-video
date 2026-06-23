@@ -77,12 +77,14 @@ async function tryLoadOnce(): Promise<boolean> {
       const { service_name, api_key } = item;
       if (!api_key) continue;
       if (KEYS_NEEDED.includes(service_name)) {
-        process.env[service_name] = api_key;
-        loaded++;
+        if (!process.env[service_name]) {
+          process.env[service_name] = api_key;
+          loaded++;
+        }
         continue;
       }
       const alias = KEY_ALIASES[service_name];
-      if (alias) {
+      if (alias && !process.env[alias]) {
         process.env[alias] = api_key;
         loaded++;
       }

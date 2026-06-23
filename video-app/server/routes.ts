@@ -498,6 +498,9 @@ router.patch('/videos/:id/scenes/:sceneId', async (req, res) => {
       try { translatedT2vPrompt = await translateText(t2vPromptRu.trim(), 'ru-to-en'); } catch { /* use old EN */ }
     }
 
+    const sceneExists = project.script.scenes.some(s => s.id === req.params.sceneId);
+    if (!sceneExists) return res.status(404).json({ error: 'Scene not found' });
+
     const scenes = project.script.scenes.map((s) => {
       if (s.id !== req.params.sceneId) return s;
       const updated: any = { ...s };

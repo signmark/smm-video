@@ -15,7 +15,10 @@
     "test:prod:i2v": "PIPELINE=i2v npx tsx --test e2e/prod-generation.e2e.ts",
     "test:prod:t2v": "PIPELINE=t2v npx tsx --test e2e/prod-generation.e2e.ts",
     "test:prod:kling": "PIPELINE=kling npx tsx --test e2e/prod-generation.e2e.ts",
-    "test:prod:chain": "PIPELINE=chain npx tsx --test e2e/prod-generation.e2e.ts"
+    "test:prod:chain": "PIPELINE=chain npx tsx --test e2e/prod-generation.e2e.ts",
+    "test:postprod": "npx tsx --test e2e/postprod.e2e.ts",
+    "test:postprod:fast": "SKIP_SLOW=1 npx tsx --test e2e/postprod.e2e.ts",
+    "test:postprod:existing": "npx tsx --test e2e/postprod.e2e.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.37.0",

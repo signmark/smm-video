@@ -1,6 +1,8 @@
 /**
  * Text-to-speech via OpenAI TTS API.
- * After generation, adjusts playback speed with ffmpeg atempo to fit target clip duration.
+ * Audio is returned at its natural pace — the video assembler sets each clip's length
+ * to the audio duration, so no speed adjustment is needed (and speeding up only some
+ * scenes made voice pacing inconsistent between scenes).
  * Falls back to Microsoft Edge TTS (free, no key) then HuggingFace.
  */
 import fs from 'fs/promises';
@@ -41,7 +43,7 @@ export async function generateAudio(params: {
 }): Promise<{ path: string; duration: number } | null> {
   // Guard: null/undefined language defaults to Russian
   const lang = (params.language ?? 'ru') as 'ru' | 'en';
-  const { text, outputPath, targetDuration } = params;
+  const { text, outputPath } = params;
 
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -133,17 +135,8 @@ export async function generateAudio(params: {
     if (fallbackOk) {
       const rawDuration = await getAudioDuration(outputPath);
       console.log(`[tts] Fallback generated ${path.basename(outputPath)} (${rawDuration.toFixed(2)}s)`);
-      if (targetDuration && targetDuration > 0) {
-        const ratio = rawDuration / targetDuration;
-        if (ratio > 1.08 && ratio <= 4.0) {
-          const adjusted = await adjustAudioSpeed(outputPath, ratio);
-          if (adjusted) {
-            const finalDuration = await getAudioDuration(outputPath);
-            return { path: outputPath, duration: finalDuration };
-          }
-        }
-        // No silence padding — clip duration is driven by audio, not the other way around
-      }
+      // Natural pacing: no atempo speed-up. The assembler sets each clip's length to the
+      // audio's natural duration, so voice fills every scene without being rushed.
       return { path: outputPath, duration: rawDuration };
     }
     throw new Error('[tts] All TTS providers failed (OpenAI quota + Edge TTS failed + HuggingFace failed)');
@@ -156,99 +149,10 @@ export async function generateAudio(params: {
   const rawDuration = await getAudioDuration(outputPath);
   console.log(`[tts] Generated ${path.basename(outputPath)} (${rawDuration.toFixed(2)}s)`);
 
-  // Adjust speed to fit target clip duration if provided
-  if (targetDuration && targetDuration > 0) {
-    const ratio = rawDuration / targetDuration; // > 1 means audio is longer than clip → speed up
-
-    if (ratio > 1.08 && ratio <= 4.0) {
-      // Audio is longer than clip — speed up only
-      const adjusted = await adjustAudioSpeed(outputPath, ratio);
-      if (adjusted) {
-        const finalDuration = await getAudioDuration(outputPath);
-        console.log(`[tts] Sped up ×${ratio.toFixed(2)} → ${finalDuration.toFixed(2)}s (target ${targetDuration}s)`);
-        return { path: outputPath, duration: finalDuration };
-      }
-    } else if (ratio > 4.0) {
-      console.warn(`[tts] Audio too long (ratio ${ratio.toFixed(2)}) — keeping original`);
-    }
-    // No silence padding — clip duration is driven by audio, not the other way around
-  }
-
+  // Natural pacing: no atempo speed-up. The assembler sets each clip's length to the
+  // audio's natural duration, so voice fills every scene without being rushed. Speeding
+  // up only long-narration scenes made voice speed inconsistent between scenes.
   return { path: outputPath, duration: rawDuration };
-}
-
-/**
- * Adjusts audio tempo in-place using ffmpeg atempo filter.
- * atempo range is 0.5–2.0; for larger ranges, chain multiple filters.
- * ratio = tts_duration / target_duration:
- *   > 1 → audio longer than target → speed up (tempo > 1)
- *   < 1 → audio shorter than target → slow down (tempo < 1)
- */
-async function adjustAudioSpeed(filePath: string, ratio: number): Promise<boolean> {
-  const tmpPath = filePath.replace(/\.mp3$/, '_tmp.mp3');
-  try {
-    // Build chained atempo filters for ratios outside 0.5–2.0
-    const filters = buildAtempoChain(ratio);
-    await execFileAsync(FFMPEG, [
-      '-y', '-i', filePath,
-      '-filter:a', filters,
-      '-codec:a', 'libmp3lame', '-q:a', '4',
-      tmpPath,
-    ]);
-    // Replace original with adjusted
-    await fs.rename(tmpPath, filePath);
-    return true;
-  } catch (err: any) {
-    console.warn(`[tts] atempo adjustment failed: ${err.message}`);
-    try { await fs.unlink(tmpPath); } catch {}
-    return false;
-  }
-}
-
-function buildAtempoChain(ratio: number): string {
-  // ratio is tts_duration / target_duration — this IS the tempo value needed
-  // e.g., ratio=1.5 means audio is 1.5× longer → speed it up by 1.5 (atempo=1.5)
-  const filters: string[] = [];
-  let remaining = ratio;
-
-  if (remaining > 1) {
-    // Speed up: chain atempo=2.0 as many times as needed
-    while (remaining > 2.0) {
-      filters.push('atempo=2.0');
-      remaining /= 2.0;
-    }
-    filters.push(`atempo=${remaining.toFixed(4)}`);
-  } else {
-    // Slow down: chain atempo=0.5 as many times as needed
-    while (remaining < 0.5) {
-      filters.push('atempo=0.5');
-      remaining /= 0.5;
-    }
-    filters.push(`atempo=${remaining.toFixed(4)}`);
-  }
-
-  return filters.join(',');
-}
-
-async function padWithSilence(filePath: string, silenceSec: number): Promise<boolean> {
-  if (silenceSec <= 0.1) return false;
-  const tmpPath = filePath.replace(/\.mp3$/, '_tmp.mp3');
-  try {
-    await execFileAsync(FFMPEG, [
-      '-y',
-      '-i', filePath,
-      '-f', 'lavfi', '-t', String(silenceSec), '-i', 'anullsrc=channel_layout=stereo:sample_rate=44100',
-      '-filter_complex', '[0:a][1:a]concat=n=2:v=0:a=1',
-      '-codec:a', 'libmp3lame', '-q:a', '4',
-      tmpPath,
-    ]);
-    await fs.rename(tmpPath, filePath);
-    return true;
-  } catch (err: any) {
-    console.warn(`[tts] silence pad failed: ${err.message}`);
-    try { await fs.unlink(tmpPath); } catch {}
-    return false;
-  }
 }
 
 // ─── Microsoft Edge TTS (free, no API key required) ───────────────────────────

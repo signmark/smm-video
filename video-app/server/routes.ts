@@ -1814,6 +1814,11 @@ async function runGenerationPipeline(projectId: string) {
 
         // Phase B: animate all frames + TTS in parallel
         let completedClips = 0;
+        // Animation runs ~60-90s with all scenes in parallel, so completedClips stays 0
+        // for most of it. Drive a smooth time-based estimate so the bar advances during
+        // animation instead of freezing at 35% then jumping. Band: 35→73 over ~90s.
+        const animStart = Date.now();
+        const ANIM_EXPECTED_MS = 90000;
         const ttsPromises = Promise.all(
           script.scenes.map(async (scene, i) => {
             const audioPath = path.join(audioDir, `scene_${i}.mp3`);
@@ -1860,7 +1865,12 @@ async function runGenerationPipeline(projectId: string) {
                   model: project.animationModel,
                   clipDuration: project.clipDuration,
                   onWait: async (elapsedMs) => {
+                    // Monotonic: never report below the step floor already reached by
+                    // completed clips, even if other scenes finish faster than expected.
+                    const timePct = 35 + Math.round(Math.min((Date.now() - animStart) / ANIM_EXPECTED_MS, 0.95) * 38);
+                    const stepFloor = 35 + Math.round((completedClips / total) * 40);
                     await updateProject(projectId, {
+                      progress: Math.max(timePct, stepFloor),
                       progressMessage: `Анимация: ${completedClips}/${total} готово, сцена ${i + 1} (${Math.round(elapsedMs / 1000)}с)...`,
                     });
                   },
@@ -1884,8 +1894,10 @@ async function runGenerationPipeline(projectId: string) {
               }
             }
             completedClips++;
+            const stepPct = 35 + Math.round((completedClips / total) * 40);
+            const timePct = 35 + Math.round(Math.min((Date.now() - animStart) / ANIM_EXPECTED_MS, 0.95) * 38);
             await updateProject(projectId, {
-              progress: 35 + Math.round((completedClips / total) * 40),
+              progress: Math.max(stepPct, timePct),
               progressMessage: `Анимация: ${completedClips}/${total} сцен готово`,
             });
             return { clipPath, duration: scene.duration };

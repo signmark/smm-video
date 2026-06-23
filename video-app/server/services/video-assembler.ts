@@ -846,6 +846,10 @@ export async function assembleFromClips(params: {
         '-vf', vf,                                     // normalise + colour grade
         '-c:v', 'libx264', '-preset', 'fast', '-crf', '23', '-r', '25', '-pix_fmt', 'yuv420p',
         '-c:a', 'aac', '-b:a', '128k',
+        // Normalise sample rate to 44100 Hz — OpenAI TTS outputs 24000 Hz but flash/silence
+        // clips use 44100 Hz; mismatched rates cause ffmpeg concat to produce wrong audio
+        // timestamps (audio becomes ~1.5× too long in the final file).
+        '-ar', '44100',
         '-af', `apad=whole_dur=${clipDur}`,            // pad audio silence to clipDur
         muxed,
       ];

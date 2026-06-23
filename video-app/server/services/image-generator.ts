@@ -288,7 +288,6 @@ async function generatePlaceholder(text: string, format: VideoFormat): Promise<B
     <rect width="100%" height="100%" fill="${bg}"/>
     <rect x="4%" y="4%" width="92%" height="92%" rx="24" fill="${bg}" opacity="0.7" stroke="#ffffff22" stroke-width="2"/>
     ${textElements}
-    <text x="50%" y="${h * 0.9}" fill="#ffffff44" font-size="${Math.round(fontSize * 0.6)}" font-family="Arial,sans-serif" text-anchor="middle">AI Video Generator</text>
   </svg>`;
 
   return sharp(Buffer.from(svg)).jpeg({ quality: 90 }).toBuffer();

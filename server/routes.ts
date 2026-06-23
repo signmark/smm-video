@@ -1,4 +1,5 @@
 import { Express } from "express";
+import { globalApiKeysService } from './services/global-api-keys';
 
 // Роутеры, регистрируемые здесь. Остальные (auth, video, stories, analytics и т.д.)
 // монтируются в server/index.ts — порядок монтирования там критичен.
@@ -78,18 +79,27 @@ export function registerRoutes(app: Express): void {
   registerDebugRoutes(app);
   registerUserRoutes(app);
 
-  // Публичный эндпоинт цен тарифов — читается из env в runtime, без пересборки
-  app.get('/api/config/pricing', (_req, res) => {
-    // Читаем из env — поддерживаем оба варианта имён (PLAN_PRICE_* и VITE_PLAN_PRICE_*)
+  // Публичный эндпоинт цен тарифов
+  // Приоритет: Directus global_api_keys → env vars → дефолты
+  app.get('/api/config/pricing', async (_req, res) => {
+    const getNum = async (directusKey: string, envKey: string, fallback: number): Promise<number> => {
+      try {
+        const val = await globalApiKeysService.getGlobalApiKey(directusKey);
+        if (val) return Number(val);
+      } catch {}
+      return Number(process.env[envKey] ?? process.env[`VITE_${envKey}`] ?? fallback);
+    };
+
+    const [proPrice, proOriginal, basicPrice, basicOriginal] = await Promise.all([
+      getNum('PLAN_PRICE_PRO',          'PLAN_PRICE_PRO',          670),
+      getNum('PLAN_PRICE_PRO_ORIGINAL', 'PLAN_PRICE_PRO_ORIGINAL', 1990),
+      getNum('PLAN_PRICE_BASIC',        'PLAN_PRICE_BASIC',        390),
+      getNum('PLAN_PRICE_BASIC_ORIGINAL','PLAN_PRICE_BASIC_ORIGINAL',990),
+    ]);
+
     res.json({
-      pro: {
-        price:    Number(process.env.PLAN_PRICE_PRO    ?? process.env.VITE_PLAN_PRICE_PRO    ?? 670),
-        original: Number(process.env.PLAN_PRICE_PRO_ORIGINAL ?? process.env.VITE_PLAN_PRICE_PRO_ORIGINAL ?? 1990),
-      },
-      basic: {
-        price:    Number(process.env.PLAN_PRICE_BASIC    ?? process.env.VITE_PLAN_PRICE_BASIC    ?? 390),
-        original: Number(process.env.PLAN_PRICE_BASIC_ORIGINAL ?? process.env.VITE_PLAN_PRICE_BASIC_ORIGINAL ?? 990),
-      },
+      pro:   { price: proPrice,   original: proOriginal   },
+      basic: { price: basicPrice, original: basicOriginal },
     });
   });
 

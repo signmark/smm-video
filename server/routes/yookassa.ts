@@ -215,6 +215,27 @@ router.post('/payments/:paymentId/activate', async (req: Request, res: Response)
     }
 
     await activateSubscription(metaUserId, metaPlan);
+
+    // Отправляем purchase postback если у пользователя есть партнёрский код
+    try {
+      const userResp2 = await fetch(`${DIRECTUS_URL}/users/${metaUserId}?fields=omemo_partner_code,email,telegram_chat_id`, {
+        headers: { 'Authorization': `Bearer ${ADMIN_TOKEN}` },
+      });
+      if (userResp2.ok) {
+        const { data: ud } = await userResp2.json();
+        if (ud?.omemo_partner_code) {
+          sendPurchasePostback({
+            partnerCode: ud.omemo_partner_code,
+            userId: metaUserId,
+            paymentId,
+            amount: parseFloat(payment.amount?.value || '0'),
+            email: ud.email,
+            telegramId: ud.telegram_chat_id,
+          }).catch(() => {});
+        }
+      }
+    } catch (_) {}
+
     return res.json({ ok: true, plan: metaPlan });
   } catch (err: any) {
     console.error('[yookassa/activate] Ошибка:', err?.message);

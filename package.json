@@ -28,6 +28,7 @@
     "test:e2e:video": "cd video-app && npx tsx --test e2e/video-generator.e2e.ts",
     "test:e2e:video:fast": "cd video-app && SKIP_SLOW=1 npx tsx --test e2e/video-generator.e2e.ts",
     "test:e2e:video:full": "cd video-app && npx tsx --test e2e/video-generator.e2e.ts",
+    "test:quality:video": "cd video-app && npx tsx --test e2e/video-quality.e2e.ts",
     "test:playwright": "playwright test",
     "test:playwright:headed": "playwright test --headed",
     "test:playwright:smm": "playwright test smm-flow",

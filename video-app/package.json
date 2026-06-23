@@ -8,7 +8,9 @@
     "start": "node --experimental-vm-modules node_modules/.bin/tsx server/index.ts",
     "test:e2e": "npx tsx --test e2e/video-generator.e2e.ts",
     "test:e2e:fast": "SKIP_SLOW=1 npx tsx --test e2e/video-generator.e2e.ts",
-    "test:e2e:generate": "npx tsx --test e2e/video-generator.e2e.ts"
+    "test:e2e:generate": "npx tsx --test e2e/video-generator.e2e.ts",
+    "test:quality": "npx tsx --test e2e/video-quality.e2e.ts",
+    "test:quality:existing": "npx tsx --test e2e/video-quality.e2e.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.37.0",

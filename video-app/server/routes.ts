@@ -1016,7 +1016,7 @@ async function runResumePipeline(projectId: string) {
         outputPath: videoPath,
         tempDir,
         format: project.format,
-        flashCut: true,
+        crossfadeDuration: 0.5,
         hookTextOverlay: true,
         onProgress: async (pct, msg) => {
           await updateProject(projectId, { progress: 78 + Math.round(pct * 0.18), progressMessage: msg });
@@ -1035,6 +1035,7 @@ async function runResumePipeline(projectId: string) {
           color: (project as any).subtitleColor,
         },
         actualDurations: resumeActualDurations,
+        crossfadeSec: 0.5,
       });
 
       await update({ progress: 98, progressMessage: 'Добавляю фоновую музыку...' });
@@ -1534,7 +1535,7 @@ async function runGenerationPipeline(projectId: string) {
         outputPath: videoPath,
         tempDir,
         format: project.format,
-        flashCut: true,
+        crossfadeDuration: 0.5,
         hookTextOverlay: true,
         onProgress: async (pct, msg) => {
           await updateProject(projectId, { progress: 75 + Math.round(pct * 0.20), progressMessage: msg });
@@ -1554,7 +1555,7 @@ async function runGenerationPipeline(projectId: string) {
           color: latestProject?.subtitleColor ?? project.subtitleColor,
         },
         actualDurations: chainActualDurations,
-        interSceneGapSec: 0.12,
+        crossfadeSec: 0.5,
       });
 
       await update({ progress: 98, progressMessage: 'Добавляю фоновую музыку...' });
@@ -1650,7 +1651,7 @@ async function runGenerationPipeline(projectId: string) {
         outputPath: videoPath,
         tempDir,
         format: project.format,
-        flashCut: true,
+        crossfadeDuration: 0.5,
         hookTextOverlay: true,
         onProgress: async (pct, msg) => {
           await updateProject(projectId, { progress: 75 + Math.round(pct * 0.20), progressMessage: msg });
@@ -1669,7 +1670,7 @@ async function runGenerationPipeline(projectId: string) {
           color: project.subtitleColor,
         },
         actualDurations: i2vActualDurations,
-        interSceneGapSec: 0.12,
+        crossfadeSec: 0.5,
       });
 
       await update({ progress: 98, progressMessage: 'Добавляю фоновую музыку...' });
@@ -1901,7 +1902,7 @@ async function runGenerationPipeline(projectId: string) {
           outputPath: videoPath,
           tempDir,
           format: project.format,
-          flashCut: true,
+          crossfadeDuration: 0.5,
           hookTextOverlay: true,
           onProgress: async (pct, msg) => {
             await updateProject(projectId, { progress: 78 + Math.round(pct * 0.18), progressMessage: msg });
@@ -1920,7 +1921,7 @@ async function runGenerationPipeline(projectId: string) {
             color: project.subtitleColor,
           },
           actualDurations: parallelActualDurations,
-          interSceneGapSec: 0.12,
+          crossfadeSec: 0.5,
         });
 
         chainSucceeded = true;

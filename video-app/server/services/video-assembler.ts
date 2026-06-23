@@ -715,8 +715,14 @@ export async function burnSubtitles(params: {
    * video timeline that includes these inter-scene gaps.
    */
   interSceneGapSec?: number;
+  /**
+   * Crossfade duration between scenes (seconds). When > 0, each scene's start
+   * time is shifted back by `sceneIndex * crossfadeSec` because xfade overlaps
+   * clips. Must match the crossfadeDuration passed to assembleFromClips.
+   */
+  crossfadeSec?: number;
 }): Promise<void> {
-  const { videoPath, scenes, format, style, options = {}, actualDurations, wordTimestamps, interSceneGapSec = 0 } = params;
+  const { videoPath, scenes, format, style, options = {}, actualDurations, wordTimestamps, interSceneGapSec = 0, crossfadeSec = 0 } = params;
 
   if (style === 'none') return;
 
@@ -731,12 +737,13 @@ export async function burnSubtitles(params: {
   const entries: KaraokeSceneEntry[] = scenes.map((s, i) => {
     // Use probed actual duration when available; fall back to planned duration
     const dur = (actualDurations && actualDurations[i] > 0) ? actualDurations[i] : s.duration;
-    // Account for inter-scene gaps (e.g. flash-cut clips inserted between scenes)
-    const startTime = currentTime + i * interSceneGapSec;
+    // Account for inter-scene gaps (flash-cut +gap) and crossfade overlaps (-overlap).
+    // With crossfade, each scene starts crossfadeSec earlier than plain concatenation.
+    const startTime = currentTime + i * interSceneGapSec - i * crossfadeSec;
     const entry: KaraokeSceneEntry = {
       narration: s.narration || '',
       text: s.text || s.narration || '',
-      startTime,
+      startTime: Math.max(0, startTime),
       duration: dur,
     };
     currentTime += dur;
@@ -976,18 +983,21 @@ async function assemblWithCrossfade(params: {
   // Build filter_complex for N clips with xfade + acrossfade
   const filterParts: string[] = [];
 
-  // Video xfade chain
-  let vOffset = 0;
+  // Video xfade chain.
+  // Correct formula: offset[i] = sum(d[0..i-1]) - i*cf
+  // Each xfade "consumes" cf seconds from the timeline, so each subsequent
+  // transition must be shifted back by cf relative to plain concatenation.
+  let cumDur = 0;
   let prevVLabel = '[0:v]';
   for (let i = 1; i < n; i++) {
-    vOffset += actualDurations[i - 1] - cf;
+    cumDur += actualDurations[i - 1];
+    const vOffset = Math.max(0, cumDur - i * cf);
     const outLabel = i === n - 1 ? '[vout]' : `[v${i}]`;
     filterParts.push(`${prevVLabel}[${i}:v]xfade=transition=fade:duration=${cf}:offset=${vOffset.toFixed(3)}${outLabel}`);
     prevVLabel = outLabel;
-    if (i < n - 1) vOffset += cf; // adjust for next offset calculation — xfade consumes cf from next start
   }
 
-  // Audio acrossfade chain
+  // Audio acrossfade chain (ffmpeg handles timing automatically via overlap)
   let prevALabel = '[0:a]';
   for (let i = 1; i < n; i++) {
     const outLabel = i === n - 1 ? '[aout]' : `[a${i}]`;

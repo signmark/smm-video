@@ -1399,6 +1399,7 @@ async function runGenerationPipeline(projectId: string) {
           color: latestProject?.subtitleColor ?? project.subtitleColor,
         },
         actualDurations: chainActualDurations,
+        interSceneGapSec: 0.12,
       });
 
       await update({ progress: 98, progressMessage: 'Добавляю фоновую музыку...' });
@@ -1513,6 +1514,7 @@ async function runGenerationPipeline(projectId: string) {
           color: project.subtitleColor,
         },
         actualDurations: i2vActualDurations,
+        interSceneGapSec: 0.12,
       });
 
       await update({ progress: 98, progressMessage: 'Добавляю фоновую музыку...' });
@@ -1763,6 +1765,7 @@ async function runGenerationPipeline(projectId: string) {
             color: project.subtitleColor,
           },
           actualDurations: parallelActualDurations,
+          interSceneGapSec: 0.12,
         });
 
         chainSucceeded = true;

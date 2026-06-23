@@ -496,10 +496,21 @@ function generateTiktokASS(scenes: KaraokeSceneEntry[], format: VideoFormat, opt
   for (const s of scenes) {
     const words = s.narration.trim().split(/\s+/).filter(Boolean);
     if (!words.length) continue;
-    const wordDur = s.duration / words.length;
+
+    // Proportional timing: longer words (more chars) get more screen time to
+    // approximate TTS speech duration. Strip punctuation for the char count so
+    // trailing commas/dots don't inflate short words.
+    const charCounts = words.map(w => w.replace(/[^\p{L}\p{N}]/gu, '').length || 1);
+    const totalChars = charCounts.reduce((a, b) => a + b, 0);
+    const minWordDur = Math.min(0.20, s.duration / words.length);
+
+    let cursor = s.startTime;
     words.forEach((word, i) => {
-      const start = s.startTime + i * wordDur;
-      const end = start + wordDur;
+      const proportion = charCounts[i] / totalChars;
+      const wordDur = Math.max(minWordDur, s.duration * proportion);
+      const start = cursor;
+      const end = Math.min(start + wordDur, s.startTime + s.duration);
+      cursor += wordDur;
       lines.push(`Dialogue: 0,${formatAssTime(start)},${formatAssTime(end)},TikTok,,0,0,0,,{\\fad(80,80)}${word}`);
     });
   }
@@ -697,8 +708,15 @@ export async function burnSubtitles(params: {
    * `start`/`end` values are relative to the scene's audio clip start.
    */
   wordTimestamps?: WordTimestamp[][];
+  /**
+   * Duration of silent gap inserted between scenes (e.g. flash-cut = 0.12s).
+   * When provided, each scene's subtitle start time is shifted forward by
+   * `sceneIndex * interSceneGapSec` so subtitles stay in sync with the actual
+   * video timeline that includes these inter-scene gaps.
+   */
+  interSceneGapSec?: number;
 }): Promise<void> {
-  const { videoPath, scenes, format, style, options = {}, actualDurations, wordTimestamps } = params;
+  const { videoPath, scenes, format, style, options = {}, actualDurations, wordTimestamps, interSceneGapSec = 0 } = params;
 
   if (style === 'none') return;
 
@@ -713,10 +731,12 @@ export async function burnSubtitles(params: {
   const entries: KaraokeSceneEntry[] = scenes.map((s, i) => {
     // Use probed actual duration when available; fall back to planned duration
     const dur = (actualDurations && actualDurations[i] > 0) ? actualDurations[i] : s.duration;
+    // Account for inter-scene gaps (e.g. flash-cut clips inserted between scenes)
+    const startTime = currentTime + i * interSceneGapSec;
     const entry: KaraokeSceneEntry = {
       narration: s.narration || '',
       text: s.text || s.narration || '',
-      startTime: currentTime,
+      startTime,
       duration: dur,
     };
     currentTime += dur;

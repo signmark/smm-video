@@ -255,7 +255,7 @@ router.get('/music/preview', async (req, res) => {
 
 router.post('/videos', async (req, res) => {
   try {
-    const { title, topic, format, duration, language, animationModel, subtitleStyle, voice, clipDuration, subtitleFont, subtitleSize, subtitleColor, musicStyle, customScenario, landingUrl, additionalDetails, scriptMode } = req.body;
+    const { title, topic, format, duration, language, animationModel, subtitleStyle, voice, clipDuration, subtitleFont, subtitleSize, subtitleColor, musicStyle, musicVolume, customScenario, landingUrl, additionalDetails, scriptMode } = req.body;
     if (!format || !duration) {
       return res.status(400).json({ error: 'format and duration are required' });
     }
@@ -293,6 +293,7 @@ router.post('/videos', async (req, res) => {
       subtitleSize: ['small','medium','large','xlarge'].includes(subtitleSize) ? subtitleSize : undefined,
       subtitleColor: subtitleColor && /^#[0-9a-fA-F]{6}$/.test(subtitleColor) ? subtitleColor : undefined,
       musicStyle: typeof musicStyle === 'string' ? musicStyle : undefined,
+      musicVolume: (typeof musicVolume === 'number' && musicVolume >= 0 && musicVolume <= 1) ? musicVolume : undefined,
       customScenario: hasScenario ? String(customScenario).trim() : undefined,
       landingUrl: hasLandingUrl ? String(landingUrl).trim() : undefined,
       additionalDetails: (additionalDetails && String(additionalDetails).trim()) ? String(additionalDetails).trim() : undefined,
@@ -478,7 +479,7 @@ router.patch('/videos/:id/scenes/:sceneId', async (req, res) => {
     if (!project) return res.status(404).json({ error: 'Not found' });
     if (!project.script) return res.status(400).json({ error: 'No script' });
 
-    const { text, t2vPrompt, imagePrompt, narration, selectedVariant, videoSource, stockQuery, imagePromptRu, t2vPromptRu } = req.body;
+    const { text, t2vPrompt, imagePrompt, narration, selectedVariant, videoSource, stockQuery, imagePromptRu, t2vPromptRu, duration: sceneDuration } = req.body;
 
     if (selectedVariant !== undefined) {
       const sv = Number(selectedVariant);
@@ -515,6 +516,7 @@ router.patch('/videos/:id/scenes/:sceneId', async (req, res) => {
       if (typeof t2vPromptRu === 'string') updated.t2vPromptRu = t2vPromptRu.trim();
       if (translatedImagePrompt) updated.imagePrompt = translatedImagePrompt;
       if (translatedT2vPrompt) updated.t2vPrompt = translatedT2vPrompt;
+      if (typeof sceneDuration === 'number' && sceneDuration > 0 && sceneDuration <= 60) updated.duration = sceneDuration;
       return updated;
     });
     const updatedScript = { ...project.script, scenes };
@@ -743,6 +745,156 @@ router.post('/videos/:id/scenes/:sceneIndex/upload-frame', async (req, res) => {
   }
 });
 
+// ── New scene-level routes ─────────────────────────────────────────────────────
+
+// Delete a scene
+router.delete('/videos/:id/scenes/:sceneIndex', async (req, res) => {
+  try {
+    const project = await getProject(req.params.id);
+    if (!project) return res.status(404).json({ error: 'Not found' });
+    if (!project.script) return res.status(400).json({ error: 'No script' });
+    const idx = parseInt(req.params.sceneIndex, 10);
+    if (isNaN(idx) || idx < 0 || idx >= project.script.scenes.length) {
+      return res.status(400).json({ error: 'Invalid scene index' });
+    }
+    if (project.script.scenes.length <= 1) {
+      return res.status(400).json({ error: 'Cannot delete the only scene' });
+    }
+    const scenes = project.script.scenes.filter((_, i) => i !== idx);
+    await updateProject(req.params.id, { script: { ...project.script, scenes } });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Add a blank scene
+router.post('/videos/:id/scenes', async (req, res) => {
+  try {
+    const project = await getProject(req.params.id);
+    if (!project) return res.status(404).json({ error: 'Not found' });
+    if (!project.script) return res.status(400).json({ error: 'No script' });
+    const { insertAt } = req.body;
+    const newScene: Scene = {
+      id: crypto.randomUUID(),
+      text: 'Новая сцена',
+      imagePrompt: 'A cinematic scene',
+      stockQuery: 'cinematic',
+      videoSource: 'ai',
+      duration: project.clipDuration ?? 5,
+    };
+    const scenes = [...project.script.scenes];
+    const pos = (typeof insertAt === 'number' && insertAt >= 0 && insertAt <= scenes.length) ? insertAt : scenes.length;
+    scenes.splice(pos, 0, newScene);
+    await updateProject(req.params.id, { script: { ...project.script, scenes } });
+    res.json({ success: true, insertedAt: pos });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Reorder scenes
+router.post('/videos/:id/scenes/reorder', async (req, res) => {
+  try {
+    const project = await getProject(req.params.id);
+    if (!project) return res.status(404).json({ error: 'Not found' });
+    if (!project.script) return res.status(400).json({ error: 'No script' });
+    const { order } = req.body; // array of new indices e.g. [2,0,1]
+    if (!Array.isArray(order) || order.length !== project.script.scenes.length) {
+      return res.status(400).json({ error: 'order must be an array with same length as scenes' });
+    }
+    const scenes = order.map((i: number) => project.script!.scenes[i]);
+    await updateProject(req.params.id, { script: { ...project.script, scenes } });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Re-animate a single scene (redo FAL.AI call for that scene)
+router.post('/videos/:id/scenes/:sceneIndex/reanimate', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const project = await getProject(id);
+    if (!project) return res.status(404).json({ error: 'Not found' });
+    if (!project.script) return res.status(400).json({ error: 'No script' });
+    const idx = parseInt(req.params.sceneIndex, 10);
+    if (isNaN(idx) || idx < 0 || idx >= project.script.scenes.length) {
+      return res.status(400).json({ error: 'Invalid scene index' });
+    }
+    const scene = project.script.scenes[idx];
+    const imagesDir = DATA_PATHS.imagesDir(id);
+    const clipsDir = path.join(imagesDir, 'clips');
+    await fs.mkdir(clipsDir, { recursive: true });
+    const clipPath = path.join(clipsDir, `clip_${idx}.mp4`);
+    const model = project.animationModel as any;
+    const dur = project.clipDuration ?? (scene as any).duration ?? 5;
+    const { format } = project;
+
+    res.json({ success: true, message: 'Reanimate started' });
+
+    // Run async
+    (async () => {
+      type SceneStatusVal = 'pending' | 'animating' | 'done' | 'error';
+      const sceneStatuses: Record<number, SceneStatusVal> = { ...(project.script!.sceneStatuses ?? {}), [idx]: 'animating' as SceneStatusVal };
+      await updateProject(id, { script: { ...project.script!, sceneStatuses } });
+      try {
+        if (scene.videoSource !== 'stock') {
+          const variantIdx = (scene as any).selectedVariant ?? 0;
+          const variantPath = path.join(imagesDir, 'variants', `scene_${idx}_v${variantIdx}.jpg`);
+          const fallbackPath = path.join(imagesDir, `scene_${idx}_v0.jpg`);
+          const imgPath = existsSync(variantPath) ? variantPath : (existsSync(fallbackPath) ? fallbackPath : null);
+
+          if (scene.videoSource === 'stock-animated' || !imgPath) {
+            await animateText({ prompt: scene.imagePrompt, outputPath: clipPath, model, durationSeconds: dur, format });
+          } else {
+            const imageBuffer = await fs.readFile(imgPath);
+            await animateFrame({ imageBuffer, prompt: scene.imagePrompt, outputPath: clipPath, model, durationSeconds: dur, format });
+          }
+        }
+        const fresh = await getProject(id);
+        const doneStatuses: Record<number, SceneStatusVal> = { ...(fresh?.script?.sceneStatuses ?? {}), [idx]: 'done' as SceneStatusVal };
+        await updateProject(id, { script: { ...fresh!.script!, sceneStatuses: doneStatuses } });
+      } catch (e: any) {
+        const fresh = await getProject(id);
+        const errStatuses: Record<number, SceneStatusVal> = { ...(fresh?.script?.sceneStatuses ?? {}), [idx]: 'error' as SceneStatusVal };
+        await updateProject(id, { script: { ...fresh!.script!, sceneStatuses: errStatuses } });
+        console.error(`[reanimate] scene ${idx} error:`, e.message);
+      }
+    })().catch(console.error);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Regenerate TTS audio for a single scene
+router.post('/videos/:id/scenes/:sceneIndex/regenerate-audio', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const project = await getProject(id);
+    if (!project) return res.status(404).json({ error: 'Not found' });
+    if (!project.script) return res.status(400).json({ error: 'No script' });
+    const idx = parseInt(req.params.sceneIndex, 10);
+    if (isNaN(idx) || idx < 0 || idx >= project.script.scenes.length) {
+      return res.status(400).json({ error: 'Invalid scene index' });
+    }
+    const scene = project.script.scenes[idx];
+    const imagesDir = DATA_PATHS.imagesDir(id);
+    await fs.mkdir(path.join(imagesDir, 'audio'), { recursive: true });
+    const audioPath = path.join(imagesDir, 'audio', `scene_${idx}.mp3`);
+    await generateAudio({
+      text: scene.narration || scene.text,
+      language: project.language,
+      outputPath: audioPath,
+      targetDuration: project.clipDuration ?? (scene as any).duration ?? 5,
+      voice: project.voice,
+    });
+    res.json({ success: true, message: 'Audio regenerated' });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Resume pipeline from the furthest completed stage
 router.post('/videos/:id/resume', async (req, res) => {
   try {
@@ -764,7 +916,7 @@ router.post('/videos/:id/resume', async (req, res) => {
   }
 });
 
-async function applyMusic(projectId: string, videoPath: string, topic: string, scenes: { duration: number }[], clipDuration?: number, musicStyle?: string, scriptMode?: string): Promise<void> {
+async function applyMusic(projectId: string, videoPath: string, topic: string, scenes: { duration: number }[], clipDuration?: number, musicStyle?: string, scriptMode?: string, musicVolume?: number): Promise<void> {
   // Whoosh SFX on scene transitions (viral mode)
   if (scriptMode === 'viral') {
     await mixWhooshSFX({ videoPath, sceneDurations: scenes.map(s => clipDuration ?? s.duration) });
@@ -773,7 +925,7 @@ async function applyMusic(projectId: string, videoPath: string, topic: string, s
   const musicPath = videoPath.replace(/\.mp4$/, '_bg_music.mp3');
   const musicFile = await generateBackgroundMusic({ style: musicStyle, outputPath: musicPath, targetDurationSec: totalDuration });
   if (musicFile) {
-    await mixBackgroundMusic({ videoPath, musicPath: musicFile });
+    await mixBackgroundMusic({ videoPath, musicPath: musicFile, musicVolume });
     await fs.unlink(musicPath).catch(() => {});
   }
 }
@@ -886,7 +1038,7 @@ async function runResumePipeline(projectId: string) {
       });
 
       await update({ progress: 98, progressMessage: 'Добавляю фоновую музыку...' });
-      await applyMusic(projectId, videoPath, project.topic, script.scenes, project.clipDuration, project.musicStyle, project.scriptMode);
+      await applyMusic(projectId, videoPath, project.topic, script.scenes, project.clipDuration, project.musicStyle, project.scriptMode, project.musicVolume);
       await waitForFile(videoPath);
       await update({
         status: 'done', progress: 100, progressMessage: 'Готово!',
@@ -1406,7 +1558,7 @@ async function runGenerationPipeline(projectId: string) {
       });
 
       await update({ progress: 98, progressMessage: 'Добавляю фоновую музыку...' });
-      await applyMusic(projectId, videoPath, project.topic, script.scenes, project.clipDuration, undefined, project.scriptMode);
+      await applyMusic(projectId, videoPath, project.topic, script.scenes, project.clipDuration, undefined, project.scriptMode, project.musicVolume);
       await waitForFile(videoPath);
       await update({
         status: 'done',
@@ -1521,7 +1673,7 @@ async function runGenerationPipeline(projectId: string) {
       });
 
       await update({ progress: 98, progressMessage: 'Добавляю фоновую музыку...' });
-      await applyMusic(projectId, videoPath, project.topic, script.scenes, project.clipDuration, project.musicStyle, project.scriptMode);
+      await applyMusic(projectId, videoPath, project.topic, script.scenes, project.clipDuration, project.musicStyle, project.scriptMode, project.musicVolume);
       await waitForFile(videoPath);
       await update({
         status: 'done',
@@ -1869,7 +2021,7 @@ async function runGenerationPipeline(projectId: string) {
 
     // ── Done ─────────────────────────────────────────────────────────────────
     await update({ progress: 98, progressMessage: 'Добавляю фоновую музыку...' });
-    await applyMusic(projectId, videoPath, project.topic, script.scenes, project.clipDuration, project.musicStyle, project.scriptMode);
+    await applyMusic(projectId, videoPath, project.topic, script.scenes, project.clipDuration, project.musicStyle, project.scriptMode, project.musicVolume);
     await waitForFile(videoPath);
     await update({
       status: 'done',

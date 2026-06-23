@@ -390,6 +390,7 @@ export default function Create() {
   const [subtitleColor, setSubtitleColor] = useState('#ffffff');
   const [voice, setVoice] = useState('alloy');
   const [musicStyle, setMusicStyle] = useState<MusicStyleValue>('ambient');
+  const [musicVolume, setMusicVolume] = useState(0.18);
   const [playingVoice, setPlayingVoice] = useState<string | null>(null);
   const [playingMusic, setPlayingMusic] = useState(false);
   const [loadingMusicPreview, setLoadingMusicPreview] = useState(false);
@@ -564,6 +565,7 @@ export default function Create() {
         subtitleSize: subtitleStyle !== 'none' ? subtitleSize : undefined,
         subtitleColor: subtitleStyle !== 'none' ? subtitleColor : undefined,
         musicStyle,
+        musicVolume: musicStyle !== 'none' ? musicVolume : undefined,
       };
 
       if (inputMode === 'custom') {
@@ -1022,7 +1024,28 @@ export default function Create() {
                 </div>
               )}
               <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5, padding: '6px 10px', borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}>
-                🎵 Громкость фоновой музыки ~18% — голос всегда преобладает. Треки Jamendo под лицензией CC.
+                🎵 Треки Jamendo под лицензией CC.
+              </div>
+              {/* Music volume slider */}
+              <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--text-muted)' }}>
+                  <span>🔊 Громкость музыки</span>
+                  <span style={{ fontWeight: 600, color: 'var(--text)' }}>{Math.round(musicVolume * 100)}%</span>
+                </div>
+                <input
+                  type="range"
+                  min={0.05}
+                  max={0.5}
+                  step={0.01}
+                  value={musicVolume}
+                  onChange={e => setMusicVolume(parseFloat(e.target.value))}
+                  style={{ width: '100%', accentColor: 'var(--accent)', cursor: 'pointer' }}
+                />
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, color: 'var(--text-muted)' }}>
+                  <span>5% (тихо)</span>
+                  <span style={{ color: musicVolume <= 0.2 ? 'var(--accent)' : 'var(--text-muted)' }}>18% (по умолчанию)</span>
+                  <span>50% (громко)</span>
+                </div>
               </div>
             </div>
           )}

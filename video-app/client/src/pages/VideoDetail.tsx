@@ -576,6 +576,12 @@ export default function VideoDetail({ id }: { id: string }) {
   const [editingStockQuery, setEditingStockQuery] = useState<string | null>(null); // sceneId
   const [stockQueryDraft, setStockQueryDraft] = useState('');
   const [retryingStock, setRetryingStock] = useState<Set<string>>(new Set());
+  const [reanimatingScenes, setReanimatingScenes] = useState<Set<number>>(new Set());
+  const [regenAudioScenes, setRegenAudioScenes] = useState<Set<number>>(new Set());
+  const [deletingSceneIdx, setDeletingSceneIdx] = useState<number | null>(null);
+  const [addingScene, setAddingScene] = useState(false);
+  const [editingDurationIdx, setEditingDurationIdx] = useState<number | null>(null);
+  const [durationDraft, setDurationDraft] = useState(5);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   async function fetchProject() {
@@ -799,6 +805,82 @@ export default function VideoDetail({ id }: { id: string }) {
     });
   }
 
+  async function handleReanimateScene(sceneIndex: number) {
+    setReanimatingScenes((s) => new Set(s).add(sceneIndex));
+    try {
+      await fetch(`${API}/videos/${id}/scenes/${sceneIndex}/reanimate`, { method: 'POST' });
+      if (!pollRef.current) pollRef.current = setInterval(fetchProject, 3000);
+    } finally {
+      setTimeout(() => setReanimatingScenes((s) => { const n = new Set(s); n.delete(sceneIndex); return n; }), 2000);
+    }
+  }
+
+  async function handleDeleteScene(sceneIndex: number) {
+    if (!confirm(`Удалить сцену ${sceneIndex + 1}?`)) return;
+    setDeletingSceneIdx(sceneIndex);
+    try {
+      const res = await fetch(`${API}/videos/${id}/scenes/${sceneIndex}`, { method: 'DELETE' });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Ошибка'); return; }
+      await fetchProject();
+    } finally {
+      setDeletingSceneIdx(null);
+    }
+  }
+
+  async function handleAddScene(insertAt?: number) {
+    setAddingScene(true);
+    try {
+      const res = await fetch(`${API}/videos/${id}/scenes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ insertAt }),
+      });
+      if (res.ok) await fetchProject();
+    } finally {
+      setAddingScene(false);
+    }
+  }
+
+  async function handleReorderScene(fromIndex: number, dir: 'up' | 'down') {
+    if (!project?.script) return;
+    const scenes = project.script.scenes;
+    const toIndex = dir === 'up' ? fromIndex - 1 : fromIndex + 1;
+    if (toIndex < 0 || toIndex >= scenes.length) return;
+    const order = scenes.map((_, i) => i);
+    order.splice(fromIndex, 1);
+    order.splice(toIndex, 0, fromIndex);
+    const res = await fetch(`${API}/videos/${id}/scenes/reorder`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ order }),
+    });
+    if (res.ok) await fetchProject();
+  }
+
+  async function handleRegenAudio(sceneIndex: number) {
+    setRegenAudioScenes((s) => new Set(s).add(sceneIndex));
+    try {
+      const res = await fetch(`${API}/videos/${id}/scenes/${sceneIndex}/regenerate-audio`, { method: 'POST' });
+      if (!res.ok) { const d = await res.json().catch(() => ({})); alert(d.error || 'Ошибка'); }
+    } finally {
+      setRegenAudioScenes((s) => { const n = new Set(s); n.delete(sceneIndex); return n; });
+    }
+  }
+
+  async function handleSaveDuration(sceneIndex: number, sceneId: string, dur: number) {
+    await fetch(`${API}/videos/${id}/scenes/${sceneId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ duration: dur }),
+    });
+    setProject((p) => {
+      if (!p?.script) return p;
+      const scenes = p.script.scenes.map((s, i) => i === sceneIndex ? { ...s, duration: dur } : s);
+      return { ...p, script: { ...p.script, scenes } };
+    });
+    setEditingDurationIdx(null);
+  }
+
   if (loading) return <LoadingSpinner />;
   if (!project) return null;
 
@@ -984,7 +1066,31 @@ export default function VideoDetail({ id }: { id: string }) {
                 key={scene.id}
                 style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', padding: '14px 16px' }}
               >
-                <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
+                {/* Scene action bar */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                  <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                    <div style={{ width: 24, height: 24, borderRadius: '50%', background: '#7c3aed', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, color: 'white', flexShrink: 0 }}>
+                      {i + 1}
+                    </div>
+                    {scene.role && (
+                      <span style={{
+                        fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', padding: '2px 5px', borderRadius: 3,
+                        background: scene.role === 'hook' ? 'rgba(239,68,68,0.18)' : scene.role === 'cta' ? 'rgba(16,185,129,0.18)' : 'rgba(59,130,246,0.18)',
+                        color: scene.role === 'hook' ? '#f87171' : scene.role === 'cta' ? '#34d399' : '#60a5fa',
+                        border: `1px solid ${scene.role === 'hook' ? 'rgba(239,68,68,0.35)' : scene.role === 'cta' ? 'rgba(16,185,129,0.35)' : 'rgba(59,130,246,0.35)'}`,
+                      }}>
+                        {scene.role === 'hook' ? '🎣' : scene.role === 'cta' ? '🚀' : '⚡'}
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <button onClick={() => handleReorderScene(i, 'up')} disabled={i === 0} title="Выше" style={{ padding: '2px 7px', fontSize: 11, border: '1px solid var(--border)', borderRadius: 4, background: 'transparent', color: i === 0 ? 'var(--text-dim)' : 'var(--text-muted)', cursor: i === 0 ? 'default' : 'pointer' }}>↑</button>
+                    <button onClick={() => handleReorderScene(i, 'down')} disabled={i === (project.script?.scenes.length ?? 0) - 1} title="Ниже" style={{ padding: '2px 7px', fontSize: 11, border: '1px solid var(--border)', borderRadius: 4, background: 'transparent', color: i === (project.script?.scenes.length ?? 0) - 1 ? 'var(--text-dim)' : 'var(--text-muted)', cursor: i === (project.script?.scenes.length ?? 0) - 1 ? 'default' : 'pointer' }}>↓</button>
+                    <button onClick={() => handleAddScene(i + 1)} disabled={addingScene} title="Добавить сцену после" style={{ padding: '2px 7px', fontSize: 11, border: '1px solid var(--border)', borderRadius: 4, background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}>+</button>
+                    <button onClick={() => handleDeleteScene(i)} disabled={deletingSceneIdx === i} title="Удалить сцену" style={{ padding: '2px 7px', fontSize: 11, border: '1px solid rgba(239,68,68,0.3)', borderRadius: 4, background: 'transparent', color: '#f87171', cursor: 'pointer' }}>✕</button>
+                  </div>
+                </div>
+              <div style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, flexShrink: 0 }}>
                     <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#7c3aed', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700, color: 'white' }}>
                       {i + 1}
@@ -1028,11 +1134,32 @@ export default function VideoDetail({ id }: { id: string }) {
                       </div>
                     )}
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 8, flexWrap: 'wrap', gap: 6 }}>
-                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                        {project.clipDuration ?? scene.duration}с
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {!project.clipDuration && editingDurationIdx === i ? (
+                          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <input
+                              type="number" min={1} max={60} step={1}
+                              value={durationDraft}
+                              onChange={e => setDurationDraft(Number(e.target.value))}
+                              autoFocus
+                              style={{ width: 48, background: 'var(--bg-card2)', border: '1.5px solid #7c3aed', borderRadius: 4, color: 'var(--text)', padding: '2px 6px', fontSize: 12, outline: 'none' }}
+                              onKeyDown={e => { if (e.key === 'Enter') handleSaveDuration(i, scene.id, durationDraft); if (e.key === 'Escape') setEditingDurationIdx(null); }}
+                            />с
+                            <button onClick={() => handleSaveDuration(i, scene.id, durationDraft)} style={{ padding: '1px 7px', fontSize: 11, border: 'none', borderRadius: 4, background: '#7c3aed', color: 'white', cursor: 'pointer' }}>✓</button>
+                            <button onClick={() => setEditingDurationIdx(null)} style={{ padding: '1px 6px', fontSize: 11, border: '1px solid var(--border)', borderRadius: 4, background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer' }}>✕</button>
+                          </span>
+                        ) : (
+                          <span
+                            onClick={!project.clipDuration ? () => { setEditingDurationIdx(i); setDurationDraft((scene as any).duration ?? 5); } : undefined}
+                            style={{ cursor: !project.clipDuration ? 'pointer' : 'default', textDecoration: !project.clipDuration ? 'underline dotted' : 'none' }}
+                            title={!project.clipDuration ? 'Нажмите для редактирования длительности сцены' : 'Длительность задана глобально'}
+                          >
+                            {project.clipDuration ?? (scene as any).duration ?? 5}с
+                          </span>
+                        )}
                         {(project.animationModel === 'chain' ? i === 0 : !!scene.t2vPrompt)
-                          ? <span style={{ marginLeft: 8, color: '#86efac' }} title="Text-to-Video: видео генерируется напрямую из текстового промпта, без опорного кадра">Текст→Видео</span>
-                          : <span style={{ marginLeft: 8, color: '#93c5fd' }} title="Image-to-Video: сначала генерируется картинка, затем она анимируется в видеоклип">Картинка→Видео</span>}
+                          ? <span style={{ color: '#86efac' }} title="Text-to-Video: видео генерируется напрямую из текстового промпта, без опорного кадра">Текст→Видео</span>
+                          : <span style={{ color: '#93c5fd' }} title="Image-to-Video: сначала генерируется картинка, затем она анимируется в видеоклип">Картинка→Видео</span>}
                       </div>
                       {/* Source toggle */}
                       {(() => {
@@ -1230,13 +1357,26 @@ export default function VideoDetail({ id }: { id: string }) {
                         </>
                       );
                     })()}
-                    <SceneAudioPlayer projectId={project.id} sceneIndex={i} />
+                    <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                      <SceneAudioPlayer projectId={project.id} sceneIndex={i} />
+                      <button
+                        onClick={() => handleRegenAudio(i)}
+                        disabled={regenAudioScenes.has(i)}
+                        title="Перегенерировать TTS для этой сцены"
+                        style={{ padding: '4px 10px', fontSize: 11, border: '1px solid var(--border)', borderRadius: 4, background: 'transparent', color: 'var(--text-muted)', cursor: regenAudioScenes.has(i) ? 'wait' : 'pointer' }}
+                      >{regenAudioScenes.has(i) ? '⏳ Озвучка...' : '🎙️ Перегенерировать аудио'}</button>
+                    </div>
                   </div>
                 </div>
               </div>
             ))}
           </div>
 
+          <button
+            onClick={() => handleAddScene()}
+            disabled={addingScene}
+            style={{ width: '100%', marginBottom: 10, padding: '8px', borderRadius: 'var(--radius-sm)', border: '1px dashed var(--border)', background: 'transparent', color: 'var(--text-muted)', fontSize: 13, cursor: 'pointer' }}
+          >{addingScene ? '⏳' : '+ Добавить сцену'}</button>
           <button
             onClick={handleStartGeneration}
             disabled={generating}
@@ -1288,16 +1428,29 @@ export default function VideoDetail({ id }: { id: string }) {
 
                   <div style={{ padding: '12px 14px' }}>
                     {/* Scene header */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                      <div style={{ width: 24, height: 24, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
-                        {i + 1}
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, flexWrap: 'wrap', gap: 4 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <div style={{ width: 24, height: 24, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                          {i + 1}
+                        </div>
+                        <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>
+                          {project.clipDuration ?? scene.duration}с
+                          {isT2VScene
+                            ? <span style={{ marginLeft: 6, color: '#86efac' }}>Текст→Видео</span>
+                            : <span style={{ marginLeft: 6, color: '#93c5fd' }}>Картинка→Видео</span>}
+                        </span>
                       </div>
-                      <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>
-                        {project.clipDuration ?? scene.duration}с
-                        {isT2VScene
-                          ? <span style={{ marginLeft: 6, color: '#86efac' }}>Текст→Видео</span>
-                          : <span style={{ marginLeft: 6, color: '#93c5fd' }}>Картинка→Видео</span>}
-                      </span>
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <button
+                          onClick={() => handleReanimateScene(i)}
+                          disabled={reanimatingScenes.has(i)}
+                          title="Перегенерировать анимацию для этой сцены"
+                          style={{ padding: '3px 8px', fontSize: 11, border: '1px solid rgba(124,58,237,0.4)', borderRadius: 4, background: 'rgba(124,58,237,0.1)', color: '#c4b5fd', cursor: reanimatingScenes.has(i) ? 'wait' : 'pointer' }}
+                        >{reanimatingScenes.has(i) ? '⏳' : '🎞️ Reanimate'}</button>
+                        <button onClick={() => handleReorderScene(i, 'up')} disabled={i === 0} title="Выше" style={{ padding: '3px 7px', fontSize: 11, border: '1px solid var(--border)', borderRadius: 4, background: 'transparent', color: 'var(--text-muted)', cursor: i === 0 ? 'default' : 'pointer' }}>↑</button>
+                        <button onClick={() => handleReorderScene(i, 'down')} disabled={i === (project.script?.scenes.length ?? 0) - 1} title="Ниже" style={{ padding: '3px 7px', fontSize: 11, border: '1px solid var(--border)', borderRadius: 4, background: 'transparent', color: 'var(--text-muted)', cursor: i === (project.script?.scenes.length ?? 0) - 1 ? 'default' : 'pointer' }}>↓</button>
+                        <button onClick={() => handleDeleteScene(i)} disabled={deletingSceneIdx === i} title="Удалить сцену" style={{ padding: '3px 7px', fontSize: 11, border: '1px solid rgba(239,68,68,0.3)', borderRadius: 4, background: 'transparent', color: '#f87171', cursor: 'pointer' }}>✕</button>
+                      </div>
                     </div>
 
                     {/* Subtitle editor */}
@@ -1332,7 +1485,15 @@ export default function VideoDetail({ id }: { id: string }) {
                       </div>
                     )}
 
-                    <SceneAudioPlayer projectId={project.id} sceneIndex={i} />
+                    <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
+                      <SceneAudioPlayer projectId={project.id} sceneIndex={i} />
+                      <button
+                        onClick={() => handleRegenAudio(i)}
+                        disabled={regenAudioScenes.has(i)}
+                        title="Перегенерировать TTS для этой сцены"
+                        style={{ padding: '4px 10px', fontSize: 11, border: '1px solid var(--border)', borderRadius: 4, background: 'transparent', color: 'var(--text-muted)', cursor: regenAudioScenes.has(i) ? 'wait' : 'pointer' }}
+                      >{regenAudioScenes.has(i) ? '⏳ Озвучка...' : '🎙️ Переозвучить'}</button>
+                    </div>
                   </div>
                 </div>
               );

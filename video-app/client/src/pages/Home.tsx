@@ -43,6 +43,7 @@ const FORMAT_ICON: Record<string, string> = {
 export default function Home() {
   const [projects, setProjects] = useState<VideoProject[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
 
   async function fetchProjects() {
     try {
@@ -102,8 +103,22 @@ export default function Home() {
       {projects.length === 0 ? (
         <EmptyState />
       ) : (
+        <>
+        {projects.length > 3 && (
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="🔍 Поиск по названию..."
+            style={{
+              width: '100%', boxSizing: 'border-box', marginBottom: 16,
+              padding: '10px 14px', borderRadius: 'var(--radius-sm)',
+              border: '1px solid var(--border)', background: 'var(--bg-card)',
+              color: 'var(--text)', fontSize: 14, outline: 'none',
+            }}
+          />
+        )}
         <div style={{ display: 'grid', gap: 12 }}>
-          {projects.map((p) => (
+          {projects.filter(p => !search || p.title?.toLowerCase().includes(search.toLowerCase()) || p.topic?.toLowerCase().includes(search.toLowerCase())).map((p) => (
             <ProjectCard
               key={p.id}
               project={p}
@@ -121,6 +136,7 @@ export default function Home() {
             />
           ))}
         </div>
+        </>
       )}
     </div>
   );

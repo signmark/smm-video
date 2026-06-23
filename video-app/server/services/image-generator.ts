@@ -16,7 +16,7 @@ const HF_SIZES: Record<VideoFormat, { width: number; height: number }> = {
 };
 
 const FAL_IMAGE_SIZE: Record<VideoFormat, string> = {
-  '9:16': 'portrait_9_16',
+  '9:16': 'portrait_16_9',
   '16:9': 'landscape_16_9',
   '1:1': 'square',
 };

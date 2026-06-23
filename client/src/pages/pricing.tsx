@@ -22,8 +22,8 @@ const PLANS = [
   {
     key: 'pro',
     name: 'Профессиональный',
-    price: 670,
-    originalPrice: 1990,
+    price: Number(import.meta.env.VITE_PLAN_PRICE_PRO ?? 670),
+    originalPrice: Number(import.meta.env.VITE_PLAN_PRICE_PRO_ORIGINAL ?? 1990),
     period: 'мес',
     description: 'Полный доступ ко всем функциям платформы',
     popular: true,
@@ -47,8 +47,8 @@ const PLANS = [
   {
     key: 'basic',
     name: 'Базовый',
-    price: 390,
-    originalPrice: 990,
+    price: Number(import.meta.env.VITE_PLAN_PRICE_BASIC ?? 390),
+    originalPrice: Number(import.meta.env.VITE_PLAN_PRICE_BASIC_ORIGINAL ?? 990),
     period: 'мес',
     description: 'Для небольших проектов и старта',
     popular: false,

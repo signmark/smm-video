@@ -32,9 +32,9 @@ export const PLAN_DURATIONS: Record<string, number> = {
 };
 
 export const PLAN_PRICES: Record<string, string> = {
-  'Базовый': '990 ₽/мес',
-  'Профессиональный': '4990 ₽/мес',
-  'Корпоративный': 'По договорённости',
+  'Базовый':         process.env.PLAN_PRICE_BASIC_LABEL      ?? '990 ₽/мес',
+  'Профессиональный': process.env.PLAN_PRICE_PRO_LABEL       ?? '4990 ₽/мес',
+  'Корпоративный':   process.env.PLAN_PRICE_ENTERPRISE_LABEL ?? 'По договорённости',
 };
 
 const PLAN_CODES: Record<string, string> = {

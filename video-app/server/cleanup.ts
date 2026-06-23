@@ -2,7 +2,7 @@ import fs from 'fs/promises';
 import { existsSync } from 'fs';
 import { listProjects, updateProject, DATA_PATHS } from './db.js';
 
-const RETENTION_DAYS = 3;
+const RETENTION_DAYS = parseInt(process.env.VIDEO_RETENTION_DAYS ?? '30', 10);
 const RETENTION_MS = RETENTION_DAYS * 24 * 60 * 60 * 1000;
 
 export async function cleanupOldVideos(): Promise<void> {

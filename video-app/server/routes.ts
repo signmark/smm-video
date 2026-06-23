@@ -32,7 +32,7 @@ import { generateScript } from './services/script-generator.js';
 import { generateImage, generateLayeredImage } from './services/image-generator.js';
 import { generateAudio } from './services/tts-generator.js';
 import { assembleVideo, assembleFromClips, extractLastFrame, burnSubtitles, subtitleSizeMultiplier, mixBackgroundMusic, mixWhooshSFX, makeStaticClipFromImage, makeTitleCardClip } from './services/video-assembler.js';
-import { generateBackgroundMusic, getMusicStyle } from './services/music-generator.js';
+import { generateBackgroundMusic, getMusicStyle, autoMusicStyle } from './services/music-generator.js';
 
 import { animateFrame, animateText, isT2VModel } from './services/fal-animator.js';
 import { searchAndDownloadStockClip, searchAndDownloadStockPhoto } from './services/stock-video.js';
@@ -286,7 +286,7 @@ router.post('/videos', async (req, res) => {
       duration: Number(duration),
       language: language || 'ru',
       animationModel: ALL_MODELS.includes(animationModel) ? animationModel : 'wan',
-      subtitleStyle: VALID_SUBTITLE_STYLES.includes(subtitleStyle) ? subtitleStyle : 'karaoke',
+      subtitleStyle: VALID_SUBTITLE_STYLES.includes(subtitleStyle) ? subtitleStyle : (format === '9:16' ? 'tiktok' : 'karaoke'),
       voice: (voice && VALID_VOICES.has(voice)) ? voice : undefined,
       clipDuration: (clipDuration === 5 || clipDuration === 10) ? clipDuration : undefined,
       subtitleFont: subtitleFont ? String(subtitleFont) : undefined,
@@ -297,7 +297,7 @@ router.post('/videos', async (req, res) => {
       customScenario: hasScenario ? String(customScenario).trim() : undefined,
       landingUrl: hasLandingUrl ? String(landingUrl).trim() : undefined,
       additionalDetails: (additionalDetails && String(additionalDetails).trim()) ? String(additionalDetails).trim() : undefined,
-      scriptMode: scriptMode === 'viral' ? 'viral' : undefined,
+      scriptMode: scriptMode === 'viral' ? 'viral' : (format === '9:16' ? 'viral' : undefined),
     });
     res.status(201).json(project);
   } catch (err: any) {
@@ -923,7 +923,9 @@ async function applyMusic(projectId: string, videoPath: string, topic: string, s
   }
   const totalDuration = scenes.reduce((s, sc) => s + (clipDuration ?? sc.duration), 0);
   const musicPath = videoPath.replace(/\.mp4$/, '_bg_music.mp3');
-  const musicFile = await generateBackgroundMusic({ style: musicStyle, outputPath: musicPath, targetDurationSec: totalDuration });
+  // Auto-select music style from topic when user hasn't chosen one
+  const effectiveMusicStyle = musicStyle ?? autoMusicStyle(topic);
+  const musicFile = await generateBackgroundMusic({ style: effectiveMusicStyle, outputPath: musicPath, targetDurationSec: totalDuration });
   if (musicFile) {
     await mixBackgroundMusic({ videoPath, musicPath: musicFile, musicVolume });
     await fs.unlink(musicPath).catch(() => {});
@@ -959,7 +961,7 @@ async function runResumePipeline(projectId: string) {
         videoPath,
         scenes,
         format: project.format,
-        style: project.subtitleStyle ?? 'karaoke',
+        style: project.subtitleStyle ?? (project.format === '9:16' ? 'tiktok' : 'karaoke'),
         options: {
           font: (project as any).subtitleFont,
           sizeMultiplier: subtitleSizeMultiplier((project as any).subtitleSize),
@@ -1011,12 +1013,14 @@ async function runResumePipeline(projectId: string) {
       );
 
       const resumeScenes = await maybeWithTitleCard(clipsWithAudio, project.format, tempDir);
+      const isViralResume = project.scriptMode === 'viral';
       const resumeActualDurations = await assembleFromClips({
         scenes: resumeScenes,
         outputPath: videoPath,
         tempDir,
         format: project.format,
-        crossfadeDuration: 0.5,
+        crossfadeDuration: isViralResume ? 0 : 0.5,
+        flashCut: isViralResume,
         hookTextOverlay: true,
         onProgress: async (pct, msg) => {
           await updateProject(projectId, { progress: 78 + Math.round(pct * 0.18), progressMessage: msg });
@@ -1028,14 +1032,14 @@ async function runResumePipeline(projectId: string) {
         videoPath,
         scenes: resumeScenes,
         format: project.format,
-        style: project.subtitleStyle ?? 'karaoke',
+        style: project.subtitleStyle ?? (project.format === '9:16' ? 'tiktok' : 'karaoke'),
         options: {
           font: (project as any).subtitleFont,
           sizeMultiplier: subtitleSizeMultiplier((project as any).subtitleSize),
           color: (project as any).subtitleColor,
         },
         actualDurations: resumeActualDurations,
-        crossfadeSec: 0.5,
+        crossfadeSec: isViralResume ? 0 : 0.5,
       });
 
       await update({ progress: 98, progressMessage: 'Добавляю фоновую музыку...' });
@@ -1530,12 +1534,14 @@ async function runGenerationPipeline(projectId: string) {
 
       await update({ status: 'assembling', progress: 75, progressMessage: 'Chain: склеиваю клипы...' });
       const chainScenes = await maybeWithTitleCard(clipsWithAudio, project.format, tempDir);
+      const isViralChain = project.scriptMode === 'viral';
       const chainActualDurations = await assembleFromClips({
         scenes: chainScenes,
         outputPath: videoPath,
         tempDir,
         format: project.format,
-        crossfadeDuration: 0.5,
+        crossfadeDuration: isViralChain ? 0 : 0.5,
+        flashCut: isViralChain,
         hookTextOverlay: true,
         onProgress: async (pct, msg) => {
           await updateProject(projectId, { progress: 75 + Math.round(pct * 0.20), progressMessage: msg });
@@ -1548,14 +1554,14 @@ async function runGenerationPipeline(projectId: string) {
         videoPath,
         scenes: chainScenes,
         format: project.format,
-        style: latestProject?.subtitleStyle ?? project.subtitleStyle ?? 'karaoke',
+        style: latestProject?.subtitleStyle ?? project.subtitleStyle ?? (project.format === '9:16' ? 'tiktok' : 'karaoke'),
         options: {
           font: latestProject?.subtitleFont ?? project.subtitleFont,
           sizeMultiplier: subtitleSizeMultiplier(latestProject?.subtitleSize ?? project.subtitleSize),
           color: latestProject?.subtitleColor ?? project.subtitleColor,
         },
         actualDurations: chainActualDurations,
-        crossfadeSec: 0.5,
+        crossfadeSec: isViralChain ? 0 : 0.5,
       });
 
       await update({ progress: 98, progressMessage: 'Добавляю фоновую музыку...' });
@@ -1646,12 +1652,14 @@ async function runGenerationPipeline(projectId: string) {
       await update({ status: 'assembling', progress: 75, progressMessage: 'Склеиваю клипы...' });
 
       const t2vScenes = await maybeWithTitleCard(clipsWithAudio, project.format, tempDir);
+      const isViralT2V = project.scriptMode === 'viral';
       const i2vActualDurations = await assembleFromClips({
         scenes: t2vScenes,
         outputPath: videoPath,
         tempDir,
         format: project.format,
-        crossfadeDuration: 0.5,
+        crossfadeDuration: isViralT2V ? 0 : 0.5,
+        flashCut: isViralT2V,
         hookTextOverlay: true,
         onProgress: async (pct, msg) => {
           await updateProject(projectId, { progress: 75 + Math.round(pct * 0.20), progressMessage: msg });
@@ -1663,14 +1671,14 @@ async function runGenerationPipeline(projectId: string) {
         videoPath,
         scenes: t2vScenes,
         format: project.format,
-        style: project.subtitleStyle ?? 'karaoke',
+        style: project.subtitleStyle ?? (project.format === '9:16' ? 'tiktok' : 'karaoke'),
         options: {
           font: project.subtitleFont,
           sizeMultiplier: subtitleSizeMultiplier(project.subtitleSize),
           color: project.subtitleColor,
         },
         actualDurations: i2vActualDurations,
-        crossfadeSec: 0.5,
+        crossfadeSec: isViralT2V ? 0 : 0.5,
       });
 
       await update({ progress: 98, progressMessage: 'Добавляю фоновую музыку...' });
@@ -1897,12 +1905,14 @@ async function runGenerationPipeline(projectId: string) {
         await update({ status: 'assembling', progress: 78, progressMessage: 'Склеиваю клипы...' });
 
         const i2vScenes = await maybeWithTitleCard(clipsWithAudio, project.format, tempDir);
+        const isViralI2V = project.scriptMode === 'viral';
         const parallelActualDurations = await assembleFromClips({
           scenes: i2vScenes,
           outputPath: videoPath,
           tempDir,
           format: project.format,
-          crossfadeDuration: 0.5,
+          crossfadeDuration: isViralI2V ? 0 : 0.5,
+          flashCut: isViralI2V,
           hookTextOverlay: true,
           onProgress: async (pct, msg) => {
             await updateProject(projectId, { progress: 78 + Math.round(pct * 0.18), progressMessage: msg });
@@ -1914,14 +1924,14 @@ async function runGenerationPipeline(projectId: string) {
           videoPath,
           scenes: i2vScenes,
           format: project.format,
-          style: project.subtitleStyle ?? 'karaoke',
+          style: project.subtitleStyle ?? (project.format === '9:16' ? 'tiktok' : 'karaoke'),
           options: {
             font: project.subtitleFont,
             sizeMultiplier: subtitleSizeMultiplier(project.subtitleSize),
             color: project.subtitleColor,
           },
           actualDurations: parallelActualDurations,
-          crossfadeSec: 0.5,
+          crossfadeSec: isViralI2V ? 0 : 0.5,
         });
 
         chainSucceeded = true;
@@ -2011,7 +2021,7 @@ async function runGenerationPipeline(projectId: string) {
         videoPath,
         scenes: assemblerScenes,
         format: project.format,
-        style: project.subtitleStyle ?? 'karaoke',
+        style: project.subtitleStyle ?? (project.format === '9:16' ? 'tiktok' : 'karaoke'),
         options: {
           font: project.subtitleFont,
           sizeMultiplier: subtitleSizeMultiplier(project.subtitleSize),

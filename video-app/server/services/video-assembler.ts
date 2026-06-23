@@ -481,15 +481,15 @@ function generateFadeASS(scenes: KaraokeSceneEntry[], format: VideoFormat, optio
   return header + '\n' + dialogues + '\n';
 }
 
-/** Style: TikTok — one word at a time, large bold font */
+/** Style: TikTok — one word at a time, large bold font with shadow */
 function generateTiktokASS(scenes: KaraokeSceneEntry[], format: VideoFormat, options: SubtitleOptions = {}): string {
   const { w, h } = FORMAT_SIZES[format];
   const font = options.font ?? 'DejaVu Sans';
-  const fontSize = formatAwareFontSize(w, format, 0.070, options.sizeMultiplier ?? 1);
+  const fontSize = formatAwareFontSize(w, format, 0.075, options.sizeMultiplier ?? 1);
   const primaryColor = hexToAssColor(options.color ?? '#ffffff');
-  const marginV = Math.round(h * 0.10);
-  // BorderStyle=1 (outline only, no background box), bold, large
-  const styleLine = `Style: TikTok,${font},${fontSize},${primaryColor},${primaryColor},&H00000000,&H00000000,1,0,0,0,100,100,0,0,1,4,0,2,40,40,${marginV},1`;
+  const marginV = Math.round(h * 0.12);
+  // BorderStyle=1 (outline+shadow), bold, large — Outline=5px, Shadow=3px for max readability
+  const styleLine = `Style: TikTok,${font},${fontSize},${primaryColor},${primaryColor},&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,5,3,2,40,40,${marginV},1`;
   const header = makeAssHeader(w, h, styleLine);
 
   const lines: string[] = [];

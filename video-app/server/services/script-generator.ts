@@ -238,48 +238,50 @@ function buildViralReelsPrompt(params: { topic: string; format: VideoFormat; dur
   const narrationWords = Math.round(sceneDuration * wordsPerSec);
   const bodyEnd = sceneCount - 1;
 
-  return `You are an expert viral short-video scriptwriter. Create a ${params.duration}-second viral Reels/Shorts/TikTok script about: "${params.topic}".
+  return `You are a world-class viral short-video scriptwriter with millions of combined views. Create a ${params.duration}-second viral Reels/Shorts/TikTok script about: "${params.topic}".
 
 MANDATORY 3-PART STRUCTURE — EXACTLY ${sceneCount} scenes, ${sceneDuration}s each:
 
-🎣 Scene 1 — HOOK (${sceneDuration}s): Stop-scroll moment.
-- MUST open with a shocking fact, bold claim, direct pain-point, or provocative question
-- FORBIDDEN openers: "Привет", "Сегодня я расскажу", "В этом видео", any greeting or warm-up
-- Examples: "Твой контент не видят из-за одной настройки" / "99% людей делают это неправильно" / "Как я удвоил охваты за 3 дня"
-- Visual: dynamic close-up, reaction shot, dramatic reveal, bold on-screen moment
+🎣 Scene 1 — HOOK (${sceneDuration}s): Stop-scroll in the first 1.5 seconds.
+- MUST open with ONE of: shocking statistic, bold counter-intuitive claim, direct pain point, or "did you know" provocation
+- FORBIDDEN openers: "Привет", "Сегодня я расскажу", "В этом видео", "Меня зовут", any greeting or warm-up
+- HOOK FORMULAS: "[X]% людей не знают что..." / "Никто не говорит тебе правду о..." / "Я [результат] за [срок] — вот как" / "Перестань делать [ошибка] прямо сейчас"
+- Visual: dramatic close-up, shocked face, split-before/after, bold text reveal, product transformation
 
-⚡ Scenes 2–${bodyEnd} — BODY (${sceneDuration}s each): Ultra-fast value delivery.
-- EXACTLY ONE insight per scene — if two ideas fit, split them across two scenes
-- Zero filler words. Every word must earn its place.
-- Visuals: B-roll cutaways, screen demos, hands-in-action, fast-motion shots
+⚡ Scenes 2–${bodyEnd} — BODY (${sceneDuration}s each): Rapid-fire value, zero padding.
+- EXACTLY ONE concrete insight, tip, or reveal per scene
+- Every sentence must deliver new information — no repeating, no padding
+- Visuals: fast B-roll cutaways, hands-in-action, screen recordings, dynamic angles, motion graphics
 
-🚀 Scene ${sceneCount} — CTA (${sceneDuration}s): Comment trigger (NOT "like and subscribe").
-- Ask for a SPECIFIC comment word or save action that creates FOMO or reward
-- Examples: "Напиши КЛИП в комменты — скину готовый шаблон" / "Сохрани — это пригодится" / "Пиши ДА если хочешь полный гайд"
+🚀 Scene ${sceneCount} — CTA (${sceneDuration}s): Engagement trigger — NOT "like and subscribe".
+- Command a SPECIFIC action with a clear reward or FOMO reason
+- FORMULAS: "Напиши [СЛОВО] в комменты — пришлю [что]" / "Сохрани — через неделю скажешь спасибо" / "Пиши ДА если узнал себя 👇"
 
 Return ONLY valid JSON, no markdown, no explanation:
 {
-  "title": "catchy viral video title in ${langName}",
+  "title": "catchy viral title in ${langName} — under 8 words, creates curiosity gap",
   "scenes": [
     {
       "role": "hook",
-      "text": "Punchy subtitle in ${langName} — MAX 5 WORDS, max impact, works as a standalone hook",
-      "narration": "Voiceover in ${langName}. EXACTLY ~${narrationWords} words. Fast confident expert tone. Natural reading pace = ${sceneDuration}s. Zero filler.",
-      "stockQuery": "2-4 English Pexels keywords — visually DYNAMIC: close-ups, screens, hands, reactions, fast motion, urban life",
-      "imagePrompt": "Cinematic English visual description. Dynamic, high-contrast, modern aesthetic. NO TEXT IN IMAGE.",
-      "motionPrompt": "Fast dynamic English movement description for this ${sceneDuration}s clip. Quick zoom, fast pan, or dramatic reveal.",
+      "text": "Subtitle in ${langName} — MAX 4 WORDS, shock value, works as standalone hook if screenshotted",
+      "narration": "Voiceover in ${langName}. EXACTLY ~${narrationWords} words. Fast expert pace = ${sceneDuration}s. First word grabs attention. Zero filler. Short punchy sentences — max 12 words each.",
+      "stockQuery": "2-4 English Pexels keywords — DYNAMIC ONLY: close-up hands, shocked person, fast city, screen recording, transformation, action shot. NO static objects, NO talking heads",
+      "imagePrompt": "Hyper-cinematic English visual. Shot type: extreme close-up OR dramatic wide angle. Lighting: high-contrast rim light or neon glow. Subject: person reacting, product reveal, or dramatic environment. Color grade: teal-orange or moody desaturated. NO text in image. Ultra-detailed, photorealistic.",
+      "motionPrompt": "Aggressive dynamic motion for ${sceneDuration}s clip. Choose: [crash zoom into face] OR [whip pan left revealing subject] OR [fast dolly push through scene] OR [handheld shaky tracking shot]. Camera: fast, energetic, unstable in a controlled way. No slow gentle moves.",
       "duration": ${sceneDuration}
     }
   ]
 }
 
-VIRAL QUALITY RULES:
-- Hook narration: create pain, curiosity, or disbelief within the first 3 words
-- Body narration: short punchy sentences — expert delivering gold, not reading a textbook
-- CTA narration: specific action + reward/reason to act NOW
-- Every subtitle must stand alone as a hook if screenshot
-- stockQuery: always visually dynamic B-roll — no talking heads, no static objects
-- Exactly ${sceneCount} scenes total, each exactly ${sceneDuration}s`;
+VIRAL QUALITY CHECKLIST — every scene must pass ALL:
+✅ Hook: first 3 words create immediate tension, curiosity, or disbelief
+✅ Body: each scene = one atomic insight, delivered in expert punchy sentences
+✅ CTA: specific word/action + concrete reward or FOMO reason
+✅ Every subtitle = a standalone viral caption if screenshot
+✅ stockQuery: kinetic B-roll only — motion, action, transformation
+✅ imagePrompt: dramatic, high-contrast, cinematic close-up or wide — never flat/stock
+✅ motionPrompt: aggressive camera moves — crash zoom, whip pan, fast dolly
+✅ Exactly ${sceneCount} scenes total, each exactly ${sceneDuration}s`;
 }
 
 // ── Landing page product promo prompts ───────────────────────────────────────

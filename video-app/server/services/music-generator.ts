@@ -287,3 +287,19 @@ export async function generateBackgroundMusic(params: {
 export function buildMusicPrompt(topic: string): string {
   return `background music for a video about "${topic.slice(0, 80)}", ambient cinematic, no vocals`;
 }
+
+/**
+ * Automatically selects a music style based on topic keywords.
+ * Used as fallback when user has not explicitly chosen a music style.
+ */
+export function autoMusicStyle(topic: string): string {
+  const t = topic.toLowerCase();
+  if (/путешест|природ|горы|море|лес|арктик|норвег|остров|закат|рассвет|travel|nature|mountain|ocean|forest|arctic|sunset|landscape/i.test(t)) return 'cinematic';
+  if (/технолог|искусствен|робот|программ|digital|tech|\bai\b|startup|innovation|будущ|нейро/i.test(t)) return 'electronic';
+  if (/бизнес|продаж|маркетинг|успех|карьер|бренд|business|sales|marketing|success|brand|entrepreneur/i.test(t)) return 'corporate';
+  if (/фитнес|спорт|здоров|трениров|workout|fitness|sport|gym|motivation|мотивац/i.test(t)) return 'electronic';
+  if (/кулинар|еда|рецепт|food|cooking|recipe|restaurant|вкусн/i.test(t)) return 'acoustic';
+  if (/мод|красот|лайфстайл|уход|fashion|beauty|lifestyle|skincare/i.test(t)) return 'acoustic';
+  if (/история|документ|наука|history|documentary|science|space|космос/i.test(t)) return 'cinematic';
+  return 'cinematic';
+}

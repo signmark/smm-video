@@ -28,8 +28,8 @@ const VALID_VOICES = new Set(['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable'
 
 // Instructions in English — models parse English meta-instructions more reliably
 const INSTRUCTIONS_BY_LANG: Record<string, string> = {
-  ru: 'Speak in Russian language only. Natural conversational pace, expressive, clear diction. Do not translate or speak in English.',
-  en: 'Speak in English. Natural conversational pace, expressive, clear diction.',
+  ru: 'Speak Russian only. You are an energetic viral content creator and podcast host. Delivery: fast, punchy, confident. Emphasize key words with rising pitch. Use very brief dramatic pauses (80–120 ms) before surprising facts or numbers. Never monotone — vary speed and energy across sentences. Sound passionate, urgent, and authoritative. No filler, no hesitation.',
+  en: 'You are an energetic viral content creator and podcast host. Delivery: fast, punchy, confident. Emphasize key words with rising pitch. Use very brief dramatic pauses before surprising facts. Never monotone — vary speed and energy. Sound passionate, urgent, and authoritative. No filler.',
 };
 
 export async function generateAudio(params: {

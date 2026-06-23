@@ -407,12 +407,19 @@ export async function generateImage(params: {
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
 
   const { w, h } = FORMAT_OUTPUT[format];
+
+  // Enhance prompt with cinematic quality cues for better I2V source frames
+  const compositionHint =
+    format === '9:16' ? 'vertical portrait 9:16 framing, subject centered with rule-of-thirds, mobile-optimized composition' :
+    format === '16:9' ? 'cinematic widescreen 16:9 composition, horizontal framing' :
+    'square composition 1:1';
+  const enhancedPrompt = `${prompt}. Cinematic photography, dramatic lighting, shallow depth of field, high contrast, vivid colors, ultra-detailed, professional quality, ${compositionHint}. No text, no watermarks.`;
   let imageBuffer: Buffer;
   let source = 'placeholder';
 
   // 0. GPT Image 2 — best quality for I2V
   try {
-    imageBuffer = await fetchFromGptImage(prompt, format);
+    imageBuffer = await fetchFromGptImage(enhancedPrompt, format);
     source = 'GPT-Image-2';
   } catch (err0: any) {
     if (err0.message !== 'NO_OPENAI_KEY') {
@@ -421,7 +428,7 @@ export async function generateImage(params: {
 
     // 1. Gemini Flash image gen — fast, free quota, same key
     try {
-      imageBuffer = await fetchFromGeminiFlash(prompt, format);
+      imageBuffer = await fetchFromGeminiFlash(enhancedPrompt, format);
       source = 'GeminiFlash';
     } catch (err1: any) {
       if (err1.message !== 'NO_GEMINI_KEY') {
@@ -430,7 +437,7 @@ export async function generateImage(params: {
 
       // 2. Imagen 4 — highest quality, same key
       try {
-        imageBuffer = await fetchFromImagen4(prompt, format);
+        imageBuffer = await fetchFromImagen4(enhancedPrompt, format);
         source = 'Imagen4';
       } catch (err2: any) {
         if (err2.message !== 'NO_GEMINI_KEY') {
@@ -439,7 +446,7 @@ export async function generateImage(params: {
 
         // 3. HuggingFace FLUX.1-schnell — free
         try {
-          imageBuffer = await fetchFromHuggingFace(prompt, format);
+          imageBuffer = await fetchFromHuggingFace(enhancedPrompt, format);
           source = 'HuggingFace';
         } catch (err3: any) {
           if (err3.message !== 'NO_HF_TOKEN') {
@@ -448,7 +455,7 @@ export async function generateImage(params: {
 
           // 4. FAL FLUX schnell — paid fallback
           try {
-            imageBuffer = await fetchFromFal(prompt, format);
+            imageBuffer = await fetchFromFal(enhancedPrompt, format);
             source = 'FAL';
           } catch (err4: any) {
             if (err4.message !== 'NO_FAL_KEY') {

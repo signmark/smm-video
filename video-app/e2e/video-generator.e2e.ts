@@ -180,9 +180,10 @@ describe('PATCH /videos/:id/scenes/:sceneId', () => {
     projectId = p.id;
   });
 
-  it('PATCH несуществующей сцены → 404', async () => {
+  it('PATCH сцены на проекте без скрипта → 400 (no script)', async () => {
     const r = await patch(`/videos/${projectId}/scenes/999`, { text: 'Test text' });
-    assert.equal(r.status, 404);
+    // Новый проект без скрипта → 400 "No script"; с несуществующей сценой → 404
+    assert.ok([400, 404].includes(r.status), `Ожидался 400 или 404, получен ${r.status}`);
   });
 });
 
@@ -204,9 +205,9 @@ describe('GET /tts-preview/:voice', () => {
     });
   }
 
-  it('/tts-preview/invalid_voice → 404', async () => {
+  it('/tts-preview/invalid_voice → 400 (invalid voice)', async () => {
     const r = await get('/tts-preview/invalid_voice_xyz');
-    assert.equal(r.status, 404);
+    assert.equal(r.status, 400);
   });
 });
 

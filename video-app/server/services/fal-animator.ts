@@ -134,10 +134,11 @@ async function downloadVideo(url: string, outputPath: string): Promise<void> {
 
 async function animateWithWan(imageBuffer: Buffer, prompt: string, format: VideoFormat, durationSeconds: number, outputPath: string, apiKey: string, onWait?: (ms: number) => void): Promise<void> {
   const { width, height } = FORMAT_DIMS[format];
+  const structuredPrompt = buildWanPrompt(prompt);
   console.log(`[fal-anim] Wan 2.7 I2V: submitting... (${width}x${height})`);
   const q = await falSubmit('fal-ai/wan/v2.7/image-to-video', {
     image_url: `data:image/jpeg;base64,${imageBuffer.toString('base64')}`,
-    prompt,
+    prompt: structuredPrompt,
     num_frames: 81,
     width,
     height,
@@ -152,10 +153,11 @@ async function animateWithWan(imageBuffer: Buffer, prompt: string, format: Video
 
 async function animateWithKling(imageBuffer: Buffer, prompt: string, format: VideoFormat, durationSeconds: number, outputPath: string, apiKey: string, onWait?: (ms: number) => void, clipDuration?: number): Promise<void> {
   const duration = clipDuration ? String(clipDuration) : (durationSeconds >= 8 ? '10' : '5');
+  const structuredPrompt = buildKlingPrompt(prompt);
   console.log(`[fal-anim] Kling v1.6 Standard I2V: submitting... (${duration}s)`);
   const q = await falSubmit('fal-ai/kling-video/v1.6/standard/image-to-video', {
     image_url: `data:image/jpeg;base64,${imageBuffer.toString('base64')}`,
-    prompt, duration, aspect_ratio: format,
+    prompt: structuredPrompt, duration, aspect_ratio: format,
   }, apiKey);
   const result = await falPoll(q, apiKey, 360_000, onWait);
   const videoUrl = result?.video?.url;
@@ -166,10 +168,11 @@ async function animateWithKling(imageBuffer: Buffer, prompt: string, format: Vid
 
 async function animateWithKlingPro(imageBuffer: Buffer, prompt: string, format: VideoFormat, durationSeconds: number, outputPath: string, apiKey: string, onWait?: (ms: number) => void, clipDuration?: number): Promise<void> {
   const duration = clipDuration ? String(clipDuration) : (durationSeconds >= 8 ? '10' : '5');
+  const structuredPrompt = buildKlingPrompt(prompt);
   console.log(`[fal-anim] Kling v1.6 Pro I2V: submitting... (${duration}s)`);
   const q = await falSubmit('fal-ai/kling-video/v1.6/pro/image-to-video', {
     image_url: `data:image/jpeg;base64,${imageBuffer.toString('base64')}`,
-    prompt, duration, aspect_ratio: format,
+    prompt: structuredPrompt, duration, aspect_ratio: format,
   }, apiKey);
   const result = await falPoll(q, apiKey, 420_000, onWait);
   const videoUrl = result?.video?.url;
@@ -179,10 +182,11 @@ async function animateWithKlingPro(imageBuffer: Buffer, prompt: string, format: 
 }
 
 async function animateWithMinimax(imageBuffer: Buffer, prompt: string, outputPath: string, apiKey: string, onWait?: (ms: number) => void): Promise<void> {
+  const structuredPrompt = buildMinimaxPrompt(prompt);
   console.log(`[fal-anim] MiniMax I2V: submitting...`);
   const q = await falSubmit('fal-ai/minimax/video-01-live/image-to-video', {
     image_url: `data:image/jpeg;base64,${imageBuffer.toString('base64')}`,
-    prompt,
+    prompt: structuredPrompt,
   }, apiKey);
   const result = await falPoll(q, apiKey, 300_000, onWait);
   const videoUrl = result?.video?.url;
@@ -191,7 +195,52 @@ async function animateWithMinimax(imageBuffer: Buffer, prompt: string, outputPat
   console.log(`[fal-anim] MiniMax I2V clip saved: ${path.basename(outputPath)}`);
 }
 
-/** Wraps a raw prompt with Seedance 2.0 structure: Format header + technical tail */
+// ── Model-specific prompt wrappers ─────────────────────────────────────────────
+// Each wrapper applies universal rules (no morphing/flickering, specific palette,
+// no vague words) with model-specific constraints from prompt engineering docs.
+
+/** WAN 2.7: handles detailed prompts well — full structure + technical tail */
+function buildWanPrompt(prompt: string): string {
+  const TAIL = 'No morphing. No deformation. No flickering. No ghosting. Smooth continuous motion. Realistic physics. 4K cinematic.';
+  if (prompt.includes('No morphing')) return prompt;
+  return `${prompt}\n\n${TAIL}`;
+}
+
+/**
+ * Kling: kinetics > words — long descriptions work WORSE.
+ * Keep tail short, focus on motion quality keywords.
+ */
+function buildKlingPrompt(prompt: string): string {
+  const TAIL = 'Smooth motion. Realistic physics. No flickering. No morphing. Cinematic.';
+  if (prompt.includes('No flickering')) return prompt;
+  // Kling performs better with concise prompts — trim to 400 chars if needed
+  const trimmed = prompt.length > 400 ? prompt.slice(0, 397) + '...' : prompt;
+  return `${trimmed} ${TAIL}`;
+}
+
+/** MiniMax: no format/aspect param, moderate complexity */
+function buildMinimaxPrompt(prompt: string): string {
+  const TAIL = 'No morphing. No deformation. No flickering. Smooth motion. Photorealistic.';
+  if (prompt.includes('No morphing')) return prompt;
+  return `${prompt}\n\n${TAIL}`;
+}
+
+/**
+ * Luma Dream Machine: simple prompts work best.
+ * No "handheld" — use "cinematic" or "animated". No format header. Short tail.
+ */
+function buildLumaPrompt(prompt: string): string {
+  const TAIL = 'Smooth cinematic motion. No morphing, no flickering. Realistic physics.';
+  if (prompt.includes('No morphing')) return prompt;
+  // Remove Luma-incompatible terms
+  const cleaned = prompt
+    .replace(/\bhandheld\b/gi, 'cinematic')
+    .replace(/\bhandheld shake\b/gi, 'gentle camera sway')
+    .replace(/\bFormat:\s*\S+\n*/gi, '');
+  return `${cleaned.trim()}\n\n${TAIL}`;
+}
+
+/** Seedance 2.0: Format header + full technical tail */
 function buildSeedancePrompt(prompt: string, format: VideoFormat): string {
   const TECH_TAIL = 'Stable face throughout. No morphing. No deformation. No flickering. No ghosting. Realistic physics. 4K cinematic.';
   if (prompt.includes(TECH_TAIL)) return prompt; // already structured
@@ -232,9 +281,10 @@ async function animateWithLtx(imageBuffer: Buffer, prompt: string, format: Video
 
 async function animateWithWanT2V(prompt: string, format: VideoFormat, durationSeconds: number, outputPath: string, apiKey: string, onWait?: (ms: number) => void): Promise<void> {
   const { width, height } = FORMAT_DIMS[format];
+  const structuredPrompt = buildWanPrompt(prompt);
   console.log(`[fal-anim] Wan T2V 1.3B: submitting... (${width}x${height})`);
   const q = await falSubmit('fal-ai/wan/v2.7/text-to-video', {
-    prompt,
+    prompt: structuredPrompt,
     num_frames: 81,
     width,
     height,
@@ -249,9 +299,10 @@ async function animateWithWanT2V(prompt: string, format: VideoFormat, durationSe
 
 async function animateWithKlingT2V(prompt: string, format: VideoFormat, durationSeconds: number, outputPath: string, apiKey: string, onWait?: (ms: number) => void, clipDuration?: number): Promise<void> {
   const duration = clipDuration ? String(clipDuration) : (durationSeconds >= 8 ? '10' : '5');
+  const structuredPrompt = buildKlingPrompt(prompt);
   console.log(`[fal-anim] Kling v2 Standard T2V: submitting... (${duration}s)`);
   const q = await falSubmit('fal-ai/kling-video/v3/standard/text-to-video', {
-    prompt,
+    prompt: structuredPrompt,
     duration,
     aspect_ratio: format,
   }, apiKey);
@@ -265,9 +316,10 @@ async function animateWithKlingT2V(prompt: string, format: VideoFormat, duration
 
 async function animateWithKlingProT2V(prompt: string, format: VideoFormat, durationSeconds: number, outputPath: string, apiKey: string, onWait?: (ms: number) => void, clipDuration?: number): Promise<void> {
   const duration = clipDuration ? String(clipDuration) : (durationSeconds >= 8 ? '10' : '5');
+  const structuredPrompt = buildKlingPrompt(prompt);
   console.log(`[fal-anim] Kling v2 Pro T2V: submitting... (${duration}s)`);
   const q = await falSubmit('fal-ai/kling-video/v3/pro/text-to-video', {
-    prompt,
+    prompt: structuredPrompt,
     duration,
     aspect_ratio: format,
   }, apiKey);
@@ -283,9 +335,10 @@ async function animateWithLuma(prompt: string, format: VideoFormat, durationSeco
   // Luma только принимает '5s' или '9s' — не '10s'
   const duration = clipDuration ? (clipDuration >= 9 ? '9s' : '5s') : (durationSeconds >= 7 ? '9s' : '5s');
   const aspect_ratio = LUMA_ASPECT[format];
+  const structuredPrompt = buildLumaPrompt(prompt);
   console.log(`[fal-anim] Luma Ray 2 Flash T2V: submitting... (${duration}, ${aspect_ratio})`);
   const q = await falSubmit('fal-ai/luma-dream-machine/ray-2-flash', {
-    prompt,
+    prompt: structuredPrompt,
     aspect_ratio,
     duration,
     loop: false,

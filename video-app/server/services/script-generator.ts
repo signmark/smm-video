@@ -61,6 +61,85 @@ Rules:
 - Each scene flows logically to tell a story about the topic`;
 }
 
+// ── WAN 2.7 I2V prompt ───────────────────────────────────────────────────────
+
+function buildWanI2VPrompt(params: { topic: string; format: VideoFormat; duration: number; language: 'ru' | 'en' }, sceneCount: number, sceneDuration: number): string {
+  const langName = params.language === 'ru' ? 'Russian' : 'English';
+  const formatDesc = params.format === '9:16' ? 'vertical portrait (Shorts/Reels/TikTok)' : params.format === '16:9' ? 'horizontal landscape (YouTube)' : 'square (Instagram/VK)';
+  const wordsPerSec = params.language === 'ru' ? 1.8 : 2.3;
+  const narrationWords = Math.round(sceneDuration * wordsPerSec);
+  const half = Math.round(sceneDuration / 2);
+
+  return `Create a script for a ${params.duration}-second ${formatDesc} video about: "${params.topic}".
+The script must have EXACTLY ${sceneCount} scenes (~${sceneDuration} seconds each).
+
+This script will be animated with WAN 2.7. It handles detailed structured prompts well.
+
+Return ONLY valid JSON, no markdown, no explanation:
+{
+  "title": "video title in ${langName}",
+  "scenes": [
+    {
+      "text": "Short punchy subtitle in ${langName} (max 6 words, shown on screen)",
+      "narration": "Voiceover in ${langName}. EXACTLY ~${narrationWords} words for ${sceneDuration}s at natural pace. Complete informative sentences.",
+      "stockQuery": "2-4 simple English keywords for Pexels stock footage. Generic visual terms only, no brand names.",
+      "imagePrompt": "Detailed English visual description combining background and subject. Cinematic quality, photorealistic, NO TEXT IN IMAGE.",
+      "motionPrompt": "Structured WAN prompt in English. Order: 1) Visual style + color grade + specific color palette (e.g. 'warm golden tones, teal shadows'). 2) Location: exact setting with surface materials, lighting type and direction. 3) Second-by-second breakdown with camera movement — '[0:00-${half}s] camera movement + subject action | [${half}:00-${sceneDuration}s] camera movement + subject action'. Camera terms: slow push in, dolly forward, arc left, tilt up, crane shot, tracking shot, static wide. 4) No vague adjectives (no 'beautiful', 'nice', 'cool').",
+      "backgroundPrompt": "Background/environment only in English. Setting, lighting, atmosphere — NO people, NO products.",
+      "subjectPrompt": "Subject only in English on pure white background. Precise visual details.",
+      "duration": ${sceneDuration}
+    }
+  ]
+}
+
+Rules:
+- "text" in ${langName}, max 6 words
+- "narration" in ${langName}, ~${narrationWords} words
+- "stockQuery" in English, 2-4 generic Pexels keywords
+- "imagePrompt" in English, vivid and specific, NO TEXT
+- "motionPrompt" in English: style → location → timecodes with camera movement — no vague words
+- Exactly ${sceneCount} scenes total, each visually DISTINCT`;
+}
+
+// ── Kling I2V prompt ──────────────────────────────────────────────────────────
+
+function buildKlingI2VPrompt(params: { topic: string; format: VideoFormat; duration: number; language: 'ru' | 'en' }, sceneCount: number, sceneDuration: number): string {
+  const langName = params.language === 'ru' ? 'Russian' : 'English';
+  const formatDesc = params.format === '9:16' ? 'vertical portrait (Shorts/Reels/TikTok)' : params.format === '16:9' ? 'horizontal landscape (YouTube)' : 'square (Instagram/VK)';
+  const wordsPerSec = params.language === 'ru' ? 1.8 : 2.3;
+  const narrationWords = Math.round(sceneDuration * wordsPerSec);
+  // Kling max segment: 5s
+  const segEnd = Math.min(sceneDuration, 5);
+
+  return `Create a script for a ${params.duration}-second ${formatDesc} video about: "${params.topic}".
+The script must have EXACTLY ${sceneCount} scenes (~${sceneDuration} seconds each).
+
+IMPORTANT: This script will be animated with Kling. Kling works best with CONCISE, kinetics-focused prompts. Long descriptions hurt quality. Keep motionPrompt under 120 words. Focus on MOTION and PHYSICS, not prose.
+
+Return ONLY valid JSON, no markdown, no explanation:
+{
+  "title": "video title in ${langName}",
+  "scenes": [
+    {
+      "text": "Short punchy subtitle in ${langName} (max 6 words, shown on screen)",
+      "narration": "Voiceover in ${langName}. EXACTLY ~${narrationWords} words for ${sceneDuration}s at natural pace.",
+      "stockQuery": "2-4 simple English keywords for Pexels stock footage. Generic visual terms only.",
+      "imagePrompt": "Detailed English visual description combining background and subject. Cinematic, photorealistic, NO TEXT IN IMAGE.",
+      "motionPrompt": "Concise Kling prompt in English — MAX 120 words. Format: [Subject + action + speed]. [Camera: specific movement, e.g. slow dolly in / arc right / tilt up / tracking shot]. [Style: cinematic + color palette e.g. 'warm amber tones']. [0:00-${segEnd}s] exact motion. Realistic physics. No vague words.",
+      "backgroundPrompt": "Background/environment only in English. Setting, lighting, atmosphere — NO people, NO products.",
+      "subjectPrompt": "Subject only in English on pure white background. Precise visual details.",
+      "duration": ${sceneDuration}
+    }
+  ]
+}
+
+Rules:
+- "motionPrompt" MUST be under 120 words — Kling penalizes long prompts
+- Focus on kinetics: what moves, how fast, which direction — before aesthetics
+- No vague adjectives (no 'beautiful', 'nice', 'cool', 'amazing')
+- Exactly ${sceneCount} scenes total, each visually DISTINCT`;
+}
+
 // ── Seedance 2.0 I2V prompt ───────────────────────────────────────────────────
 
 function buildSeedanceI2VPrompt(params: { topic: string; format: VideoFormat; duration: number; language: 'ru' | 'en' }, sceneCount: number, sceneDuration: number): string {
@@ -556,12 +635,18 @@ export async function generateScript(params: {
   } else if (safeParams.scriptMode === 'viral') {
     prompt = buildViralReelsPrompt(safeParams, sceneCount, sceneDuration);
   } else {
-    const isSeedance = (safeParams.animationModel ?? '').startsWith('seedance') && !isT2V;
-    prompt = isT2V
-      ? buildT2VPrompt(safeParams, sceneCount, sceneDuration)
-      : isSeedance
-        ? buildSeedanceI2VPrompt(safeParams, sceneCount, sceneDuration)
-        : buildI2VPrompt(safeParams, sceneCount, sceneDuration);
+    const model = safeParams.animationModel ?? 'wan';
+    if (isT2V) {
+      prompt = buildT2VPrompt(safeParams, sceneCount, sceneDuration);
+    } else if (model.startsWith('seedance')) {
+      prompt = buildSeedanceI2VPrompt(safeParams, sceneCount, sceneDuration);
+    } else if (model.startsWith('kling')) {
+      prompt = buildKlingI2VPrompt(safeParams, sceneCount, sceneDuration);
+    } else if (model === 'wan') {
+      prompt = buildWanI2VPrompt(safeParams, sceneCount, sceneDuration);
+    } else {
+      prompt = buildI2VPrompt(safeParams, sceneCount, sceneDuration);
+    }
   }
 
   // Append user's additional style/context notes to the prompt

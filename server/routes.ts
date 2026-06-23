@@ -78,6 +78,21 @@ export function registerRoutes(app: Express): void {
   registerDebugRoutes(app);
   registerUserRoutes(app);
 
+  // Публичный эндпоинт цен тарифов — читается из env в runtime, без пересборки
+  app.get('/api/config/pricing', (_req, res) => {
+    // Читаем из env — поддерживаем оба варианта имён (PLAN_PRICE_* и VITE_PLAN_PRICE_*)
+    res.json({
+      pro: {
+        price:    Number(process.env.PLAN_PRICE_PRO    ?? process.env.VITE_PLAN_PRICE_PRO    ?? 670),
+        original: Number(process.env.PLAN_PRICE_PRO_ORIGINAL ?? process.env.VITE_PLAN_PRICE_PRO_ORIGINAL ?? 1990),
+      },
+      basic: {
+        price:    Number(process.env.PLAN_PRICE_BASIC    ?? process.env.VITE_PLAN_PRICE_BASIC    ?? 390),
+        original: Number(process.env.PLAN_PRICE_BASIC_ORIGINAL ?? process.env.VITE_PLAN_PRICE_BASIC_ORIGINAL ?? 990),
+      },
+    });
+  });
+
   // Запускаем сервис проверки статусов публикаций
   publicationStatusChecker.start();
 }

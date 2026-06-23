@@ -18,12 +18,13 @@ const PLAN_LEVEL: Record<string, number> = {
   enterprise: 3,
 };
 
+// Дефолтные цены — перезаписываются при загрузке страницы из /api/config/pricing
 const PLANS = [
   {
     key: 'pro',
     name: 'Профессиональный',
-    price: Number(import.meta.env.VITE_PLAN_PRICE_PRO ?? 670),
-    originalPrice: Number(import.meta.env.VITE_PLAN_PRICE_PRO_ORIGINAL ?? 1990),
+    price: 670,
+    originalPrice: 1990,
     period: 'мес',
     description: 'Полный доступ ко всем функциям платформы',
     popular: true,
@@ -47,8 +48,8 @@ const PLANS = [
   {
     key: 'basic',
     name: 'Базовый',
-    price: Number(import.meta.env.VITE_PLAN_PRICE_BASIC ?? 390),
-    originalPrice: Number(import.meta.env.VITE_PLAN_PRICE_BASIC_ORIGINAL ?? 990),
+    price: 390,
+    originalPrice: 990,
     period: 'мес',
     description: 'Для небольших проектов и старта',
     popular: false,
@@ -156,6 +157,7 @@ export default function PricingPage() {
   const { toast } = useToast();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [userPlan, setUserPlan] = useState<string | null>(null);
+  const [plans, setPlans] = useState(PLANS);
   const [selectedPlan, setSelectedPlan] = useState<typeof PLANS[0] | null>(null);
   const [modalState, setModalState] = useState<ModalState>('idle');
   const [errorMessage, setErrorMessage] = useState('');
@@ -192,6 +194,19 @@ export default function PricingPage() {
       .then(r => r.json())
       .then(d => setYookassaAvailable(!!d.available))
       .catch(() => setYookassaAvailable(false));
+
+    // Загружаем цены из env в runtime — без пересборки при изменении
+    fetch('/api/config/pricing')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (!data) return;
+        setPlans(prev => prev.map(p => {
+          if (p.key === 'pro' && data.pro)   return { ...p, price: data.pro.price,   originalPrice: data.pro.original   };
+          if (p.key === 'basic' && data.basic) return { ...p, price: data.basic.price, originalPrice: data.basic.original };
+          return p;
+        }));
+      })
+      .catch(() => {});
   }, []);
 
   // Уровень текущего тарифа пользователя (null = не авторизован)
@@ -200,7 +215,7 @@ export default function PricingPage() {
   const hasActivePaidPlan = userPlan && userPlan !== 'trial' && userPlan !== 'free' && userPlan !== 'basic';
 
   // Фильтруем: пользователям с активным платным тарифом не показываем тарифы ниже
-  const visiblePlans = PLANS.filter(plan => {
+  const visiblePlans = plans.filter(plan => {
     if (!hasActivePaidPlan) return true; // гость / trial / free — видит всё
     return (PLAN_LEVEL[plan.key] ?? 0) >= (userPlanLevel ?? 0);
   });

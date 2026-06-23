@@ -61,6 +61,54 @@ Rules:
 - Each scene flows logically to tell a story about the topic`;
 }
 
+// ── Seedance 2.0 I2V prompt ───────────────────────────────────────────────────
+
+function buildSeedanceI2VPrompt(params: { topic: string; format: VideoFormat; duration: number; language: 'ru' | 'en' }, sceneCount: number, sceneDuration: number): string {
+  const langName = params.language === 'ru' ? 'Russian' : 'English';
+  const formatDesc =
+    params.format === '9:16' ? 'vertical portrait (Shorts/Reels/TikTok)'
+    : params.format === '16:9' ? 'horizontal landscape (YouTube)'
+    : 'square (Instagram/VK)';
+  const wordsPerSec = params.language === 'ru' ? 1.8 : 2.3;
+  const narrationWords = Math.round(sceneDuration * wordsPerSec);
+
+  // Build second-by-second breakdown example based on scene duration
+  const half = Math.round(sceneDuration / 2);
+  const exampleBreakdown = `[0:00-${half}s] slow push in, subject turns toward camera | [${half}:00-${sceneDuration}s] orbital shot, camera arcs left revealing background`;
+
+  return `Create a script for a ${params.duration}-second ${formatDesc} video about: "${params.topic}".
+The script must have EXACTLY ${sceneCount} scenes (~${sceneDuration} seconds each).
+
+This script will be animated with Seedance 2.0. The "motionPrompt" field must follow the EXACT Seedance 2.0 structure below.
+
+Return ONLY valid JSON, no markdown, no explanation:
+{
+  "title": "video title in ${langName}",
+  "scenes": [
+    {
+      "text": "Short punchy subtitle in ${langName} (max 6 words, shown on screen as caption)",
+      "narration": "Voiceover in ${langName}. EXACTLY ~${narrationWords} words to fill ${sceneDuration}s at natural pace. Complete informative sentences.",
+      "stockQuery": "2-4 simple English keywords for Pexels stock footage. Generic visual terms only, no brand names.",
+      "imagePrompt": "Detailed English visual description combining background and subject. Cinematic quality, photorealistic, NO TEXT IN IMAGE.",
+      "motionPrompt": "Seedance 2.0 structured prompt in English — MANDATORY order: 1) Visual style: [cinematic/documentary/product] + color grade + specific color palette (e.g. 'teal and orange', 'warm golden tones'). 2) Location: exact setting with surface materials (marble/wood/concrete/glass), wall/floor textures, lighting source and temperature in Kelvin, spatial depth. 3) Second-by-second breakdown — each segment on separate line, max 15s each, camera movement REQUIRED in every segment. Format: '[0:00-${half}s] camera movement + subject action | [${half}:00-${sceneDuration}s] camera movement + subject action'. Use specific camera terms: slow push in, crash zoom, orbital shot, low angle, handheld shake, tracking shot, crane shot, dolly forward, arc right, tilt up. 4) NO vague words (no 'beautiful', 'nice', 'cool', 'amazing'). Example: '${exampleBreakdown}'",
+      "backgroundPrompt": "Background/environment only in English. Setting, lighting, atmosphere — NO people, NO products.",
+      "subjectPrompt": "Subject only in English on pure white background. Precise visual details.",
+      "duration": ${sceneDuration}
+    }
+  ]
+}
+
+Rules:
+- "text" in ${langName}, max 6 words
+- "narration" in ${langName}, ~${narrationWords} words, natural spoken pace
+- "stockQuery" in English, 2-4 generic Pexels keywords
+- "imagePrompt" in English, vivid and specific
+- "motionPrompt" in English, MUST follow Seedance 2.0 structure above — style → location → second-by-second breakdown with camera movements
+- No vague adjectives in motionPrompt: forbidden words are "beautiful", "nice", "cool", "amazing", "great"
+- Exactly ${sceneCount} scenes total, each ~${sceneDuration}s
+- Each scene must be visually DISTINCT (different location, angle, or action)`;
+}
+
 // ── T2V prompt ─────────────────────────────────────────────────────────────────
 
 function buildT2VPrompt(params: { topic: string; format: VideoFormat; duration: number; language: 'ru' | 'en' }, sceneCount: number, sceneDuration: number): string {
@@ -508,9 +556,12 @@ export async function generateScript(params: {
   } else if (safeParams.scriptMode === 'viral') {
     prompt = buildViralReelsPrompt(safeParams, sceneCount, sceneDuration);
   } else {
+    const isSeedance = (safeParams.animationModel ?? '').startsWith('seedance') && !isT2V;
     prompt = isT2V
       ? buildT2VPrompt(safeParams, sceneCount, sceneDuration)
-      : buildI2VPrompt(safeParams, sceneCount, sceneDuration);
+      : isSeedance
+        ? buildSeedanceI2VPrompt(safeParams, sceneCount, sceneDuration)
+        : buildI2VPrompt(safeParams, sceneCount, sceneDuration);
   }
 
   // Append user's additional style/context notes to the prompt

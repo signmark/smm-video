@@ -191,12 +191,21 @@ async function animateWithMinimax(imageBuffer: Buffer, prompt: string, outputPat
   console.log(`[fal-anim] MiniMax I2V clip saved: ${path.basename(outputPath)}`);
 }
 
+/** Wraps a raw prompt with Seedance 2.0 structure: Format header + technical tail */
+function buildSeedancePrompt(prompt: string, format: VideoFormat): string {
+  const TECH_TAIL = 'Stable face throughout. No morphing. No deformation. No flickering. No ghosting. Realistic physics. 4K cinematic.';
+  if (prompt.includes(TECH_TAIL)) return prompt; // already structured
+  const header = prompt.startsWith('Format:') ? '' : `Format: ${format}\n\n`;
+  return `${header}${prompt}\n\n${TECH_TAIL}`;
+}
+
 async function animateWithSeedance(imageBuffer: Buffer, prompt: string, format: VideoFormat, durationSeconds: number, outputPath: string, apiKey: string, onWait?: (ms: number) => void, clipDuration?: number): Promise<void> {
   const duration = clipDuration ?? (durationSeconds >= 8 ? 10 : 5);
+  const structuredPrompt = buildSeedancePrompt(prompt, format);
   console.log(`[fal-anim] Seedance I2V: submitting... (${duration}s)`);
   const q = await falSubmit('fal-ai/bytedance/seedance/v1/lite/image-to-video', {
     image_url: `data:image/jpeg;base64,${imageBuffer.toString('base64')}`,
-    prompt, duration, resolution: '720p', aspect_ratio: format,
+    prompt: structuredPrompt, duration, resolution: '720p', aspect_ratio: format,
   }, apiKey);
   const result = await falPoll(q, apiKey, 300_000, onWait);
   const videoUrl = result?.video?.url;
@@ -292,9 +301,10 @@ async function animateWithLuma(prompt: string, format: VideoFormat, durationSeco
 async function animateWithSeedanceT2V(prompt: string, format: VideoFormat, durationSeconds: number, outputPath: string, apiKey: string, onWait?: (ms: number) => void, clipDuration?: number): Promise<void> {
   const duration = clipDuration ?? (durationSeconds >= 8 ? 10 : 5);
   const aspect_ratio = format; // seedance accepts '9:16', '16:9', '1:1'
+  const structuredPrompt = buildSeedancePrompt(prompt, format);
   console.log(`[fal-anim] Seedance T2V: submitting... (${duration}s, ${aspect_ratio})`);
   const q = await falSubmit('fal-ai/bytedance/seedance-1-lite/text-to-video', {
-    prompt,
+    prompt: structuredPrompt,
     duration,
     resolution: '720p',
     aspect_ratio,
@@ -310,9 +320,10 @@ async function animateWithSeedanceT2V(prompt: string, format: VideoFormat, durat
 async function animateWithSeedance2T2V(prompt: string, format: VideoFormat, durationSeconds: number, outputPath: string, apiKey: string, onWait?: (ms: number) => void, clipDuration?: number): Promise<void> {
   const duration = clipDuration ?? (durationSeconds >= 8 ? 10 : 5);
   const aspect_ratio = format;
+  const structuredPrompt = buildSeedancePrompt(prompt, format);
   console.log(`[fal-anim] Seedance 2.0 T2V: submitting... (${duration}s, ${aspect_ratio})`);
   const q = await falSubmit('fal-ai/bytedance/seedance-2.0/text-to-video', {
-    prompt,
+    prompt: structuredPrompt,
     duration,
     resolution: '720p',
     aspect_ratio,

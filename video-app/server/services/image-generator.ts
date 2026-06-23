@@ -21,6 +21,12 @@ const FAL_IMAGE_SIZE: Record<VideoFormat, string> = {
   '1:1': 'square',
 };
 
+const FAL_NANO_ASPECT: Record<VideoFormat, string> = {
+  '9:16': '9:16',
+  '16:9': '16:9',
+  '1:1': '1:1',
+};
+
 const IMAGEN_ASPECT: Record<VideoFormat, string> = {
   '9:16': '9:16',
   '16:9': '16:9',
@@ -261,6 +267,39 @@ async function fetchFromFal(prompt: string, format: VideoFormat): Promise<Buffer
   return Buffer.from(await imgRes.arrayBuffer());
 }
 
+// ── 4b. FAL.AI Nano Banana (Gemini Flash Image via FAL — reliable billing) ────
+// Drop-in replacement for the Google-keyed Nano Banana when its quota is hit.
+
+async function fetchFromFalNanoBanana(prompt: string, format: VideoFormat): Promise<Buffer> {
+  const key = process.env.FAL_AI_API_KEY;
+  if (!key) throw new Error('NO_FAL_KEY');
+
+  const res = await fetch('https://fal.run/fal-ai/nano-banana', {
+    method: 'POST',
+    headers: { Authorization: `Key ${key}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      prompt,
+      num_images: 1,
+      output_format: 'jpeg',
+      aspect_ratio: FAL_NANO_ASPECT[format],
+    }),
+    signal: AbortSignal.timeout(90000),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`FAL-NanoBanana ${res.status}: ${text.slice(0, 200)}`);
+  }
+
+  const json = (await res.json()) as { images: Array<{ url: string }> };
+  const imageUrl = json.images?.[0]?.url;
+  if (!imageUrl) throw new Error('FAL-NanoBanana returned no image URL');
+
+  const imgRes = await fetch(imageUrl, { signal: AbortSignal.timeout(30000) });
+  if (!imgRes.ok) throw new Error(`FAL-NanoBanana image download failed: ${imgRes.status}`);
+  return Buffer.from(await imgRes.arrayBuffer());
+}
+
 // ── 5. Placeholder (last resort) ──────────────────────────────────────────────
 
 async function generatePlaceholder(text: string, format: VideoFormat): Promise<Buffer> {
@@ -351,6 +390,7 @@ export async function generateLayeredImage(params: {
       // Try providers in order until one works
       for (const fn of [
         () => fetchFromGptImage(isolatedPrompt, '1:1'),
+        () => fetchFromFalNanoBanana(isolatedPrompt, '1:1'),
         () => fetchFromGeminiFlash(isolatedPrompt, '1:1'),
         () => fetchFromImagen4(isolatedPrompt, '1:1'),
         () => fetchFromHuggingFace(isolatedPrompt, '1:1'),
@@ -414,58 +454,37 @@ export async function generateImage(params: {
     format === '16:9' ? 'cinematic widescreen 16:9 composition, horizontal framing' :
     'square composition 1:1';
   const enhancedPrompt = `${prompt}. Cinematic photography, dramatic lighting, shallow depth of field, high contrast, vivid colors, ultra-detailed, professional quality, ${compositionHint}. No text, no watermarks.`;
-  let imageBuffer: Buffer;
+  let imageBuffer: Buffer | undefined;
   let source = 'placeholder';
 
-  // 0. GPT Image 2 — best quality for I2V
-  try {
-    imageBuffer = await fetchFromGptImage(enhancedPrompt, format);
-    source = 'GPT-Image-2';
-  } catch (err0: any) {
-    if (err0.message !== 'NO_OPENAI_KEY') {
-      console.warn(`[image-gen] GPT-Image-2 failed: ${err0.message} — trying GeminiFlash`);
-    }
+  // Priority chain. GPT-Image-2 best for I2V but often billing-capped; FAL Nano
+  // Banana is the reliable workhorse (Gemini Flash Image billed via FAL), then
+  // the Google-keyed models (quota-limited), HuggingFace (free), FAL FLUX, then
+  // a local placeholder as the last resort.
+  const providers: Array<{ name: string; fn: () => Promise<Buffer> }> = [
+    { name: 'GPT-Image-2', fn: () => fetchFromGptImage(enhancedPrompt, format) },
+    { name: 'FAL-NanoBanana', fn: () => fetchFromFalNanoBanana(enhancedPrompt, format) },
+    { name: 'GeminiFlash', fn: () => fetchFromGeminiFlash(enhancedPrompt, format) },
+    { name: 'Imagen4', fn: () => fetchFromImagen4(enhancedPrompt, format) },
+    { name: 'HuggingFace', fn: () => fetchFromHuggingFace(enhancedPrompt, format) },
+    { name: 'FAL-Flux', fn: () => fetchFromFal(enhancedPrompt, format) },
+  ];
 
-    // 1. Gemini Flash image gen — fast, free quota, same key
+  const SKIP_MESSAGES = new Set(['NO_OPENAI_KEY', 'NO_GEMINI_KEY', 'NO_HF_TOKEN', 'NO_FAL_KEY']);
+  for (const provider of providers) {
     try {
-      imageBuffer = await fetchFromGeminiFlash(enhancedPrompt, format);
-      source = 'GeminiFlash';
-    } catch (err1: any) {
-      if (err1.message !== 'NO_GEMINI_KEY') {
-        console.warn(`[image-gen] GeminiFlash failed: ${err1.message} — trying Imagen4`);
-      }
-
-      // 2. Imagen 4 — highest quality, same key
-      try {
-        imageBuffer = await fetchFromImagen4(enhancedPrompt, format);
-        source = 'Imagen4';
-      } catch (err2: any) {
-        if (err2.message !== 'NO_GEMINI_KEY') {
-          console.warn(`[image-gen] Imagen4 failed: ${err2.message} — trying HuggingFace`);
-        }
-
-        // 3. HuggingFace FLUX.1-schnell — free
-        try {
-          imageBuffer = await fetchFromHuggingFace(enhancedPrompt, format);
-          source = 'HuggingFace';
-        } catch (err3: any) {
-          if (err3.message !== 'NO_HF_TOKEN') {
-            console.warn(`[image-gen] HF failed: ${err3.message} — trying FAL`);
-          }
-
-          // 4. FAL FLUX schnell — paid fallback
-          try {
-            imageBuffer = await fetchFromFal(enhancedPrompt, format);
-            source = 'FAL';
-          } catch (err4: any) {
-            if (err4.message !== 'NO_FAL_KEY') {
-              console.warn(`[image-gen] FAL failed: ${err4.message} — using placeholder`);
-            }
-            imageBuffer = await generatePlaceholder(sceneText || prompt, format);
-          }
-        }
+      imageBuffer = await provider.fn();
+      source = provider.name;
+      break;
+    } catch (err: any) {
+      if (!SKIP_MESSAGES.has(err.message)) {
+        console.warn(`[image-gen] ${provider.name} failed: ${err.message}`);
       }
     }
+  }
+
+  if (!imageBuffer) {
+    imageBuffer = await generatePlaceholder(sceneText || prompt, format);
   }
 
   await sharp(imageBuffer!)

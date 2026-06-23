@@ -395,13 +395,14 @@ export async function createProject(data: {
     });
     const created = directusToProject(res.data);
     // Directus CREATE may not accept all fields (permission split between create/update)
-    // Always PATCH subtitle_style and animation_model explicitly after creation
-    if (created.subtitleStyle !== project.subtitleStyle || created.animationModel !== project.animationModel) {
+    // Always PATCH subtitle_style, animation_model and script_mode explicitly after creation
+    if (created.subtitleStyle !== project.subtitleStyle || created.animationModel !== project.animationModel || created.scriptMode !== project.scriptMode) {
       const patch = await directusFetch(`/items/video_projects/${created.id}`, {
         method: 'PATCH',
         body: JSON.stringify({
           subtitle_style: project.subtitleStyle,
           animation_model: project.animationModel,
+          script_mode: project.scriptMode ?? null,
         }),
       });
       return directusToProject(patch.data);

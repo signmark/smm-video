@@ -37,6 +37,7 @@ import { generateBackgroundMusic, getMusicStyle, autoMusicStyle } from './servic
 import { animateFrame, animateText, isT2VModel } from './services/fal-animator.js';
 import { searchAndDownloadStockClip, searchAndDownloadStockPhoto } from './services/stock-video.js';
 import { ensureKeysLoaded } from './load-keys.js';
+import { planVideo } from './services/director.js';
 
 const VALID_SUBTITLE_STYLES: SubtitleStyle[] = ['none', 'plain', 'fade', 'karaoke', 'tiktok', 'word-by-word', 'cinematic', 'cinematic-full', 'bar'];
 
@@ -301,6 +302,23 @@ router.post('/videos', async (req, res) => {
     });
     res.status(201).json(project);
   } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// AI-режиссёр: по брифу/теме предлагает план настроек видео (не запускает генерацию).
+router.post('/videos/plan', async (req, res) => {
+  const { brief, topic, customScenario, landingUrl, additionalDetails } = req.body ?? {};
+  const hasInput = [brief, topic, customScenario, landingUrl].some((v) => v && String(v).trim().length > 0);
+  if (!hasInput) {
+    return res.status(400).json({ error: 'Нужен бриф, тема, сценарий или ссылка на лендинг' });
+  }
+  try {
+    await ensureKeysLoaded();
+    const plan = await planVideo({ brief, topic, customScenario, landingUrl, additionalDetails });
+    res.json(plan);
+  } catch (err: any) {
+    console.error('[director] plan failed:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

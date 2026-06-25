@@ -401,6 +401,10 @@ export default function Create() {
   const musicAbortRef = useRef<AbortController | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [directorBrief, setDirectorBrief] = useState('');
+  const [directorLoading, setDirectorLoading] = useState(false);
+  const [directorRationale, setDirectorRationale] = useState('');
+  const [directorError, setDirectorError] = useState('');
 
   // Stop all audio when navigating away from the page
   useEffect(() => {
@@ -520,6 +524,73 @@ export default function Create() {
     setAnimationModel(mode === 't2v' ? 'kling-t2v' : 'wan');
   }
 
+  function applyPlan(plan: any, fillTopic: boolean) {
+    if (plan.format) setFormat(plan.format);
+    if (typeof plan.duration === 'number') setDuration(plan.duration);
+    if (plan.language) setLanguage(plan.language);
+    if (plan.scriptMode) setScriptMode(plan.scriptMode);
+    if (plan.animationModel) {
+      setAnimationModel(plan.animationModel);
+      // Pipeline всегда выводим из модели, чтобы режим и модель не рассинхронизировались.
+      setPipelineMode(T2V_MODELS.some((m) => m.value === plan.animationModel) ? 't2v' : 'i2v');
+    } else if (plan.pipelineMode) {
+      setPipelineMode(plan.pipelineMode);
+    }
+    if (plan.clipDuration === 5 || plan.clipDuration === 10) setClipDuration(plan.clipDuration);
+    if (plan.voice) setVoice(plan.voice);
+    if (plan.subtitleStyle) setSubtitleStyle(plan.subtitleStyle as SubtitleStyleValue);
+    if (plan.musicStyle) setMusicStyle(plan.musicStyle as MusicStyleValue);
+    if (plan.title) setTitle(plan.title);
+    if (fillTopic && plan.topic) {
+      setInputMode('topic');
+      setTopic(plan.topic);
+    }
+    setDirectorRationale(plan.rationale || '');
+  }
+
+  // useBrief=true — план по свободному брифу; иначе — по текущим полям формы.
+  async function runDirector(useBrief: boolean) {
+    const payload: Record<string, any> = {};
+    if (useBrief) {
+      if (!directorBrief.trim()) { setDirectorError('Опишите, какое видео вам нужно'); return; }
+      payload.brief = directorBrief.trim();
+    } else {
+      if (inputMode === 'topic') {
+        if (!topic.trim()) { setDirectorError('Сначала введите тему видео'); return; }
+        payload.topic = topic.trim();
+      } else if (inputMode === 'custom') {
+        if (!customScenario.trim()) { setDirectorError('Сначала введите сценарий'); return; }
+        payload.customScenario = customScenario.trim();
+      } else {
+        if (!landingUrl.trim()) { setDirectorError('Сначала введите ссылку на лендинг'); return; }
+        payload.landingUrl = landingUrl.trim();
+      }
+      if (additionalDetails.trim()) payload.additionalDetails = additionalDetails.trim();
+    }
+
+    setDirectorLoading(true);
+    setDirectorError('');
+    setDirectorRationale('');
+    try {
+      const res = await fetch(`${API}/videos/plan`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) {
+        let msg = 'Не удалось составить план';
+        try { msg = (await res.json()).error || msg; } catch {}
+        throw new Error(msg);
+      }
+      const plan = await res.json();
+      applyPlan(plan, useBrief);
+    } catch (err: any) {
+      setDirectorError(err.message);
+    } finally {
+      setDirectorLoading(false);
+    }
+  }
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
 
@@ -621,6 +692,53 @@ export default function Create() {
       </p>
 
       <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+        {/* AI-режиссёр: предлагает настройки видео по брифу */}
+        <div style={{ background: 'var(--bg-card2)', border: '1.5px solid var(--accent)', borderRadius: 'var(--radius-sm)', padding: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <span style={{ fontSize: 18 }}>🎬</span>
+            <span style={{ fontWeight: 700, fontSize: 15 }}>AI-режиссёр</span>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>предложит формат, модель, голос, музыку и субтитры</span>
+          </div>
+          <textarea
+            value={directorBrief}
+            onChange={(e) => setDirectorBrief(e.target.value)}
+            data-testid="input-director-brief"
+            placeholder="Опишите словами, какое видео вам нужно. Например: «энергичный рекламный ролик про кофейню на 30 секунд для Reels»"
+            rows={2}
+            style={{ width: '100%', padding: '10px 12px', fontSize: 14, borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text)', resize: 'vertical', boxSizing: 'border-box' }}
+          />
+          <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              data-testid="button-director-brief"
+              onClick={() => runDirector(true)}
+              disabled={directorLoading}
+              style={{ flex: 1, minWidth: 200, padding: '10px 14px', fontSize: 14, fontWeight: 600, border: 'none', borderRadius: 'var(--radius-sm)', cursor: directorLoading ? 'wait' : 'pointer', background: 'var(--accent)', color: 'white', opacity: directorLoading ? 0.7 : 1 }}
+            >
+              {directorLoading ? '🤔 Думаю…' : '✨ Составить план по брифу'}
+            </button>
+            <button
+              type="button"
+              data-testid="button-director-auto"
+              onClick={() => runDirector(false)}
+              disabled={directorLoading}
+              title="Подобрать настройки по уже заполненным полям (тема / сценарий / лендинг)"
+              style={{ padding: '10px 14px', fontSize: 14, fontWeight: 600, border: '1.5px solid var(--accent)', borderRadius: 'var(--radius-sm)', cursor: directorLoading ? 'wait' : 'pointer', background: 'transparent', color: 'var(--accent)', opacity: directorLoading ? 0.7 : 1 }}
+            >
+              ⚡ Авто
+            </button>
+          </div>
+          {directorError && (
+            <p style={{ color: 'var(--danger, #ef4444)', fontSize: 13, marginTop: 8, marginBottom: 0 }}>{directorError}</p>
+          )}
+          {directorRationale && (
+            <div data-testid="text-director-rationale" style={{ marginTop: 10, padding: '10px 12px', background: 'var(--bg-card)', borderRadius: 'var(--radius-sm)', fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.5 }}>
+              <strong style={{ color: 'var(--text)' }}>План режиссёра:</strong> {directorRationale}
+              <div style={{ marginTop: 4, fontSize: 12 }}>Поля ниже заполнены — проверьте и при необходимости измените.</div>
+            </div>
+          )}
+        </div>
 
         {/* Content mode toggle */}
         <div style={{ display: 'flex', gap: 0, borderRadius: 'var(--radius-sm)', overflow: 'hidden', border: '1.5px solid var(--border)' }}>

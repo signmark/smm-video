@@ -4,6 +4,7 @@
 - [N8n removal](n8n-removal.md) — n8n полностью удалён; все вебхуки заменены прямыми сервисами; publish-scheduler.ts — главный путь публикации
 - [User token policy](user-token-policy.md) — UI-операции ТОЛЬКО через user token; admin-token только для серверных задач; tokenExpired флаг → 401 sessionExpired
 - [Vite build memory](vite-build-memory.md) — vite build падает с exit -1 без вывода; нужно NODE_OPTIONS="--max-old-space-size=1024" npx vite build
+- [Director enum sync](director-enum-sync.md) — AI-режиссёр video-app: allowlists в director.ts/routes.ts/Create.tsx должны совпадать, иначе план задаёт значение вне UI-дропдауна
 - [Subscription enforcement](subscription-enforcement.md) — expire_date нет в JWT/getCurrentUser; блокировка истёкших через глобальный гейт requireActiveSubscription (GET свободны, мутации 403), личность через /users/me с токеном
 - [Pricing banner states](pricing-banner-states.md) — баннеры trial/paid/expired считать из ОДНОГО источника истечения (isExpired→effectivePlan); не дублировать проверку expire_date, иначе баннеры конфликтуют
 - [Image-gen usage storage](image-gen-usage-storage.md) — месячный счётчик AI-картинок в JSON-поле directus_users.image_gen_usage {month,count}, не в файле; поле есть на dev+prod

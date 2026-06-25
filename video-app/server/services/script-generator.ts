@@ -663,6 +663,14 @@ export async function generateScript(params: {
 - Keep every scene visually distinct from the others.
 - Do NOT add any JSON keys beyond the schema shown above — only fill the existing fields.`;
 
+  // Russian-specific spelling/pronunciation rules — narration is fed to TTS, so
+  // correct «ё» and accurate spelling are critical for how the voiceover sounds.
+  if (safeParams.language === 'ru') {
+    prompt += `\n\nRUSSIAN SPELLING (critical for "text" and "narration" — they are spoken aloud by TTS):
+- ALWAYS write the letter «ё» (not «е») in every word where «ё» is required by meaning and standard pronunciation: всё, ещё, её, моё, твоё, идёт, даёт, поёт, несёт, берёт, живёт, чёрный, тёплый, лёгкий, серьёзно, надёжный, объём, актёр, ребёнок, полёт, нёс, вёл, шёл и т.п. The voice mispronounces these if «е» is used instead of «ё».
+- Spell every Russian word exactly and correctly — no invented, distorted or misspelled forms (e.g. write «чесалка», never «ческалка»). Use only real, dictionary-correct words.`;
+  }
+
   // Append user's additional style/context notes to the prompt
   if (safeParams.additionalDetails && safeParams.additionalDetails.trim()) {
     prompt += `\n\nIMPORTANT — Additional style/context requirements from the user (incorporate into ALL scenes — style_anchor, t2vPrompt, imagePrompt, environment, atmosphere, etc.):\n"${safeParams.additionalDetails.trim()}"`;

@@ -112,7 +112,7 @@ export function registerFalAiImageRoutes(app: Express) {
   app.get('/api/user/image-gen-usage', async (req, res) => {
     const { userId, plan } = await getUserPlanInfo(req);
     if (!userId) return res.status(401).json({ error: 'Не авторизован' });
-    const usage = getUsage(userId);
+    const usage = await getUsage(userId);
     const limit = plan === 'basic' ? BASIC_PLAN_LIMIT : plan === 'trial' ? TRIAL_PLAN_LIMIT : null;
     res.json({
       count: usage.count,
@@ -147,8 +147,8 @@ export function registerFalAiImageRoutes(app: Express) {
       }
       if ((plan === 'basic' || plan === 'trial') && planUserId) {
         const planLimit = plan === 'trial' ? TRIAL_PLAN_LIMIT : BASIC_PLAN_LIMIT;
-        if (!canGenerate(planUserId, planLimit)) {
-          const usage = getUsage(planUserId);
+        if (!(await canGenerate(planUserId, planLimit))) {
+          const usage = await getUsage(planUserId);
           return res.status(429).json({
             success: false,
             error: `Лимит генераций исчерпан (${usage.count}/${planLimit} в месяц). Оформите подписку для продолжения.`,
@@ -338,7 +338,7 @@ export function registerFalAiImageRoutes(app: Express) {
         let usageInfo: { count?: number; remaining?: number | null } = {};
         if (planUserId && (plan === 'basic' || plan === 'trial')) {
           const planLimit = plan === 'trial' ? TRIAL_PLAN_LIMIT : BASIC_PLAN_LIMIT;
-          const newCount = incrementUsage(planUserId);
+          const newCount = await incrementUsage(planUserId);
           usageInfo = { count: newCount, remaining: Math.max(0, planLimit - newCount) };
           console.log(`[image-gen] User ${planUserId.slice(0, 8)} ${plan} usage: ${newCount}/${planLimit}`);
         }

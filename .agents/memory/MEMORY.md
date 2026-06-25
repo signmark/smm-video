@@ -4,6 +4,7 @@
 - [N8n removal](n8n-removal.md) — n8n полностью удалён; все вебхуки заменены прямыми сервисами; publish-scheduler.ts — главный путь публикации
 - [User token policy](user-token-policy.md) — UI-операции ТОЛЬКО через user token; admin-token только для серверных задач; tokenExpired флаг → 401 sessionExpired
 - [Vite build memory](vite-build-memory.md) — vite build падает с exit -1 без вывода; нужно NODE_OPTIONS="--max-old-space-size=1024" npx vite build
+- [Image-gen usage storage](image-gen-usage-storage.md) — месячный счётчик AI-картинок в JSON-поле directus_users.image_gen_usage {month,count}, не в файле; поле есть на dev+prod
 - [Video progress & TTS pacing](video-progress-and-tts-pacing.md) — TTS без atempo (сборщик сам ретаймит клип под аудио); прогресс анимации — по времени + Math.max(time, stepFloor) для монотонности
 - [FAL image-gen params](fal-image-gen-params.md) — FAL Flux image_size=portrait_16_9 (не portrait_9_16!) для 9:16; Nano Banana=aspect_ratio; рабочий Flux-фолбэк нужен т.к. Nano Banana иногда 422
 - [Directus schema drift](directus-schema-drift.md) — Directus молча дропает поля, которых нет в коллекции (200 OK, значение пропадает); dev/prod схемы расходятся, проверять GET /fields login-токеном

@@ -177,8 +177,8 @@ export function registerAiRoutes(app: Express) {
         }
         const TRIAL_PLAN_LIMIT = 10;
         const activeLimit = plan === 'trial' ? TRIAL_PLAN_LIMIT : plan === 'basic' ? BASIC_PLAN_LIMIT : null;
-        if (activeLimit !== null && !canGenerate(userId, activeLimit)) {
-          const usage = getUsage(userId);
+        if (activeLimit !== null && !(await canGenerate(userId, activeLimit))) {
+          const usage = await getUsage(userId);
           return res.status(429).json({
             success: false,
             error: `Лимит генераций исчерпан (${usage.count}/${activeLimit} в месяц). Оформите подписку для продолжения.`,
@@ -327,7 +327,7 @@ export function registerAiRoutes(app: Express) {
         const TRIAL_PLAN_LIMIT_INC = 10;
         if (plan === 'basic' || plan === 'trial') {
           const planLimit = plan === 'trial' ? TRIAL_PLAN_LIMIT_INC : BASIC_PLAN_LIMIT;
-          const newCount = incrementUsage(userId);
+          const newCount = await incrementUsage(userId);
           usageInfo = { count: newCount, remaining: Math.max(0, planLimit - newCount) };
           log(`[image-gen] User ${userId.slice(0, 8)} ${plan} usage: ${newCount}/${planLimit}`, 'info');
         }

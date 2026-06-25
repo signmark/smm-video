@@ -635,11 +635,15 @@ export default function VideoDetail({ id }: { id: string }) {
     }
   }
 
-  async function handleResume() {
+  async function handleResume(mode: 'auto' | 'rebuild' = 'auto') {
     setResuming(true);
-    const res = await fetch(`${API}/videos/${id}/resume`, { method: 'POST' });
+    const res = await fetch(`${API}/videos/${id}/resume`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode }),
+    });
     if (res.ok) {
-      setProject((p) => p ? { ...p, status: 'assembling', progress: 78, progressMessage: 'Определяю с какого места продолжить...' } : p);
+      setProject((p) => p ? { ...p, status: 'assembling', progress: 78, progressMessage: mode === 'rebuild' ? 'Пересобираю заново из сохранённых материалов...' : 'Определяю с какого места продолжить...' } : p);
       if (!pollRef.current) pollRef.current = setInterval(fetchProject, 3000);
     } else {
       const json = await res.json().catch(() => ({}));
@@ -934,13 +938,22 @@ export default function VideoDetail({ id }: { id: string }) {
           {isError && (
             <>
               <button
-                onClick={handleResume}
+                onClick={() => handleResume('auto')}
                 disabled={resuming}
                 data-testid="button-resume"
                 style={btnStyle(resuming ? '#1e3a5f' : '#1d4ed8')}
                 title="Продолжить с того места, где остановились"
               >
                 {resuming ? '⏳ Продолжаем...' : '▶ Продолжить'}
+              </button>
+              <button
+                onClick={() => handleResume('rebuild')}
+                disabled={resuming}
+                data-testid="button-rebuild"
+                style={btnStyle(resuming ? '#3a1e5f' : '#7c3aed')}
+                title="Полностью пересобрать видео из сохранённых клипов и озвучки"
+              >
+                {resuming ? '⏳ Пересобираем...' : '♻️ Пересобрать заново'}
               </button>
               <button onClick={handleRegenerate} style={btnStyle('var(--accent)')}>
                 🔄 Заново
@@ -1423,14 +1436,26 @@ export default function VideoDetail({ id }: { id: string }) {
               📝 Скрипт: {project.script.title}
             </h2>
             {isDone && (
-              <button
-                onClick={handleResume}
-                disabled={resuming}
-                title="Пересобрать финальное видео с текущими субтитрами (используются готовые клипы)"
-                style={{ padding: '7px 16px', borderRadius: 'var(--radius-sm)', border: 'none', background: resuming ? '#1e3a5f' : '#0f4c8a', color: 'white', fontSize: 13, fontWeight: 600, cursor: resuming ? 'not-allowed' : 'pointer', opacity: resuming ? 0.7 : 1 }}
-              >
-                {resuming ? '⏳ Пересобираем...' : '🔄 Пересобрать субтитры'}
-              </button>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button
+                  onClick={() => handleResume('auto')}
+                  disabled={resuming}
+                  data-testid="button-reburn-subtitles"
+                  title="Пересобрать финальное видео с текущими субтитрами (используются готовые клипы)"
+                  style={{ padding: '7px 16px', borderRadius: 'var(--radius-sm)', border: 'none', background: resuming ? '#1e3a5f' : '#0f4c8a', color: 'white', fontSize: 13, fontWeight: 600, cursor: resuming ? 'not-allowed' : 'pointer', opacity: resuming ? 0.7 : 1 }}
+                >
+                  {resuming ? '⏳ Пересобираем...' : '🔄 Пересобрать субтитры'}
+                </button>
+                <button
+                  onClick={() => handleResume('rebuild')}
+                  disabled={resuming}
+                  data-testid="button-rebuild-done"
+                  title="Полностью пересобрать видео из сохранённых клипов и озвучки (если итог пустой/битый)"
+                  style={{ padding: '7px 16px', borderRadius: 'var(--radius-sm)', border: 'none', background: resuming ? '#3a1e5f' : '#7c3aed', color: 'white', fontSize: 13, fontWeight: 600, cursor: resuming ? 'not-allowed' : 'pointer', opacity: resuming ? 0.7 : 1 }}
+                >
+                  {resuming ? '⏳ Пересобираем...' : '♻️ Пересобрать заново'}
+                </button>
+              </div>
             )}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>

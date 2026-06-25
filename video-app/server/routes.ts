@@ -38,6 +38,7 @@ import { animateFrame, animateText, isT2VModel, generateAvatarClip, generateAgen
 import { searchAndDownloadStockClip, searchAndDownloadStockPhoto } from './services/stock-video.js';
 import { ensureKeysLoaded } from './load-keys.js';
 import { planVideo } from './services/director.js';
+import { decideResumeStage } from './resume-policy.js';
 
 const VALID_SUBTITLE_STYLES: SubtitleStyle[] = ['none', 'plain', 'fade', 'karaoke', 'tiktok', 'word-by-word', 'cinematic', 'cinematic-full', 'bar'];
 
@@ -931,10 +932,23 @@ router.post('/videos/:id/resume', async (req, res) => {
     }
     if (!project.script) return res.status(400).json({ error: 'No script — restart from scratch' });
 
+    // mode='rebuild' → full re-assembly from saved clips+audio, ignoring any
+    // existing (possibly corrupt) final MP4. mode='auto' (default) re-burns
+    // subtitles when the final video is valid, else falls back to re-assembly.
+    const mode: 'auto' | 'rebuild' = req.body?.mode === 'rebuild' ? 'rebuild' : 'auto';
+
+    // Flip to 'assembling' synchronously BEFORE responding so polling clients
+    // never observe the stale previous 'done'/'error' status while the async
+    // pipeline spins up (also makes the 409 double-click guard effective).
+    await updateProject(project.id, {
+      status: 'assembling', progress: 1,
+      progressMessage: mode === 'rebuild' ? 'Пересборка из сохранённых материалов...' : 'Определяю с какого места продолжить...',
+    });
+
     res.json({ success: true });
 
     // Determine resume point asynchronously
-    runResumePipeline(project.id).catch((err) => {
+    runResumePipeline(project.id, mode).catch((err) => {
       console.error('[resume] Pipeline error:', err);
     });
   } catch (err: any) {
@@ -959,7 +973,7 @@ async function applyMusic(projectId: string, videoPath: string, topic: string, s
   }
 }
 
-async function runResumePipeline(projectId: string) {
+async function runResumePipeline(projectId: string, mode: 'auto' | 'rebuild' = 'auto') {
   const project = await getProject(projectId);
   if (!project?.script) return;
 
@@ -973,11 +987,43 @@ async function runResumePipeline(projectId: string) {
   const update = (p: Partial<typeof project>) => updateProject(projectId, p);
 
   try {
-    // ── Stage 1: assembled video exists → only re-burn subtitles ────────────
-    let assembledExists = false;
-    try { await fs.access(videoPath); assembledExists = true; } catch {}
+    // ── Stage 1: VALID assembled video exists → only re-burn subtitles ───────
+    // mode='rebuild' forces full re-assembly from clips, skipping Stage 1.
+    // Otherwise: fs.access only proves the file exists — an interrupted assembly
+    // leaves a truncated MP4 (moov atom not found). probeActualDuration returns 0
+    // for corrupt/0-byte files, so we burn subtitles ONLY onto a playable video.
+    // A corrupt file is deleted so we fall through to Stage 2 (re-assemble).
+    let assembledValid = false;
+    if (mode !== 'rebuild') {
+      try {
+        await fs.access(videoPath);
+        const existingDur = await probeActualDuration(videoPath);
+        assembledValid = existingDur > 0;
+        if (!assembledValid) {
+          console.warn(`[resume] Existing ${path.basename(videoPath)} is corrupt (duration=0) — removing, will re-assemble from clips`);
+          await fs.unlink(videoPath).catch(() => {});
+        }
+      } catch {}
+    }
 
-    if (assembledExists) {
+    // Check ALL clips exist (not just clip_0 — partial downloads break ffmpeg).
+    let clipsExist = false;
+    try {
+      const clipChecks = await Promise.all(
+        script.scenes.map((_, i) => fs.access(path.join(clipsDir, `clip_${i}.mp4`)).then(() => true).catch(() => false))
+      );
+      clipsExist = clipChecks.every(Boolean);
+      if (!clipsExist) {
+        const missing = clipChecks.map((ok, i) => !ok ? i : -1).filter(i => i >= 0);
+        console.warn(`[resume] Missing clips: ${missing.map(i => `clip_${i}.mp4`).join(', ')} — cannot skip to assembly`);
+      }
+    } catch {}
+
+    const stage = decideResumeStage({ mode, assembledValid, clipsExist });
+    console.log(`[resume] ${projectId}: mode=${mode} assembledValid=${assembledValid} clipsExist=${clipsExist} → stage=${stage}`);
+
+    // ── reburn: valid final video exists → only re-burn subtitles ────────────
+    if (stage === 'reburn') {
       await update({ status: 'assembling', progress: 96, progressMessage: 'Накладываю субтитры (resume)...' });
       const scenes = script.scenes.map((s) => ({
         narration: s.narration || s.text,
@@ -1004,21 +1050,8 @@ async function runResumePipeline(projectId: string) {
       return;
     }
 
-    // ── Stage 2: clips exist → reconstruct clipsWithAudio, assemble + burn ──
-    // Check ALL clips exist, not just clip_0 (partial downloads cause ffmpeg errors)
-    let clipsExist = false;
-    try {
-      const clipChecks = await Promise.all(
-        script.scenes.map((_, i) => fs.access(path.join(clipsDir, `clip_${i}.mp4`)).then(() => true).catch(() => false))
-      );
-      clipsExist = clipChecks.every(Boolean);
-      if (!clipsExist) {
-        const missing = clipChecks.map((ok, i) => !ok ? i : -1).filter(i => i >= 0);
-        console.warn(`[resume] Missing clips: ${missing.map(i => `clip_${i}.mp4`).join(', ')} — cannot skip to assembly`);
-      }
-    } catch {}
-
-    if (clipsExist) {
+    // ── reassemble: clips exist → reconstruct clipsWithAudio, assemble + burn ──
+    if (stage === 'reassemble') {
       await update({ status: 'assembling', progress: 78, progressMessage: 'Склеиваю клипы (resume)...' });
 
       const clipsWithAudio = await Promise.all(

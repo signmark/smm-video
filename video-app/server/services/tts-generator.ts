@@ -30,9 +30,83 @@ const VALID_VOICES = new Set(['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable'
 
 // Instructions in English — models parse English meta-instructions more reliably
 const INSTRUCTIONS_BY_LANG: Record<string, string> = {
-  ru: 'Speak Russian only. You are an energetic viral content creator and podcast host. Delivery: fast, punchy, confident. Emphasize key words with rising pitch. Use very brief dramatic pauses (80–120 ms) before surprising facts or numbers. Never monotone — vary speed and energy across sentences. Sound passionate, urgent, and authoritative. No filler, no hesitation.',
+  ru: 'Speak Russian only. You are an energetic viral content creator and podcast host. Delivery: fast, punchy, confident. Emphasize key words with rising pitch. Use very brief dramatic pauses (80–120 ms) before surprising facts or numbers. Never monotone — vary speed and energy across sentences. Sound passionate, urgent, and authoritative. No filler, no hesitation. The text may contain stress marks (a combining acute accent placed right after a vowel) — always pronounce that exact syllable as the stressed one.',
   en: 'You are an energetic viral content creator and podcast host. Delivery: fast, punchy, confident. Emphasize key words with rising pitch. Use very brief dramatic pauses before surprising facts. Never monotone — vary speed and energy. Sound passionate, urgent, and authoritative. No filler.',
 };
+
+// ─── Russian stress accentuation (context-aware homograph fix) ────────────────
+// Russian TTS (OpenAI gpt-4o-mini-tts + Edge neural voices) honor the Unicode
+// combining acute accent (U+0301) placed right after a stressed vowel. We ask
+// Gemini to insert those marks with full sentence context so homographs like
+// "духи́" (perfume) vs "ду́хи" (spirits) are pronounced correctly.
+// Best-effort: any failure, missing key, or non-Cyrillic text → original text.
+const accentCache = new Map<string, string>();
+const CYRILLIC_RE = /[а-яё]/i;
+
+function stripStressMarks(s: string): string {
+  return s.replace(/\u0301/g, '');
+}
+
+function geminiBaseForTts(): string {
+  const proxyUrl = process.env.GEMINI_PROXY_URL;
+  if (proxyUrl) {
+    try { const u = new URL(proxyUrl); return `${u.protocol}//${u.host}`; } catch {}
+  }
+  return 'https://generativelanguage.googleapis.com';
+}
+
+async function accentuateRussian(text: string): Promise<string> {
+  if (!CYRILLIC_RE.test(text)) return text;
+  const cached = accentCache.get(text);
+  if (cached !== undefined) return cached;
+
+  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || process.env.GOOGLE_AI_API_KEY;
+  if (!apiKey) return text;
+
+  const systemInstruction =
+    'Ты — система простановки ударений в русском тексте для синтеза речи. ' +
+    'Верни ТОТ ЖЕ текст без единого изменения слов, их порядка, пунктуации, регистра, переносов и пробелов, ' +
+    'добавив ТОЛЬКО знак ударения — комбинирующий акут U+0301 — сразу ПОСЛЕ ударной гласной в каждом многосложном слове. ' +
+    'Букву «ё» не заменяй и не добавляй. Особое внимание омографам: ставь ударение строго по СМЫСЛУ предложения ' +
+    '(духи́ — парфюм; ду́хи — призраки; за́мок — здание; замо́к — на двери; бо́льшая/больша́я; и т.п.). ' +
+    'Не добавляй пояснений, кавычек, markdown — выведи только сам текст с ударениями.';
+
+  try {
+    const url = `${geminiBaseForTts()}/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text }] }],
+        systemInstruction: { parts: [{ text: systemInstruction }] },
+        generationConfig: { temperature: 0, topP: 0.1, maxOutputTokens: 2048 },
+      }),
+      signal: AbortSignal.timeout(20_000),
+    });
+    if (!res.ok) {
+      console.warn(`[tts:accent] Gemini ${res.status} — using plain text`);
+      accentCache.set(text, text); // cache fallback to avoid re-hitting a failing key per scene
+      return text;
+    }
+    const data = await res.json() as any;
+    const parts: any[] = data.candidates?.[0]?.content?.parts ?? [];
+    const out = parts.map((p: any) => p.text || '').join('').trim();
+    // Safety net: accept ONLY if the model changed nothing but stress marks.
+    // Guards against the model rewriting words, adding quotes/markdown, swapping е↔ё, etc.
+    if (!out || stripStressMarks(out) !== text.trim()) {
+      console.warn('[tts:accent] result altered text beyond stress marks — using plain text');
+      accentCache.set(text, text);
+      return text;
+    }
+    const marks = (out.match(/\u0301/g) || []).length;
+    console.log(`[tts:accent] added ${marks} stress mark(s)`);
+    accentCache.set(text, out);
+    return out;
+  } catch (err: any) {
+    console.warn(`[tts:accent] error: ${err.message} — using plain text`);
+    return text;
+  }
+}
 
 export async function generateAudio(params: {
   text: string;
@@ -53,6 +127,10 @@ export async function generateAudio(params: {
 
   if (!text.trim()) return null;
 
+  // Context-aware Russian stress so homographs (духи́/ду́хи) are read correctly.
+  // synthText feeds OpenAI + Edge (both honor U+0301); HuggingFace mms gets raw text.
+  const synthText = lang === 'ru' ? await accentuateRussian(text) : text;
+
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
 
   const voice = (params.voice && VALID_VOICES.has(params.voice)) ? params.voice : (DEFAULT_VOICE_BY_LANG[lang] ?? 'alloy');
@@ -62,7 +140,7 @@ export async function generateAudio(params: {
 
   // Helper: single TTS attempt with given model and timeout
   async function attemptTTS(model: string, timeoutMs: number): Promise<Response> {
-    const body: Record<string, any> = { model, voice, input: text, response_format: 'mp3' };
+    const body: Record<string, any> = { model, voice, input: synthText, response_format: 'mp3' };
     if (model === 'gpt-4o-mini-tts') body.instructions = instructions;
     return fetch('https://api.openai.com/v1/audio/speech', {
       method: 'POST',
@@ -125,10 +203,11 @@ export async function generateAudio(params: {
   if (!res || openAiQuotaExceeded) {
     console.warn(`[tts] OpenAI unavailable — trying Edge TTS fallback`);
 
-    let fallbackOk = await generateWithEdgeTTS(text, lang, outputPath, params.voice);
+    let fallbackOk = await generateWithEdgeTTS(synthText, lang, outputPath, params.voice);
 
     if (!fallbackOk) {
       console.warn(`[tts] Edge TTS failed — trying HuggingFace`);
+      // HuggingFace mms-tts g2p can't use stress marks — feed raw text.
       fallbackOk = await generateWithHuggingFace(text, lang, outputPath);
     }
 

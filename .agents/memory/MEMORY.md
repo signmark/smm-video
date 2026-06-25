@@ -5,6 +5,7 @@
 - [User token policy](user-token-policy.md) — UI-операции ТОЛЬКО через user token; admin-token только для серверных задач; tokenExpired флаг → 401 sessionExpired
 - [Vite build memory](vite-build-memory.md) — vite build падает с exit -1 без вывода; нужно NODE_OPTIONS="--max-old-space-size=1024" npx vite build
 - [HeyGen avatar/agent](heygen-avatar-integration.md) — avatar клип липсинкается под тот же TTS, что муксит assembler (-map 1:a:0), нет двойного звука; avatar обрабатывается в I2V И T2V; agent — short-circuit без сцен
+- [Gemini proxy + TTS ударения](gemini-proxy-and-tts-accent.md) — Gemini-вызовы ТОЛЬКО через GEMINI_PROXY_URL (триальный ключ, прямой = 403); русские ударения омографов через U+0301 от Gemini, OpenAI/Edge их читают, HF — нет
 - [Video stock gate](video-stock-gate.md) — любой путь к status=script_ready ОБЯЗАН ставить script.stockPrechecked=true, иначе фронт поллит вечно; стоки Pexels→Pixabay→AI
 - [Video music & A/V sync](video-music-sync.md) — длина фоновой музыки от probeActualDuration(видео), не от плановых scene.duration; клип = audioDuration; resume должен пробивать аудио
 - [Video prompt engineering](video-prompt-engineering.md) — 3 слоя промптов (script/motion/image); cross-cutting гайды добавлять в generateScript() ПОСЛЕ выбора билдера, не в каждый билдер

@@ -157,6 +157,7 @@ export default function PricingPage() {
   const { toast } = useToast();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [userPlan, setUserPlan] = useState<string | null>(null);
+  const [expireDate, setExpireDate] = useState<string | null>(null);
   const [plans, setPlans] = useState(PLANS);
   const [selectedPlan, setSelectedPlan] = useState<typeof PLANS[0] | null>(null);
   const [modalState, setModalState] = useState<ModalState>('idle');
@@ -186,6 +187,7 @@ export default function PricingPage() {
           // Считаем подписку истёкшей если expire_date задана и прошла
           const isExpired = expireDate ? new Date(expireDate) < new Date() : false;
           setUserPlan(isExpired ? 'free' : plan);
+          setExpireDate(expireDate);
         })
         .catch(() => {});
     }
@@ -213,6 +215,21 @@ export default function PricingPage() {
   // trial(0) и free(−1) — показываем все тарифы
   const userPlanLevel = userPlan ? (PLAN_LEVEL[userPlan] ?? 0) : null;
   const hasActivePaidPlan = userPlan && userPlan !== 'trial' && userPlan !== 'free' && userPlan !== 'basic';
+
+  // Срок действия текущей подписки/триала
+  const dayWord = (n: number) => {
+    const m10 = n % 10, m100 = n % 100;
+    if (m10 === 1 && m100 !== 11) return 'день';
+    if (m10 >= 2 && m10 <= 4 && (m100 < 10 || m100 >= 20)) return 'дня';
+    return 'дней';
+  };
+  const expireDateFormatted = expireDate
+    ? new Date(expireDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })
+    : null;
+  const daysLeft = expireDate
+    ? Math.ceil((new Date(expireDate).getTime() - Date.now()) / 86400000)
+    : null;
+  const hasActivePeriod = !!(expireDateFormatted && daysLeft !== null && daysLeft > 0);
 
   // Фильтруем: пользователям с активным платным тарифом не показываем тарифы ниже
   const visiblePlans = plans.filter(plan => {
@@ -535,6 +552,11 @@ export default function PricingPage() {
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                   Полный доступ к тарифу Профессиональный · 1 кампания · 10 генераций изображений · 10 публикаций постов
                 </p>
+                {isAuthenticated && userPlan === 'trial' && hasActivePeriod && (
+                  <p className="text-xs font-medium text-blue-700 dark:text-blue-300 mt-1.5 flex items-center justify-center sm:justify-start gap-1" data-testid="text-trial-period">
+                    <Clock className="w-3.5 h-3.5" /> Триал действует до {expireDateFormatted} · осталось {daysLeft} {dayWord(daysLeft!)}
+                  </p>
+                )}
               </div>
               <div className="sm:ml-auto flex-shrink-0">
                 {isAuthenticated && userPlan === 'trial' ? (
@@ -565,6 +587,11 @@ export default function PricingPage() {
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                   Для перехода на более высокий тариф оставьте заявку ниже
                 </p>
+                {hasActivePeriod && (
+                  <p className="text-xs font-medium text-green-700 dark:text-green-300 mt-1.5 flex items-center justify-center sm:justify-start gap-1" data-testid="text-subscription-period">
+                    <Clock className="w-3.5 h-3.5" /> Подписка действует до {expireDateFormatted} · осталось {daysLeft} {dayWord(daysLeft!)}
+                  </p>
+                )}
               </div>
               <div className="sm:ml-auto flex-shrink-0">
                 <Link href="/dashboard">

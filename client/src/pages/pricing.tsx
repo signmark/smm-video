@@ -184,9 +184,7 @@ export default function PricingPage() {
           if (!data) return;
           const plan: string = data.plan || 'basic';
           const expireDate: string | null = data.expire_date || null;
-          // Считаем подписку истёкшей если expire_date задана и прошла
-          const isExpired = expireDate ? new Date(expireDate) < new Date() : false;
-          setUserPlan(isExpired ? 'free' : plan);
+          setUserPlan(plan);
           setExpireDate(expireDate);
         })
         .catch(() => {});
@@ -213,8 +211,14 @@ export default function PricingPage() {
 
   // Уровень текущего тарифа пользователя (null = не авторизован)
   // trial(0) и free(−1) — показываем все тарифы
-  const userPlanLevel = userPlan ? (PLAN_LEVEL[userPlan] ?? 0) : null;
-  const hasActivePaidPlan = userPlan && userPlan !== 'trial' && userPlan !== 'free' && userPlan !== 'basic';
+  // Единый источник истины: истёк ли срок (одна проверка по expire_date),
+  // эффективный тариф с учётом истечения и признак активной платной подписки
+  const isExpired = !!(isAuthenticated && expireDate && new Date(expireDate).getTime() <= Date.now());
+  const effectivePlan = isExpired ? 'free' : userPlan;
+  const hasActiveSubscription = !!(isAuthenticated && effectivePlan && effectivePlan !== 'trial' && effectivePlan !== 'free');
+
+  const userPlanLevel = effectivePlan ? (PLAN_LEVEL[effectivePlan] ?? 0) : null;
+  const hasActivePaidPlan = !!effectivePlan && effectivePlan !== 'trial' && effectivePlan !== 'free' && effectivePlan !== 'basic';
 
   // Срок действия текущей подписки/триала
   const dayWord = (n: number) => {
@@ -290,7 +294,7 @@ export default function PricingPage() {
     : null;
 
   const isPlanCurrent = (plan: typeof PLANS[0]) =>
-    isAuthenticated && userPlan && userPlan !== 'trial' && userPlan === plan.key;
+    isAuthenticated && !!effectivePlan && effectivePlan !== 'trial' && effectivePlan === plan.key;
 
   const handlePlanClick = (plan: typeof PLANS[0]) => {
     if (isPlanCurrent(plan)) return; // текущий тариф — ничего не делаем
@@ -404,7 +408,7 @@ export default function PricingPage() {
     : 'По договорённости';
 
   // Показывать ли trial-баннер: только незалогиненным и trial-пользователям
-  const showTrialBanner = !isAuthenticated || userPlan === 'trial' || userPlan === null;
+  const showTrialBanner = !isAuthenticated || effectivePlan === 'trial' || effectivePlan === null;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-50 to-white dark:from-gray-950 dark:to-gray-900">
@@ -479,7 +483,7 @@ export default function PricingPage() {
         <section className="py-4 mb-20">
 
           {/* Promo code bar — скрываем для пользователей с активным платным тарифом (они ничего не покупают) */}
-          {(!isAuthenticated || !userPlan || userPlan === 'trial') && (
+          {(!isAuthenticated || !effectivePlan || effectivePlan === 'trial' || effectivePlan === 'free') && (
             <div className="mb-8">
               {appliedPromo ? (
                 <div className="flex items-center justify-between gap-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl px-4 py-3 max-w-xl mx-auto">
@@ -552,14 +556,14 @@ export default function PricingPage() {
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                   Полный доступ к тарифу Профессиональный · 1 кампания · 10 генераций изображений · 10 публикаций постов
                 </p>
-                {isAuthenticated && userPlan === 'trial' && hasActivePeriod && (
+                {isAuthenticated && effectivePlan === 'trial' && hasActivePeriod && (
                   <p className="text-xs font-medium text-blue-700 dark:text-blue-300 mt-1.5 flex items-center justify-center sm:justify-start gap-1" data-testid="text-trial-period">
                     <Clock className="w-3.5 h-3.5" /> Триал действует до {expireDateFormatted} · осталось {daysLeft} {dayWord(daysLeft!)}
                   </p>
                 )}
               </div>
               <div className="sm:ml-auto flex-shrink-0">
-                {isAuthenticated && userPlan === 'trial' ? (
+                {isAuthenticated && effectivePlan === 'trial' ? (
                   <Link href="/dashboard">
                     <Button size="sm" className="bg-blue-600 hover:bg-blue-700 text-white" data-testid="button-trial-cta">
                       Перейти в приложение
@@ -576,8 +580,27 @@ export default function PricingPage() {
             </div>
           )}
 
+          {/* Баннер истёкшего триала/подписки — предлагаем выбрать тариф */}
+          {isExpired && (
+            <div className="mb-8 max-w-3xl mx-auto bg-gradient-to-r from-red-50 to-orange-50 dark:from-red-900/20 dark:to-orange-900/20 border border-red-200 dark:border-red-800 rounded-2xl px-6 py-4 flex flex-col sm:flex-row items-center gap-4" data-testid="banner-expired">
+              <div className="w-12 h-12 rounded-xl bg-red-100 dark:bg-red-800 flex items-center justify-center flex-shrink-0">
+                <XCircle className="w-6 h-6 text-red-600 dark:text-red-400" />
+              </div>
+              <div className="text-center sm:text-left">
+                <p className="font-semibold text-gray-900 dark:text-white text-sm" data-testid="text-expired-title">
+                  {userPlan === 'trial'
+                    ? `Пробный период закончился ${expireDateFormatted}`
+                    : `Подписка закончилась ${expireDateFormatted}`}
+                </p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  Выберите тариф ниже, чтобы продолжить пользоваться платформой
+                </p>
+              </div>
+            </div>
+          )}
+
           {/* Приветствие для пользователей с активным тарифом */}
-          {isAuthenticated && userPlan && userPlan !== 'trial' && (
+          {hasActiveSubscription && (
             <div className="mb-8 max-w-3xl mx-auto bg-gradient-to-r from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border border-green-200 dark:border-green-800 rounded-2xl px-6 py-4 flex flex-col sm:flex-row items-center gap-4">
               <div className="w-12 h-12 rounded-xl bg-green-100 dark:bg-green-800 flex items-center justify-center flex-shrink-0">
                 <Crown className="w-6 h-6 text-green-600 dark:text-green-400" />
@@ -813,10 +836,10 @@ export default function PricingPage() {
         <section className="py-16 mb-10">
           <div className="bg-gradient-to-r from-blue-600 to-violet-600 rounded-3xl p-12 text-center text-white">
             <h2 className="text-4xl font-bold mb-4" data-testid="heading-bottom-cta">
-              {isAuthenticated && userPlan && userPlan !== 'trial' ? 'Спасибо, что с нами!' : 'Начните прямо сейчас'}
+              {hasActiveSubscription ? 'Спасибо, что с нами!' : 'Начните прямо сейчас'}
             </h2>
             <p className="text-blue-100 text-lg mb-8 max-w-lg mx-auto">
-              {isAuthenticated && userPlan && userPlan !== 'trial'
+              {hasActiveSubscription
                 ? 'Ваша подписка активна. Управляйте контентом в приложении.'
                 : '14 дней полного доступа без карты. Отмените в любой момент.'}
             </p>

@@ -35,7 +35,7 @@ const PLANS = [
     features: [
       { text: 'Неограниченные кампании', ok: true },
       { text: 'Неограниченные публикации', ok: true },
-      { text: 'Все 5 платформ: Telegram, VK, Instagram, Facebook, YouTube', ok: true },
+      { text: 'Все 6 платформ: Telegram, VK, Instagram, Facebook, YouTube, Threads', ok: true },
       { text: 'ИИ-генерация текстов (Gemini, Claude, DeepSeek)', ok: true },
       { text: 'ИИ-генерация изображений (без ограничений)', ok: true },
       { text: 'Публикация Reels / Stories / Shorts', ok: true },

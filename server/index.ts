@@ -216,6 +216,12 @@ app.use('/api', (req, res, next) => {
   next();
 });
 
+// Гейт подписки: истёкшим пользователям запрещены любые изменяющие операции
+// (создание/генерация/публикация/правка/удаление), но чтение своих данных
+// кампаний (GET) остаётся доступным — чтобы сохранить наработки или мигрировать.
+import { requireActiveSubscription } from './middleware/require-active-subscription';
+app.use(requireActiveSubscription);
+
 // Health check endpoint for deployment monitoring
 app.get('/health', (req, res) => {
   res.status(200).json({

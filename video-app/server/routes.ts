@@ -31,7 +31,7 @@ async function waitForFile(filePath: string, maxMs = 10000): Promise<void> {
 import { generateScript } from './services/script-generator.js';
 import { generateImage, generateLayeredImage } from './services/image-generator.js';
 import { generateAudio } from './services/tts-generator.js';
-import { assembleVideo, assembleFromClips, extractLastFrame, burnSubtitles, subtitleSizeMultiplier, mixBackgroundMusic, mixWhooshSFX, makeStaticClipFromImage, makeTitleCardClip } from './services/video-assembler.js';
+import { assembleVideo, assembleFromClips, extractLastFrame, burnSubtitles, subtitleSizeMultiplier, mixBackgroundMusic, makeStaticClipFromImage, makeTitleCardClip } from './services/video-assembler.js';
 import { generateBackgroundMusic, getMusicStyle, autoMusicStyle } from './services/music-generator.js';
 
 import { animateFrame, animateText, isT2VModel } from './services/fal-animator.js';
@@ -942,10 +942,6 @@ router.post('/videos/:id/resume', async (req, res) => {
 });
 
 async function applyMusic(projectId: string, videoPath: string, topic: string, scenes: { duration: number }[], clipDuration?: number, musicStyle?: string, scriptMode?: string, musicVolume?: number): Promise<void> {
-  // Whoosh SFX on scene transitions (viral mode)
-  if (scriptMode === 'viral') {
-    await mixWhooshSFX({ videoPath, sceneDurations: scenes.map(s => clipDuration ?? s.duration) });
-  }
   const totalDuration = scenes.reduce((s, sc) => s + (clipDuration ?? sc.duration), 0);
   const musicPath = videoPath.replace(/\.mp4$/, '_bg_music.mp3');
   // Auto-select music style from topic when user hasn't chosen one
@@ -1038,14 +1034,13 @@ async function runResumePipeline(projectId: string) {
       );
 
       const resumeScenes = await maybeWithTitleCard(clipsWithAudio, project.format, tempDir);
-      const isViralResume = project.scriptMode === 'viral';
       const resumeActualDurations = await assembleFromClips({
         scenes: resumeScenes,
         outputPath: videoPath,
         tempDir,
         format: project.format,
-        crossfadeDuration: isViralResume ? 0 : 0.5,
-        flashCut: isViralResume,
+        crossfadeDuration: 0.5,
+        flashCut: false,
         hookTextOverlay: true,
         onProgress: async (pct, msg) => {
           await updateProject(projectId, { progress: 78 + Math.round(pct * 0.18), progressMessage: msg });
@@ -1064,7 +1059,7 @@ async function runResumePipeline(projectId: string) {
           color: (project as any).subtitleColor,
         },
         actualDurations: resumeActualDurations,
-        crossfadeSec: isViralResume ? 0 : 0.5,
+        crossfadeSec: 0.5,
       });
 
       await update({ progress: 98, progressMessage: 'Добавляю фоновую музыку...' });
@@ -1559,14 +1554,13 @@ async function runGenerationPipeline(projectId: string) {
 
       await update({ status: 'assembling', progress: 75, progressMessage: 'Chain: склеиваю клипы...' });
       const chainScenes = await maybeWithTitleCard(clipsWithAudio, project.format, tempDir);
-      const isViralChain = project.scriptMode === 'viral';
       const chainActualDurations = await assembleFromClips({
         scenes: chainScenes,
         outputPath: videoPath,
         tempDir,
         format: project.format,
-        crossfadeDuration: isViralChain ? 0 : 0.5,
-        flashCut: isViralChain,
+        crossfadeDuration: 0.5,
+        flashCut: false,
         hookTextOverlay: true,
         onProgress: async (pct, msg) => {
           await updateProject(projectId, { progress: 75 + Math.round(pct * 0.20), progressMessage: msg });
@@ -1586,7 +1580,7 @@ async function runGenerationPipeline(projectId: string) {
           color: latestProject?.subtitleColor ?? project.subtitleColor,
         },
         actualDurations: chainActualDurations,
-        crossfadeSec: isViralChain ? 0 : 0.5,
+        crossfadeSec: 0.5,
       });
 
       await update({ progress: 98, progressMessage: 'Добавляю фоновую музыку...' });
@@ -1677,14 +1671,13 @@ async function runGenerationPipeline(projectId: string) {
       await update({ status: 'assembling', progress: 75, progressMessage: 'Склеиваю клипы...' });
 
       const t2vScenes = await maybeWithTitleCard(clipsWithAudio, project.format, tempDir);
-      const isViralT2V = project.scriptMode === 'viral';
       const i2vActualDurations = await assembleFromClips({
         scenes: t2vScenes,
         outputPath: videoPath,
         tempDir,
         format: project.format,
-        crossfadeDuration: isViralT2V ? 0 : 0.5,
-        flashCut: isViralT2V,
+        crossfadeDuration: 0.5,
+        flashCut: false,
         hookTextOverlay: true,
         onProgress: async (pct, msg) => {
           await updateProject(projectId, { progress: 75 + Math.round(pct * 0.20), progressMessage: msg });
@@ -1703,7 +1696,7 @@ async function runGenerationPipeline(projectId: string) {
           color: project.subtitleColor,
         },
         actualDurations: i2vActualDurations,
-        crossfadeSec: isViralT2V ? 0 : 0.5,
+        crossfadeSec: 0.5,
       });
 
       await update({ progress: 98, progressMessage: 'Добавляю фоновую музыку...' });
@@ -1942,14 +1935,13 @@ async function runGenerationPipeline(projectId: string) {
         await update({ status: 'assembling', progress: 78, progressMessage: 'Склеиваю клипы...' });
 
         const i2vScenes = await maybeWithTitleCard(clipsWithAudio, project.format, tempDir);
-        const isViralI2V = project.scriptMode === 'viral';
         const parallelActualDurations = await assembleFromClips({
           scenes: i2vScenes,
           outputPath: videoPath,
           tempDir,
           format: project.format,
-          crossfadeDuration: isViralI2V ? 0 : 0.5,
-          flashCut: isViralI2V,
+          crossfadeDuration: 0.5,
+          flashCut: false,
           hookTextOverlay: true,
           onProgress: async (pct, msg) => {
             await updateProject(projectId, { progress: 78 + Math.round(pct * 0.18), progressMessage: msg });
@@ -1968,7 +1960,7 @@ async function runGenerationPipeline(projectId: string) {
             color: project.subtitleColor,
           },
           actualDurations: parallelActualDurations,
-          crossfadeSec: isViralI2V ? 0 : 0.5,
+          crossfadeSec: 0.5,
         });
 
         chainSucceeded = true;

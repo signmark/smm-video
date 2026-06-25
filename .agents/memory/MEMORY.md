@@ -4,6 +4,7 @@
 - [N8n removal](n8n-removal.md) — n8n полностью удалён; все вебхуки заменены прямыми сервисами; publish-scheduler.ts — главный путь публикации
 - [User token policy](user-token-policy.md) — UI-операции ТОЛЬКО через user token; admin-token только для серверных задач; tokenExpired флаг → 401 sessionExpired
 - [Vite build memory](vite-build-memory.md) — vite build падает с exit -1 без вывода; нужно NODE_OPTIONS="--max-old-space-size=1024" npx vite build
+- [Video prompt engineering](video-prompt-engineering.md) — 3 слоя промптов (script/motion/image); cross-cutting гайды добавлять в generateScript() ПОСЛЕ выбора билдера, не в каждый билдер
 - [Director enum sync](director-enum-sync.md) — AI-режиссёр video-app: allowlists в director.ts/routes.ts/Create.tsx должны совпадать, иначе план задаёт значение вне UI-дропдауна
 - [Subscription enforcement](subscription-enforcement.md) — expire_date нет в JWT/getCurrentUser; блокировка истёкших через глобальный гейт requireActiveSubscription (GET свободны, мутации 403), личность через /users/me с токеном
 - [Pricing banner states](pricing-banner-states.md) — баннеры trial/paid/expired считать из ОДНОГО источника истечения (isExpired→effectivePlan); не дублировать проверку expire_date, иначе баннеры конфликтуют

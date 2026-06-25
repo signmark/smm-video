@@ -453,7 +453,7 @@ export async function generateImage(params: {
     format === '9:16' ? 'vertical portrait 9:16 framing, subject centered with rule-of-thirds, mobile-optimized composition' :
     format === '16:9' ? 'cinematic widescreen 16:9 composition, horizontal framing' :
     'square composition 1:1';
-  const enhancedPrompt = `${prompt}. Cinematic photography, dramatic lighting, shallow depth of field, high contrast, vivid colors, ultra-detailed, professional quality, ${compositionHint}. No text, no watermarks.`;
+  const enhancedPrompt = `${prompt}. Cinematic photography, dramatic lighting, shallow depth of field, high contrast, vivid colors, ultra-detailed, professional quality, sharp focus, 8K resolution, professional color grading, detailed textures, realistic materials, ${compositionHint}. No text, no watermarks.`;
   let imageBuffer: Buffer | undefined;
   let source = 'placeholder';
 

@@ -651,6 +651,17 @@ export async function generateScript(params: {
     }
   }
 
+  // ── Professional prompting guidelines (применяются ко ВСЕМ режимам) ──────────
+  // Единая точка: усиливает структуру визуальных/motion-промптов и хук — без
+  // переписывания каждого билдера. Сформулировано условно ("when filling …"),
+  // чтобы не ломать JSON-схему конкретного билдера (поля у них различаются).
+  prompt += `\n\nPROFESSIONAL PROMPTING GUIDELINES (apply when filling the visual and motion fields below):
+- Visual prompts (imagePrompt / subjectPrompt / backgroundPrompt / t2vPrompt): follow a clear professional structure — [shot type & camera angle] + [main subject with concrete details] + [setting/environment] + [lighting setup & direction] + [lens or focal length] + [color palette] + [mood/atmosphere]. Be specific; avoid vague adjectives ("beautiful", "nice", "cool"). Photorealistic, highly detailed.
+- Motion / animation fields (motionPrompt / t2vPrompt): always describe BOTH camera movement (slow push-in, dolly forward, pan, tilt, crane, tracking, or static) AND subject movement, with natural physics. Keep motion smooth and continuous — no morphing.
+- Opening hook: the FIRST scene must grab attention within the first 3 seconds — lead with the most striking visual or statement, no slow intro.
+- Keep every scene visually distinct from the others.
+- Do NOT add any JSON keys beyond the schema shown above — only fill the existing fields.`;
+
   // Append user's additional style/context notes to the prompt
   if (safeParams.additionalDetails && safeParams.additionalDetails.trim()) {
     prompt += `\n\nIMPORTANT — Additional style/context requirements from the user (incorporate into ALL scenes — style_anchor, t2vPrompt, imagePrompt, environment, atmosphere, etc.):\n"${safeParams.additionalDetails.trim()}"`;

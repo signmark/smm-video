@@ -94,7 +94,11 @@ router.get('/videos/:id', async (req, res) => {
   }
 });
 
-const ALL_MODELS: AnimationModel[] = ['wan', 'kling', 'kling-pro', 'minimax', 'seedance', 'wan-t2v', 'kling-t2v', 'kling-pro-t2v', 'luma', 'chain'];
+const ALL_MODELS: AnimationModel[] = ['wan', 'kling', 'kling-pro', 'minimax', 'seedance', 'wan-t2v', 'kling-t2v', 'kling-pro-t2v', 'luma', 'veo3', 'chain'];
+
+// Models whose clip length is fixed by the provider (not user-selectable). For
+// these, clipDuration must be ignored so scene layout/assembly use the real length.
+const FIXED_DURATION_MODELS = new Set<string>(['veo3']);
 
 const VALID_VOICES = new Set(['alloy', 'ash', 'ballad', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer']);
 
@@ -289,7 +293,10 @@ router.post('/videos', async (req, res) => {
       animationModel: ALL_MODELS.includes(animationModel) ? animationModel : 'wan',
       subtitleStyle: VALID_SUBTITLE_STYLES.includes(subtitleStyle) ? subtitleStyle : (format === '9:16' ? 'tiktok' : 'karaoke'),
       voice: (voice && VALID_VOICES.has(voice)) ? voice : undefined,
-      clipDuration: (clipDuration === 5 || clipDuration === 10) ? clipDuration : undefined,
+      // Fixed-duration models (Veo 3.1 = ~8s) ignore clipDuration — clearing it
+      // prevents a stray 5/10 from overriding the model's real clip length and
+      // desyncing scene layout, narration pacing, and assembly.
+      clipDuration: FIXED_DURATION_MODELS.has(animationModel) ? undefined : ((clipDuration === 5 || clipDuration === 10) ? clipDuration : undefined),
       subtitleFont: subtitleFont ? String(subtitleFont) : undefined,
       subtitleSize: ['small','medium','large','xlarge'].includes(subtitleSize) ? subtitleSize : undefined,
       subtitleColor: subtitleColor && /^#[0-9a-fA-F]{6}$/.test(subtitleColor) ? subtitleColor : undefined,

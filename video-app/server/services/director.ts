@@ -42,7 +42,7 @@ export interface DirectorPlan {
 const FORMATS = ['9:16', '16:9', '1:1'] as const;
 const DURATIONS = [15, 30, 60, 90];
 const I2V_MODELS = ['wan', 'kling', 'kling-pro', 'minimax', 'seedance'];
-const T2V_MODELS = ['wan-t2v', 'kling-t2v', 'kling-pro-t2v', 'luma', 'chain'];
+const T2V_MODELS = ['wan-t2v', 'kling-t2v', 'kling-pro-t2v', 'luma', 'veo3', 'chain'];
 const ALL_MODELS = [...I2V_MODELS, ...T2V_MODELS];
 // Синхронизировано с VOICES в Create.tsx (UI-дропдаун) — 'ballad' исключён, его нет в UI.
 const VOICES = ['alloy', 'ash', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer'];

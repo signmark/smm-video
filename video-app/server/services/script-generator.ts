@@ -6,6 +6,7 @@ import type { Script, VideoFormat } from '../db.js';
 function getModelClipDuration(animationModel: string): number {
   if (['kling', 'kling-pro', 'kling-t2v', 'kling-pro-t2v'].includes(animationModel)) return 10;
   if (animationModel === 'luma') return 9;
+  if (animationModel === 'veo3') return 8; // Veo 3.1 (FAL) produces fixed ~8s clips
   // wan, wan-t2v, minimax, seedance — all produce ~5s clips
   return 5;
 }

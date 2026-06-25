@@ -49,6 +49,23 @@ Partner postback (опционально): OMEMO_POSTBACK_URL (default: https://
 
 ## Video App (подпроект `video-app/`)
 
+### Статус генератора (что сделано / что осталось)
+
+**Сделано:**
+- ✅ Полный пайплайн: сценарий → stock precheck → AI-варианты картинок → анимация (FAL.AI) → TTS → сборка ffmpeg → фоновая музыка
+- ✅ Источники сцен: `stock` (Pexels), `ai` (Imagen 4 / Gemini Flash), `avatar` (HeyGen) — миксуются в одном видео
+- ✅ Модели анимации в UI: wan / wan-t2v / kling / kling-pro / minimax / seedance / luma / veo3 / chain
+- ✅ **HeyGen** интеграция (FAL): `heygen-avatar` (говорящий аватар, липсинк под наш RU TTS — по сценам или всё видео) и `heygen-agent` (один промпт → готовый MP4 в обход пайплайна). Аватар-клип муксится с тем же TTS (`-map 1:a:0`), двойного звука нет
+- ✅ **TTS русские ударения**: `accentuateRussian()` через Gemini (по прокси) расставляет U+0301 по смыслу для омографов (духи́/ду́хи, за́мок/замо́к). OpenAI/Edge читают метки, HF получает сырой текст. Безопасный фолбэк на оригинал при любой ошибке
+- ✅ TTS: OpenAI (primary) → HuggingFace mms (fallback); фоновая музыка MusicGen (громкость 0.18)
+- ✅ Хранение: PostgreSQL `video_projects` (+ JSON-фолбэк), бинарники в `data/images`, `data/videos`
+- ✅ Ключи в деве берутся из `video-app/.env` (лог `Loaded 0 from Directus` — норма); на проде — из Directus
+
+**Осталось / проверить:**
+- ⏳ Живая проверка **HeyGen avatar/agent** реальными вызовами FAL на проде (код готов, tsc чисто, но end-to-end генерация с настоящими клипами не прогонялась)
+- ⏳ Подтвердить расстановку ударений на **реальной** генерации озвучки (логика и прокси проверены, но платную полную генерацию не запускали)
+- ⏳ Подбор/курирование пресетов аватаров HeyGen под задачи пользователя (сейчас дефолт `Abigail Sofa Front`)
+
 ### Полный пайплайн генерации
 1. AI пишет сценарий (N сцен с текстом, image-prompt, stockQuery)
 2. **Stock precheck** — параллельно проверяет все сцены в Pexels; найденные → `videoSource=stock`, не найденные → `videoSource=ai`

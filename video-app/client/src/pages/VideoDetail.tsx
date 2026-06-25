@@ -318,6 +318,7 @@ interface VideoProject {
 const STATUS_LABELS: Record<string, string> = {
   idle: 'Ожидание',
   generating_script: 'Генерация сценария...',
+  searching_stock: '🔍 Подбираю стоки...',
   script_ready: 'Сценарий готов',
   generating_images: 'Генерация изображений',
   animating: 'Анимация клипов',
@@ -329,6 +330,7 @@ const STATUS_LABELS: Record<string, string> = {
 const STATUS_COLORS: Record<string, string> = {
   idle: 'var(--text-muted)',
   generating_script: 'var(--yellow)',
+  searching_stock: '#38bdf8',
   script_ready: '#a78bfa',
   generating_images: 'var(--blue)',
   animating: '#60a5fa',
@@ -885,6 +887,7 @@ export default function VideoDetail({ id }: { id: string }) {
   if (!project) return null;
 
   const isActive = ['generating_script', 'generating_images', 'animating', 'assembling'].includes(project.status);
+  const isSearchingStock = project.status === 'searching_stock';
   const isScriptReady = project.status === 'script_ready';
   const isDone = project.status === 'done';
   const isError = project.status === 'error';
@@ -952,9 +955,9 @@ export default function VideoDetail({ id }: { id: string }) {
 
       {/* Status card */}
       <div style={{ background: 'var(--bg-card)', border: `1px solid ${isScriptReady ? 'rgba(167,139,250,0.3)' : 'var(--border)'}`, borderRadius: 'var(--radius)', padding: 20, marginBottom: 24 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: isActive ? 16 : 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: (isActive || isSearchingStock) ? 16 : 0 }}>
           <span style={{ fontSize: 22 }}>
-            {isDone ? '✅' : isError ? '❌' : isScriptReady ? '📋' : isActive ? '⏳' : '🕐'}
+            {isDone ? '✅' : isError ? '❌' : isScriptReady ? '📋' : isSearchingStock ? '🔍' : isActive ? '⏳' : '🕐'}
           </span>
           <div>
             <div style={{ fontWeight: 600, color: STATUS_COLORS[project.status] }}>
@@ -969,7 +972,7 @@ export default function VideoDetail({ id }: { id: string }) {
           </div>
         </div>
 
-        {isActive && (
+        {(isActive || isSearchingStock) && (
           <div style={{ background: 'var(--bg-card2)', borderRadius: 999, height: 6, overflow: 'hidden' }}>
             <div style={{ height: '100%', width: `${project.progress}%`, background: 'var(--accent)', borderRadius: 999, transition: 'width 0.5s ease' }} />
           </div>
@@ -1042,6 +1045,20 @@ export default function VideoDetail({ id }: { id: string }) {
       {/* Save to SMM campaign — show whenever video is done, regardless of local file */}
       {isDone && project.videoUrl && (
         <SaveToCampaign projectId={project.id} projectTitle={project.title} />
+      )}
+
+      {/* ── STOCK SEARCH GATE (searching_stock state) ──────────────────────── */}
+      {isSearchingStock && (
+        <div style={{ background: 'rgba(56,189,248,0.06)', border: '1.5px solid rgba(56,189,248,0.3)', borderRadius: 'var(--radius)', padding: 24, marginBottom: 24, textAlign: 'center' }}>
+          <div style={{ fontSize: 32, marginBottom: 12 }}>🔍</div>
+          <div style={{ fontWeight: 700, fontSize: 16, color: '#7dd3fc', marginBottom: 8 }}>Подбираю стоковые видео и фото</div>
+          <p style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.5, maxWidth: 460, margin: '0 auto' }}>
+            Проверяю несколько стоковых источников по каждой сцене. Как только проверка завершится, откроется сценарий — и для каждой сцены можно будет выбрать готовое стоковое видео/фото или AI-генерацию. Это занимает несколько секунд.
+          </p>
+          {project.script?.scenes?.length ? (
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 12 }}>Сцен в сценарии: {project.script.scenes.length}</div>
+          ) : null}
+        </div>
       )}
 
       {/* ── SCRIPT REVIEW (script_ready state) ─────────────────────────────── */}

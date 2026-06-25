@@ -63,6 +63,7 @@ export type AnimationModel =
 export type VideoStatus =
   | 'idle'
   | 'generating_script'
+  | 'searching_stock'
   | 'script_ready'
   | 'generating_images'
   | 'animating'

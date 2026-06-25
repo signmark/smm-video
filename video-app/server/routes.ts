@@ -1309,7 +1309,11 @@ async function runStockPrecheck(projectId: string, script: Script, format: Video
 
   // Single DB update: set stockAvailable + stockPhotoAvailable + auto-switch videoSource
   const fresh = await getProject(projectId);
-  if (!fresh?.script) return;
+  if (!fresh?.script) {
+    // No script to mark prechecked → can't satisfy the polling contract; surface as error.
+    await updateProject(projectId, { status: 'error', error: 'Сценарий не найден при проверке стоков', progressMessage: 'Ошибка: сценарий не найден.' });
+    return;
+  }
 
   const updatedScenes = fresh.script.scenes.map((s, i) => {
     const r = results.find((x) => x.i === i);
@@ -1325,13 +1329,19 @@ async function runStockPrecheck(projectId: string, script: Script, format: Video
     };
   });
 
-  await updateProject(projectId, {
-    script: { ...fresh.script, scenes: updatedScenes, stockPrechecked: true },
-  });
-
   const foundVideo = results.filter((r) => r.available).length;
   const foundPhoto = results.filter((r) => !r.available && r.photoAvailable).length;
-  console.log(`[stock-precheck] Done for ${projectId}: ${foundVideo} video, ${foundPhoto} photo, ${script.scenes.length - foundVideo - foundPhoto} AI`);
+  const aiCount = script.scenes.length - foundVideo - foundPhoto;
+
+  // Release the gate → 'script_ready' now that every scene has an accurate source.
+  await updateProject(projectId, {
+    script: { ...fresh.script, scenes: updatedScenes, stockPrechecked: true },
+    status: 'script_ready',
+    progress: 20,
+    progressMessage: `Готово: ${foundVideo} видео, ${foundPhoto} фото, ${aiCount} AI. Проверьте сценарий и выберите источник.`,
+  });
+
+  console.log(`[stock-precheck] Done for ${projectId}: ${foundVideo} video, ${foundPhoto} photo, ${aiCount} AI`);
 
   // Auto-generate 3 image variants only for scenes with no stock at all
   const aiScenes = results.filter((r) => !r.available && !r.photoAvailable);
@@ -1395,23 +1405,37 @@ async function runScriptOnly(projectId: string) {
       scriptMode: project.scriptMode,
     });
 
+    // Hold the user on a "searching stock" gate while the precheck scours stock
+    // sources for every scene. Only after that do we move to 'script_ready', so
+    // the AI/Stock choice the user sees is already accurate (not still loading).
     await updateProject(projectId, {
       script,
-      status: 'script_ready',
-      progress: 20,
-      progressMessage: `Сценарий готов — ${script.scenes.length} сцен. Проверьте и запустите генерацию.`,
+      status: 'searching_stock',
+      progress: 15,
+      progressMessage: `Сценарий готов — ${script.scenes.length} сцен. Подбираю стоковые видео и фото под каждую сцену...`,
     });
 
-    console.log(`[video-gen] Script ready for ${projectId}: ${script.scenes.length} scenes`);
+    console.log(`[video-gen] Script ready for ${projectId}: ${script.scenes.length} scenes — searching stock`);
 
-    // Fire TTS in background so user can preview audio in script review
+    // Fire TTS in background so user can preview audio once script review opens
     generateScriptAudio(projectId, script, project.language, project.voice, project.clipDuration).catch((err) => {
       console.warn(`[tts] Background preview failed for ${projectId}: ${err.message}`);
     });
 
-    // Fire stock precheck in background — checks Pexels availability per scene
-    runStockPrecheck(projectId, script, project.format, project.clipDuration).catch((err) => {
+    // Stock precheck — checks all stock sources per scene. It transitions the
+    // project to 'script_ready' when finished (or on failure), releasing the gate.
+    runStockPrecheck(projectId, script, project.format, project.clipDuration).catch(async (err) => {
       console.warn(`[stock-precheck] Failed for ${projectId}: ${err.message}`);
+      // Never leave the user stuck on the gate. Must also set stockPrechecked=true,
+      // otherwise frontend polling (stops on script_ready && stockPrechecked) loops forever.
+      try {
+        await updateProject(projectId, {
+          script: { ...script, stockPrechecked: true },
+          status: 'script_ready',
+          progress: 20,
+          progressMessage: 'Сценарий готов (стоки проверить не удалось — доступна AI-генерация).',
+        });
+      } catch {}
     });
   } catch (err: any) {
     console.error(`[video-gen] Script generation failed for ${projectId}:`, err.message);

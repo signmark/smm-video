@@ -4,6 +4,7 @@
 - [N8n removal](n8n-removal.md) — n8n полностью удалён; все вебхуки заменены прямыми сервисами; publish-scheduler.ts — главный путь публикации
 - [User token policy](user-token-policy.md) — UI-операции ТОЛЬКО через user token; admin-token только для серверных задач; tokenExpired флаг → 401 sessionExpired
 - [Vite build memory](vite-build-memory.md) — vite build падает с exit -1 без вывода; нужно NODE_OPTIONS="--max-old-space-size=1024" npx vite build
+- [Video stock gate](video-stock-gate.md) — любой путь к status=script_ready ОБЯЗАН ставить script.stockPrechecked=true, иначе фронт поллит вечно; стоки Pexels→Pixabay→AI
 - [Video music & A/V sync](video-music-sync.md) — длина фоновой музыки от probeActualDuration(видео), не от плановых scene.duration; клип = audioDuration; resume должен пробивать аудио
 - [Video prompt engineering](video-prompt-engineering.md) — 3 слоя промптов (script/motion/image); cross-cutting гайды добавлять в generateScript() ПОСЛЕ выбора билдера, не в каждый билдер
 - [Director enum sync](director-enum-sync.md) — AI-режиссёр video-app: allowlists в director.ts/routes.ts/Create.tsx должны совпадать, иначе план задаёт значение вне UI-дропдауна

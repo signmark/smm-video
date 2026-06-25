@@ -11,8 +11,16 @@ calls to `generativelanguage.googleapis.com` fail with **403 "key suspended"**.
 
 **Why:** the project's `GEMINI_API_KEY` is a trial key and is geo/policy-blocked on
 direct access — it only works through the configured proxy. The key is the *same* on
-dev and prod. `GEMINI_PROXY_URL` is loaded from Directus by `load-keys.ts` on prod;
-in dev "Loaded 0 keys" so the proxy is empty and direct calls 403 (expected in dev).
+dev and prod.
+
+**Where keys come from in dev:** `video-app/.env` already contains all needed keys
+(OPENAI_API_KEY, GEMINI_API_KEY, GEMINI_PROXY_URL, GOOGLE_API_KEY, FAL_AI_API_KEY, …).
+`load-keys.ts` does `dotenvConfig('../.env', override:false)` first, then Directus.
+So in dev the server log `[load-keys] Loaded 0 API keys from Directus` is **normal** —
+it means 0 *new* keys (the .env already provided them), NOT that keys are missing.
+TTS and Gemini-proxy both work in dev. NOTE: the agent's interactive bash shell does
+NOT source `.env`, so `echo $OPENAI_API_KEY` shows empty there — that's a shell quirk,
+not the server's reality. Verify via the running server, not the shell env.
 
 **How to apply:** copy the `getGeminiBase()` pattern already in `script-generator.ts`,
 `image-generator.ts`, `director.ts`, `veo-generator.ts` — never hardcode the Google

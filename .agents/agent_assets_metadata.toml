@@ -78,3 +78,9 @@ id = "oW4cXKYiiLenFSbGMIlua"
 uri = "file://docs/REDESIGN_CONCEPT.md"
 type = "text"
 title = "REDESIGN_CONCEPT.md"
+
+[[outputs]]
+id = "PUS6YOEdI2Hrr0_iqvEhb"
+uri = "file://video-app.zip"
+type = "unspecified"
+title = "Видео-генератор (исходники)"

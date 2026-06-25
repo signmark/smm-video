@@ -13,10 +13,10 @@ export function registerUserRoutes(app: Express) {
 
       let userData: any = null;
 
-      const profileFields = 'id,email,first_name,last_name,is_smm_admin,is_smm_super,plan,expire_date';
+      const profileFields = 'id,email,first_name,last_name,is_smm_admin,is_smm_super,plan,n';
 
       // Всегда используем admin-токен для получения полного профиля —
-      // пользовательский токен Directus может возвращать пустые кастомные поля (plan, expire_date)
+      // пользовательский токен Directus может возвращать пустые кастомные поля (plan, n)
       // из-за ограничений политики доступа роли.
       const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
       if (!adminToken) {
@@ -51,7 +51,7 @@ export function registerUserRoutes(app: Express) {
         last_name: userData.last_name || '',
         is_smm_admin: userData.is_smm_admin || userData.is_smm_super || false,
         plan: userData.plan || 'basic',
-        expire_date: userData.expire_date || null,
+        expire_date: userData.n || null,
       };
 
       res.json(userProfile);

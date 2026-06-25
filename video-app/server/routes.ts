@@ -31,7 +31,7 @@ async function waitForFile(filePath: string, maxMs = 10000): Promise<void> {
 import { generateScript } from './services/script-generator.js';
 import { generateImage, generateLayeredImage } from './services/image-generator.js';
 import { generateAudio } from './services/tts-generator.js';
-import { assembleVideo, assembleFromClips, extractLastFrame, burnSubtitles, subtitleSizeMultiplier, mixBackgroundMusic, makeStaticClipFromImage, makeTitleCardClip } from './services/video-assembler.js';
+import { assembleVideo, assembleFromClips, extractLastFrame, burnSubtitles, subtitleSizeMultiplier, mixBackgroundMusic, makeStaticClipFromImage, makeTitleCardClip, probeActualDuration } from './services/video-assembler.js';
 import { generateBackgroundMusic, getMusicStyle, autoMusicStyle } from './services/music-generator.js';
 
 import { animateFrame, animateText, isT2VModel } from './services/fal-animator.js';
@@ -942,7 +942,12 @@ router.post('/videos/:id/resume', async (req, res) => {
 });
 
 async function applyMusic(projectId: string, videoPath: string, topic: string, scenes: { duration: number }[], clipDuration?: number, musicStyle?: string, scriptMode?: string, musicVolume?: number): Promise<void> {
-  const totalDuration = scenes.reduce((s, sc) => s + (clipDuration ?? sc.duration), 0);
+  const plannedTotal = scenes.reduce((s, sc) => s + (clipDuration ?? sc.duration), 0);
+  // Music must cover the ACTUAL assembled video. Clip lengths are driven by the
+  // natural TTS duration (usually longer than planned), so a planned-sum target
+  // leaves the last scene silent. Probe the finished file; +1s safety margin.
+  const probedVideoDur = await probeActualDuration(videoPath);
+  const totalDuration = (probedVideoDur > 0 ? probedVideoDur : plannedTotal) + 1;
   const musicPath = videoPath.replace(/\.mp4$/, '_bg_music.mp3');
   // Auto-select music style from topic when user hasn't chosen one
   const effectiveMusicStyle = musicStyle ?? autoMusicStyle(topic);
@@ -1021,11 +1026,14 @@ async function runResumePipeline(projectId: string) {
           const audioPath = path.join(audioDir, `scene_${i}.mp3`);
           let hasAudio = false;
           try { await fs.access(audioPath); hasAudio = true; } catch {}
+          // Probe the existing audio so clip length = voice length (prevents truncated
+          // narration / desync on resume — same as the main generation paths).
+          const audioDuration = hasAudio ? await probeActualDuration(audioPath) : undefined;
           return {
             clipPath,
             duration: project.clipDuration ?? s.duration,
             audioPath: hasAudio ? audioPath : undefined,
-            audioDuration: undefined as number | undefined,
+            audioDuration,
             narration: s.narration || s.text,
             text: s.text,
             role: s.role,

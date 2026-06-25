@@ -959,6 +959,26 @@ export async function assembleFromClips(params: {
     });
   }
 
+  // ── Sync verification ("agent control") ──────────────────────────────────
+  // The final timeline length must equal sum(per-scene durations) minus crossfade
+  // overlaps (plus flash-cut gaps). A large mismatch means voice/subtitles can
+  // drift out of sync — surface it loudly so it can be caught and regenerated.
+  try {
+    const n2 = actualDurations.length;
+    if (n2 > 0) {
+      const overlaps = crossfadeDuration > 0 ? (n2 - 1) * crossfadeDuration : 0;
+      const gaps = flashCut && crossfadeDuration <= 0 ? (n2 - 1) * 0.12 : 0;
+      const expected = actualDurations.reduce((a, b) => a + b, 0) - overlaps + gaps;
+      const finalDur = await probeActualDuration(outputPath);
+      const drift = Math.abs(finalDur - expected);
+      if (finalDur > 0 && drift > 0.75) {
+        console.warn(`[sync] ⚠ Timeline drift ${drift.toFixed(2)}s — expected ${expected.toFixed(2)}s, got ${finalDur.toFixed(2)}s. Voice/subtitles may be out of sync.`);
+      } else if (finalDur > 0) {
+        console.log(`[sync] ✓ Timeline OK (drift ${drift.toFixed(2)}s, ${finalDur.toFixed(2)}s)`);
+      }
+    }
+  } catch {}
+
   onProgress?.(95, 'Очистка временных файлов...');
   await fs.rm(tempDir, { recursive: true, force: true });
 

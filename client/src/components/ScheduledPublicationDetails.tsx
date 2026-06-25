@@ -41,7 +41,6 @@ const PLATFORM_ABBR: Record<string, string> = {
   facebook: 'FB',
   youtube: 'YT',
   threads: 'Th',
-  tiktok: 'TK',
 };
 
 const PLATFORM_FULL: Record<string, string> = {
@@ -51,7 +50,6 @@ const PLATFORM_FULL: Record<string, string> = {
   facebook: 'Facebook',
   youtube: 'YouTube',
   threads: 'Threads',
-  tiktok: 'TikTok',
 };
 
 const PLATFORM_CHIP_CLASS: Record<string, string> = {
@@ -61,7 +59,6 @@ const PLATFORM_CHIP_CLASS: Record<string, string> = {
   facebook: 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300',
   youtube: 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300',
   threads: 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300',
-  tiktok: 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300',
 };
 
 const STATUS_DOT: Record<string, string> = {

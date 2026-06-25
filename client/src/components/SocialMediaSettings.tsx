@@ -38,7 +38,6 @@ import { YouTubeSetupWizard } from "./YouTubeSetupWizard";
 import InstagramSetupWizardSimple from "./InstagramSetupWizardSimple";
 import VkSetupWizard from "./VkSetupWizard";
 import FacebookSetupWizard from "./FacebookSetupWizard";
-import TikTokSetupWizard from "./TikTokSetupWizard";
 import type { SocialMediaSettings } from "@shared/schema";
 
 const socialMediaSettingsSchema = z.object({

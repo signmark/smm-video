@@ -85,7 +85,6 @@ const NotFound = lazy(() => import("@/pages/not-found"));
 const VideoEditor = lazy(() => import("@/pages/video"));
 const YouTubeCallback = lazy(() => import("@/pages/youtube-callback"));
 const InstagramCallback = lazy(() => import("@/pages/instagram-callback"));
-const TikTokCallback = lazy(() => import("@/pages/tiktok-callback"));
 const VkCallback = lazy(() => import("@/pages/vk-callback"));
 const ThreadsCallback = lazy(() => import("@/pages/threads-callback"));
 const AIAssistantPage = lazy(() => import("@/pages/ai-assistant"));
@@ -226,7 +225,6 @@ function Router() {
       <Route path="/api/youtube/auth/callback" component={YouTubeCallback} />
       <Route path="/youtube-callback" component={YouTubeCallback} />
       <Route path="/instagram-callback" component={InstagramCallback} />
-      <Route path="/tiktok-callback" component={TikTokCallback} />
       <Route path="/vk-callback" component={VkCallback} />
       <Route path="/threads-callback" component={ThreadsCallback} />
 

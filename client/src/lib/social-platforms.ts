@@ -7,8 +7,7 @@ export const safeSocialPlatforms: SocialPlatform[] = [
   'telegram',
   'vk',
   'youtube',
-  'threads',
-  'tiktok'
+  'threads'
 ];
 
 // Тип для более безопасной работы с платформами

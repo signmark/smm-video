@@ -3304,7 +3304,6 @@ export default function ContentPage() {
                         facebook: '👥 Facebook',
                         threads: '🧵 Threads',
                         youtube: '🎬 YouTube',
-                        tiktok: '🎵 TikTok',
                       };
 
                       const results: Array<{ platform: string; success: boolean; error?: string }> =

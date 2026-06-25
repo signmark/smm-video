@@ -34,7 +34,7 @@ import { generateAudio } from './services/tts-generator.js';
 import { assembleVideo, assembleFromClips, extractLastFrame, burnSubtitles, subtitleSizeMultiplier, mixBackgroundMusic, makeStaticClipFromImage, makeTitleCardClip, probeActualDuration } from './services/video-assembler.js';
 import { generateBackgroundMusic, getMusicStyle, autoMusicStyle } from './services/music-generator.js';
 
-import { animateFrame, animateText, isT2VModel } from './services/fal-animator.js';
+import { animateFrame, animateText, isT2VModel, generateAvatarClip, generateAgentVideo, DEFAULT_HEYGEN_AVATAR } from './services/fal-animator.js';
 import { searchAndDownloadStockClip, searchAndDownloadStockPhoto } from './services/stock-video.js';
 import { ensureKeysLoaded } from './load-keys.js';
 import { planVideo } from './services/director.js';
@@ -94,7 +94,7 @@ router.get('/videos/:id', async (req, res) => {
   }
 });
 
-const ALL_MODELS: AnimationModel[] = ['wan', 'kling', 'kling-pro', 'minimax', 'seedance', 'wan-t2v', 'kling-t2v', 'kling-pro-t2v', 'luma', 'veo3', 'chain'];
+const ALL_MODELS: AnimationModel[] = ['wan', 'kling', 'kling-pro', 'minimax', 'seedance', 'wan-t2v', 'kling-t2v', 'kling-pro-t2v', 'luma', 'veo3', 'heygen-avatar', 'heygen-agent', 'chain'];
 
 // Models whose clip length is fixed by the provider (not user-selectable). For
 // these, clipDuration must be ignored so scene layout/assembly use the real length.
@@ -260,7 +260,7 @@ router.get('/music/preview', async (req, res) => {
 
 router.post('/videos', async (req, res) => {
   try {
-    const { title, topic, format, duration, language, animationModel, subtitleStyle, voice, clipDuration, subtitleFont, subtitleSize, subtitleColor, musicStyle, musicVolume, customScenario, landingUrl, additionalDetails, scriptMode } = req.body;
+    const { title, topic, format, duration, language, animationModel, subtitleStyle, voice, clipDuration, subtitleFont, subtitleSize, subtitleColor, musicStyle, musicVolume, customScenario, landingUrl, additionalDetails, scriptMode, heygenAvatar } = req.body;
     if (!format || !duration) {
       return res.status(400).json({ error: 'format and duration are required' });
     }
@@ -306,6 +306,7 @@ router.post('/videos', async (req, res) => {
       landingUrl: hasLandingUrl ? String(landingUrl).trim() : undefined,
       additionalDetails: (additionalDetails && String(additionalDetails).trim()) ? String(additionalDetails).trim() : undefined,
       scriptMode: scriptMode === 'viral' ? 'viral' : (format === '9:16' ? 'viral' : undefined),
+      heygenAvatar: (typeof heygenAvatar === 'string' && heygenAvatar.trim()) ? heygenAvatar.trim().slice(0, 120) : undefined,
     });
     res.status(201).json(project);
   } catch (err: any) {
@@ -535,7 +536,7 @@ router.patch('/videos/:id/scenes/:sceneId', async (req, res) => {
       if (typeof imagePrompt === 'string') updated.imagePrompt = imagePrompt.trim();
       if (typeof narration === 'string') updated.narration = narration.trim();
       if (typeof selectedVariant === 'number') updated.selectedVariant = selectedVariant;
-      if (videoSource === 'ai' || videoSource === 'stock' || videoSource === 'stock-animated') updated.videoSource = videoSource;
+      if (videoSource === 'ai' || videoSource === 'stock' || videoSource === 'stock-animated' || videoSource === 'avatar') updated.videoSource = videoSource;
       if (typeof stockQuery === 'string') updated.stockQuery = stockQuery.trim();
       if (typeof imagePromptRu === 'string') updated.imagePromptRu = imagePromptRu.trim();
       if (typeof t2vPromptRu === 'string') updated.t2vPromptRu = t2vPromptRu.trim();
@@ -1264,6 +1265,25 @@ async function runStockPrecheck(projectId: string, script: Script, format: Video
   const clipsDir = path.join(DATA_PATHS.imagesDir(projectId), 'clips');
   await fs.mkdir(clipsDir, { recursive: true });
 
+  // HeyGen avatar (whole-video) mode: every scene is rendered as a talking avatar
+  // lip-synced to its TTS — there is no stock or AI image to look for. Mark all
+  // scenes 'avatar' and release the gate immediately.
+  const proj = await getProject(projectId);
+  if (proj?.animationModel === 'heygen-avatar') {
+    const fresh = await getProject(projectId);
+    if (fresh?.script) {
+      const avatarScenes = fresh.script.scenes.map((s) => ({ ...s, videoSource: 'avatar' as const }));
+      await updateProject(projectId, {
+        script: { ...fresh.script, scenes: avatarScenes, stockPrechecked: true },
+        status: 'script_ready',
+        progress: 20,
+        progressMessage: `Сценарий готов: ${avatarScenes.length} сцен — все озвучит аватар. Проверьте текст и нажмите «Генерировать видео».`,
+      });
+    }
+    console.log(`[stock-precheck] ${projectId}: heygen-avatar — all scenes set to avatar, skipping stock`);
+    return;
+  }
+
   console.log(`[stock-precheck] Checking all ${script.scenes.length} scene(s) for project ${projectId}`);
 
   // Run all checks in parallel, collect results
@@ -1378,6 +1398,15 @@ async function runScriptOnly(projectId: string) {
     const project = await getProject(projectId);
     if (!project) throw new Error('Project not found');
 
+    // HeyGen video-agent has no scene script — a single prompt produces the whole
+    // video. Skip script generation entirely and run the generation pipeline,
+    // which short-circuits to the agent path.
+    if (project.animationModel === 'heygen-agent') {
+      console.log(`[video-gen] ${projectId}: heygen-agent — skipping script, running agent pipeline`);
+      await runGenerationPipeline(projectId);
+      return;
+    }
+
     await updateProject(projectId, { status: 'generating_script', progress: 5, progressMessage: 'Генерирую сценарий...' });
 
     let landingPageContent: string | undefined;
@@ -1457,6 +1486,37 @@ async function runGenerationPipeline(projectId: string) {
     if (!project) throw new Error('Project not found');
 
     const useT2V = isT2VModel(project.animationModel);
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // HEYGEN VIDEO-AGENT: single prompt → whole finished MP4 (bypasses scenes)
+    // ══════════════════════════════════════════════════════════════════════════
+    if (project.animationModel === 'heygen-agent') {
+      const agentKey = process.env.FAL_AI_API_KEY;
+      if (!agentKey) throw new Error('FAL_AI_API_KEY не настроен — нужен для HeyGen video-agent');
+      const agentVideoPath = DATA_PATHS.videoFile(projectId);
+      // Prefer the user's full brief (customScenario); otherwise build from topic + details.
+      const agentPrompt = (project.customScenario && project.customScenario.trim())
+        ? project.customScenario.trim()
+        : [project.topic, project.additionalDetails].filter(Boolean).join('. ');
+      await update({ status: 'animating', progress: 15, progressMessage: 'HeyGen video-agent: генерирую ролик по промпту...' });
+      await generateAgentVideo({
+        prompt: agentPrompt,
+        outputPath: agentVideoPath,
+        apiKey: agentKey,
+        onWait: async (elapsedMs) => {
+          await updateProject(projectId, { progress: Math.min(90, 15 + Math.round(elapsedMs / 1000)), progressMessage: `HeyGen video-agent: рендер ${Math.round(elapsedMs / 1000)}с...` });
+        },
+      });
+      await update({
+        status: 'done',
+        progress: 100,
+        progressMessage: 'Готово!',
+        videoPath: agentVideoPath,
+        videoUrl: `/video-app/api/videos/${projectId}/download`,
+      });
+      console.log(`[video-gen] HeyGen agent project ${projectId} done: ${agentVideoPath}`);
+      return;
+    }
 
     // ── Step 1: Generate script (skip if already approved) ───────────────────
     let script = project.script;
@@ -1642,6 +1702,18 @@ async function runGenerationPipeline(projectId: string) {
       const total = script.scenes.length;
       let completedClips = 0;
 
+      // Per-scene TTS promises kept as an array so an 'avatar' scene can await its
+      // own audio (HeyGen lip-syncs to it) even within the T2V pipeline.
+      const t2vTtsArr = script.scenes.map(async (scene, i) => {
+        const audioPath = path.join(audioDir, `scene_${i}.mp3`);
+        try {
+          return await generateAudio({ text: scene.narration || scene.text, language: project.language, outputPath: audioPath, targetDuration: project.clipDuration ?? scene.duration, voice: project.voice });
+        } catch (err: any) {
+          console.warn(`[tts] Scene ${i} failed: ${err.message}`);
+          return null;
+        }
+      });
+
       const [clips, audioResults] = await Promise.all([
         // Phase A: T2V clips in parallel
         Promise.all(
@@ -1652,6 +1724,32 @@ async function runGenerationPipeline(projectId: string) {
               console.log(`[video-gen] T2V scene ${i + 1}: STOCK "${query.slice(0, 60)}"`);
               await updateProject(projectId, { progressMessage: `Stock: поиск клипа для сцены ${i + 1}/${total}...` });
               await searchAndDownloadStockClip({ query, outputPath: clipPath, durationSeconds: project.clipDuration ?? scene.duration, format: project.format });
+            } else if (scene.videoSource === 'avatar') {
+              // HeyGen digital-twin lip-synced to this scene's TTS (clip audio is
+              // discarded at assembly; the TTS file is muxed instead → perfect sync).
+              let audioBuffer: Buffer | null = null;
+              try {
+                await t2vTtsArr[i];
+                audioBuffer = await fs.readFile(path.join(audioDir, `scene_${i}.mp3`));
+              } catch (e: any) {
+                console.warn(`[video-gen] T2V scene ${i + 1}: avatar TTS unavailable (${e?.message}) — using prompt fallback`);
+              }
+              try {
+                await generateAvatarClip({
+                  avatarName: project.heygenAvatar || DEFAULT_HEYGEN_AVATAR,
+                  audioBuffer,
+                  prompt: audioBuffer ? undefined : (scene.narration || scene.text),
+                  format: project.format,
+                  outputPath: clipPath,
+                  apiKey: falKey!,
+                  onWait: async (elapsedMs) => {
+                    await updateProject(projectId, { progressMessage: `Аватар: ${completedClips}/${total} готово, сцена ${i + 1} (${Math.round(elapsedMs / 1000)}с)...` });
+                  },
+                });
+              } catch (avErr: any) {
+                console.warn(`[video-gen] T2V scene ${i + 1}: avatar failed (${avErr.message}) — using title card fallback`);
+                await makeTitleCardClip({ text: scene.text, durationSeconds: project.clipDuration ?? scene.duration, outputPath: clipPath, format: project.format });
+              }
             } else {
               const prompt = scene.t2vPrompt || scene.imagePrompt;
               console.log(`[video-gen] T2V scene ${i + 1}: prompt="${prompt.slice(0, 80)}..."`);
@@ -1677,18 +1775,8 @@ async function runGenerationPipeline(projectId: string) {
             return { clipPath, duration: scene.duration };
           })
         ),
-        // Phase B: TTS in parallel with video generation
-        Promise.all(
-          script.scenes.map(async (scene, i) => {
-            const audioPath = path.join(audioDir, `scene_${i}.mp3`);
-            try {
-              return await generateAudio({ text: scene.narration || scene.text, language: project.language, outputPath: audioPath, targetDuration: project.clipDuration ?? scene.duration, voice: project.voice });
-            } catch (err: any) {
-              console.warn(`[tts] Scene ${i} failed: ${err.message}`);
-              return null;
-            }
-          })
-        ),
+        // Phase B: TTS (same per-scene promises) resolved in parallel with video generation
+        Promise.all(t2vTtsArr),
       ]);
 
       const clipsWithAudio = clips.map((clip, i) => ({
@@ -1823,7 +1911,7 @@ async function runGenerationPipeline(projectId: string) {
 
         const frameBuffers = await Promise.all(
           script.scenes.map(async (scene, i) => {
-            if (scene.videoSource === 'stock') return null; // skip image gen for stock scenes
+            if (scene.videoSource === 'stock' || scene.videoSource === 'avatar') return null; // skip image gen for stock/avatar scenes
 
             const framePath = path.join(framesDir, `frame_${i}.jpg`);
 
@@ -1869,17 +1957,18 @@ async function runGenerationPipeline(projectId: string) {
         // animation instead of freezing at 35% then jumping. Band: 35→73 over ~90s.
         const animStart = Date.now();
         const ANIM_EXPECTED_MS = 90000;
-        const ttsPromises = Promise.all(
-          script.scenes.map(async (scene, i) => {
-            const audioPath = path.join(audioDir, `scene_${i}.mp3`);
-            try {
-              return await generateAudio({ text: scene.narration || scene.text, language: project.language, outputPath: audioPath, targetDuration: project.clipDuration ?? scene.duration, voice: project.voice });
-            } catch (err: any) {
-              console.warn(`[tts] Scene ${i} failed: ${err.message}`);
-              return null;
-            }
-          })
-        );
+        // Per-scene TTS promises kept as an array so avatar clips can await their own
+        // scene's audio (HeyGen lip-syncs to it) while other scenes animate in parallel.
+        const ttsArr = script.scenes.map(async (scene, i) => {
+          const audioPath = path.join(audioDir, `scene_${i}.mp3`);
+          try {
+            return await generateAudio({ text: scene.narration || scene.text, language: project.language, outputPath: audioPath, targetDuration: project.clipDuration ?? scene.duration, voice: project.voice });
+          } catch (err: any) {
+            console.warn(`[tts] Scene ${i} failed: ${err.message}`);
+            return null;
+          }
+        });
+        const ttsPromises = Promise.all(ttsArr);
         // Cap TTS wait to 2 minutes — if slower, proceed with silence for failed scenes
         const ttsWithCap = Promise.race([
           ttsPromises,
@@ -1903,6 +1992,47 @@ async function runGenerationPipeline(projectId: string) {
                 const query = scene.stockQuery || scene.imagePrompt || scene.text;
                 console.log(`[video-gen] I2V scene ${i + 1}: STOCK re-downloading "${query.slice(0, 60)}"`);
                 await searchAndDownloadStockClip({ query, outputPath: clipPath, durationSeconds: project.clipDuration ?? scene.duration, format: project.format });
+              }
+            } else if (scene.videoSource === 'avatar') {
+              // HeyGen digital-twin: talking avatar lip-synced to THIS scene's TTS.
+              // Wait for the scene's own audio, then feed it as audio_url. The clip's
+              // built-in audio is discarded at assembly (-map 1:a:0 uses the TTS file),
+              // so the lip-sync stays perfectly aligned with no double audio.
+              let audioBuffer: Buffer | null = null;
+              try {
+                await ttsArr[i];
+                const audioPath = path.join(audioDir, `scene_${i}.mp3`);
+                audioBuffer = await fs.readFile(audioPath);
+              } catch (e: any) {
+                console.warn(`[video-gen] I2V scene ${i + 1}: avatar TTS unavailable (${e?.message}) — using prompt fallback`);
+              }
+              try {
+                await generateAvatarClip({
+                  avatarName: project.heygenAvatar || DEFAULT_HEYGEN_AVATAR,
+                  audioBuffer,
+                  prompt: audioBuffer ? undefined : (scene.narration || scene.text),
+                  format: project.format,
+                  outputPath: clipPath,
+                  apiKey: falKey!,
+                  onWait: async (elapsedMs) => {
+                    const timePct = 35 + Math.round(Math.min((Date.now() - animStart) / ANIM_EXPECTED_MS, 0.95) * 38);
+                    const stepFloor = 35 + Math.round((completedClips / total) * 40);
+                    await updateProject(projectId, {
+                      progress: Math.max(timePct, stepFloor),
+                      progressMessage: `Аватар: ${completedClips}/${total} готово, сцена ${i + 1} (${Math.round(elapsedMs / 1000)}с)...`,
+                    });
+                  },
+                });
+              } catch (avErr: any) {
+                console.warn(`[video-gen] Scene ${i + 1}: avatar generation failed (${avErr.message}) — using static frame fallback`);
+                await updateProject(projectId, { progressMessage: `⚠️ Сцена ${i + 1}: аватар недоступен — использую статичный кадр` });
+                const framePath = path.join(framesDir, `frame_${i}.jpg`);
+                const clipDur = project.clipDuration ?? scene.duration;
+                try {
+                  await makeStaticClipFromImage({ imagePath: framePath, durationSeconds: clipDur, outputPath: clipPath, format: project.format, sceneIndex: i });
+                } catch {
+                  await makeTitleCardClip({ text: scene.text, durationSeconds: clipDur, outputPath: clipPath, format: project.format });
+                }
               }
             } else {
               try {

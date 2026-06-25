@@ -290,7 +290,7 @@ interface Scene {
   t2vPrompt?: string;
   duration: number;
   selectedVariant?: number;
-  videoSource?: 'ai' | 'stock' | 'stock-animated';
+  videoSource?: 'ai' | 'stock' | 'stock-animated' | 'avatar';
   stockAvailable?: boolean;
   stockPhotoAvailable?: boolean;
   stockQuery?: string;
@@ -712,7 +712,7 @@ export default function VideoDetail({ id }: { id: string }) {
     setRetryingStock((s) => { const n = new Set(s); n.delete(sceneId); return n; });
   }
 
-  async function handleSetVideoSource(sceneId: string, videoSource: 'ai' | 'stock' | 'stock-animated') {
+  async function handleSetVideoSource(sceneId: string, videoSource: 'ai' | 'stock' | 'stock-animated' | 'avatar') {
     const body: Record<string, any> = { videoSource };
     if (videoSource === 'stock-animated') body.selectedVariant = 0;
     await fetch(`${API}/videos/${id}/scenes/${sceneId}`, {
@@ -1236,6 +1236,16 @@ export default function VideoDetail({ id }: { id: string }) {
                                 }}
                               >🎞️ Анимировать фото</button>
                             )}
+                            <button
+                              onClick={() => handleSetVideoSource(scene.id, 'avatar')}
+                              title="HeyGen говорящий аватар с липсинком под озвучку сцены"
+                              style={{
+                                padding: '3px 10px', fontSize: 11, borderRadius: 4, cursor: 'pointer', fontWeight: 600,
+                                background: scene.videoSource === 'avatar' ? '#db2777' : 'transparent',
+                                color: scene.videoSource === 'avatar' ? 'white' : '#f472b6',
+                                border: scene.videoSource === 'avatar' ? 'none' : '1px solid #f472b6',
+                              }}
+                            >🧑‍💼 Аватар</button>
                           </div>
                         );
                       })()}

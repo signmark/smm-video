@@ -533,3 +533,83 @@ export async function animateText(params: {
 
   throw new Error('All T2V animation models failed');
 }
+
+// ── HeyGen models ────────────────────────────────────────────────────────────
+
+/** Default HeyGen digital-twin avatar preset (used when none selected). */
+export const DEFAULT_HEYGEN_AVATAR = 'Abigail Sofa Front';
+
+// HeyGen aspect_ratio enum matches our VideoFormat values 1:1; pass through.
+const HEYGEN_ASPECT: Record<VideoFormat, string> = {
+  '9:16': '9:16',
+  '16:9': '16:9',
+  '1:1': '1:1',
+};
+
+/**
+ * HeyGen digital-twin (avatar5): renders a talking-avatar clip.
+ *
+ * For Russian narration we feed our own TTS as `audio_url` (data URI) so the
+ * avatar lip-syncs to the exact voice track. The downstream assembler takes the
+ * audio from the TTS file (not the clip), so the embedded audio is harmless —
+ * video and audio stay perfectly in sync with no double track.
+ *
+ * If no audio is supplied, falls back to `prompt` (HeyGen generates its own
+ * English voice — acceptable degraded path when TTS fails).
+ */
+export async function generateAvatarClip(params: {
+  avatarName: string;
+  audioBuffer?: Buffer | null;
+  prompt?: string;
+  format: VideoFormat;
+  outputPath: string;
+  apiKey: string;
+  onWait?: (ms: number) => void;
+}): Promise<void> {
+  const { avatarName, audioBuffer, prompt, format, outputPath, apiKey, onWait } = params;
+  const payload: Record<string, any> = {
+    avatar: avatarName || DEFAULT_HEYGEN_AVATAR,
+    aspect_ratio: HEYGEN_ASPECT[format],
+    resolution: '720p',
+    output_format: 'mp4',
+  };
+  if (audioBuffer && audioBuffer.length > 0) {
+    payload.audio_url = `data:audio/mp3;base64,${audioBuffer.toString('base64')}`;
+  } else if (prompt && prompt.trim()) {
+    payload.prompt = prompt.trim();
+  } else {
+    throw new Error('generateAvatarClip requires either audioBuffer or prompt');
+  }
+
+  console.log(`[fal-anim] HeyGen digital-twin: submitting avatar="${payload.avatar}" (${audioBuffer ? 'audio' : 'prompt'})...`);
+  const q = await falSubmit('fal-ai/heygen/avatar5/digital-twin', payload, apiKey);
+  console.log(`[fal-anim] HeyGen digital-twin request_id: ${q.request_id}`);
+  const result = await falPoll(q, apiKey, 600_000, onWait); // avatar render can take several minutes
+  const videoUrl = result?.video?.url;
+  if (!videoUrl) throw new Error(`HeyGen digital-twin no video URL: ${JSON.stringify(result).slice(0, 200)}`);
+  await downloadVideo(videoUrl, outputPath);
+  console.log(`[fal-anim] HeyGen avatar clip saved: ${path.basename(outputPath)}`);
+}
+
+/**
+ * HeyGen video-agent (v3): a single prompt produces a whole finished MP4.
+ * Bypasses the scene pipeline entirely. English-only narration.
+ */
+export async function generateAgentVideo(params: {
+  prompt: string;
+  outputPath: string;
+  apiKey: string;
+  onWait?: (ms: number) => void;
+}): Promise<void> {
+  const { prompt, outputPath, apiKey, onWait } = params;
+  if (!prompt || !prompt.trim()) throw new Error('generateAgentVideo requires a prompt');
+
+  console.log(`[fal-anim] HeyGen video-agent: submitting prompt="${prompt.slice(0, 80)}..."`);
+  const q = await falSubmit('fal-ai/heygen/v3/video-agent', { prompt: prompt.trim() }, apiKey);
+  console.log(`[fal-anim] HeyGen video-agent request_id: ${q.request_id}`);
+  const result = await falPoll(q, apiKey, 900_000, onWait); // whole-video agent can take up to ~15 min
+  const videoUrl = result?.video?.url;
+  if (!videoUrl) throw new Error(`HeyGen video-agent no video URL: ${JSON.stringify(result).slice(0, 200)}`);
+  await downloadVideo(videoUrl, outputPath);
+  console.log(`[fal-anim] HeyGen agent video saved: ${path.basename(outputPath)}`);
+}

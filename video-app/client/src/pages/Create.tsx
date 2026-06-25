@@ -252,6 +252,43 @@ const T2V_MODELS = [
   },
 ];
 
+const HEYGEN_MODELS = [
+  {
+    value: 'heygen-avatar',
+    label: 'HeyGen Avatar (Digital Twin)',
+    speed: '~2-5 мин',
+    quality: '★★★★★',
+    desc: 'Говорящий аватар с липсинком под нашу озвучку. Подходит для каждой сцены.',
+    clip: 'по длине озвучки',
+    color: '#ec4899',
+  },
+  {
+    value: 'heygen-agent',
+    label: 'HeyGen Video Agent',
+    speed: '~3-6 мин',
+    quality: '★★★★★',
+    desc: 'Один промпт → готовый ролик целиком. Сценарий по сценам не используется.',
+    clip: 'весь ролик',
+    color: '#d946ef',
+  },
+];
+
+// Curated HeyGen digital-twin avatar presets (FAL avatar5). Name must match FAL preset.
+const HEYGEN_AVATARS = [
+  'Abigail Sofa Front',
+  'Aiden Office Front',
+  'Anna Casual Front',
+  'Brandon Suit Front',
+  'Daisy Studio Front',
+  'Elena Business Front',
+  'Ethan Casual Front',
+  'Isabella Studio Front',
+  'Liam Office Front',
+  'Mia Sofa Front',
+  'Noah Suit Front',
+  'Sophia Business Front',
+];
+
 const SCENARIO_PLACEHOLDER = `Опишите сценарий по сценам. Например:
 
 Сцена 1: Бабушка сидит у окна сельского дома, смотрит на небо. Над деревней появляется дрон.
@@ -381,7 +418,8 @@ export default function Create() {
   const [format, setFormat] = useState('9:16');
   const [duration, setDuration] = useState(30);
   const [language, setLanguage] = useState<'ru' | 'en'>('ru');
-  const [pipelineMode, setPipelineMode] = useState<'i2v' | 't2v'>('i2v');
+  const [pipelineMode, setPipelineMode] = useState<'i2v' | 't2v' | 'heygen'>('i2v');
+  const [heygenAvatar, setHeygenAvatar] = useState<string>(HEYGEN_AVATARS[0]);
   const [animationModel, setAnimationModel] = useState('wan');
   const [subtitleStyle, setSubtitleStyle] = useState<SubtitleStyleValue>('karaoke');
   const [clipDuration, setClipDuration] = useState<5 | 10>(10);
@@ -519,9 +557,9 @@ export default function Create() {
     await playMusicPreview(next);
   }
 
-  function handlePipelineSwitch(mode: 'i2v' | 't2v') {
+  function handlePipelineSwitch(mode: 'i2v' | 't2v' | 'heygen') {
     setPipelineMode(mode);
-    setAnimationModel(mode === 't2v' ? 'kling-t2v' : 'wan');
+    setAnimationModel(mode === 't2v' ? 'kling-t2v' : mode === 'heygen' ? 'heygen-avatar' : 'wan');
   }
 
   function applyPlan(plan: any, fillTopic: boolean) {
@@ -532,7 +570,11 @@ export default function Create() {
     if (plan.animationModel) {
       setAnimationModel(plan.animationModel);
       // Pipeline всегда выводим из модели, чтобы режим и модель не рассинхронизировались.
-      setPipelineMode(T2V_MODELS.some((m) => m.value === plan.animationModel) ? 't2v' : 'i2v');
+      setPipelineMode(
+        HEYGEN_MODELS.some((m) => m.value === plan.animationModel) ? 'heygen'
+        : T2V_MODELS.some((m) => m.value === plan.animationModel) ? 't2v'
+        : 'i2v'
+      );
     } else if (plan.pipelineMode) {
       setPipelineMode(plan.pipelineMode);
     }
@@ -629,6 +671,7 @@ export default function Create() {
         duration,
         language,
         animationModel,
+        heygenAvatar: animationModel === 'heygen-avatar' ? heygenAvatar : undefined,
         subtitleStyle,
         voice,
         clipDuration: CLIP_DURATION_MODELS.has(animationModel) ? clipDuration : undefined,
@@ -682,7 +725,7 @@ export default function Create() {
     }
   }
 
-  const currentModels = pipelineMode === 't2v' ? T2V_MODELS : I2V_MODELS;
+  const currentModels = pipelineMode === 't2v' ? T2V_MODELS : pipelineMode === 'heygen' ? HEYGEN_MODELS : I2V_MODELS;
 
   return (
     <div style={{ maxWidth: 640, margin: '0 auto' }}>
@@ -928,20 +971,31 @@ export default function Create() {
               ✨ Text-to-Video
               <div style={{ fontSize: 11, fontWeight: 400, marginTop: 2, color: pipelineMode === 't2v' ? '#86efac' : 'var(--text-muted)' }}>Текст → видео напрямую</div>
             </button>
+            <button
+              type="button"
+              data-testid="pipeline-heygen"
+              onClick={() => handlePipelineSwitch('heygen')}
+              style={{ flex: 1, padding: '10px 0', fontSize: 13, fontWeight: 600, border: 'none', borderLeft: '1.5px solid var(--border)', cursor: 'pointer', background: pipelineMode === 'heygen' ? '#3a1a32' : 'var(--bg-card2)', color: pipelineMode === 'heygen' ? '#f472b6' : 'var(--text-muted)', transition: 'all 0.15s' }}
+            >
+              🧑‍💼 HeyGen Avatar
+              <div style={{ fontSize: 11, fontWeight: 400, marginTop: 2, color: pipelineMode === 'heygen' ? '#f9a8d4' : 'var(--text-muted)' }}>Говорящий аватар</div>
+            </button>
           </div>
 
           {/* Pipeline description */}
-          <div style={{ marginTop: 8, padding: '10px 14px', background: pipelineMode === 't2v' ? 'rgba(74,222,128,0.07)' : 'rgba(96,165,250,0.07)', border: `1px solid ${pipelineMode === 't2v' ? 'rgba(74,222,128,0.2)' : 'rgba(96,165,250,0.2)'}`, borderRadius: 'var(--radius-sm)', fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+          <div style={{ marginTop: 8, padding: '10px 14px', background: pipelineMode === 't2v' ? 'rgba(74,222,128,0.07)' : pipelineMode === 'heygen' ? 'rgba(236,72,153,0.07)' : 'rgba(96,165,250,0.07)', border: `1px solid ${pipelineMode === 't2v' ? 'rgba(74,222,128,0.2)' : pipelineMode === 'heygen' ? 'rgba(236,72,153,0.2)' : 'rgba(96,165,250,0.2)'}`, borderRadius: 'var(--radius-sm)', fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>
             {pipelineMode === 'i2v' ? (
               <>🖼️ <strong style={{ color: 'var(--text)' }}>Image-to-Video:</strong> AI генерирует опорные кадры (Imagen4), затем оживляет их в видеоклипы. Лучше для видео с конкретным персонажем — первый кадр задаёт «ДНК» внешности.</>
-            ) : (
+            ) : pipelineMode === 't2v' ? (
               <>✨ <strong style={{ color: 'var(--text)' }}>Text-to-Video:</strong> AI пишет T2V-промпт с <em>consistency_block</em> и генерирует видео напрямую без картинки. Быстрее, меньше артефактов склейки. Лучше для абстрактного/атмосферного контента.</>
+            ) : (
+              <>🧑‍💼 <strong style={{ color: 'var(--text)' }}>HeyGen Avatar:</strong> говорящий цифровой человек, синхронизированный с озвучкой. <em>Digital Twin</em> — аватар в каждой сцене (~$0.10/сек); <em>Video Agent</em> — целый ролик из одного промпта (~$0.034/сек).</>
             )}
           </div>
         </Field>
 
         {/* Model selection */}
-        <Field label={`Модель ${pipelineMode === 't2v' ? 'T2V' : 'I2V'}`} hint="Время ожидания — сколько FAL.AI обрабатывает запрос. Длина клипа указана отдельно.">
+        <Field label={`Модель ${pipelineMode === 't2v' ? 'T2V' : pipelineMode === 'heygen' ? 'HeyGen' : 'I2V'}`} hint="Время ожидания — сколько FAL.AI обрабатывает запрос. Длина клипа указана отдельно.">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {currentModels.map((m) => {
               const hasFrames = 'frames' in m;
@@ -990,6 +1044,21 @@ export default function Create() {
             })}
           </div>
         </Field>
+
+        {animationModel === 'heygen-avatar' && (
+          <Field label="Аватар" hint="Цифровой человек HeyGen, который озвучивает сцены. Имя должно совпадать с пресетом FAL.">
+            <select
+              data-testid="heygen-avatar-select"
+              value={heygenAvatar}
+              onChange={(e) => setHeygenAvatar(e.target.value)}
+              style={{ width: '100%', padding: '11px 14px', borderRadius: 'var(--radius-sm)', border: '1.5px solid var(--border)', background: 'var(--bg-card2)', color: 'var(--text)', fontSize: 14, cursor: 'pointer' }}
+            >
+              {HEYGEN_AVATARS.map((a) => (
+                <option key={a} value={a}>{a}</option>
+              ))}
+            </select>
+          </Field>
+        )}
 
         <Field label="Язык контента">
           <div style={{ display: 'flex', gap: 10 }}>

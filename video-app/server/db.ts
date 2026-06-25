@@ -23,7 +23,7 @@ export interface Scene {
   imagePath?: string;
   duration: number;
   selectedVariant?: number;         // UI-selected image variant index (0-2 = AI variants, 3 = custom upload)
-  videoSource?: 'ai' | 'stock' | 'stock-animated'; // 'ai' = generate via FAL/Imagen (default), 'stock' = Pexels stock clip, 'stock-animated' = Pexels photo animated via FAL
+  videoSource?: 'ai' | 'stock' | 'stock-animated' | 'avatar'; // 'ai' = generate via FAL/Imagen (default), 'stock' = Pexels stock clip, 'stock-animated' = Pexels photo animated via FAL, 'avatar' = HeyGen digital-twin talking avatar lip-synced to scene TTS
   stockQuery?: string;          // custom search query for Pexels (defaults to imagePrompt)
   stockAvailable?: boolean;     // set by precheck: true = clip found & downloaded, false = not found
   stockPhotoAvailable?: boolean; // set by precheck: true = Pexels photo found, saved as variant 0
@@ -58,6 +58,8 @@ export type AnimationModel =
   | 'seedance2-t2v'// Seedance 2.0 Text-to-Video
   | 'veo3'         // Google Veo 3.1 T2V
   | 'happy-horse'  // Alibaba Happy Horse T2V
+  | 'heygen-avatar'// HeyGen digital-twin: talking avatar lip-synced to RU TTS (per-scene or whole video)
+  | 'heygen-agent' // HeyGen video-agent: single prompt → whole MP4 (bypasses scene pipeline)
   | 'chain';       // Chain: Kling T2V (сцена 1) → Kling I2V (сцены 2+)
 
 export type VideoStatus =
@@ -87,6 +89,7 @@ export interface VideoProject {
   subtitleColor?: string;
   musicStyle?: string;
   musicVolume?: number;
+  heygenAvatar?: string; // HeyGen digital-twin avatar preset name (used by 'avatar' scenes / heygen-avatar model)
   status: VideoStatus;
   progress: number;
   progressMessage: string;
@@ -165,6 +168,7 @@ function projectToDirectus(p: Partial<VideoProject>): Record<string, any> {
   if (p.subtitleColor !== undefined) d.subtitle_color = p.subtitleColor;
   if (p.musicStyle !== undefined) d.music_style = p.musicStyle;
   if (p.musicVolume !== undefined) d.music_volume = p.musicVolume;
+  if (p.heygenAvatar !== undefined) d.heygen_avatar = p.heygenAvatar ?? null;
   if (p.status !== undefined) d.status = p.status;
   if (p.progress !== undefined) d.progress = p.progress;
   if (p.progressMessage !== undefined) d.progress_message = p.progressMessage;
@@ -196,6 +200,7 @@ function directusToProject(row: any): VideoProject {
     subtitleColor: row.subtitle_color ?? undefined,
     musicStyle: row.music_style ?? undefined,
     musicVolume: row.music_volume != null ? Number(row.music_volume) : undefined,
+    heygenAvatar: row.heygen_avatar ?? undefined,
     status: (row.status ?? 'idle') as VideoStatus,
     progress: row.progress ?? 0,
     progressMessage: row.progress_message ?? '',
@@ -284,6 +289,7 @@ async function ensureTable(): Promise<void> {
   await p.query(`ALTER TABLE video_projects ADD COLUMN IF NOT EXISTS landing_url TEXT`);
   await p.query(`ALTER TABLE video_projects ADD COLUMN IF NOT EXISTS script_mode TEXT`);
   await p.query(`ALTER TABLE video_projects ADD COLUMN IF NOT EXISTS additional_details TEXT`);
+  await p.query(`ALTER TABLE video_projects ADD COLUMN IF NOT EXISTS heygen_avatar TEXT`);
 }
 
 let tableReady = false;
@@ -311,6 +317,7 @@ function rowToProject(row: any): VideoProject {
     subtitleColor: row.subtitle_color ?? undefined,
     musicStyle: row.music_style ?? undefined,
     musicVolume: row.music_volume != null ? Number(row.music_volume) : undefined,
+    heygenAvatar: row.heygen_avatar ?? undefined,
     status: row.status as VideoStatus,
     progress: row.progress,
     progressMessage: row.progress_message,
@@ -368,6 +375,7 @@ export async function createProject(data: {
   subtitleColor?: string;
   musicStyle?: string;
   musicVolume?: number;
+  heygenAvatar?: string;
   customScenario?: string;
   landingUrl?: string;
   additionalDetails?: string;
@@ -419,8 +427,8 @@ export async function createProject(data: {
         (id, title, topic, format, duration, language, animation_model, subtitle_style, voice, clip_duration,
          subtitle_font, subtitle_size, subtitle_color, music_style, music_volume,
          status, progress, progress_message, custom_scenario, landing_url,
-         additional_details, script_mode, created_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24)`,
+         additional_details, script_mode, heygen_avatar, created_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25)`,
       [
         project.id, project.title, project.topic, project.format,
         project.duration, project.language, project.animationModel, project.subtitleStyle,
@@ -430,6 +438,7 @@ export async function createProject(data: {
         project.status, project.progress, project.progressMessage,
         project.customScenario ?? null, project.landingUrl ?? null,
         project.additionalDetails ?? null, project.scriptMode ?? null,
+        project.heygenAvatar ?? null,
         project.createdAt, project.updatedAt,
       ]
     );
@@ -509,7 +518,7 @@ export async function updateProject(
       language: 'language', animationModel: 'animation_model',
       subtitleStyle: 'subtitle_style', voice: 'voice', clipDuration: 'clip_duration',
       subtitleFont: 'subtitle_font', subtitleSize: 'subtitle_size', subtitleColor: 'subtitle_color',
-      musicStyle: 'music_style', musicVolume: 'music_volume', status: 'status',
+      musicStyle: 'music_style', musicVolume: 'music_volume', heygenAvatar: 'heygen_avatar', status: 'status',
       progress: 'progress', progressMessage: 'progress_message', script: 'script',
       customScenario: 'custom_scenario', landingUrl: 'landing_url', additionalDetails: 'additional_details', scriptMode: 'script_mode', videoPath: 'video_path',
       videoUrl: 'video_url', error: 'error',

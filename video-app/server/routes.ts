@@ -40,7 +40,7 @@ import { ensureKeysLoaded } from './load-keys.js';
 import { planVideo } from './services/director.js';
 import { decideResumeStage } from './resume-policy.js';
 
-const VALID_SUBTITLE_STYLES: SubtitleStyle[] = ['none', 'plain', 'fade', 'karaoke', 'tiktok', 'word-by-word', 'cinematic', 'cinematic-full', 'bar'];
+const VALID_SUBTITLE_STYLES: SubtitleStyle[] = ['none', 'plain', 'fade', 'fade-zoom', 'karaoke', 'tiktok', 'word-by-word', 'cinematic', 'cinematic-full', 'bar'];
 
 /**
  * If the scene list contains a hook-role scene with text, prepend a 0.7 s

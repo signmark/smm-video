@@ -475,23 +475,29 @@ function generateFadeASS(scenes: KaraokeSceneEntry[], format: VideoFormat, optio
   return header + '\n' + dialogues + '\n';
 }
 
-/** Style: fade-zoom — full sentence fades in/out with a gentle scale 95%→100% pop */
+/**
+ * Style: fade-zoom — full sentence фейдится + "наводка резкости" (blur8→0).
+ * Используем \blur+\t вместо \fscx/\fscy — надёжно работает во всех версиях libass.
+ * Шрифт крупный bold, тень для читаемости.
+ */
 function generateFadeZoomASS(scenes: KaraokeSceneEntry[], format: VideoFormat, options: SubtitleOptions = {}): string {
   const { w, h } = FORMAT_SIZES[format];
   const font = options.font ?? 'DejaVu Sans';
-  const fontSize = formatAwareFontSize(w, format, 0.038, options.sizeMultiplier ?? 1);
+  // Крупнее обычного (0.048 вместо 0.038) — заметнее на экране
+  const fontSize = formatAwareFontSize(w, format, 0.048, options.sizeMultiplier ?? 1);
   const primaryColor = hexToAssColor(options.color ?? '#ffffff');
-  const marginV = Math.round(h * 0.07);
-  const styleLine = `Style: FadeZoom,${font},${fontSize},${primaryColor},${primaryColor},&H00000000,&HA0000000,1,0,0,0,100,100,1,0,1,3,1,2,40,40,${marginV},1`;
+  const marginV = Math.round(h * 0.08);
+  // Bold=1, BorderStyle=1 (outline+shadow), Outline=4, Shadow=2
+  const styleLine = `Style: FadeZoom,${font},${fontSize},${primaryColor},${primaryColor},&H00000000,&HA0000000,1,0,0,0,100,100,0,0,1,4,2,2,40,40,${marginV},1`;
   const header = makeAssHeader(w, h, styleLine);
 
-  const fadeMs = 300;
-  const zoomDurMs = 500;
+  const fadeMs = 350;
+  const sharpMs = 500;  // время "наводки резкости"
   const dialogues = scenes
     .filter(s => s.narration.trim())
     .map(s => {
-      // Fade in+out, scale 95→100% over first 500ms
-      const text = `{\\fad(${fadeMs},${fadeMs})\\fscx95\\fscy95\\t(0,${zoomDurMs},1,\\fscx100\\fscy100)}${s.narration.trim()}`;
+      // Fade in/out + blur 8→0 (zoom-to-focus эффект, надёжен в libass на любой версии)
+      const text = `{\\fad(${fadeMs},${fadeMs})\\blur8\\t(0,${sharpMs},1,\\blur0)}${s.narration.trim()}`;
       return `Dialogue: 0,${formatAssTime(s.startTime)},${formatAssTime(s.startTime + s.duration)},FadeZoom,,0,0,0,,${text}`;
     }).join('\n');
 

@@ -491,13 +491,14 @@ function generateFadeZoomASS(scenes: KaraokeSceneEntry[], format: VideoFormat, o
   const styleLine = `Style: FadeZoom,${font},${fontSize},${primaryColor},${primaryColor},&H00000000,&HA0000000,1,0,0,0,100,100,0,0,1,4,2,2,40,40,${marginV},1`;
   const header = makeAssHeader(w, h, styleLine);
 
-  const fadeMs = 350;
-  const sharpMs = 500;  // время "наводки резкости"
   const dialogues = scenes
     .filter(s => s.narration.trim())
     .map(s => {
-      // Fade in/out + blur 8→0 (zoom-to-focus эффект, надёжен в libass на любой версии)
-      const text = `{\\fad(${fadeMs},${fadeMs})\\blur8\\t(0,${sharpMs},1,\\blur0)}${s.narration.trim()}`;
+      // Fade: 1.2с in/out (очень заметно), blur 15→0 за 1с (zoom-to-focus)
+      // \fad — самый надёжный тег в libass, поддерживается везде
+      // длинный fadeMs нужен чтобы эффект был виден даже на коротких сценах
+      const fadeMs = Math.min(1200, Math.round(s.duration * 1000 * 0.35));
+      const text = `{\\fad(${fadeMs},${fadeMs})\\blur15\\t(0,1000,1,\\blur0)}${s.narration.trim()}`;
       return `Dialogue: 0,${formatAssTime(s.startTime)},${formatAssTime(s.startTime + s.duration)},FadeZoom,,0,0,0,,${text}`;
     }).join('\n');
 

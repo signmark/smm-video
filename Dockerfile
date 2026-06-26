@@ -16,8 +16,11 @@ ENV VITE_PLAN_PRICE_BASIC_ORIGINAL=$VITE_PLAN_PRICE_BASIC_ORIGINAL
 # Копируем package files
 COPY package*.json ./
 
+# Заменяем Replit-внутренний реестр на публичный npm перед установкой
+RUN sed -i 's|http://package-firewall.replit.local/npm/|https://registry.npmjs.org/|g' package-lock.json
+
 # Устанавливаем ВСЕ зависимости (включая dev для сборки)
-RUN npm install
+RUN npm install --registry https://registry.npmjs.org
 
 # Копируем исходный код
 COPY . .
@@ -54,8 +57,9 @@ ENV NODE_ENV=production
 
 # Копируем package files и устанавливаем ТОЛЬКО production зависимости
 COPY package*.json ./
-RUN npm install --omit=dev && \
-    npm install @ffmpeg-installer/ffmpeg @ffprobe-installer/ffprobe --omit=dev
+RUN sed -i 's|http://package-firewall.replit.local/npm/|https://registry.npmjs.org/|g' package-lock.json
+RUN npm install --omit=dev --registry https://registry.npmjs.org && \
+    npm install @ffmpeg-installer/ffmpeg @ffprobe-installer/ffprobe --omit=dev --registry https://registry.npmjs.org
 
 # Копируем собранные файлы из builder стадии
 COPY --from=builder /app/dist ./dist

@@ -3,8 +3,8 @@
  *
  * I2V models (require source image):
  *   wan         — fal-ai/wan/v2.7/image-to-video
- *   kling       — fal-ai/kling-video/v1.6/standard/image-to-video
- *   kling-pro   — fal-ai/kling-video/v1.6/pro/image-to-video
+ *   kling       — fal-ai/kling-video/v3/standard/image-to-video
+ *   kling-pro   — fal-ai/kling-video/v3/pro/image-to-video
  *   minimax     — fal-ai/minimax/video-01-live/image-to-video
  *   seedance    — fal-ai/bytedance/seedance/v1/lite/image-to-video
  *
@@ -154,8 +154,8 @@ async function animateWithWan(imageBuffer: Buffer, prompt: string, format: Video
 async function animateWithKling(imageBuffer: Buffer, prompt: string, format: VideoFormat, durationSeconds: number, outputPath: string, apiKey: string, onWait?: (ms: number) => void, clipDuration?: number): Promise<void> {
   const duration = clipDuration ? String(clipDuration) : (durationSeconds >= 8 ? '10' : '5');
   const structuredPrompt = buildKlingPrompt(prompt);
-  console.log(`[fal-anim] Kling v1.6 Standard I2V: submitting... (${duration}s)`);
-  const q = await falSubmit('fal-ai/kling-video/v1.6/standard/image-to-video', {
+  console.log(`[fal-anim] Kling v3 Standard I2V: submitting... (${duration}s)`);
+  const q = await falSubmit('fal-ai/kling-video/v3/standard/image-to-video', {
     image_url: `data:image/jpeg;base64,${imageBuffer.toString('base64')}`,
     prompt: structuredPrompt, duration, aspect_ratio: format,
   }, apiKey);
@@ -169,8 +169,8 @@ async function animateWithKling(imageBuffer: Buffer, prompt: string, format: Vid
 async function animateWithKlingPro(imageBuffer: Buffer, prompt: string, format: VideoFormat, durationSeconds: number, outputPath: string, apiKey: string, onWait?: (ms: number) => void, clipDuration?: number): Promise<void> {
   const duration = clipDuration ? String(clipDuration) : (durationSeconds >= 8 ? '10' : '5');
   const structuredPrompt = buildKlingPrompt(prompt);
-  console.log(`[fal-anim] Kling v1.6 Pro I2V: submitting... (${duration}s)`);
-  const q = await falSubmit('fal-ai/kling-video/v1.6/pro/image-to-video', {
+  console.log(`[fal-anim] Kling v3 Pro I2V: submitting... (${duration}s)`);
+  const q = await falSubmit('fal-ai/kling-video/v3/pro/image-to-video', {
     image_url: `data:image/jpeg;base64,${imageBuffer.toString('base64')}`,
     prompt: structuredPrompt, duration, aspect_ratio: format,
   }, apiKey);

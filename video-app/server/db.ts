@@ -46,8 +46,8 @@ export type SubtitleStyle = 'none' | 'plain' | 'fade' | 'fade-zoom' | 'karaoke' 
 // I2V = image-to-video, T2V = text-to-video
 export type AnimationModel =
   | 'wan'          // Wan 2.7 I2V
-  | 'kling'        // Kling v1.6 Standard I2V
-  | 'kling-pro'    // Kling v1.6 Pro I2V
+  | 'kling'        // Kling v3 Standard I2V
+  | 'kling-pro'    // Kling v3 Pro I2V
   | 'minimax'      // MiniMax I2V
   | 'seedance'     // Seedance v1 Lite I2V
   | 'seedance2'    // Seedance 2.0 I2V

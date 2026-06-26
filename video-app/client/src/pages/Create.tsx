@@ -146,7 +146,7 @@ const I2V_MODELS = [
   },
   {
     value: 'kling',
-    label: 'Kling v1.6 Standard',
+    label: 'Kling v3 Standard',
     speed: '~90-150с',
     quality: '★★★★★',
     desc: 'Высокое качество',
@@ -156,7 +156,7 @@ const I2V_MODELS = [
   },
   {
     value: 'kling-pro',
-    label: 'Kling v1.6 Pro',
+    label: 'Kling v3 Pro',
     speed: '~120-180с',
     quality: '★★★★★',
     desc: 'Максимальное качество',

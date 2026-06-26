@@ -141,8 +141,8 @@ Partner postback (опционально): OMEMO_POSTBACK_URL (default: https://
 |----------|-----------|-----------|
 | `wan` | `fal-ai/wan/v2.7/image-to-video` | width/height, num_frames: 81 (не aspect_ratio/resolution!) |
 | `wan-t2v` | `fal-ai/wan/v2.7/text-to-video` | width/height, num_frames: 81 |
-| `kling` | `fal-ai/kling-video/v1.6/standard/image-to-video` | duration: 5s или 10s |
-| `kling-pro` | `fal-ai/kling-video/v1.6/pro/image-to-video` | duration: 5s или 10s |
+| `kling` | `fal-ai/kling-video/v3/standard/image-to-video` | duration: 5s или 10s |
+| `kling-pro` | `fal-ai/kling-video/v3/pro/image-to-video` | duration: 5s или 10s |
 | `minimax` | `fal-ai/minimax/video-01-live/image-to-video` | prompt только |
 | `seedance` | `fal-ai/bytedance/seedance-1-lite/image-to-video` | duration, aspect_ratio |
 | `seedance2` | `fal-ai/bytedance/seedance-2.0/image-to-video` | duration, aspect_ratio |

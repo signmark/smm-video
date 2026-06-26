@@ -39,6 +39,14 @@ function SubtitleStylePreview({ style, color = '#ffffff' }: { style: string; col
     </div>
   );
 
+  if (style === 'fade-zoom') return (
+    <div style={frame}>
+      <div style={{ ...bottomBase, bottom: 10, fontSize: 6, color, background: 'rgba(0,0,0,0.65)', borderRadius: 2, padding: '3px 4px', opacity: 0.75, transform: 'scale(1.04)', transformOrigin: 'bottom center' }}>
+        {sample}
+      </div>
+    </div>
+  );
+
   if (style === 'karaoke') return (
     <div style={frame}>
       <div style={{ ...bottomBase, bottom: 10, fontSize: 6, color: 'rgba(255,255,255,0.9)', background: 'rgba(0,0,0,0.7)', borderRadius: 2, padding: '3px 4px' }}>
@@ -317,6 +325,12 @@ const SUBTITLE_STYLES = [
     label: 'Плавное появление',
     desc: 'Вся фраза плавно проявляется и гаснет',
     icon: '🌅',
+  },
+  {
+    value: 'fade-zoom',
+    label: 'Fade + Zoom',
+    desc: 'Фраза появляется с лёгким увеличением — мягкий pop-in эффект',
+    icon: '🔍',
   },
   {
     value: 'karaoke',

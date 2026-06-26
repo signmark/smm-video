@@ -41,7 +41,7 @@ export interface Script {
 
 export type VideoFormat = '9:16' | '16:9' | '1:1';
 
-export type SubtitleStyle = 'none' | 'plain' | 'fade' | 'karaoke' | 'tiktok' | 'word-by-word' | 'cinematic' | 'cinematic-full' | 'bar' | 'word-timed';
+export type SubtitleStyle = 'none' | 'plain' | 'fade' | 'fade-zoom' | 'karaoke' | 'tiktok' | 'word-by-word' | 'cinematic' | 'cinematic-full' | 'bar' | 'word-timed';
 
 // I2V = image-to-video, T2V = text-to-video
 export type AnimationModel =

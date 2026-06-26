@@ -481,6 +481,29 @@ function generateFadeASS(scenes: KaraokeSceneEntry[], format: VideoFormat, optio
   return header + '\n' + dialogues + '\n';
 }
 
+/** Style: fade-zoom — full sentence fades in/out with a gentle scale 95%→100% pop */
+function generateFadeZoomASS(scenes: KaraokeSceneEntry[], format: VideoFormat, options: SubtitleOptions = {}): string {
+  const { w, h } = FORMAT_SIZES[format];
+  const font = options.font ?? 'DejaVu Sans';
+  const fontSize = formatAwareFontSize(w, format, 0.038, options.sizeMultiplier ?? 1);
+  const primaryColor = hexToAssColor(options.color ?? '#ffffff');
+  const marginV = Math.round(h * 0.07);
+  const styleLine = `Style: FadeZoom,${font},${fontSize},${primaryColor},${primaryColor},&H00000000,&HA0000000,1,0,0,0,100,100,1,0,1,3,1,2,40,40,${marginV},1`;
+  const header = makeAssHeader(w, h, styleLine);
+
+  const fadeMs = 300;
+  const zoomDurMs = 500;
+  const dialogues = scenes
+    .filter(s => s.narration.trim())
+    .map(s => {
+      // Fade in+out, scale 95→100% over first 500ms
+      const text = `{\\fad(${fadeMs},${fadeMs})\\fscx95\\fscy95\\t(0,${zoomDurMs},1,\\fscx100\\fscy100)}${s.narration.trim()}`;
+      return `Dialogue: 0,${formatAssTime(s.startTime)},${formatAssTime(s.startTime + s.duration)},FadeZoom,,0,0,0,,${text}`;
+    }).join('\n');
+
+  return header + '\n' + dialogues + '\n';
+}
+
 /** Style: TikTok — one word at a time, large bold font with shadow */
 function generateTiktokASS(scenes: KaraokeSceneEntry[], format: VideoFormat, options: SubtitleOptions = {}): string {
   const { w, h } = FORMAT_SIZES[format];
@@ -675,6 +698,7 @@ function generateSubtitleASS(scenes: KaraokeSceneEntry[], format: VideoFormat, s
   switch (style) {
     case 'plain':       return generatePlainASS(scenes, format, options);
     case 'fade':        return generateFadeASS(scenes, format, options);
+    case 'fade-zoom':   return generateFadeZoomASS(scenes, format, options);
     case 'tiktok':      return generateTiktokASS(scenes, format, options);
     case 'word-by-word': return generateWordByWordASS(scenes, format, options);
     case 'cinematic':      return generateCinematicASS(scenes, format, options);

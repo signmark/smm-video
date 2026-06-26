@@ -141,6 +141,13 @@ type PipelineConfig = {
   subtitleStyle: 'karaoke' | 'tiktok' | 'none';
   language: 'ru' | 'en';
   /**
+   * Если true — сначала вызывается POST /generate-script и ждётся
+   * stockPrechecked=true, только потом POST /generate.
+   * Обязательно для I2V/T2V пайплайнов, где videoSource проставляется
+   * только после stock precheck.
+   */
+  needsPrecheck?: boolean;
+  /**
    * Ожидаемый источник большинства сцен.
    * 'stock' → тема богатая на стоки (природа, спорт и т.п.)
    * 'ai'    → тема нишевая, стоки вряд ли найдутся
@@ -158,6 +165,7 @@ const PIPELINES: PipelineConfig[] = [
     animationModel: 'seedance',
     subtitleStyle: 'tiktok',
     language: 'ru',
+    needsPrecheck: true,
     expectedDominantSource: 'stock',
   },
   {
@@ -169,6 +177,7 @@ const PIPELINES: PipelineConfig[] = [
     animationModel: 'wan-t2v',
     subtitleStyle: 'karaoke',
     language: 'ru',
+    needsPrecheck: true,
     expectedDominantSource: 'ai',
   },
   {
@@ -180,6 +189,7 @@ const PIPELINES: PipelineConfig[] = [
     animationModel: 'kling',
     subtitleStyle: 'karaoke',
     language: 'ru',
+    needsPrecheck: true,
     expectedDominantSource: 'mixed',
   },
   {
@@ -257,6 +267,11 @@ function assertResolution(probe: FfprobeOutput, format: string, label: string) {
 /**
  * Создаёт проект, запускает генерацию, ждёт завершения.
  * Возвращает project + скачанный MP4 + ffprobe.
+ *
+ * Если cfg.needsPrecheck=true — сначала вызывает POST /generate-script,
+ * ждёт stockPrechecked=true (stock precheck завершён), затем POST /generate.
+ * Это обязательно для I2V/T2V пайплайнов, где videoSource проставляется
+ * только во время stock precheck, а не внутри основной генерации.
  */
 async function generateVideo(cfg: PipelineConfig): Promise<GeneratedVideo> {
   console.log(`\n[${cfg.id}] Создаём проект: "${cfg.topic}"`);
@@ -276,7 +291,23 @@ async function generateVideo(cfg: PipelineConfig): Promise<GeneratedVideo> {
   const projectId = rCreate.body.id;
   console.log(`[${cfg.id}] Проект создан: ${projectId}`);
 
-  // Запускаем генерацию (скрипт + видео за один шаг)
+  // Для I2V/T2V пайплайнов: сначала generate-script + stock precheck,
+  // иначе videoSource не проставляется и stock-клипы не используются.
+  if (cfg.needsPrecheck) {
+    console.log(`[${cfg.id}] Генерируем скрипт + stock precheck...`);
+    const rScript = await post(`/videos/${projectId}/generate-script`, {});
+    assert.ok([200, 202].includes(rScript.status),
+      `[${cfg.id}] /generate-script вернул ${rScript.status}`);
+
+    await pollUntil<Project>(
+      `/videos/${projectId}`,
+      p => p.script?.stockPrechecked === true,
+      { timeoutMs: T.script + T.precheck, intervalMs: 3000 },
+    );
+    console.log(`[${cfg.id}] Stock precheck завершён. Запускаем генерацию...`);
+  }
+
+  // Запускаем генерацию
   const rGen = await post(`/videos/${projectId}/generate`, {});
   assert.ok([200, 202].includes(rGen.status),
     `[${cfg.id}] /generate вернул ${rGen.status}`);
@@ -490,11 +521,14 @@ for (const cfg of PIPELINES) {
 
     if (cfg.animationModel === 'wan-t2v') {
       describe('T2V-специфичные проверки', () => {
-        it('T2V: все сцены имеют videoSource ai или stock', () => {
+        it('T2V: все сцены имеют корректный videoSource', () => {
           const scenes = result.project.script?.scenes ?? [];
+          const valid = new Set(['ai', 'stock', 'stock-animated']);
           for (const [i, s] of scenes.entries()) {
             assert.ok(
-              s.videoSource === 'ai' || s.videoSource === 'stock',
+              // videoSource может отсутствовать если precheck не запускался,
+              // либо быть stock/stock-animated/ai — всё это допустимо для T2V
+              s.videoSource === undefined || valid.has(s.videoSource),
               `T2V сцена ${i}: неожиданный videoSource="${s.videoSource}"`);
           }
         });

@@ -95,7 +95,7 @@ router.get('/videos/:id', async (req, res) => {
   }
 });
 
-const ALL_MODELS: AnimationModel[] = ['wan', 'kling', 'kling-pro', 'minimax', 'seedance', 'wan-t2v', 'kling-t2v', 'kling-pro-t2v', 'luma', 'veo3', 'heygen-avatar', 'heygen-agent', 'chain'];
+const ALL_MODELS: AnimationModel[] = ['wan', 'kling', 'kling-pro', 'minimax', 'seedance', 'seedance2', 'wan-t2v', 'kling-t2v', 'kling-pro-t2v', 'luma', 'veo3', 'heygen-avatar', 'heygen-agent', 'chain'];
 
 // Models whose clip length is fixed by the provider (not user-selectable). For
 // these, clipDuration must be ignored so scene layout/assembly use the real length.

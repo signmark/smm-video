@@ -54,7 +54,7 @@ Partner postback (опционально): OMEMO_POSTBACK_URL (default: https://
 **Сделано:**
 - ✅ Полный пайплайн: сценарий → stock precheck → AI-варианты картинок → анимация (FAL.AI) → TTS → сборка ffmpeg → фоновая музыка
 - ✅ Источники сцен: `stock` (Pexels), `ai` (Imagen 4 / Gemini Flash), `avatar` (HeyGen) — миксуются в одном видео
-- ✅ Модели анимации в UI: wan / wan-t2v / kling / kling-pro / minimax / seedance / luma / veo3 / chain
+- ✅ Модели анимации в UI: wan / wan-t2v / kling / kling-pro / minimax / seedance / seedance2 / luma / veo3 / chain
 - ✅ **HeyGen** интеграция (FAL): `heygen-avatar` (говорящий аватар, липсинк под наш RU TTS — по сценам или всё видео) и `heygen-agent` (один промпт → готовый MP4 в обход пайплайна). Аватар-клип муксится с тем же TTS (`-map 1:a:0`), двойного звука нет
 - ✅ **TTS русские ударения**: `accentuateRussian()` через Gemini (по прокси) расставляет U+0301 по смыслу для омографов (духи́/ду́хи, за́мок/замо́к). OpenAI/Edge читают метки, HF получает сырой текст. Безопасный фолбэк на оригинал при любой ошибке
 - ✅ TTS: OpenAI (primary) → HuggingFace mms (fallback); фоновая музыка MusicGen (громкость 0.18)
@@ -145,6 +145,7 @@ Partner postback (опционально): OMEMO_POSTBACK_URL (default: https://
 | `kling-pro` | `fal-ai/kling-video/v1.6/pro/image-to-video` | duration: 5s или 10s |
 | `minimax` | `fal-ai/minimax/video-01-live/image-to-video` | prompt только |
 | `seedance` | `fal-ai/bytedance/seedance-1-lite/image-to-video` | duration, aspect_ratio |
+| `seedance2` | `fal-ai/bytedance/seedance-2.0/image-to-video` | duration, aspect_ratio |
 
 ### Важные особенности и грабли
 - **FAL polling**: использовать `status_url` и `response_url` из ответа submit — не конструировать URL вручную

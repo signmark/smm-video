@@ -41,14 +41,14 @@ export interface DirectorPlan {
 // ── Допустимые значения (синхронизированы с routes.ts ALL_MODELS и Create.tsx) ──
 const FORMATS = ['9:16', '16:9', '1:1'] as const;
 const DURATIONS = [15, 30, 60, 90];
-const I2V_MODELS = ['wan', 'kling', 'kling-pro', 'minimax', 'seedance'];
+const I2V_MODELS = ['wan', 'kling', 'kling-pro', 'minimax', 'seedance', 'seedance2'];
 const T2V_MODELS = ['wan-t2v', 'kling-t2v', 'kling-pro-t2v', 'luma', 'veo3', 'chain'];
 const ALL_MODELS = [...I2V_MODELS, ...T2V_MODELS];
 // Синхронизировано с VOICES в Create.tsx (UI-дропдаун) — 'ballad' исключён, его нет в UI.
 const VOICES = ['alloy', 'ash', 'coral', 'echo', 'fable', 'nova', 'onyx', 'sage', 'shimmer'];
 const SUBTITLE_STYLES = ['none', 'plain', 'fade', 'karaoke', 'tiktok', 'word-by-word', 'cinematic', 'cinematic-full', 'bar'];
 const MUSIC_STYLES = ['none', 'ambient', 'cinematic', 'corporate', 'electronic', 'acoustic', 'jazz'];
-const CLIP_DURATION_MODELS = new Set(['kling', 'kling-pro', 'seedance', 'kling-t2v', 'kling-pro-t2v', 'luma']);
+const CLIP_DURATION_MODELS = new Set(['kling', 'kling-pro', 'seedance', 'seedance2', 'kling-t2v', 'kling-pro-t2v', 'luma']);
 
 const SYSTEM_INSTRUCTION =
   'Ты — опытный креативный директор по коротким видео для соцсетей (Reels, Shorts, TikTok, YouTube). ' +

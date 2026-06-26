@@ -263,6 +263,21 @@ async function animateWithSeedance(imageBuffer: Buffer, prompt: string, format: 
   console.log(`[fal-anim] Seedance I2V clip saved: ${path.basename(outputPath)}`);
 }
 
+async function animateWithSeedance2(imageBuffer: Buffer, prompt: string, format: VideoFormat, durationSeconds: number, outputPath: string, apiKey: string, onWait?: (ms: number) => void, clipDuration?: number): Promise<void> {
+  const duration = clipDuration ?? (durationSeconds >= 8 ? 10 : 5);
+  const structuredPrompt = buildSeedancePrompt(prompt, format);
+  console.log(`[fal-anim] Seedance 2.0 I2V: submitting... (${duration}s)`);
+  const q = await falSubmit('fal-ai/bytedance/seedance-2.0/image-to-video', {
+    image_url: `data:image/jpeg;base64,${imageBuffer.toString('base64')}`,
+    prompt: structuredPrompt, duration, resolution: '720p', aspect_ratio: format,
+  }, apiKey);
+  const result = await falPoll(q, apiKey, 300_000, onWait);
+  const videoUrl = result?.video?.url;
+  if (!videoUrl) throw new Error(`Seedance 2.0 I2V no video URL`);
+  await downloadVideo(videoUrl, outputPath);
+  console.log(`[fal-anim] Seedance 2.0 I2V clip saved: ${path.basename(outputPath)}`);
+}
+
 async function animateWithLtx(imageBuffer: Buffer, prompt: string, format: VideoFormat, outputPath: string, apiKey: string, onWait?: (ms: number) => void): Promise<void> {
   const { width, height } = FORMAT_DIMS[format];
   console.log(`[fal-anim] LTX I2V: submitting... (${width}x${height})`);
@@ -447,6 +462,7 @@ export async function animateFrame(params: {
       case 'kling-pro': return animateWithKlingPro(imageBuffer, prompt, format, durationSeconds, outputPath, apiKey, onWait, clipDuration);
       case 'minimax':   return animateWithMinimax(imageBuffer, prompt, outputPath, apiKey, onWait);
       case 'seedance':  return animateWithSeedance(imageBuffer, prompt, format, durationSeconds, outputPath, apiKey, onWait, clipDuration);
+      case 'seedance2': return animateWithSeedance2(imageBuffer, prompt, format, durationSeconds, outputPath, apiKey, onWait, clipDuration);
       default: throw new Error(`Model ${model} is T2V, use animateText() instead`);
     }
   };

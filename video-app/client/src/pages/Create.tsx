@@ -174,6 +174,16 @@ const I2V_MODELS = [
     color: '#10b981',
     frames: 1 as 1 | 2,
   },
+  {
+    value: 'seedance2',
+    label: 'Seedance 2.0',
+    speed: '~60-90с',
+    quality: '★★★★☆',
+    desc: 'Улучшенное качество движения',
+    clip: '5 или 10 с/клип',
+    color: '#06b6d4',
+    frames: 1 as 1 | 2,
+  },
 ];
 
 const T2V_MODELS = [
@@ -372,7 +382,7 @@ const SUBTITLE_STYLES = [
 
 type SubtitleStyleValue = typeof SUBTITLE_STYLES[number]['value'];
 
-const CLIP_DURATION_MODELS = new Set(['kling', 'kling-pro', 'seedance', 'kling-t2v', 'kling-pro-t2v', 'luma', 'seedance-t2v', 'seedance2-t2v', 'happy-horse']);
+const CLIP_DURATION_MODELS = new Set(['kling', 'kling-pro', 'seedance', 'seedance2', 'kling-t2v', 'kling-pro-t2v', 'luma', 'seedance-t2v', 'seedance2-t2v', 'happy-horse']);
 
 const SUBTITLE_FONTS = [
   { value: 'DejaVu Sans',      label: 'Стандартный', desc: 'Округлый sans-serif' },

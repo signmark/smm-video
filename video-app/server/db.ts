@@ -50,6 +50,7 @@ export type AnimationModel =
   | 'kling-pro'    // Kling v1.6 Pro I2V
   | 'minimax'      // MiniMax I2V
   | 'seedance'     // Seedance v1 Lite I2V
+  | 'seedance2'    // Seedance 2.0 I2V
   | 'wan-t2v'      // Wan 2.7 Text-to-Video
   | 'kling-t2v'    // Kling v3 Standard Text-to-Video
   | 'kling-pro-t2v'// Kling v3 Pro Text-to-Video

@@ -365,13 +365,7 @@ export interface WordTimestamp {
 }
 
 // ── Karaoke subtitle generation ───────────────────────────────────────────────
-
-interface KaraokeSceneEntry {
-  narration: string;
-  text: string;       // short subtitle (max 8 words) — used by cinematic style
-  startTime: number;
-  duration: number;
-}
+// KaraokeSceneEntry is exported below near generateSubtitleASS for testability
 
 function formatAssTime(sec: number): string {
   const h = Math.floor(sec / 3600);
@@ -694,7 +688,14 @@ function generateBarASS(scenes: KaraokeSceneEntry[], format: VideoFormat, option
   return header + '\n' + dialogues + '\n';
 }
 
-function generateSubtitleASS(scenes: KaraokeSceneEntry[], format: VideoFormat, style: SubtitleStyle, options: SubtitleOptions = {}): string {
+export interface KaraokeSceneEntry {
+  narration: string;
+  text: string;
+  startTime: number;
+  duration: number;
+}
+
+export function generateSubtitleASS(scenes: KaraokeSceneEntry[], format: VideoFormat, style: SubtitleStyle, options: SubtitleOptions = {}): string {
   switch (style) {
     case 'plain':       return generatePlainASS(scenes, format, options);
     case 'fade':        return generateFadeASS(scenes, format, options);

@@ -436,6 +436,73 @@ async function animateWithHappyHorse(prompt: string, format: VideoFormat, durati
   console.log(`[fal-anim] Happy Horse T2V clip saved: ${path.basename(outputPath)}`);
 }
 
+// ── Whisper transcription (word-level timestamps) ──────────────────────────────
+
+export interface FalWordTimestamp {
+  word: string;
+  start: number;
+  end: number;
+}
+
+/**
+ * Transcribes a TTS audio clip via FAL's hosted Whisper (fal-ai/whisper) and returns
+ * per-word start/end timestamps (chunk_level='word'). This is the PRIMARY source for
+ * the 'word-timed' subtitle style: FAL_AI_API_KEY is required for animation elsewhere
+ * in this app and is therefore reliably present, unlike OPENAI_API_KEY which is often
+ * unset. Callers should fall back to OpenAI Whisper (getWordTimestamps in
+ * tts-generator.ts) when this returns null.
+ *
+ * FAL's response shape differs from OpenAI's: each chunk has `timestamp: [start, end]`
+ * instead of separate start/end fields — mapped here to the same {word,start,end} shape
+ * used throughout the app so both sources are interchangeable to callers.
+ */
+export async function transcribeAudioFal(audioPath: string): Promise<FalWordTimestamp[] | null> {
+  const apiKey = process.env.FAL_AI_API_KEY;
+  if (!apiKey) {
+    console.warn('[fal-whisper] No FAL_AI_API_KEY — skipping');
+    return null;
+  }
+
+  try {
+    const buf = await fs.readFile(audioPath);
+    const ext = path.extname(audioPath).toLowerCase();
+    const mime = ext === '.wav' ? 'audio/wav' : ext === '.m4a' ? 'audio/mp4' : 'audio/mpeg';
+    const audio_url = `data:${mime};base64,${buf.toString('base64')}`;
+
+    const q = await falSubmit('fal-ai/whisper', {
+      audio_url,
+      task: 'transcribe',
+      chunk_level: 'word',
+    }, apiKey);
+
+    const result = await falPoll(q, apiKey, 120_000);
+    const chunks = result?.chunks;
+    if (!Array.isArray(chunks) || chunks.length === 0) {
+      console.warn('[fal-whisper] No word chunks returned');
+      return null;
+    }
+
+    const words: FalWordTimestamp[] = chunks
+      .map((c: any) => ({
+        word: String(c.text ?? '').trim(),
+        start: Array.isArray(c.timestamp) ? Number(c.timestamp[0]) : NaN,
+        end: Array.isArray(c.timestamp) ? Number(c.timestamp[1]) : NaN,
+      }))
+      .filter((w) => w.word && Number.isFinite(w.start) && Number.isFinite(w.end) && w.end > w.start);
+
+    if (words.length === 0) {
+      console.warn('[fal-whisper] All word chunks were empty/invalid after parsing');
+      return null;
+    }
+
+    console.log(`[fal-whisper] Got ${words.length} word timestamps from ${path.basename(audioPath)}`);
+    return words;
+  } catch (err: any) {
+    console.warn(`[fal-whisper] Transcription failed: ${err.message}`);
+    return null;
+  }
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /** I2V: animate a source image into a video clip */

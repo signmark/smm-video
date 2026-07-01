@@ -105,6 +105,19 @@ function SubtitleStylePreview({ style, color = '#ffffff' }: { style: string; col
     </div>
   );
 
+  if (style === 'word-timed') return (
+    <div style={frame}>
+      <div style={{ position: 'absolute', bottom: 14, left: 0, right: 0, textAlign: 'center' }}>
+        <span style={{ fontSize: 12, fontWeight: 900, color: '#facc15', textShadow: '0 2px 8px rgba(0,0,0,0.85)' }}>
+          {words[1]}
+        </span>
+      </div>
+      <div style={{ position: 'absolute', bottom: 6, left: 0, right: 0, textAlign: 'center', fontSize: 5, opacity: 0.5, color: '#fff' }}>
+        точно по речи
+      </div>
+    </div>
+  );
+
   return <div style={frame} />;
 }
 
@@ -377,6 +390,12 @@ const SUBTITLE_STYLES = [
     label: 'Плашка',
     desc: 'Белый текст на тёмной полупрозрачной подложке — как в новостях',
     icon: '📰',
+  },
+  {
+    value: 'word-timed',
+    label: 'По словам (Whisper)',
+    desc: 'Каждое слово появляется точно в момент произнесения — тайминги из Whisper, идеальная синхронизация',
+    icon: '🎯',
   },
 ] as const;
 

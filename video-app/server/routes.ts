@@ -30,17 +30,71 @@ async function waitForFile(filePath: string, maxMs = 10000): Promise<void> {
 
 import { generateScript } from './services/script-generator.js';
 import { generateImage, generateLayeredImage } from './services/image-generator.js';
-import { generateAudio } from './services/tts-generator.js';
-import { assembleVideo, assembleFromClips, extractLastFrame, burnSubtitles, subtitleSizeMultiplier, mixBackgroundMusic, makeStaticClipFromImage, makeTitleCardClip, probeActualDuration } from './services/video-assembler.js';
+import { generateAudio, getWordTimestamps } from './services/tts-generator.js';
+import { assembleVideo, assembleFromClips, extractLastFrame, burnSubtitles, subtitleSizeMultiplier, mixBackgroundMusic, makeStaticClipFromImage, makeTitleCardClip, probeActualDuration, type WordTimestamp } from './services/video-assembler.js';
 import { generateBackgroundMusic, getMusicStyle, autoMusicStyle } from './services/music-generator.js';
 
-import { animateFrame, animateText, isT2VModel, generateAvatarClip, generateAgentVideo, DEFAULT_HEYGEN_AVATAR } from './services/fal-animator.js';
+import { animateFrame, animateText, isT2VModel, generateAvatarClip, generateAgentVideo, DEFAULT_HEYGEN_AVATAR, transcribeAudioFal } from './services/fal-animator.js';
 import { searchAndDownloadStockClip, searchAndDownloadStockPhoto } from './services/stock-video.js';
 import { ensureKeysLoaded } from './load-keys.js';
 import { planVideo } from './services/director.js';
 import { decideResumeStage } from './resume-policy.js';
 
-const VALID_SUBTITLE_STYLES: SubtitleStyle[] = ['none', 'plain', 'fade', 'fade-zoom', 'karaoke', 'tiktok', 'word-by-word', 'cinematic', 'cinematic-full', 'bar'];
+const VALID_SUBTITLE_STYLES: SubtitleStyle[] = ['none', 'plain', 'fade', 'fade-zoom', 'karaoke', 'tiktok', 'word-by-word', 'cinematic', 'cinematic-full', 'bar', 'word-timed'];
+
+/**
+ * Transcribes one scene's TTS audio to word-level timestamps, preferring FAL's
+ * hosted Whisper (fal-ai/whisper) over OpenAI's. FAL_AI_API_KEY is a required key
+ * elsewhere in this app (animation cannot run without it) and is therefore reliably
+ * present, whereas OPENAI_API_KEY is frequently unset — so FAL is tried first and
+ * OpenAI Whisper is only a fallback for when FAL itself fails or is unreachable.
+ * Returns [] (not null) so callers can safely concatenate/count across scenes.
+ */
+async function getSceneWordTimestamps(audioPath: string): Promise<WordTimestamp[]> {
+  try {
+    const fal = await transcribeAudioFal(audioPath);
+    if (fal && fal.length > 0) return fal;
+  } catch {}
+  try {
+    const openai = await getWordTimestamps(audioPath);
+    if (openai && openai.length > 0) return openai;
+  } catch {}
+  return [];
+}
+
+/**
+ * Wrapper around burnSubtitles that powers the 'word-timed' style: transcribes
+ * each scene's TTS audio (FAL Whisper primary, OpenAI Whisper fallback) to obtain
+ * real per-word start/end times, so every word appears exactly when it is spoken
+ * instead of being spread evenly across the scene. All other styles pass straight
+ * through unchanged.
+ *
+ * Degradation is graceful: a scene whose audio is missing or whose transcription
+ * fails on both providers contributes an empty timestamp list; if no scene yields
+ * any timestamps at all (e.g. both FAL_AI_API_KEY and OPENAI_API_KEY are unset),
+ * wordTimestamps is dropped and burnSubtitles falls back to its estimated-timing
+ * tiktok renderer.
+ */
+async function burnSubtitlesSynced(params: Parameters<typeof burnSubtitles>[0]): Promise<void> {
+  let wordTimestamps = params.wordTimestamps;
+  if (params.style === 'word-timed' && !wordTimestamps) {
+    wordTimestamps = await Promise.all(
+      params.scenes.map(async (s) => {
+        const audioPath = (s as { audioPath?: string }).audioPath;
+        if (!audioPath) return [];
+        return getSceneWordTimestamps(audioPath);
+      }),
+    );
+    const total = wordTimestamps.reduce((n, w) => n + w.length, 0);
+    if (total === 0) {
+      console.warn('[subtitles] word-timed: no Whisper timestamps (FAL + OpenAI both unavailable) — falling back to estimated timing');
+      wordTimestamps = undefined;
+    } else {
+      console.log(`[subtitles] word-timed: aligned ${total} words across ${params.scenes.length} scenes via Whisper`);
+    }
+  }
+  await burnSubtitles({ ...params, wordTimestamps });
+}
 
 /**
  * If the scene list contains a hook-role scene with text, prepend a 0.7 s
@@ -1025,12 +1079,14 @@ async function runResumePipeline(projectId: string, mode: 'auto' | 'rebuild' = '
     // ── reburn: valid final video exists → only re-burn subtitles ────────────
     if (stage === 'reburn') {
       await update({ status: 'assembling', progress: 96, progressMessage: 'Накладываю субтитры (resume)...' });
-      const scenes = script.scenes.map((s) => ({
+      const scenes = script.scenes.map((s, i) => ({
         narration: s.narration || s.text,
         text: s.text,
         duration: project.clipDuration ?? s.duration,
+        // Point at the existing per-scene audio so 'word-timed' can re-align on resume.
+        audioPath: path.join(audioDir, `scene_${i}.mp3`),
       }));
-      await burnSubtitles({
+      await burnSubtitlesSynced({
         videoPath,
         scenes,
         format: project.format,
@@ -1090,7 +1146,7 @@ async function runResumePipeline(projectId: string, mode: 'auto' | 'rebuild' = '
       });
 
       await update({ progress: 96, progressMessage: 'Накладываю субтитры...' });
-      await burnSubtitles({
+      await burnSubtitlesSynced({
         videoPath,
         scenes: resumeScenes,
         format: project.format,
@@ -1694,7 +1750,7 @@ async function runGenerationPipeline(projectId: string) {
 
       await update({ progress: 95, progressMessage: 'Chain: накладываю субтитры...' });
       const latestProject = await getProject(projectId);
-      await burnSubtitles({
+      await burnSubtitlesSynced({
         videoPath,
         scenes: chainScenes,
         format: project.format,
@@ -1838,7 +1894,7 @@ async function runGenerationPipeline(projectId: string) {
       });
 
       await update({ progress: 95, progressMessage: 'Накладываю субтитры...' });
-      await burnSubtitles({
+      await burnSubtitlesSynced({
         videoPath,
         scenes: t2vScenes,
         format: project.format,
@@ -2144,7 +2200,7 @@ async function runGenerationPipeline(projectId: string) {
         });
 
         await update({ progress: 96, progressMessage: 'Накладываю субтитры...' });
-        await burnSubtitles({
+        await burnSubtitlesSynced({
           videoPath,
           scenes: i2vScenes,
           format: project.format,
@@ -2241,7 +2297,7 @@ async function runGenerationPipeline(projectId: string) {
       });
 
       await update({ progress: 96, progressMessage: 'Накладываю субтитры...' });
-      await burnSubtitles({
+      await burnSubtitlesSynced({
         videoPath,
         scenes: assemblerScenes,
         format: project.format,

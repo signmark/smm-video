@@ -614,38 +614,37 @@ export function SocialMediaSettings({
     }
   };
 
-  // Инлайн-переподключение VK через PKCE popup (без открытия мастера настройки)
+  // Переподключение VK через needanapp (webhook polling)
   const startVkReconnect = () => {
-    const popup = window.open(
-      `/api/vk/oauth2/start?campaign_id=${campaignId}`,
-      "vk-oauth2-reconnect",
-      "width=600,height=700,scrollbars=yes"
-    );
-    if (!popup) {
-      toast({ title: "Ошибка", description: "Не удалось открыть окно авторизации VK. Разрешите всплывающие окна.", variant: "destructive" });
-      return;
-    }
+    // Открываем needanapp в новой вкладке
+    window.open('https://vk.needanapp.ru', '_blank');
     setIsVkReconnecting(true);
 
-    const listener = (e: MessageEvent) => {
-      if (e.origin !== window.location.origin) return;
-      if (e.data?.type === "VK_OAUTH2_SUCCESS") {
-        cleanupVkReconnect();
-        loadVkSettings();
-        toast({ title: "VK переподключён", description: "Токен обновлён — публикации возобновятся." });
-      } else if (e.data?.type === "VK_OAUTH_ERROR") {
-        cleanupVkReconnect();
-        toast({ title: "Ошибка авторизации VK", description: e.data.error || "Попробуйте ещё раз.", variant: "destructive" });
-      }
-    };
-    vkReconnectListenerRef.current = listener;
-    window.addEventListener("message", listener);
+    toast({
+      title: "Переподключение VK",
+      description: "Откройте vk.needanapp.ru, получите токен и вставьте webhook URL. Ожидаем токен..."
+    });
 
-    vkReconnectCheckRef.current = setInterval(() => {
-      if (popup.closed) {
+    // Запускаем polling webhook status
+    vkReconnectCheckRef.current = setInterval(async () => {
+      try {
+        const resp = await fetch(`/api/vk/token-webhook/${campaignId}/status`);
+        const data = await resp.json();
+        if (data.ready) {
+          cleanupVkReconnect();
+          loadVkSettings();
+          toast({ title: "VK переподключён", description: "Токен обновлён — публикации возобновятся." });
+        }
+      } catch {}
+    }, 3000);
+
+    // Таймаут 5 минут
+    setTimeout(() => {
+      if (vkReconnectCheckRef.current) {
         cleanupVkReconnect();
+        toast({ title: "Время ожидания истекло", description: "Токен не получен за 5 минут. Попробуйте ещё раз.", variant: "destructive" });
       }
-    }, 1000);
+    }, 5 * 60 * 1000);
   };
 
   const cleanupVkReconnect = () => {

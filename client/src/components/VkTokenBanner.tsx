@@ -66,37 +66,30 @@ export function VkTokenBanner() {
   const startReconnect = () => {
     if (!selectedCampaignId) return;
 
-    const popup = window.open(
-      `/api/vk/oauth2/start?campaign_id=${selectedCampaignId}`,
-      "vk-oauth2-reconnect",
-      "width=600,height=700,scrollbars=yes"
-    );
-
-    if (!popup) {
-      return;
-    }
-
+    // Открываем needanapp в новой вкладке
+    window.open('https://vk.needanapp.ru', '_blank');
     setIsReconnecting(true);
 
-    const listener = (e: MessageEvent) => {
-      if (e.origin !== window.location.origin) return;
-      if (e.data?.type === "VK_OAUTH2_SUCCESS") {
-        cleanup();
-        setDismissed(false);
-        localStorage.removeItem(dismissedKey);
-        queryClient.invalidateQueries({ queryKey: ["/api/vk-settings-for-banner", selectedCampaignId] });
-      } else if (e.data?.type === "VK_OAUTH_ERROR") {
-        cleanup();
-      }
-    };
-    listenerRef.current = listener;
-    window.addEventListener("message", listener);
+    // Запускаем polling webhook status
+    checkClosedRef.current = setInterval(async () => {
+      try {
+        const resp = await fetch(`/api/vk/token-webhook/${selectedCampaignId}/status`);
+        const data = await resp.json();
+        if (data.ready) {
+          cleanup();
+          setDismissed(false);
+          localStorage.removeItem(dismissedKey);
+          queryClient.invalidateQueries({ queryKey: ["/api/vk-settings-for-banner", selectedCampaignId] });
+        }
+      } catch {}
+    }, 3000);
 
-    checkClosedRef.current = setInterval(() => {
-      if (popup.closed) {
+    // Таймаут 5 минут
+    setTimeout(() => {
+      if (checkClosedRef.current) {
         cleanup();
       }
-    }, 1000);
+    }, 5 * 60 * 1000);
   };
 
   if (!selectedCampaignId || dismissed || !vkSettings) return null;

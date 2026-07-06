@@ -324,7 +324,7 @@ export function SocialMediaSettings({
 
     setLoadingVkGroups(true);
     try {
-      const response = await fetch(`/api/vk/groups?access_token=${token}`);
+      const response = await fetch(`/api/vk/groups?access_token=${encodeURIComponent(token)}`);
       const data = await response.json();
       
       if (data.success && data.groups) {

@@ -292,7 +292,8 @@ router.post('/vk/token-webhook/:campaignId', async (req, res) => {
       token,
       accessToken: token,
       tokenReceivedAt: new Date().toISOString(),
-      configured: true
+      configured: true,
+      authExpired: false
     };
     if (rToken)        vkUpdate.refreshToken  = rToken;
     if (dId)           vkUpdate.deviceId      = dId;

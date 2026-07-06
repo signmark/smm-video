@@ -196,26 +196,12 @@ export function CampaignForm({ onClose }: CampaignFormProps) {
       }
       
       // ШАГ 3: Заполнение анкеты (если включено)
-      if (values.autoFillQuestionnaire && analysisData) {
-        try {
-          updateStepStatus("questionnaire", "in-progress");
-          
-          const questionnaireResponse = await fetch(`/api/campaigns/${campaignId}/questionnaire`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${token}`
-            },
-            body: JSON.stringify(analysisData.data)
-          });
-          
-          if (!questionnaireResponse.ok) {
-            throw new Error("Ошибка заполнения анкеты");
-          }
-          
+      // Анкета уже сохранена на шаге 2 (analyze-site), просто помечаем шаг как завершённый
+      if (values.autoFillQuestionnaire) {
+        if (analysisData) {
           updateStepStatus("questionnaire", "completed");
-        } catch (error: any) {
-          updateStepStatus("questionnaire", "error", error.message);
+        } else {
+          updateStepStatus("questionnaire", "error", "Не удалось заполнить анкету: анализ сайта не завершён");
         }
       }
       

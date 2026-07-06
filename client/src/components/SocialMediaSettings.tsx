@@ -1031,7 +1031,7 @@ export function SocialMediaSettings({
       // Автоматически проверяем токен при загрузке (тихо, без тоста)
       if (vkSettings.token) {
         setVkStatus({ isLoading: true });
-        api.post('/validate/vk', { token: vkSettings.token, groupId: vkSettings.groupId })
+        api.post('/validate/vk', { token: vkSettings.token, groupId: vkSettings.groupId, campaignId })
           .then(response => {
             setVkStatus({
               isLoading: false,
@@ -1161,7 +1161,7 @@ export function SocialMediaSettings({
     
     try {
       setVkStatus({ isLoading: true });
-      const response = await api.post('/validate/vk', { token, groupId });
+      const response = await api.post('/validate/vk', { token, groupId, campaignId });
       
       setVkStatus({
         isLoading: false,

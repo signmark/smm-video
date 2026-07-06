@@ -81,6 +81,15 @@ export function registerSocialRoutes(app: Express) {
 
   app.post("/api/validate/vk", authenticateUser, async (req, res) => {
     const result = await validateVkToken(req.body.token, req.body.groupId);
+    // Если токен невалиден и передан campaignId — помечаем authExpired
+    if (!result.isValid && req.body.campaignId) {
+      try {
+        const { markVkAuthExpired } = await import('../services/vk-token-refresh');
+        await markVkAuthExpired(req.body.campaignId);
+      } catch (e: any) {
+        console.error('[validate/vk] Ошибка при выставлении authExpired:', e.message);
+      }
+    }
     res.json({ success: result.isValid, message: result.message });
   });
 

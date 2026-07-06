@@ -1038,6 +1038,10 @@ export function SocialMediaSettings({
               isValid: response.data.success,
               message: response.data.message
             });
+            // Если токен невалиден — authExpired выставлен на бэке, обновляем vkSettings
+            if (!response.data.success) {
+              loadVkSettings();
+            }
           })
           .catch(() => {
             setVkStatus({ isLoading: false, isValid: false, message: 'Не удалось проверить токен' });
@@ -1177,6 +1181,9 @@ export function SocialMediaSettings({
       // Если валидация успешна, автоматически сохраняем настройки
       if (response.data.success) {
         await onSubmit(form.getValues());
+      } else {
+        // Токен невалиден — authExpired выставлен на бэке, обновляем vkSettings
+        loadVkSettings();
       }
     } catch (error) {
       console.error('Error validating VK token:', error);

@@ -633,8 +633,17 @@ export function SocialMediaSettings({
         const data = await resp.json();
         if (data.ready) {
           cleanupVkReconnect();
+          // Загружаем настройки и подтягиваем группы для выбора
+          const resp2 = await fetch(`/api/campaigns/${campaignId}/vk-settings`, {
+            headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` }
+          });
+          const d2 = await resp2.json();
+          if (d2.settings?.token) {
+            form.setValue('vk.token', d2.settings.token);
+            fetchVkGroups();
+          }
           loadVkSettings();
-          toast({ title: "VK переподключён", description: "Токен обновлён — публикации возобновятся." });
+          toast({ title: "VK переподключён", description: "Выберите группу для публикации." });
         }
       } catch {}
     }, 3000);

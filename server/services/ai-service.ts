@@ -596,6 +596,7 @@ export class AiService {
           log(`[AiService] ⚠️ Gemini квота исчерпана — переключаемся на DeepSeek`, 'warn');
           try {
             result = await this.generateWithDeepSeek({ ...params, model: 'deepseek-chat', service: 'deepseek' });
+            result = { ...result, isFallback: true, originalService: service };
             log(`[AiService] ✅ DeepSeek fallback успешен`, 'info');
           } catch (deepseekErr: any) {
             log(`[AiService] ❌ DeepSeek fallback тоже не удался: ${deepseekErr.message}`, 'error');

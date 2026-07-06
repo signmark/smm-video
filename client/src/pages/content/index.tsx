@@ -1147,7 +1147,12 @@ export default function ContentPage() {
         'qwen': 'Qwen',
       };
       const svcLabel = MODEL_NAMES[data.model] ?? MODEL_NAMES[data.service] ?? MODEL_NAMES[aiModel] ?? data.model ?? data.service ?? aiModel ?? 'Gemini';
-      toast({ title: 'Готово', description: `Текст сгенерирован (${svcLabel})` });
+      const originalLabel = data.originalService ? (MODEL_NAMES[data.originalService] ?? data.originalService) : null;
+      if (data.isFallback && originalLabel) {
+        toast({ title: 'Модель переключена', description: `${originalLabel} была недоступна. Ответ через ${svcLabel}.` });
+      } else {
+        toast({ title: 'Готово', description: `Текст сгенерирован (${svcLabel})` });
+      }
     } catch (err: any) {
       const msg = err.message || '';
       const isQuota = msg.includes('429') || msg.includes('quota') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('rate limit');

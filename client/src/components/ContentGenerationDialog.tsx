@@ -100,7 +100,8 @@ export function ContentGenerationDialog({ campaignId, keywords, onClose }: Conte
         content: text,
         service: data.service || selectedService,
         model: data.model || null,
-        isFallback: (data.service || '').includes('fallback')
+        isFallback: data.isFallback || (data.service || '').includes('fallback'),
+        originalService: data.originalService || null
       };
     },
     onSuccess: (data) => {
@@ -129,12 +130,12 @@ export function ContentGenerationDialog({ campaignId, keywords, onClose }: Conte
 
       // Если сработал fallback — уведомляем и переключаем дропдаун; обычный тост не показываем
       if (data.isFallback && data.model) {
-        const fallbackValue = data.model.includes('1.5') ? 'gemini-1.5-flash' : 'gemini-2.5-flash';
+        const originalLabel = data.originalService ? modelLabel(data.originalService) : 'выбранная модель';
         toast({
           title: 'Модель переключена автоматически',
-          description: `Выбранная модель временно недоступна (503). Ответ сгенерирован через ${modelLabel(data.model)}.`,
+          description: `${originalLabel} была недоступна. Ответ сгенерирован через ${modelLabel(data.model)}.`,
         });
-        setSelectedService(fallbackValue as any);
+        setSelectedService(data.model.includes('deepseek') ? 'deepseek-chat' : data.model.includes('1.5') ? 'gemini-1.5-flash' : 'gemini-2.5-flash' as any);
       } else {
         toast({
           title: 'Успешно',

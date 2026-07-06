@@ -274,7 +274,9 @@ export function TrendContentGenerator({ selectedTopics, onGenerated, campaignId 
         
         toast({
           title: "Успешно",
-          description: "Контент сгенерирован"
+          description: data.isFallback
+            ? `Модель была недоступна. Ответ через ${data.model || 'DeepSeek'}.`
+            : "Контент сгенерирован"
         });
       } else {
         // Если по какой-то причине content отсутствует

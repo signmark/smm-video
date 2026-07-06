@@ -584,7 +584,9 @@ export class AiService {
 
     const isQuotaError = (err: any) => {
       const msg: string = err?.message || '';
-      return msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota') || msg.includes('rate limit');
+      return msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota') ||
+        msg.includes('rate limit') || msg.includes('503') || msg.includes('UNAVAILABLE') ||
+        msg.includes('high demand') || msg.includes('temporarily');
     };
 
     let result;
@@ -617,7 +619,13 @@ export class AiService {
       } catch (geminiErr: any) {
         if (isQuotaError(geminiErr)) {
           log(`[AiService] ⚠️ Gemini квота исчерпана — переключаемся на DeepSeek`, 'warn');
-          result = await this.generateWithDeepSeek({ ...params, model: 'deepseek-chat', service: 'deepseek' });
+          try {
+            result = await this.generateWithDeepSeek({ ...params, model: 'deepseek-chat', service: 'deepseek' });
+            result = { ...result, isFallback: true, originalService: service };
+          } catch (deepseekErr: any) {
+            log(`[AiService] ❌ DeepSeek fallback тоже не удался: ${deepseekErr.message}`, 'error');
+            throw geminiErr;
+          }
         } else {
           throw geminiErr;
         }

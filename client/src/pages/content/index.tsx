@@ -1139,7 +1139,7 @@ export default function ContentPage() {
         'gemini-2.5-pro': 'Gemini 2.5 Pro',
         'gemini-2.5-flash': 'Gemini 2.5 Flash',
         'gemini-2.5-flash-lite': 'Gemini 2.5 Flash Lite',
-        'gemini-1.5-flash': 'Gemini 1.5 Flash',
+
         'gemini-proxy': 'Gemini',
         'gemini-proxy-fallback': 'Gemini (fallback)',
         'deepseek-chat': 'DeepSeek',

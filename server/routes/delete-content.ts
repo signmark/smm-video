@@ -1,5 +1,6 @@
 import express from 'express';
 import axios from 'axios';
+import { clearContentCache } from '../utils/content-cache';
 
 const router = express.Router();
 
@@ -28,6 +29,8 @@ router.delete('/content/:id', async (req, res) => {
         }
       }
     );
+
+    clearContentCache();
 
     res.json({
       success: true,

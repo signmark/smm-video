@@ -116,7 +116,7 @@ export function ContentGenerationDialog({ campaignId, keywords, onClose }: Conte
         'gemini-2.5-pro': 'Gemini 2.5 Pro',
         'gemini-2.5-flash': 'Gemini 2.5 Flash',
         'gemini-2.5-flash-lite': 'Gemini 2.5 Flash Lite',
-        'gemini-1.5-flash': 'Gemini 1.5 Flash',
+
         'gemini-proxy': 'Gemini',
         'gemini-proxy-fallback': 'Gemini (fallback)',
         'deepseek-chat': 'DeepSeek',
@@ -135,7 +135,7 @@ export function ContentGenerationDialog({ campaignId, keywords, onClose }: Conte
           title: 'Модель переключена автоматически',
           description: `${originalLabel} была недоступна. Ответ сгенерирован через ${modelLabel(data.model)}.`,
         });
-        setSelectedService(data.model.includes('deepseek') ? 'deepseek-chat' : data.model.includes('1.5') ? 'gemini-1.5-flash' : 'gemini-2.5-flash' as any);
+        setSelectedService(data.model.includes('deepseek') ? 'deepseek-chat' : 'gemini-2.5-flash' as any);
       } else {
         toast({
           title: 'Успешно',
@@ -284,8 +284,6 @@ export function ContentGenerationDialog({ campaignId, keywords, onClose }: Conte
               <span className="text-xs font-normal text-muted-foreground bg-muted px-2 py-0.5 rounded-full">
                 {(() => {
                   const m = usedModel;
-                  if (m.includes('8b')) return 'Gemini 1.5 Flash 8B';
-                  if (m.includes('1.5')) return 'Gemini 1.5 Flash';
                   if (m.includes('2.5-flash')) return 'Gemini 2.5 Flash';
                   if (m.includes('2.5-pro')) return 'Gemini 2.5 Pro';
                   if (m.includes('3.0-pro') || m.includes('3-pro')) return 'Gemini 3.0 Pro';
@@ -345,7 +343,7 @@ export function ContentGenerationDialog({ campaignId, keywords, onClose }: Conte
                     <SelectItem data-testid="model-gemini-3.0-pro" value="gemini-3.0-pro" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Gemini 3.0 Pro</SelectItem>
                     <SelectItem data-testid="model-gemini-2.5-pro" value="gemini-2.5-pro" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Gemini 2.5 Pro</SelectItem>
                     <SelectItem data-testid="model-gemini-2.5-flash" value="gemini-2.5-flash" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Gemini 2.5 Flash</SelectItem>
-                    <SelectItem data-testid="model-gemini-1.5-flash" value="gemini-1.5-flash" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Gemini 1.5 Flash</SelectItem>
+
                     <SelectItem data-testid="model-deepseek" value="deepseek" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">DeepSeek</SelectItem>
                     <SelectItem data-testid="model-qwen" value="qwen" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Qwen</SelectItem>
                   </SelectContent>
@@ -353,7 +351,7 @@ export function ContentGenerationDialog({ campaignId, keywords, onClose }: Conte
               </div>
             </div>
 
-            {(selectedService === 'deepseek' || selectedService === 'qwen' || selectedService === 'gemini-1.5-flash' || selectedService === 'gemini-2.5-flash' || selectedService === 'gemini-2.5-pro' || selectedService === 'gemini-3.0-pro' || selectedService === 'gemini-3.5-flash') && (
+            {(selectedService === 'deepseek' || selectedService === 'qwen' || selectedService === 'gemini-2.5-flash' || selectedService === 'gemini-2.5-pro' || selectedService === 'gemini-3.0-pro' || selectedService === 'gemini-3.5-flash') && (
               <div className="grid grid-cols-4 items-center gap-4">
                 <Label htmlFor="platform" className="text-right">
                   Платформа

@@ -7,7 +7,7 @@ import { ApiServiceName } from './api-keys';
 // Скрейпер-сервер (Telegram, VK, YouTube, Instagram + аналитика)
 export const SCRAPER_BASE = 'http://217.26.25.95:3030';
 // Фоллбэк api-key для скрейпера
-const SCRAPER_API_KEY_FALLBACK = process.env.SCRAPER_API_KEY || 'N5beUaQCEdBPYed_fZeBIXdXhD6yZBpdbFzcSwB8MVI';
+const SCRAPER_API_KEY_FALLBACK = process.env.SCRAPER_API_KEY || 'c1f2e8ad-61c5-450a-b301-12690e9e1112';
 
 // Алиас для обратной совместимости
 const SCRAPER_OLD_BASE = SCRAPER_BASE;
@@ -112,12 +112,12 @@ function extractChannelId(url: string): string {
 async function callScraper(endpoint: string, body: any, apiKey: string): Promise<any | null> {
   try {
     const url = `${SCRAPER_BASE}${endpoint}`;
-    log(`[TrendCollector] POST ${url} body=${JSON.stringify(body).substring(0, 200)}`, 'info');
+    console.error(`[TrendCollector] → ${endpoint} query="${body.query}" min_members=${body.min_members} limit=${body.limit} key=${apiKey.substring(0,8)}...`);
     const response = await axios.post(url, body, {
       headers: { 'Content-Type': 'application/json', 'api-key': apiKey },
       timeout: 45000
     });
-    log(`[TrendCollector] RESPONSE ${endpoint} status=${response.status} data=${JSON.stringify(response.data).substring(0, 400)}`, 'info');
+    console.error(`[TrendCollector] ← ${endpoint} status=${response.status} items=${JSON.stringify(response.data).substring(0, 150)}`);
     return response.data;
   } catch (err: any) {
     console.error(`[TrendCollector] ❌ Ошибка ${endpoint}: status=${err.response?.status} code=${err.code} msg=${err.message}`);
@@ -174,6 +174,34 @@ async function callOldScraper(endpoint: string, body: any, apiKey: string): Prom
 
 // ─── Поиск групп/каналов ──────────────────────────────────────────────────────
 
+/** Генерирует короткие поисковые запросы для TG/VK из длинных ключевых слов кампании */
+async function generateSearchQueries(keywords: string[], platform: 'telegram' | 'vk'): Promise<string[]> {
+  if (keywords.length === 0) return [];
+
+  // Стоп-слова для фильтрации
+  const stopWords = new Set(['для', 'с', 'в', 'на', 'и', 'от', 'из', 'по', 'к', 'о', 'об', 'не', 'что', 'как', 'это', 'все', 'его', 'ее', 'их', 'при', 'без', 'до', 'после', 'между', 'через', 'также', 'или', 'но', 'а', 'если', 'уже', 'еще', 'ещё', 'другие', 'другой', 'других', 'которые', 'который', 'которая', 'которое', 'которых', 'каждый', 'каждая', 'каждое', 'ваш', 'ваша', 'ваше', 'ваши', 'мой', 'моя', 'мое', 'мои', 'наш', 'наша', 'наше', 'наши', 'свой', 'своя', 'свое', 'свои', 'такой', 'такая', 'такое', 'такие', 'тот', 'та', 'те', 'эта', 'эти', 'этих', 'сам', 'сама', 'само', 'сами', 'даже', 'где', 'когда', 'почему', 'зачем', 'кто', 'чей', 'чьи']);
+
+  if (platform === 'telegram') {
+    // TG: извлекаем ОДНО СЛОВО из каждого ключевого слова (только русские, 3+ букв)
+    const words = new Set<string>();
+    for (const kw of keywords) {
+      const parts = kw.split(/[\s,;.!?()\-]+/);
+      for (const part of parts) {
+        const w = part.toLowerCase().replace(/[^а-яё]/g, '');
+        if (w.length >= 3 && !stopWords.has(w) && /[а-яё]/.test(w)) {
+          words.add(w);
+        }
+      }
+    }
+    const result = Array.from(words).slice(0, 10);
+    console.error(`[TrendCollector] TG search words: ${result.join(', ')}`);
+    return result.length > 0 ? result : keywords.slice(0, 5);
+  }
+
+  // VK: оставляем как есть (VK скрейпер работает с фразами)
+  return keywords;
+}
+
 async function findGroups(
   platform: 'telegram' | 'vk',
   keywords: string[],
@@ -183,6 +211,11 @@ async function findGroups(
 ): Promise<TgGroup[] | VkGroup[]> {
   const endpoint = platform === 'telegram' ? '/api/telegram/find-groups' : '/api/vk/find-groups';
 
+  // Для Telegram генерируем короткие поисковые запросы через ИИ
+  const searchQueries = platform === 'telegram'
+    ? await generateSearchQueries(keywords, 'telegram')
+    : keywords;
+
   // Новый контракт (06.2026): запрос с большим числом ключей требует -batch + callback.
   // Но find-groups используется СИНХРОННО инлайн (результат сразу идёт в сбор трендов),
   // поэтому в callback уходить нельзя. Вместо этого режем ключи на чанки в пределах
@@ -190,8 +223,8 @@ async function findGroups(
   // агрегируя результат. max_concurrent на стороне скрапера = 1.
   const chunkSize = platform === 'telegram' ? 5 : 10;
   const chunks: string[][] = [];
-  for (let i = 0; i < keywords.length; i += chunkSize) {
-    chunks.push(keywords.slice(i, i + chunkSize));
+  for (let i = 0; i < searchQueries.length; i += chunkSize) {
+    chunks.push(searchQueries.slice(i, i + chunkSize));
   }
   if (chunks.length === 0) return [];
 
@@ -212,9 +245,9 @@ async function findGroups(
   const all: (TgGroup | VkGroup)[] = [];
   for (const chunk of chunks) {
     const data = await callScraper(endpoint, {
-      keywords: chunk,
+      query: chunk.join(', '),
       min_members: minMembers,
-      max_groups: maxGroups
+      limit: maxGroups
     }, apiKey);
     all.push(...parseGroups(data));
   }
@@ -810,7 +843,7 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
   const platforms = params.platforms || ['telegram', 'vk', 'youtube', 'instagram'];
   const sourcesList = params.sourcesList;
 
-  log(`[TrendCollector] 🚀 Сбор трендов для кампании ${campaignId} | platforms=${platforms.join(',')} | collectSources=${collectSources} | keywords=${keywords.length} | sourcesList=${sourcesList?.length ?? 'не передан'}`, 'info');
+  console.error(`[TrendCollector] 🚀 Сбор трендов для кампании ${campaignId} | platforms=${platforms.join(',')} | collectSources=${collectSources} | keywords=${keywords.length} | sourcesList=${sourcesList?.length ?? 'не передан'}`);
 
   const apiKey = await getScraperApiKey();
   const oldScraperKey = apiKey; // используем тот же ключ для YT/IG (тот же сервер)
@@ -825,7 +858,7 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
       const sourceIdMap = new Map<string, string>(); // tgId.lower → DB record id
 
       if (collectSources && keywords.length > 0) {
-        log(`[TrendCollector][TG] Поиск каналов по ${keywords.length} ключевым словам`, 'info');
+        console.error(`[TrendCollector][TG] Поиск каналов по ${keywords.length} ключевым словам`);
         const groups = await findGroups('telegram', keywords, minFollowers.telegram || 2000, maxSourcesPerPlatform, apiKey) as TgGroup[];
         log(`[TrendCollector][TG] Найдено каналов: ${groups.length}`, 'info');
         results.sourcesFound!.telegram = groups.length;

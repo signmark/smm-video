@@ -4286,15 +4286,7 @@ ${conversationContext}
           token: request.authToken
         });
       } catch (flashErr: any) {
-        // Если flash тоже не прошёл — пробуем gemini-1.5-flash как последний запасной вариант
-        console.warn(`[AUTONOMOUS-AI] gemini-2.5-flash failed (${flashErr?.message?.slice(0,80)}), trying gemini-1.5-flash`);
-        autonomousAiResult = await aiService.generateContent({
-          prompt: fullPrompt,
-          model: 'gemini-1.5-flash',
-          service: 'gemini',
-          userId: request.userId,
-          token: request.authToken
-        });
+        console.warn(`[AUTONOMOUS-AI] gemini-2.5-flash failed (${flashErr?.message?.slice(0,80)})`);
       }
       const response = autonomousAiResult.content;
 

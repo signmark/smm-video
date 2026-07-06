@@ -216,8 +216,7 @@ export class AiService {
             modelId,
             'gemini-2.5-pro',
             'gemini-2.5-flash',
-            'gemini-2.0-flash',
-            'gemini-1.5-pro'
+            'gemini-2.0-flash'
           ].filter((v, i, a) => a.indexOf(v) === i);
 
           for (const vModel of vertexModels) {
@@ -423,7 +422,7 @@ export class AiService {
             proxyError.message?.includes('rate limit') ||
             proxyError.message?.includes('high demand') ||
             proxyError.message?.includes('temporarily');
-          // Цепочка fallback: 2.5-flash (1.5-flash и 8b сняты с API — 404)
+          // Цепочка fallback: 2.5-flash
           const fallbackChain = ['gemini-2.5-flash'];
           const fallbackModels = fallbackChain.filter(m => m !== modelId);
           if (isTransient && fallbackModels.length > 0) {

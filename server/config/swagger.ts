@@ -255,7 +255,6 @@ const options: swaggerJSDoc.Options = {
           type: 'string',
           enum: [
             'gemini-2.5-flash',
-            'gemini-1.5-flash',
             'deepseek-v3',
             'claude-3.5-sonnet',
             'fal-ai/flux-pro',

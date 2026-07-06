@@ -37,6 +37,11 @@ export function invalidateContentCache(userId: string, campaignId?: string): voi
   }
 }
 
+/** Полная очистка всего кеша контента */
+export function clearContentCache(): void {
+  contentCache.clear();
+}
+
 /** Автоматическая очистка истёкших записей каждые 5 минут */
 setInterval(() => {
   const now = Date.now();

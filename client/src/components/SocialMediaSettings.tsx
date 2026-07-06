@@ -217,6 +217,7 @@ export function SocialMediaSettings({
   const [isVkReconnecting, setIsVkReconnecting] = useState(false);
   const vkReconnectListenerRef = useRef<((e: MessageEvent) => void) | null>(null);
   const vkReconnectCheckRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const vkValidatedForSettingsRef = useRef<any>(null);
 
   // Функция проверки статуса настройки платформ
   const isConfigured = (platform: 'instagram' | 'youtube' | 'facebook' | 'vk' | 'telegram' | 'threads' | 'tiktok') => {
@@ -1028,7 +1029,9 @@ export function SocialMediaSettings({
       form.trigger('vk');
 
       // Автоматически проверяем токен при загрузке (тихо, без тоста)
-      if (vkSettings.token) {
+      // Пропускаем если уже валидировали для этих же настроек (защита от цикла)
+      if (vkSettings.token && vkValidatedForSettingsRef.current !== vkSettings) {
+        vkValidatedForSettingsRef.current = vkSettings;
         setVkStatus({ isLoading: true });
         api.post('/validate/vk', { token: vkSettings.token, groupId: vkSettings.groupId, campaignId })
           .then(response => {
@@ -1037,9 +1040,9 @@ export function SocialMediaSettings({
               isValid: response.data.success,
               message: response.data.message
             });
-            // Если токен невалиден — authExpired выставлен на бэке, обновляем vkSettings
-            if (!response.data.success) {
-              loadVkSettings();
+            // Если токен невалиден — authExpired выставлен на бэке, обновляем локально
+            if (!response.data.success && !vkSettings.authExpired) {
+              setVkSettings((prev: any) => prev ? { ...prev, authExpired: true } : prev);
             }
           })
           .catch(() => {
@@ -1181,8 +1184,8 @@ export function SocialMediaSettings({
       if (response.data.success) {
         await onSubmit(form.getValues());
       } else {
-        // Токен невалиден — authExpired выставлен на бэке, обновляем vkSettings
-        loadVkSettings();
+        // Токен невалиден — authExpired выставлен на бэке, обновляем локально
+        setVkSettings((prev: any) => prev ? { ...prev, authExpired: true } : prev);
       }
     } catch (error) {
       console.error('Error validating VK token:', error);

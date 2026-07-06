@@ -1757,7 +1757,8 @@ export function SocialMediaSettings({
                   <span><span className="font-medium">Токен недействителен.</span> {vkStatus.message || "Обновите токен, чтобы публикации в VK работали."}</span>
                 </div>
               )}
-              {/* Webhook-инструкция (needanapp) */}
+              {/* Webhook-инструкция (needanapp) — показываем только если VK не настроен или токен невалиден */}
+              {(!isConfigured('vk') || vkStatus.isValid === false || vkSettings?.authExpired) && (
               <div className="p-4 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 space-y-3">
                 <p className="font-medium text-blue-900 dark:text-blue-100 text-sm">
                   Пошаговая инструкция через needanapp:
@@ -1849,6 +1850,7 @@ export function SocialMediaSettings({
                   </div>
                 )}
               </div>
+              )}
 
               {/* Ручной ввод — по ссылке */}
               <div>

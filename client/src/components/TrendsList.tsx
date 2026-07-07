@@ -17,6 +17,7 @@ import { ru } from 'date-fns/locale';
 interface TrendsListProps {
   campaignId: string;
   onSelectTrends?: (trends: TrendTopic[]) => void;
+  onSelectTrend?: (trend: TrendTopic) => void;
   selectable?: boolean;
 }
 
@@ -91,7 +92,7 @@ interface TrendTopic {
 
 // Используем импортированную функцию createProxyImageUrl из utils/media
 
-export function TrendsList({ campaignId, onSelectTrends, selectable = false }: TrendsListProps) {
+export function TrendsList({ campaignId, onSelectTrends, onSelectTrend, selectable = false }: TrendsListProps) {
   const [selectedPeriod, setSelectedPeriod] = useState<Period>("7days");
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -485,25 +486,32 @@ export function TrendsList({ campaignId, onSelectTrends, selectable = false }: T
               key={trend.id} 
               className={`shadow hover:shadow-md transition-shadow cursor-pointer ${trend.isBookmarked ? "border-primary" : ""}`}
               onClick={() => {
-                // Для TrendDetailDialog нужен объект с полями в snake_case
-                // Создаем объект с правильной структурой для диалога
-                // Создаем объект в формате для TrendDetailDialog (с использованием snake_case полей)
-                // Копируем все поля из исходного объекта и затем дополнительно добавляем поля в snake_case формате
-                // Создаем объект для TrendDetailDialog
-                // Этот объект имеет тип any, так как ему нужны snake_case поля
-                const transformedTrend: any = {
-                  ...trend,
-                  // Добавляем snake_case версии полей для совместимости
-                  source_id: trend.sourceId,
-                  created_at: trend.createdAt,
-                  is_bookmarked: trend.isBookmarked,
-                  campaign_id: trend.campaignId || campaignId,
-                  // Обрабатываем media_links
-                  media_links: typeof trend.mediaLinks === 'string' ? trend.mediaLinks : 
-                              (trend.media_links ? JSON.stringify(trend.media_links) : undefined)
-                };
-                setSelectedTrend(transformedTrend);
-                setDetailDialogOpen(true);
+                if (onSelectTrend) {
+                  // Вызываем callback для выбора тренда (без открытия диалога)
+                  const transformedTrend: any = {
+                    ...trend,
+                    source_id: trend.sourceId,
+                    created_at: trend.createdAt,
+                    is_bookmarked: trend.isBookmarked,
+                    campaign_id: trend.campaignId || campaignId,
+                    media_links: typeof trend.mediaLinks === 'string' ? trend.mediaLinks : 
+                                (trend.media_links ? JSON.stringify(trend.media_links) : undefined)
+                  };
+                  onSelectTrend(transformedTrend);
+                } else {
+                  // Fallback: открываем диалог
+                  const transformedTrend: any = {
+                    ...trend,
+                    source_id: trend.sourceId,
+                    created_at: trend.createdAt,
+                    is_bookmarked: trend.isBookmarked,
+                    campaign_id: trend.campaignId || campaignId,
+                    media_links: typeof trend.mediaLinks === 'string' ? trend.mediaLinks : 
+                                (trend.media_links ? JSON.stringify(trend.media_links) : undefined)
+                  };
+                  setSelectedTrend(transformedTrend);
+                  setDetailDialogOpen(true);
+                }
               }}
             >
               <CardContent className="py-3 px-4">
@@ -513,19 +521,20 @@ export function TrendsList({ campaignId, onSelectTrends, selectable = false }: T
                     <div 
                       className="flex-shrink-0 mt-1"
                     >
-                      <Checkbox 
-                        checked={isTrendSelected(trend.id)}
-                        onCheckedChange={(checked) => {
-
-                          handleTrendSelect(trend);
-                        }}
-                        className="mt-1"
-                        id={`trend-checkbox-${trend.id}`}
-                        onClick={(e) => {
-                          // Предотвращаем всплытие клика, чтобы не открывался dialog
-                          e.stopPropagation();
-                        }}
-                      />
+                      <div className="flex items-center gap-1.5 p-1 rounded hover:bg-accent cursor-pointer">
+                        <Checkbox 
+                          checked={isTrendSelected(trend.id)}
+                          onCheckedChange={(checked) => {
+                            handleTrendSelect(trend);
+                          }}
+                          className="h-4 w-4"
+                          id={`trend-checkbox-${trend.id}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                          }}
+                        />
+                        <span className="text-[10px] text-muted-foreground whitespace-nowrap select-none">Пакет</span>
+                      </div>
                     </div>
                   )}
                 

@@ -2635,29 +2635,31 @@ export default function Trends() {
                                   // Первое изображение для отображения (если есть)
                                   const firstImage = mediaData.images && mediaData.images.length > 0 ? mediaData.images[0] : undefined;
 
-                                  return (
+                                   return (
                                     <Card
                                       key={topic.id}
                                       className={`hover:shadow-md transition-shadow cursor-pointer ${selectedTrendTopic?.id === topic.id ? 'ring-2 ring-primary bg-accent/20 dark:bg-accent/30' : ''
                                         }`}
                                       onClick={() => {
                                         setSelectedTrendTopic(topic);
-                                        // Автоматически выбираем галочку при клике на тренд
-                                        toggleTopicSelection(topic);
-                                        // Сразу загружаем комментарии для выбранного тренда
+                                        setActiveTab('comments');
                                         loadTrendComments(topic.id);
-                                        // НЕ открываем превью - только выбираем для комментариев
                                       }}
                                     >
                                       <CardContent className="py-3 px-4">
                                         <div className="flex items-start gap-3">
-                                          {/* Чекбокс для выбора тренда */}
-                                          <div className="flex-shrink-0">
-                                            <Checkbox
-                                              checked={selectedTopics.some(t => t.id === topic.id)}
-                                              className="h-4 w-4 border-gray-400"
-                                              aria-label={t('trends.trendCard.selectTrend')}
-                                            />
+                                          {/* Чекбокс для пакетного сбора */}
+                                          <div className="flex-shrink-0 mt-1">
+                                            <div className="flex items-center gap-1 p-0.5 rounded hover:bg-accent cursor-pointer">
+                                              <Checkbox
+                                                checked={selectedTopics.some(t => t.id === topic.id)}
+                                                onCheckedChange={() => toggleTopicSelection(topic)}
+                                                className="h-4 w-4"
+                                                aria-label={t('trends.trendCard.selectTrend')}
+                                                onClick={(e) => e.stopPropagation()}
+                                              />
+                                              <span className="text-[10px] text-muted-foreground whitespace-nowrap select-none">Пакет</span>
+                                            </div>
                                           </div>
 
                                           {/* Изображение из media_links */}

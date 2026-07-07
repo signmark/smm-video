@@ -218,7 +218,8 @@ async function findGroups(
   keywords: string[],
   minMembers: number,
   maxGroups: number,
-  apiKey: string
+  apiKey: string,
+  campaignId?: string
 ): Promise<TgGroup[] | VkGroup[]> {
   const batchEndpoint = platform === 'telegram' ? '/api/telegram/find-groups-batch' : '/api/vk/find-groups-batch';
   const callbackUrl = `${getPublicBaseUrl()}/api/trends/${platform === 'telegram' ? 'tg' : 'vk'}-find-groups-webhook`;
@@ -263,9 +264,9 @@ async function findGroups(
     // Async: регистрируем задачи для callback
     for (const tid of taskIds) {
       if (platform === 'telegram') {
-        pendingTgFindGroupsTasks.set(String(tid), { campaignId: '', keywords: searchQueries, minMembers, maxGroups, createdAt: Date.now() });
+        pendingTgFindGroupsTasks.set(String(tid), { campaignId: campaignId || '', keywords: searchQueries, minMembers, maxGroups, createdAt: Date.now() });
       } else {
-        pendingVkFindGroupsTasks.set(String(tid), { campaignId: '', keywords: searchQueries, minMembers, maxGroups, createdAt: Date.now() });
+        pendingVkFindGroupsTasks.set(String(tid), { campaignId: campaignId || '', keywords: searchQueries, minMembers, maxGroups, createdAt: Date.now() });
       }
     }
     console.error(`[TrendCollector] ← ${batchEndpoint}: task_ids=${taskIds.join(',')} (async, ждём callback)`);
@@ -893,7 +894,7 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
 
       if (collectSources && keywords.length > 0) {
         console.error(`[TrendCollector][TG] Поиск каналов по ${keywords.length} ключевым словам`);
-        const groups = await findGroups('telegram', keywords, minFollowers.telegram || 2000, maxSourcesPerPlatform, apiKey) as TgGroup[];
+        const groups = await findGroups('telegram', keywords, minFollowers.telegram || 2000, maxSourcesPerPlatform, apiKey, campaignId) as TgGroup[];
         log(`[TrendCollector][TG] Найдено каналов: ${groups.length}`, 'info');
         results.sourcesFound!.telegram = groups.length;
 
@@ -1013,7 +1014,7 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
 
       if (collectSources && keywords.length > 0) {
         log(`[TrendCollector][VK] Поиск групп по ${keywords.length} ключевым словам`, 'info');
-        const groups = await findGroups('vk', keywords, minFollowers.vk || 3000, maxSourcesPerPlatform, apiKey) as VkGroup[];
+        const groups = await findGroups('vk', keywords, minFollowers.vk || 3000, maxSourcesPerPlatform, apiKey, campaignId) as VkGroup[];
         log(`[TrendCollector][VK] Найдено открытых групп: ${groups.length}`, 'info');
         results.sourcesFound!.vk = groups.length;
 

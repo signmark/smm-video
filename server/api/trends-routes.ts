@@ -527,10 +527,17 @@ export function registerTrendsRoutes(app: Express) {
         pendingTgFindGroupsTasks.delete(String(taskId));
       }
 
-      // Сохраняем найденные каналы как источники (если есть привязка к кампании)
+      // Сохраняем найденные каналы как источники
       if (channels.length > 0) {
-        // TODO: привязать к кампании и сохранить через saveSourcesToDB
-        console.log(`[TG FindGroups Webhook] Найдены каналы: ${channels.map((c: any) => c.title || c.username || c.id).join(', ')}`);
+        const { saveSourcesToDB, pendingTgFindGroupsTasks } = await import('../services/trend-collector');
+        const task = taskId ? pendingTgFindGroupsTasks.get(String(taskId)) : null;
+        const campaignId = task?.campaignId;
+        if (campaignId) {
+          const saved = await saveSourcesToDB('telegram', channels, campaignId);
+          console.log(`[TG FindGroups Webhook] ✅ Сохранено ${saved.savedIds.length} каналов для кампании ${campaignId}`);
+        } else {
+          console.log(`[TG FindGroups Webhook] ⚠️ Нет campaignId — каналы не сохранены: ${channels.map((c: any) => c.title || c.username || c.id).join(', ')}`);
+        }
       }
     } catch (error: any) {
       console.error(`[TG FindGroups Webhook] 💥 ${error.message}`);
@@ -578,8 +585,17 @@ export function registerTrendsRoutes(app: Express) {
         pendingVkFindGroupsTasks.delete(String(taskId));
       }
 
+      // Сохраняем найденные группы как источники
       if (groups.length > 0) {
-        console.log(`[VK FindGroups Webhook] Найдены группы: ${groups.map((g: any) => g.name || g.screen_name || g.id).join(', ')}`);
+        const { saveSourcesToDB, pendingVkFindGroupsTasks } = await import('../services/trend-collector');
+        const task = taskId ? pendingVkFindGroupsTasks.get(String(taskId)) : null;
+        const campaignId = task?.campaignId;
+        if (campaignId) {
+          const saved = await saveSourcesToDB('vk', groups, campaignId);
+          console.log(`[VK FindGroups Webhook] ✅ Сохранено ${saved.savedIds.length} групп для кампании ${campaignId}`);
+        } else {
+          console.log(`[VK FindGroups Webhook] ⚠️ Нет campaignId — группы не сохранены: ${groups.map((g: any) => g.name || g.screen_name || g.id).join(', ')}`);
+        }
       }
     } catch (error: any) {
       console.error(`[VK FindGroups Webhook] 💥 ${error.message}`);

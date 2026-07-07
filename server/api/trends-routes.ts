@@ -66,7 +66,7 @@ async function generateAIAlternativeQueries(originalKeywords: string[], platform
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.7, maxOutputTokens: 500 },
+        generationConfig: { temperature: 0.7, maxOutputTokens: 2048 },
       }),
       signal: controller.signal,
     });
@@ -83,12 +83,22 @@ async function generateAIAlternativeQueries(originalKeywords: string[], platform
       return [];
     }
 
-    const jsonMatch = text.match(/\[[\s\S]*?\]/);
+    const jsonMatch = text.match(/\[[\s\S]*\]/);
     if (jsonMatch) {
-      const queries = JSON.parse(jsonMatch[0]);
-      if (Array.isArray(queries) && queries.length > 0) {
-        console.log(`[AI Fallback] Сгенерировано ${queries.length} запросов: ${queries.join(', ')}`);
-        return queries.slice(0, 13);
+      try {
+        const queries = JSON.parse(jsonMatch[0]);
+        if (Array.isArray(queries) && queries.length > 0) {
+          console.log(`[AI Fallback] Сгенерировано ${queries.length} запросов: ${queries.join(', ')}`);
+          return queries.slice(0, 13);
+        }
+      } catch (parseErr) {
+        // Если JSON обрезан — пробуем извлечь строки вручную
+        const stringMatches = jsonMatch[0].match(/"([^"]+)"/g);
+        if (stringMatches && stringMatches.length > 0) {
+          const queries = stringMatches.map(s => s.replace(/"/g, ''));
+          console.log(`[AI Fallback] Извлечено ${queries.length} запросов из обрезанного JSON: ${queries.join(', ')}`);
+          return queries.slice(0, 13);
+        }
       }
     }
     console.error(`[AI Fallback] Не удалось распарсить JSON из ответа: ${text.substring(0, 200)}`);

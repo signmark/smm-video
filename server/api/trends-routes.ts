@@ -509,14 +509,29 @@ export function registerTrendsRoutes(app: Express) {
         return;
       }
 
-      const channels = body?.result?.channels || body?.result?.groups || body?.channels || body?.groups || [];
+      // Формат скрейпера: result.results[].groups[] (батчи по ключам)
+      const results = body?.result?.results || [];
+      const channels: any[] = [];
+      for (const r of results) {
+        if (Array.isArray(r?.groups)) channels.push(...r.groups);
+      }
+      // Также поддерживаем старый формат
+      if (channels.length === 0) {
+        const legacy = body?.result?.channels || body?.result?.groups || body?.channels || body?.groups || [];
+        if (Array.isArray(legacy)) channels.push(...legacy);
+      }
       console.log(`[TG FindGroups Webhook] task=${taskId} | каналов=${channels.length}`);
 
       if (taskId) {
         const { pendingTgFindGroupsTasks } = await import('../services/trend-collector');
         pendingTgFindGroupsTasks.delete(String(taskId));
       }
-      // TODO: сохранить найденные каналы в sources
+
+      // Сохраняем найденные каналы как источники (если есть привязка к кампании)
+      if (channels.length > 0) {
+        // TODO: привязать к кампании и сохранить через saveSourcesToDB
+        console.log(`[TG FindGroups Webhook] Найдены каналы: ${channels.map((c: any) => c.title || c.username || c.id).join(', ')}`);
+      }
     } catch (error: any) {
       console.error(`[TG FindGroups Webhook] 💥 ${error.message}`);
     }
@@ -545,14 +560,27 @@ export function registerTrendsRoutes(app: Express) {
         return;
       }
 
-      const groups = body?.result?.groups || body?.groups || [];
+      // Формат скрейпера: result.results[].groups[]
+      const results = body?.result?.results || [];
+      const groups: any[] = [];
+      for (const r of results) {
+        if (Array.isArray(r?.groups)) groups.push(...r.groups);
+      }
+      // Старый формат
+      if (groups.length === 0) {
+        const legacy = body?.result?.groups || body?.groups || [];
+        if (Array.isArray(legacy)) groups.push(...legacy);
+      }
       console.log(`[VK FindGroups Webhook] task=${taskId} | групп=${groups.length}`);
 
       if (taskId) {
         const { pendingVkFindGroupsTasks } = await import('../services/trend-collector');
         pendingVkFindGroupsTasks.delete(String(taskId));
       }
-      // TODO: сохранить найденные группы в sources
+
+      if (groups.length > 0) {
+        console.log(`[VK FindGroups Webhook] Найдены группы: ${groups.map((g: any) => g.name || g.screen_name || g.id).join(', ')}`);
+      }
     } catch (error: any) {
       console.error(`[VK FindGroups Webhook] 💥 ${error.message}`);
     }

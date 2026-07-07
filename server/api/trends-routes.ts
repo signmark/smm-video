@@ -669,7 +669,7 @@ export function registerTrendsRoutes(app: Express) {
       console.log(`[TG FindGroups Webhook] task=${taskId} | каналов=${channels.length}`);
 
       // Получаем task ДО удаления
-      const { pendingTgFindGroupsTasks } = await import('../services/trend-collector');
+      const { pendingTgFindGroupsTasks, saveSourcesToDB } = await import('../services/trend-collector');
       const task = taskId ? pendingTgFindGroupsTasks.get(String(taskId)) : null;
       const campaignId = task?.campaignId;
       if (taskId) {

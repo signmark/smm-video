@@ -279,9 +279,10 @@ ${text}
       // Удаляем служебный текст в тройных обратных кавычках (```)
       improvedText = improvedText.replace(/```[\s\S]*?```/g, '');
       
-      // Удаляем лишние разделители --- в начале и конце текста
-      improvedText = improvedText.replace(/^---\s*\n?/g, ''); // Удаляем --- в начале
-      improvedText = improvedText.replace(/\n?\s*---\s*$/g, ''); // Удаляем --- в конце
+      // Удаляем технические разделители --- (маркер AI-генерации)
+      improvedText = improvedText.replace(/\n---+\n/g, '\n\n'); // --- между абзацами → пустая строка
+      improvedText = improvedText.replace(/^---+\s*\n?/g, ''); // --- в начале
+      improvedText = improvedText.replace(/\n?\s*---+\s*$/g, ''); // --- в конце
       
       // Простая очистка от служебного текста - оставляем весь контент
       // Удаляем только явные инструкции в начале ответа
@@ -379,9 +380,10 @@ ${text}
       // Удаляем служебный текст в тройных обратных кавычках (```)
       generatedContent = generatedContent.replace(/```[\s\S]*?```/g, '');
       
-      // Удаляем лишние разделители --- в начале и конце текста
-      generatedContent = generatedContent.replace(/^---\s*\n?/g, ''); // Удаляем --- в начале
-      generatedContent = generatedContent.replace(/\n?\s*---\s*$/g, ''); // Удаляем --- в конце
+      // Удаляем технические разделители --- (маркер AI-генерации)
+      generatedContent = generatedContent.replace(/\n---+\n/g, '\n\n'); // --- между абзацами → пустая строка
+      generatedContent = generatedContent.replace(/^---+\s*\n?/g, ''); // --- в начале
+      generatedContent = generatedContent.replace(/\n?\s*---+\s*$/g, ''); // --- в конце
       generatedContent = generatedContent.trim(); // Убираем лишние пробелы
       
       logger.log('Content successfully generated with Claude AI', 'claude');
@@ -443,9 +445,10 @@ ${text}
       // Удаляем служебный текст в тройных обратных кавычках (```)
       generatedContent = generatedContent.replace(/```[\s\S]*?```/g, '');
       
-      // Удаляем лишние разделители --- в начале и конце текста
-      generatedContent = generatedContent.replace(/^---\s*\n?/g, ''); // Удаляем --- в начале
-      generatedContent = generatedContent.replace(/\n?\s*---\s*$/g, ''); // Удаляем --- в конце
+      // Удаляем технические разделители --- (маркер AI-генерации)
+      generatedContent = generatedContent.replace(/\n---+\n/g, '\n\n'); // --- между абзацами → пустая строка
+      generatedContent = generatedContent.replace(/^---+\s*\n?/g, ''); // --- в начале
+      generatedContent = generatedContent.replace(/\n?\s*---+\s*$/g, ''); // --- в конце
       generatedContent = generatedContent.trim(); // Убираем лишние пробелы
       
       // Форматируем контент в зависимости от платформы

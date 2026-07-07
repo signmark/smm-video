@@ -148,9 +148,10 @@ export class QwenService {
       
       let content = response.data.choices[0].message.content;
       
-      // Удаляем лишние разделители --- в начале и конце текста
-      content = content.replace(/^---\s*\n?/g, ''); // Удаляем --- в начале
-      content = content.replace(/\n?\s*---\s*$/g, ''); // Удаляем --- в конце
+      // Удаляем технические разделители --- (маркер AI-генерации)
+      content = content.replace(/\n---+\n/g, '\n\n'); // --- между абзацами → пустая строка
+      content = content.replace(/^---+\s*\n?/g, ''); // --- в начале
+      content = content.replace(/\n?\s*---+\s*$/g, ''); // --- в конце
       
       // Удаляем тройные кавычки в начале и конце текста
       content = content.replace(/^"""\s*\n?/g, ''); // Удаляем """ в начале

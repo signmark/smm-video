@@ -527,13 +527,12 @@ export function TrendsList({ campaignId, onSelectTrends, onSelectTrend, selectab
                           onCheckedChange={(checked) => {
                             handleTrendSelect(trend);
                           }}
-                          className="h-4 w-4"
+                           className="h-4 w-4"
                           id={`trend-checkbox-${trend.id}`}
                           onClick={(e) => {
                             e.stopPropagation();
                           }}
                         />
-                        <span className="text-[10px] text-muted-foreground whitespace-nowrap select-none">Пакет</span>
                       </div>
                     </div>
                   )}

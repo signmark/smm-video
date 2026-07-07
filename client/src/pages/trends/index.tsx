@@ -2189,12 +2189,14 @@ export default function Trends() {
                           >
                             {t('trends.tabs.trends')}
                           </button>
-                          <button
-                            className={`px-4 py-2 border-b-2 ${activeTab === 'comments' ? 'border-primary font-medium text-primary' : 'border-transparent text-muted-foreground'}`}
-                            onClick={() => setActiveTab('comments')}
-                          >
-                            {t('trends.tabs.comments')}
-                          </button>
+                          {selectedTrendTopic && (
+                            <button
+                              className={`px-4 py-2 border-b-2 ${activeTab === 'comments' ? 'border-primary font-medium text-primary' : 'border-transparent text-muted-foreground'}`}
+                              onClick={() => setActiveTab('comments')}
+                            >
+                              {t('trends.tabs.comments')}
+                            </button>
+                          )}
                           <button
                             className={`px-4 py-2 border-b-2 ${activeTab === 'generation' ? 'border-primary font-medium text-primary' : 'border-transparent text-muted-foreground'}`}
                             onClick={() => setActiveTab('generation')}
@@ -2658,7 +2660,6 @@ export default function Trends() {
                                                 aria-label={t('trends.trendCard.selectTrend')}
                                                 onClick={(e) => e.stopPropagation()}
                                               />
-                                              <span className="text-[10px] text-muted-foreground whitespace-nowrap select-none">Пакет</span>
                                             </div>
                                           </div>
 

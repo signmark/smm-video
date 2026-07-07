@@ -10,6 +10,93 @@ import { apiKeyService, ApiServiceName } from '../services/api-keys';
 import { globalApiKeysService } from '../services/global-api-keys';
 import { getPublicBaseUrl, SCRAPER_BASE, getScraperApiKey } from '../services/trend-collector';
 
+// ─── AI фоллбэк для поиска каналов ───────────────────────────────────────────
+
+/** Генерирует альтернативные поисковые запросы через ИИ, если основные не дали результатов */
+async function generateAIAlternativeQueries(originalKeywords: string[], platform: 'telegram' | 'vk'): Promise<string[]> {
+  const prompt = `Ты — эксперт по поиску каналов и сообществ в социальных сетях. Сгенерируй короткие поисковые запросы (2-3 слова) для поиска ${platform === 'telegram' ? 'Telegram-каналов' : 'VK-групп'} по следующим тематикам:
+
+Тематики: ${originalKeywords.join(', ')}
+
+Требования:
+- Запросы должны быть на русском языке
+- Каждый запрос — 2-3 слова максимум
+- Запросы должны быть релевантны исходным тематикам
+- Используй синонимы и смежные темы
+- Верни ТОЛЬКО массив JSON строк, без markdown
+
+Пример формата: ["запрос1", "запрос2", "запрос3"]`;
+
+  try {
+    const response = await geminiVertexDirect.generateContent({
+      prompt,
+      temperature: 0.7,
+      maxTokens: 500,
+    });
+
+    const text = (response as any).text || response.toString();
+    // Парсим JSON массив из ответа
+    const jsonMatch = text.match(/\[[\s\S]*?\]/);
+    if (jsonMatch) {
+      const queries = JSON.parse(jsonMatch[0]);
+      if (Array.isArray(queries) && queries.length > 0) {
+        return queries.slice(0, 13); // Ограничиваем до 13 запросов
+      }
+    }
+  } catch (err: any) {
+    console.error(`[AI Fallback] Ошибка генерации запросов: ${err.message}`);
+  }
+  return [];
+}
+
+/** Повторный запрос к скрейперу с новыми запросами и регистрацией задачи */
+async function callScraperRetry(
+  endpoint: string,
+  body: any,
+  apiKey: string,
+  campaignId: string,
+  searchQueries: string[]
+): Promise<void> {
+  try {
+    const url = `${SCRAPER_BASE}${endpoint}`;
+    console.log(`[TG AI Retry] → ${endpoint} queries=${JSON.stringify(searchQueries)}`);
+    const response = await axios.post(url, body, {
+      headers: { 'Content-Type': 'application/json', 'api-key': apiKey },
+      timeout: 45000,
+    });
+    const data = response.data;
+    console.log(`[TG AI Retry] ← status=${response.status}`);
+
+    // Извлекаем task_id и регистрируем для callback
+    const taskIds: string[] = [];
+    for (const arr of [data.task_ids, data.taskIds, data.tasks]) {
+      if (Array.isArray(arr)) {
+        for (const v of arr) {
+          if (v?.task_id) taskIds.push(v.task_id);
+          else if (typeof v === 'string') taskIds.push(v);
+        }
+      }
+    }
+    if (taskIds.length === 0 && data.task_id) {
+      taskIds.push(data.task_id);
+    }
+
+    const { pendingTgFindGroupsTasks } = await import('../services/trend-collector');
+    for (const tid of taskIds) {
+      pendingTgFindGroupsTasks.set(String(tid), {
+        campaignId,
+        keywords: searchQueries,
+        minMembers: body.min_members,
+        maxGroups: body.limit,
+        createdAt: Date.now(),
+      });
+      console.log(`[TG AI Retry] 📝 Зарегистрирована задача ${tid} для кампании ${campaignId}`);
+    }
+  } catch (err: any) {
+    console.error(`[TG AI Retry] ❌ Ошибка: ${err.message}`);
+  }
+}
+
 // ─── Comment collector — тот же скрейпер что и для трендов ───────────────────
 const COMMENT_SCRAPER_BASE = SCRAPER_BASE;
 
@@ -522,15 +609,44 @@ export function registerTrendsRoutes(app: Express) {
       }
       console.log(`[TG FindGroups Webhook] task=${taskId} | каналов=${channels.length}`);
 
+      // Получаем task ДО удаления
+      const { pendingTgFindGroupsTasks } = await import('../services/trend-collector');
+      const task = taskId ? pendingTgFindGroupsTasks.get(String(taskId)) : null;
+      const campaignId = task?.campaignId;
+      if (taskId) {
+        pendingTgFindGroupsTasks.delete(String(taskId));
+      }
+
+      // Если каналов 0 — генерируем альтернативные запросы через ИИ и повторяем поиск
+      if (channels.length === 0 && task?.keywords?.length > 0 && campaignId) {
+        console.log(`[TG FindGroups Webhook] 🔄 0 каналов — генерирую альтернативные запросы через ИИ`);
+        try {
+          const altQueries = await generateAIAlternativeQueries(task.keywords, 'telegram');
+          if (altQueries.length > 0) {
+            console.log(`[TG FindGroups Webhook] 🤖 Альтернативные запросы: ${altQueries.join(', ')}`);
+            // Повторяем поиск с альтернативными запросами
+            const { getScraperApiKey } = await import('../services/trend-collector');
+            const apiKey = await getScraperApiKey();
+            const retryData = await callScraperRetry('/api/telegram/find-groups-batch', {
+              queries: altQueries,
+              limit: task.maxGroups,
+              min_members: task.minMembers,
+              unified: false,
+              strict_min_members: true,
+              async_mode: true,
+              callback_url: `${getPublicBaseUrl()}/api/trends/tg-find-groups-webhook`,
+              max_days_since_last_post: 30,
+              include_channels_without_data: false,
+              check_missing_activity: true,
+            }, apiKey, campaignId, altQueries);
+          }
+        } catch (aiErr: any) {
+          console.error(`[TG FindGroups Webhook] ❌ Ошибка ИИ фоллбэка: ${aiErr.message}`);
+        }
+      }
+
       // Сохраняем найденные каналы как источники
       if (channels.length > 0) {
-        const { saveSourcesToDB, pendingTgFindGroupsTasks } = await import('../services/trend-collector');
-        // Получаем task ДО удаления, чтобы извлечь campaignId
-        const task = taskId ? pendingTgFindGroupsTasks.get(String(taskId)) : null;
-        const campaignId = task?.campaignId;
-        if (taskId) {
-          pendingTgFindGroupsTasks.delete(String(taskId));
-        }
         if (campaignId) {
           const saved = await saveSourcesToDB('telegram', channels, campaignId);
           console.log(`[TG FindGroups Webhook] ✅ Сохранено ${saved.savedIds.length} каналов для кампании ${campaignId}`);
@@ -579,15 +695,62 @@ export function registerTrendsRoutes(app: Express) {
       }
       console.log(`[VK FindGroups Webhook] task=${taskId} | групп=${groups.length}`);
 
+      // Получаем task ДО удаления
+      const { saveSourcesToDB, pendingVkFindGroupsTasks } = await import('../services/trend-collector');
+      const task = taskId ? pendingVkFindGroupsTasks.get(String(taskId)) : null;
+      const campaignId = task?.campaignId;
+      if (taskId) {
+        pendingVkFindGroupsTasks.delete(String(taskId));
+      }
+
+      // Если групп 0 — генерируем альтернативные запросы через ИИ и повторяем поиск
+      if (groups.length === 0 && task?.keywords?.length > 0 && campaignId) {
+        console.log(`[VK FindGroups Webhook] 🔄 0 групп — генерирую альтернативные запросы через ИИ`);
+        try {
+          const altQueries = await generateAIAlternativeQueries(task.keywords, 'vk');
+          if (altQueries.length > 0) {
+            console.log(`[VK FindGroups Webhook] 🤖 Альтернативные запросы: ${altQueries.join(', ')}`);
+            const apiKey = await getScraperApiKey();
+            const url = `${SCRAPER_BASE}/api/vk/find-groups-batch`;
+            const retryBody = {
+              queries: altQueries,
+              limit: task.maxGroups,
+              min_members: task.minMembers,
+              unified: false,
+              strict_min_members: true,
+              async_mode: true,
+              callback_url: `${getPublicBaseUrl()}/api/trends/vk-find-groups-webhook`,
+            };
+            const retryResponse = await axios.post(url, retryBody, {
+              headers: { 'Content-Type': 'application/json', 'api-key': apiKey },
+              timeout: 45000,
+            });
+            const retryData = retryResponse.data;
+            const retryTaskIds: string[] = [];
+            for (const arr of [retryData.task_ids, retryData.tasks]) {
+              if (Array.isArray(arr)) {
+                for (const v of arr) {
+                  if (v?.task_id) retryTaskIds.push(v.task_id);
+                  else if (typeof v === 'string') retryTaskIds.push(v);
+                }
+              }
+            }
+            if (retryTaskIds.length === 0 && retryData.task_id) retryTaskIds.push(retryData.task_id);
+            for (const tid of retryTaskIds) {
+              pendingVkFindGroupsTasks.set(String(tid), {
+                campaignId, keywords: altQueries, minMembers: task.minMembers,
+                maxGroups: task.maxGroups, createdAt: Date.now(),
+              });
+              console.log(`[VK AI Retry] 📝 Зарегистрирована задача ${tid}`);
+            }
+          }
+        } catch (aiErr: any) {
+          console.error(`[VK FindGroups Webhook] ❌ Ошибка ИИ фоллбэка: ${aiErr.message}`);
+        }
+      }
+
       // Сохраняем найденные группы как источники
       if (groups.length > 0) {
-        const { saveSourcesToDB, pendingVkFindGroupsTasks } = await import('../services/trend-collector');
-        // Получаем task ДО удаления, чтобы извлечь campaignId
-        const task = taskId ? pendingVkFindGroupsTasks.get(String(taskId)) : null;
-        const campaignId = task?.campaignId;
-        if (taskId) {
-          pendingVkFindGroupsTasks.delete(String(taskId));
-        }
         if (campaignId) {
           const saved = await saveSourcesToDB('vk', groups, campaignId);
           console.log(`[VK FindGroups Webhook] ✅ Сохранено ${saved.savedIds.length} групп для кампании ${campaignId}`);

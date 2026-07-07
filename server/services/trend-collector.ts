@@ -28,6 +28,17 @@ export interface PendingVkTask {
 }
 export const pendingVkTasks = new Map<string, PendingVkTask>();
 
+// Webhook-реестр задач поиска источников (find-groups-batch)
+export interface PendingFindGroupsTask {
+  campaignId: string;
+  keywords: string[];
+  minMembers: number;
+  maxGroups: number;
+  createdAt: number;
+}
+export const pendingTgFindGroupsTasks = new Map<string, PendingFindGroupsTask>();
+export const pendingVkFindGroupsTasks = new Map<string, PendingFindGroupsTask>();
+
 // Автоочистка устаревших задач (>2ч) чтобы не копить память
 setInterval(() => {
   const cutoff = Date.now() - 2 * 3600_000;
@@ -209,58 +220,81 @@ async function findGroups(
   maxGroups: number,
   apiKey: string
 ): Promise<TgGroup[] | VkGroup[]> {
-  const endpoint = platform === 'telegram' ? '/api/telegram/find-groups' : '/api/vk/find-groups';
+  const batchEndpoint = platform === 'telegram' ? '/api/telegram/find-groups-batch' : '/api/vk/find-groups-batch';
+  const callbackUrl = `${getPublicBaseUrl()}/api/trends/${platform === 'telegram' ? 'tg' : 'vk'}-find-groups-webhook`;
 
   // Для Telegram генерируем короткие поисковые запросы через ИИ
   const searchQueries = platform === 'telegram'
     ? await generateSearchQueries(keywords, 'telegram')
     : keywords;
 
-  // Новый контракт (06.2026): запрос с большим числом ключей требует -batch + callback.
-  // Но find-groups используется СИНХРОННО инлайн (результат сразу идёт в сбор трендов),
-  // поэтому в callback уходить нельзя. Вместо этого режем ключи на чанки в пределах
-  // лимита одного не-batch запроса (TG ≤5, VK ≤10) и шлём их последовательно,
-  // агрегируя результат. max_concurrent на стороне скрапера = 1.
-  const chunkSize = platform === 'telegram' ? 5 : 10;
-  const chunks: string[][] = [];
-  for (let i = 0; i < searchQueries.length; i += chunkSize) {
-    chunks.push(searchQueries.slice(i, i + chunkSize));
-  }
-  if (chunks.length === 0) return [];
+  if (searchQueries.length === 0) return [];
 
-  const parseGroups = (data: any): (TgGroup | VkGroup)[] => {
-    if (!data) return [];
-    if (platform === 'telegram') {
-      if (Array.isArray(data)) return data as TgGroup[];
-      if (Array.isArray(data?.channels)) return data.channels as TgGroup[];
-      if (Array.isArray(data?.groups)) return data.groups as TgGroup[];
-      return [];
-    }
-    const vkGroups: VkGroup[] = Array.isArray(data)
-      ? data
-      : Array.isArray(data?.groups) ? data.groups : [];
-    return vkGroups.filter((g: VkGroup) => g.is_closed === 0 || g.is_closed === undefined);
+  // Используем batch-эндпоинт для списка ключей
+  // Скрейпер сам разбивает на батчи по 5 ключей
+  const batchBody: any = {
+    queries: searchQueries,
+    limit: maxGroups,
+    min_members: minMembers,
+    unified: false,
+    strict_min_members: true,
+    async_mode: true,
+    callback_url: callbackUrl,
   };
 
-  const all: (TgGroup | VkGroup)[] = [];
-  for (const chunk of chunks) {
-    const data = await callScraper(endpoint, {
-      query: chunk.join(', '),
-      min_members: minMembers,
-      limit: maxGroups
-    }, apiKey);
-    all.push(...parseGroups(data));
+  // Для TG добавляем фильтры по активности
+  if (platform === 'telegram') {
+    batchBody.max_days_since_last_post = 30;
+    batchBody.include_channels_without_data = false;
+    batchBody.check_missing_activity = true;
   }
 
-  // Дедуп по id + ограничение общего числа источников (maxGroups на всю выборку)
-  const seen = new Set<string>();
-  const deduped = all.filter(g => {
-    const id = String((g as any).id ?? '');
-    if (!id || seen.has(id)) return false;
-    seen.add(id);
-    return true;
-  });
-  return deduped.slice(0, maxGroups) as TgGroup[] | VkGroup[];
+  console.error(`[TrendCollector] → ${batchEndpoint} queries=${JSON.stringify(searchQueries)} min_members=${minMembers} limit=${maxGroups}`);
+  const data = await callScraper(batchEndpoint, batchBody, apiKey);
+
+  if (!data) {
+    console.error(`[TrendCollector] ← ${batchEndpoint}: пустой ответ`);
+    return [];
+  }
+
+  // Batch-эндпоинт может вернуть task_id (async) или результат сразу
+  const taskIds = extractTaskIds(data);
+  if (taskIds.length > 0) {
+    // Async: регистрируем задачи для callback
+    for (const tid of taskIds) {
+      if (platform === 'telegram') {
+        pendingTgFindGroupsTasks.set(String(tid), { campaignId: '', keywords: searchQueries, minMembers, maxGroups, createdAt: Date.now() });
+      } else {
+        pendingVkFindGroupsTasks.set(String(tid), { campaignId: '', keywords: searchQueries, minMembers, maxGroups, createdAt: Date.now() });
+      }
+    }
+    console.error(`[TrendCollector] ← ${batchEndpoint}: task_ids=${taskIds.join(',')} (async, ждём callback)`);
+    return []; // Результат придёт по callback
+  }
+
+  // Синхронный ответ — парсим сразу
+  return parseGroupsFromResponse(data, platform) as (TgGroup | VkGroup)[];
+}
+
+function parseGroupsFromResponse(data: any, platform: string): (TgGroup | VkGroup)[] {
+  if (!data) return [];
+  if (platform === 'telegram') {
+    if (Array.isArray(data)) return data as TgGroup[];
+    if (Array.isArray(data?.channels)) return data.channels as TgGroup[];
+    if (Array.isArray(data?.groups)) return data.groups as TgGroup[];
+    // Batch может вернуть results с groupами
+    if (data.results && Array.isArray(data.results)) {
+      return data.results.flatMap((r: any) => r.channels || r.groups || []);
+    }
+    return [];
+  }
+  const vkGroups: VkGroup[] = Array.isArray(data)
+    ? data
+    : Array.isArray(data?.groups) ? data.groups
+    : data.results && Array.isArray(data.results)
+      ? data.results.flatMap((r: any) => r.groups || [])
+      : [];
+  return vkGroups.filter((g: VkGroup) => g.is_closed === 0 || g.is_closed === undefined);
 }
 
 // ─── Сохранение источников в БД ──────────────────────────────────────────────
@@ -904,9 +938,9 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
         for (const chunk of chunks) {
           const batchBody = {
             channel_ids: chunk,
-            limit: postsPerGroup * chunk.length,
-            fetch_limit: 100,
-            merge_results: true,
+            limit: postsPerGroup, // лимит постов НА КАНАЛ
+            fetch_limit: 100, // глубина анализа (сколько постов смотрим)
+            merge_results: false, // постов per channel отдельно
             days_back: daysBack,
             min_views: 100,
             async_mode: true,
@@ -931,14 +965,12 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
         return;
       }
 
-      // ≤5 каналов: старый рабочий путь (без callback, фоновый поллинг).
-      // ВАЖНО: callback_url здесь НЕ передавать — на не-batch TG-запросе скрейпер
-      // при его наличии возвращает posts:[] немедленно вместо реального сбора.
+      // ≤5 каналов:使用 trending-posts (не-batch)
       const body = {
         channel_ids: channelIds,
-        limit: postsPerGroup * tgIds.length,
-        fetch_limit: 100,
-        merge_results: true,
+        limit: postsPerGroup, // лимит постов НА КАНАЛ
+        fetch_limit: 100, // глубина анализа
+        merge_results: false, // постов per channel отдельно
         days_back: daysBack,
         min_views: 100,
         async_mode: true,
@@ -1010,10 +1042,10 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
       const callbackUrl = `${getPublicBaseUrl()}/api/trends/vk-webhook`;
       const vkBody = {
         group_ids: vkIds.map(String),
-        limit: postsPerGroup * vkIds.length,
+        limit: postsPerGroup, // лимит постов НА ГРУППУ
         days_back: daysBack,
         min_views: 300,
-        merge_results: true,
+        merge_results: false, // постов per group отдельно
         async_mode: true,
         callback_url: callbackUrl,
       };

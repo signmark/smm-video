@@ -487,6 +487,78 @@ export function registerTrendsRoutes(app: Express) {
   });
 
   /**
+   * POST /api/trends/tg-find-groups-webhook
+   * Колбэк от find-groups-batch для Telegram — скрейпер присылает найденные каналы.
+   */
+  app.post("/api/trends/tg-find-groups-webhook", async (req: Request, res: Response) => {
+    res.json({ success: true });
+    try {
+      const body = req.body;
+      console.log(`[TG FindGroups Webhook] 📥 ${JSON.stringify(body).substring(0, 500)}`);
+
+      const taskId = body?.task_id || body?.taskId || body?.job_id || body?.id;
+      const status = (body?.status ?? body?.result?.status ?? '').toString().toLowerCase();
+      const errorMsg = body?.error || body?.result?.error;
+
+      if (errorMsg || ['error', 'failed', 'failure'].includes(status)) {
+        console.error(`[TG FindGroups Webhook] ❌ task=${taskId} ошибка: ${errorMsg || status}`);
+        if (taskId) {
+          const { pendingTgFindGroupsTasks } = await import('../services/trend-collector');
+          pendingTgFindGroupsTasks.delete(String(taskId));
+        }
+        return;
+      }
+
+      const channels = body?.result?.channels || body?.result?.groups || body?.channels || body?.groups || [];
+      console.log(`[TG FindGroups Webhook] task=${taskId} | каналов=${channels.length}`);
+
+      if (taskId) {
+        const { pendingTgFindGroupsTasks } = await import('../services/trend-collector');
+        pendingTgFindGroupsTasks.delete(String(taskId));
+      }
+      // TODO: сохранить найденные каналы в sources
+    } catch (error: any) {
+      console.error(`[TG FindGroups Webhook] 💥 ${error.message}`);
+    }
+  });
+
+  /**
+   * POST /api/trends/vk-find-groups-webhook
+   * Колбэк от find-groups-batch для VK — скрейпер присылает найденные группы.
+   */
+  app.post("/api/trends/vk-find-groups-webhook", async (req: Request, res: Response) => {
+    res.json({ success: true });
+    try {
+      const body = req.body;
+      console.log(`[VK FindGroups Webhook] 📥 ${JSON.stringify(body).substring(0, 500)}`);
+
+      const taskId = body?.task_id || body?.taskId || body?.job_id || body?.id;
+      const status = (body?.status ?? body?.result?.status ?? '').toString().toLowerCase();
+      const errorMsg = body?.error || body?.result?.error;
+
+      if (errorMsg || ['error', 'failed', 'failure'].includes(status)) {
+        console.error(`[VK FindGroups Webhook] ❌ task=${taskId} ошибка: ${errorMsg || status}`);
+        if (taskId) {
+          const { pendingVkFindGroupsTasks } = await import('../services/trend-collector');
+          pendingVkFindGroupsTasks.delete(String(taskId));
+        }
+        return;
+      }
+
+      const groups = body?.result?.groups || body?.groups || [];
+      console.log(`[VK FindGroups Webhook] task=${taskId} | групп=${groups.length}`);
+
+      if (taskId) {
+        const { pendingVkFindGroupsTasks } = await import('../services/trend-collector');
+        pendingVkFindGroupsTasks.delete(String(taskId));
+      }
+      // TODO: сохранить найденные группы в sources
+    } catch (error: any) {
+      console.error(`[VK FindGroups Webhook] 💥 ${error.message}`);
+    }
+  });
+
+  /**
    * Вызов нашего API сбора комментариев Telegram (217.26.25.95)
    */
   async function callTelegramCollectDirect(postUrl: string): Promise<boolean> {

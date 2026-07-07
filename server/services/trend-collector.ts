@@ -313,7 +313,7 @@ export async function saveSourcesToDB(
     try {
       if (platform === 'telegram') {
         const tg = g as TgGroup;
-        const tgId = (tg.id || '').trim();
+        const tgId = String(tg.id || '').trim();
         if (!tgId) continue;
 
         const existing = await directusCrud.list('campaign_content_sources', {

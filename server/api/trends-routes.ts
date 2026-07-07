@@ -5,6 +5,7 @@ import { directusCrud } from '../services/directus-crud';
 import { log } from '../utils/logger';
 import axios from 'axios';
 import { geminiVertexDirect } from '../services/gemini-vertex-direct';
+import { geminiProxyService } from '../services/gemini-proxy';
 import { DeepSeekService } from '../services/deepseek';
 import { apiKeyService, ApiServiceName } from '../services/api-keys';
 import { globalApiKeysService } from '../services/global-api-keys';
@@ -28,19 +29,18 @@ async function generateAIAlternativeQueries(originalKeywords: string[], platform
 Пример формата: ["запрос1", "запрос2", "запрос3"]`;
 
   try {
-    const response = await geminiVertexDirect.generateContent({
+    const response = await geminiProxyService.generateText({
       prompt,
-      temperature: 0.7,
-      maxTokens: 500,
+      model: 'gemini-2.0-flash',
     });
 
-    const text = (response as any).text || response.toString();
+    const text = typeof response === 'string' ? response : String(response);
     // Парсим JSON массив из ответа
     const jsonMatch = text.match(/\[[\s\S]*?\]/);
     if (jsonMatch) {
       const queries = JSON.parse(jsonMatch[0]);
       if (Array.isArray(queries) && queries.length > 0) {
-        return queries.slice(0, 13); // Ограничиваем до 13 запросов
+        return queries.slice(0, 13);
       }
     }
   } catch (err: any) {

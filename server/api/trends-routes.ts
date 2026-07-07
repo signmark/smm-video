@@ -5,7 +5,6 @@ import { directusCrud } from '../services/directus-crud';
 import { log } from '../utils/logger';
 import axios from 'axios';
 import { geminiVertexDirect } from '../services/gemini-vertex-direct';
-import { geminiProxyService } from '../services/gemini-proxy';
 import { DeepSeekService } from '../services/deepseek';
 import { apiKeyService, ApiServiceName } from '../services/api-keys';
 import { globalApiKeysService } from '../services/global-api-keys';
@@ -13,7 +12,7 @@ import { getPublicBaseUrl, SCRAPER_BASE, getScraperApiKey } from '../services/tr
 
 // ─── AI фоллбэк для поиска каналов ───────────────────────────────────────────
 
-/** Генерирует альтернативные поисковые запросы через ИИ, если основные не дали результатов */
+/** Генерирует альтернативные поисковые запросы через Gemini API (через Cloudflare Worker прокси) */
 async function generateAIAlternativeQueries(originalKeywords: string[], platform: 'telegram' | 'vk'): Promise<string[]> {
   const prompt = `Ты — эксперт по поиску каналов и сообществ в социальных сетях. Сгенерируй короткие поисковые запросы (2-3 слова) для поиска ${platform === 'telegram' ? 'Telegram-каналов' : 'VK-групп'} по следующим тематикам:
 
@@ -29,13 +28,49 @@ async function generateAIAlternativeQueries(originalKeywords: string[], platform
 Пример формата: ["запрос1", "запрос2", "запрос3"]`;
 
   try {
-    const response = await geminiProxyService.generateText({
-      prompt,
-      model: 'gemini-2.0-flash',
+    // Получаем API ключ из环境 или Directus
+    let apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      const { globalApiKeysService } = await import('../services/global-api-keys');
+      const { ApiServiceName } = await import('../services/api-keys');
+      apiKey = await globalApiKeysService.getGlobalApiKey(ApiServiceName.GEMINI) || undefined;
+    }
+    if (!apiKey) {
+      console.error(`[AI Fallback] GEMINI_API_KEY не настроен`);
+      return [];
+    }
+
+    // Формируем URL через Cloudflare Worker прокси
+    let baseUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+    const workerProxy = process.env.GEMINI_PROXY_URL;
+    if (workerProxy) {
+      try {
+        const proxyUrl = new URL(workerProxy);
+        const originalUrl = new URL(baseUrl);
+        originalUrl.host = proxyUrl.host;
+        originalUrl.protocol = proxyUrl.protocol;
+        baseUrl = originalUrl.toString();
+      } catch (e) {
+        // если неверный URL прокси — используем прямой
+      }
+    }
+
+    const response = await fetch(baseUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig: { temperature: 0.7, maxOutputTokens: 500 },
+      }),
     });
 
-    const text = typeof response === 'string' ? response : String(response);
-    // Парсим JSON массив из ответа
+    const data = await response.json();
+    const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    if (!text) {
+      console.error(`[AI Fallback] Пустой ответ от Gemini: ${JSON.stringify(data).substring(0, 200)}`);
+      return [];
+    }
+
     const jsonMatch = text.match(/\[[\s\S]*?\]/);
     if (jsonMatch) {
       const queries = JSON.parse(jsonMatch[0]);

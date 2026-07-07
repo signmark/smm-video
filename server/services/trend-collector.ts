@@ -185,11 +185,32 @@ async function callOldScraper(endpoint: string, body: any, apiKey: string): Prom
 
 // ─── Поиск групп/каналов ──────────────────────────────────────────────────────
 
-/** Возвращает ключевые слова как есть (без разбивки на отдельные слова) */
+/** Генерирует поисковые запросы: использует оригинальные ключевые слова, но если фраза длинная — берёт первые 2-3 значимых слова */
 async function generateSearchQueries(keywords: string[], platform: 'telegram' | 'vk'): Promise<string[]> {
   if (keywords.length === 0) return [];
-  // Используем оригинальные ключевые слова как фразы для поиска
-  console.error(`[TrendCollector] Search queries (${platform}): ${keywords.join(', ')}`);
+
+  const stopWords = new Set(['для', 'с', 'в', 'на', 'и', 'от', 'из', 'по', 'к', 'о', 'об', 'не', 'что', 'как', 'это', 'все', 'его', 'ее', 'их', 'при', 'без', 'до', 'после', 'между', 'через', 'также', 'или', 'но', 'а', 'если', 'уже', 'еще', 'ещё', 'с помощью']);
+
+  if (platform === 'telegram') {
+    // TG: берём короткие осмысленные фразы (2-3 слова) из каждого ключевого слова
+    const queries: string[] = [];
+    for (const kw of keywords) {
+      const words = kw.split(/[\s,;.!?()\-]+/)
+        .map(w => w.trim())
+        .filter(w => w.length > 0 && !stopWords.has(w.toLowerCase()) && /[а-яёa-z]/i.test(w));
+      if (words.length <= 3) {
+        queries.push(words.join(' '));
+      } else {
+        // Берём первые 3 значимых слова
+        queries.push(words.slice(0, 3).join(' '));
+      }
+    }
+    console.error(`[TrendCollector] TG search queries: ${queries.join(' | ')}`);
+    return queries;
+  }
+
+  // VK: оставляем как есть (VK скрейпер работает с фразами)
+  console.error(`[TrendCollector] VK search queries: ${keywords.join(', ')}`);
   return keywords;
 }
 

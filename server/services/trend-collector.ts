@@ -300,7 +300,7 @@ function parseGroupsFromResponse(data: any, platform: string): (TgGroup | VkGrou
 
 // ─── Сохранение источников в БД ──────────────────────────────────────────────
 
-async function saveSourcesToDB(
+export async function saveSourcesToDB(
   platform: 'telegram' | 'vk',
   groups: TgGroup[] | VkGroup[],
   campaignId: string

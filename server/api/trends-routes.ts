@@ -4,7 +4,6 @@ import { directusApi } from '../directus';
 import { directusCrud } from '../services/directus-crud';
 import { log } from '../utils/logger';
 import axios from 'axios';
-import { geminiVertexDirect } from '../services/gemini-vertex-direct';
 import { DeepSeekService } from '../services/deepseek';
 import { apiKeyService, ApiServiceName } from '../services/api-keys';
 import { globalApiKeysService } from '../services/global-api-keys';

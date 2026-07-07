@@ -185,29 +185,13 @@ async function callOldScraper(endpoint: string, body: any, apiKey: string): Prom
 
 // ─── Поиск групп/каналов ──────────────────────────────────────────────────────
 
-/** Генерирует короткие поисковые запросы для TG/VK из длинных ключевых слов кампании */
+/** Возвращает ключевые слова как есть (без разбивки на отдельные слова) */
 async function generateSearchQueries(keywords: string[], platform: 'telegram' | 'vk'): Promise<string[]> {
   if (keywords.length === 0) return [];
-
-  // Стоп-слова для фильтрации
-  const stopWords = new Set(['для', 'с', 'в', 'на', 'и', 'от', 'из', 'по', 'к', 'о', 'об', 'не', 'что', 'как', 'это', 'все', 'его', 'ее', 'их', 'при', 'без', 'до', 'после', 'между', 'через', 'также', 'или', 'но', 'а', 'если', 'уже', 'еще', 'ещё', 'другие', 'другой', 'других', 'которые', 'который', 'которая', 'которое', 'которых', 'каждый', 'каждая', 'каждое', 'ваш', 'ваша', 'ваше', 'ваши', 'мой', 'моя', 'мое', 'мои', 'наш', 'наша', 'наше', 'наши', 'свой', 'своя', 'свое', 'свои', 'такой', 'такая', 'такое', 'такие', 'тот', 'та', 'те', 'эта', 'эти', 'этих', 'сам', 'сама', 'само', 'сами', 'даже', 'где', 'когда', 'почему', 'зачем', 'кто', 'чей', 'чьи']);
-
-  if (platform === 'telegram') {
-    // TG: извлекаем ОДНО СЛОВО из каждого ключевого слова (только русские, 3+ букв)
-    const words = new Set<string>();
-    for (const kw of keywords) {
-      const parts = kw.split(/[\s,;.!?()\-]+/);
-      for (const part of parts) {
-        const w = part.toLowerCase().replace(/[^а-яё]/g, '');
-        if (w.length >= 3 && !stopWords.has(w) && /[а-яё]/.test(w)) {
-          words.add(w);
-        }
-      }
-    }
-    const result = Array.from(words).slice(0, 10);
-    console.error(`[TrendCollector] TG search words: ${result.join(', ')}`);
-    return result.length > 0 ? result : keywords.slice(0, 5);
-  }
+  // Используем оригинальные ключевые слова как фразы для поиска
+  console.error(`[TrendCollector] Search queries (${platform}): ${keywords.join(', ')}`);
+  return keywords;
+}
 
   // VK: оставляем как есть (VK скрейпер работает с фразами)
   return keywords;

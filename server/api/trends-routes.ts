@@ -29,10 +29,12 @@ async function generateAIAlternativeQueries(originalKeywords: string[], platform
   try {
     // Получаем API ключ из环境 или Directus
     let apiKey = process.env.GEMINI_API_KEY;
+    console.log(`[AI Fallback] GEMINI_API_KEY из env: ${apiKey ? 'есть' : 'нет'}`);
     if (!apiKey) {
       const { globalApiKeysService } = await import('../services/global-api-keys');
       const { ApiServiceName } = await import('../services/api-keys');
       apiKey = await globalApiKeysService.getGlobalApiKey(ApiServiceName.GEMINI) || undefined;
+      console.log(`[AI Fallback] GEMINI_API_KEY из Directus: ${apiKey ? 'есть' : 'нет'}`);
     }
     if (!apiKey) {
       console.error(`[AI Fallback] GEMINI_API_KEY не настроен`);
@@ -42,6 +44,7 @@ async function generateAIAlternativeQueries(originalKeywords: string[], platform
     // Формируем URL через Cloudflare Worker прокси
     let baseUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
     const workerProxy = process.env.GEMINI_PROXY_URL;
+    console.log(`[AI Fallback] GEMINI_PROXY_URL: ${workerProxy || 'не задан'}`);
     if (workerProxy) {
       try {
         const proxyUrl = new URL(workerProxy);
@@ -53,6 +56,10 @@ async function generateAIAlternativeQueries(originalKeywords: string[], platform
         // если неверный URL прокси — используем прямой
       }
     }
+    console.log(`[AI Fallback] URL: ${baseUrl.substring(0, 80)}...`);
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
 
     const response = await fetch(baseUrl, {
       method: 'POST',
@@ -61,9 +68,15 @@ async function generateAIAlternativeQueries(originalKeywords: string[], platform
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
         generationConfig: { temperature: 0.7, maxOutputTokens: 500 },
       }),
+      signal: controller.signal,
     });
 
+    clearTimeout(timeoutId);
+    console.log(`[AI Fallback] Response status: ${response.status}`);
+
     const data = await response.json();
+    console.log(`[AI Fallback] Response data: ${JSON.stringify(data).substring(0, 300)}`);
+
     const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
     if (!text) {
       console.error(`[AI Fallback] Пустой ответ от Gemini: ${JSON.stringify(data).substring(0, 200)}`);
@@ -74,9 +87,11 @@ async function generateAIAlternativeQueries(originalKeywords: string[], platform
     if (jsonMatch) {
       const queries = JSON.parse(jsonMatch[0]);
       if (Array.isArray(queries) && queries.length > 0) {
+        console.log(`[AI Fallback] Сгенерировано ${queries.length} запросов: ${queries.join(', ')}`);
         return queries.slice(0, 13);
       }
     }
+    console.error(`[AI Fallback] Не удалось распарсить JSON из ответа: ${text.substring(0, 200)}`);
   } catch (err: any) {
     console.error(`[AI Fallback] Ошибка генерации запросов: ${err.message}`);
   }

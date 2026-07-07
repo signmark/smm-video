@@ -193,10 +193,6 @@ async function generateSearchQueries(keywords: string[], platform: 'telegram' | 
   return keywords;
 }
 
-  // VK: оставляем как есть (VK скрейпер работает с фразами)
-  return keywords;
-}
-
 async function findGroups(
   platform: 'telegram' | 'vk',
   keywords: string[],

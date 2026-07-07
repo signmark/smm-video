@@ -123,7 +123,7 @@ function extractChannelId(url: string): string {
 async function callScraper(endpoint: string, body: any, apiKey: string): Promise<any | null> {
   try {
     const url = `${SCRAPER_BASE}${endpoint}`;
-    console.error(`[TrendCollector] → ${endpoint} query="${body.query}" min_members=${body.min_members} limit=${body.limit} key=${apiKey.substring(0,8)}...`);
+    console.error(`[TrendCollector] → ${endpoint} queries=${JSON.stringify(body.queries || body.query)} min_members=${body.min_members} limit=${body.limit} key=${apiKey.substring(0,8)}...`);
     const response = await axios.post(url, body, {
       headers: { 'Content-Type': 'application/json', 'api-key': apiKey },
       timeout: 45000

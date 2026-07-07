@@ -522,16 +522,15 @@ export function registerTrendsRoutes(app: Express) {
       }
       console.log(`[TG FindGroups Webhook] task=${taskId} | каналов=${channels.length}`);
 
-      if (taskId) {
-        const { pendingTgFindGroupsTasks } = await import('../services/trend-collector');
-        pendingTgFindGroupsTasks.delete(String(taskId));
-      }
-
       // Сохраняем найденные каналы как источники
       if (channels.length > 0) {
         const { saveSourcesToDB, pendingTgFindGroupsTasks } = await import('../services/trend-collector');
+        // Получаем task ДО удаления, чтобы извлечь campaignId
         const task = taskId ? pendingTgFindGroupsTasks.get(String(taskId)) : null;
         const campaignId = task?.campaignId;
+        if (taskId) {
+          pendingTgFindGroupsTasks.delete(String(taskId));
+        }
         if (campaignId) {
           const saved = await saveSourcesToDB('telegram', channels, campaignId);
           console.log(`[TG FindGroups Webhook] ✅ Сохранено ${saved.savedIds.length} каналов для кампании ${campaignId}`);
@@ -580,16 +579,15 @@ export function registerTrendsRoutes(app: Express) {
       }
       console.log(`[VK FindGroups Webhook] task=${taskId} | групп=${groups.length}`);
 
-      if (taskId) {
-        const { pendingVkFindGroupsTasks } = await import('../services/trend-collector');
-        pendingVkFindGroupsTasks.delete(String(taskId));
-      }
-
       // Сохраняем найденные группы как источники
       if (groups.length > 0) {
         const { saveSourcesToDB, pendingVkFindGroupsTasks } = await import('../services/trend-collector');
+        // Получаем task ДО удаления, чтобы извлечь campaignId
         const task = taskId ? pendingVkFindGroupsTasks.get(String(taskId)) : null;
         const campaignId = task?.campaignId;
+        if (taskId) {
+          pendingVkFindGroupsTasks.delete(String(taskId));
+        }
         if (campaignId) {
           const saved = await saveSourcesToDB('vk', groups, campaignId);
           console.log(`[VK FindGroups Webhook] ✅ Сохранено ${saved.savedIds.length} групп для кампании ${campaignId}`);

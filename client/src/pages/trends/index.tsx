@@ -403,6 +403,7 @@ export default function Trends() {
 
   // Состояние для выбора трендов для массового сбора комментариев
   const [selectedTrendsForComments, setSelectedTrendsForComments] = useState<Set<string>>(new Set());
+  const commentsRequestIdRef = useRef(0);
 
 
   const isValidCampaignSelected = selectedCampaignId &&
@@ -643,6 +644,7 @@ export default function Trends() {
 
   // Функция для загрузки комментариев выбранного тренда
   const loadTrendComments = async (trendId: string) => {
+    const requestId = ++commentsRequestIdRef.current;
     try {
       setIsLoadingComments(true);
       const authToken = localStorage.getItem('auth_token');
@@ -656,6 +658,8 @@ export default function Trends() {
         },
       });
 
+      if (requestId !== commentsRequestIdRef.current) return;
+
       if (response.ok) {
         const data = await response.json();
         setTrendComments(data.data || []);
@@ -664,6 +668,7 @@ export default function Trends() {
         throw new Error(errData.error || t("trends.toasts.loadCommentsError"));
       }
     } catch (error) {
+      if (requestId !== commentsRequestIdRef.current) return;
       console.error('Error loading trend comments:', error);
       setTrendComments([]);
       toast({
@@ -672,7 +677,9 @@ export default function Trends() {
         description: (error as Error).message || t('trends.toasts.loadCommentsErrorDesc')
       });
     } finally {
-      setIsLoadingComments(false);
+      if (requestId === commentsRequestIdRef.current) {
+        setIsLoadingComments(false);
+      }
     }
   };
 

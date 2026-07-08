@@ -458,7 +458,7 @@ export default function ContentPage() {
   const campaigns = campaignsResponse?.data || [];
 
   // Запрос полных данных выбранной кампании для получения socialMediaSettings
-  const { data: fullCampaignData } = useQuery({
+  const { data: fullCampaignData, isLoading: isLoadingCampaign } = useQuery({
     queryKey: ["/api/campaigns", selectedCampaignId],
     queryFn: async () => {
       if (!selectedCampaignId) return null;
@@ -474,9 +474,7 @@ export default function ContentPage() {
       return response.json();
     },
     enabled: !!selectedCampaignId,
-    staleTime: 5 * 60 * 1000,
-    refetchOnMount: false,
-    refetchOnWindowFocus: false,
+    staleTime: 30 * 1000,
   });
 
   // Определяем подключенные платформы из настроек кампании.
@@ -3298,10 +3296,9 @@ export default function ContentPage() {
                   publishState === 'publishing' ||
                   publishContentMutation.isPending ||
                   !Object.values(selectedPlatforms).some(Boolean) ||
-                  connectedPlatforms == null ||
                   isExpired
                 }
-                title={connectedPlatforms == null ? 'Загрузка настроек кампании...' : isExpired ? 'Выберите тариф для публикации' : undefined}
+                title={isExpired ? 'Выберите тариф для публикации' : undefined}
               >
                 {publishContentMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 {isExpired && <Lock className="mr-2 h-4 w-4" />}
@@ -3315,10 +3312,9 @@ export default function ContentPage() {
                   scheduleContentMutation.isPending ||
                   !scheduleDate ||
                   !Object.values(selectedPlatforms).some(Boolean) ||
-                  connectedPlatforms == null ||
                   isExpired
                 }
-                title={connectedPlatforms == null ? 'Загрузка настроек кампании...' : isExpired ? 'Выберите тариф для планирования' : undefined}
+                title={isExpired ? 'Выберите тариф для планирования' : undefined}
               >
                 {scheduleContentMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 {isExpired && <Lock className="mr-2 h-4 w-4" />}

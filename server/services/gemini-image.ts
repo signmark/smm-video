@@ -311,8 +311,32 @@ export class GeminiImageService {
 
     } catch (error: any) {
       const generationTime = Date.now() - startTime;
-      console.error('[GEMINI-IMAGE] ❌ Ошибка генерации изображения:', error);
-      
+      console.error('[GEMINI-IMAGE] ❌ Ошибка Vertex AI:', error.message);
+
+      // Fallback: billing not enabled — пробуем через обычный Gemini API (Cloudflare Worker прокси)
+      const isBillingError = error.message?.includes('billing') || error.message?.includes('403');
+      if (isBillingError) {
+        console.log('[GEMINI-IMAGE] 🔄 Billing error — fallback на обычный Gemini API через Cloudflare Worker');
+        try {
+          const urls = await this.generateImageViaRegularApi({
+            prompt: options.prompt,
+            numImages: 1,
+            style: options.style,
+          });
+          if (urls.length > 0) {
+            return {
+              success: true,
+              imageUrl: urls[0],
+              generationTime: Date.now() - startTime,
+              model: 'gemini-2.5-flash-image (Cloudflare Worker)',
+              prompt: options.prompt,
+            };
+          }
+        } catch (fallbackErr: any) {
+          console.error('[GEMINI-IMAGE] ❌ Fallback тоже не удался:', fallbackErr.message);
+        }
+      }
+
       return {
         success: false,
         error: error.message || 'Неизвестная ошибка при генерации изображения',

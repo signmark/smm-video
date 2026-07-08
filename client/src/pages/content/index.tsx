@@ -511,12 +511,6 @@ export default function ContentPage() {
       threads: !!(settings.threads?.accessToken && settings.threads?.threadsUserId),
     };
 
-    // Если все false — скорее всего данные пустые/не подгружены → не блокируем UI
-    const anyConnected = Object.values(result).some(Boolean);
-    if (!anyConnected) {
-      return null;
-    }
-
     return result;
   };
 

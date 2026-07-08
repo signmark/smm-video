@@ -270,10 +270,11 @@ export default function CampaignDetails() {
         description: "Ключевые слова успешно найдены",
       });
     },
-    onError: (error: Error) => {
+    onError: (error: any) => {
+      const serverMsg = error?.response?.data?.error;
       toast({
         variant: "destructive",
-        description: error.message,
+        description: serverMsg || error.message || "Не удалось найти ключевые слова",
       });
     },
   });

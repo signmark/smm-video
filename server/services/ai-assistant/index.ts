@@ -156,17 +156,16 @@ export class AIAssistantService {
       const hasWebsiteUrl = /https?:\/\/[^\s]+/;
       
       if (createCampaignPattern.test(request.message) && hasWebsiteUrl.test(request.message)) {
-        console.log('[AI-ASSISTANT] ✅ Обнаружена команда создания кампании с URL, показываем интерактивные чекбоксы');
-        
+        console.log('[AI-ASSISTANT] ✅ Обнаружена команда создания кампании с URL');
+
         const urlMatch = request.message.match(/(https?:\/\/[^\s]+)/);
         const websiteUrl = urlMatch ? urlMatch[1] : '';
-        
+
         const nameMatch = request.message.match(/кампани[юию]\s+["""«]?([^"""«\n]+?)["""«]?(\s+для\s+сайта|\s+https?:\/\/|$)/i);
         let campaignName = nameMatch ? nameMatch[1].trim() : '';
-        
-        // Remove trailing "для сайта" if it was caught by mistake
+
         campaignName = campaignName.replace(/\s+для\s+сайта$/i, '').trim();
-        
+
         if (!campaignName || campaignName.toLowerCase() === 'для сайта' || campaignName.toLowerCase() === 'новую') {
           try {
             const domain = new URL(websiteUrl).hostname.replace('www.', '');
@@ -175,53 +174,11 @@ export class AIAssistantService {
             campaignName = 'Новая кампания';
           }
         }
-        
-        return {
-          response: `Настройте опции для создания кампании "${campaignName}":`,
-          success: true,
-          interactive: {
-            type: 'campaign-options',
-            campaignOptions: {
-              name: campaignName,
-              description: `Кампания на основе сайта ${websiteUrl}`,
-              websiteUrl: websiteUrl,
-              options: [
-                {
-                  id: 'website-analysis',
-                  name: 'Анализ сайта и заполнение анкеты',
-                  description: 'Автоматически проанализировать сайт и заполнить бизнес-анкету',
-                  enabled: true
-                },
-                {
-                  id: 'keywords',
-                  name: 'Найти ключевые слова под сайт',
-                  description: 'Извлечь и сгенерировать ключевые слова на основе контента сайта',
-                  enabled: true
-                },
-                {
-                  id: 'find-sources',
-                  name: 'Найти источники для поиска трендов',
-                  description: 'Определить релевантные социальные сети и источники для анализа трендов',
-                  enabled: true
-                },
-                {
-                  id: 'collect-trends',
-                  name: 'Найти тренды',
-                  description: 'Собрать актуальные тренды из выбранных источников',
-                  enabled: true
-                },
-                {
-                  id: 'content-plan',
-                  name: 'Создать контент план с картинками',
-                  description: 'Сгенерировать контент план на основе трендов и ключевых слов с изображениями',
-                  enabled: true
-                }
-              ]
-            }
-          }
-        };
+
+        // Автоматически создаём кампанию с анализом сайта
+        return await handleCreateCampaign(request, { name: campaignName, url: websiteUrl });
       }
-      
+
       try {
         console.log('[AI-ASSISTANT] 🧠 Gemini анализирует команду и принимает решения...');
         const aiResponse = await handleAutonomousAIWithAPI(request);

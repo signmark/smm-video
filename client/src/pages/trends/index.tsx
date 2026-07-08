@@ -2196,7 +2196,12 @@ export default function Trends() {
                           {selectedTrendTopic && (
                             <button
                               className={`px-4 py-2 border-b-2 ${activeTab === 'comments' ? 'border-primary font-medium text-primary' : 'border-transparent text-muted-foreground'}`}
-                              onClick={() => setActiveTab('comments')}
+                              onClick={() => {
+                                setActiveTab('comments');
+                                if (selectedTrendTopic) {
+                                  loadTrendComments(selectedTrendTopic.id);
+                                }
+                              }}
                             >
                               {t('trends.tabs.comments')}
                             </button>

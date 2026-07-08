@@ -440,25 +440,29 @@ export class AiService {
   async analyzeWebsiteKeywords(url: string, campaignId?: string, token?: string): Promise<any[]> {
     try {
       log(`[KEYWORDS_ANALYZE] Starting analysis for ${url}`, 'info');
-      
+
       let websiteContent = "";
       try {
         const crawlResult = await webCrawlerAgent.crawlSite({ url });
-        if (crawlResult.success && crawlResult.text) {
+        if (crawlResult.success && crawlResult.text && crawlResult.text.length > 50) {
           websiteContent = crawlResult.text;
-          log(`[KEYWORDS_ANALYZE] Content obtained via Puppeteer (${websiteContent.length} chars)`, 'info');
+          log(`[KEYWORDS_ANALYZE] Content obtained via crawler (${websiteContent.length} chars)`, 'info');
         } else {
-          log(`[KEYWORDS_ANALYZE] Puppeteer failed, falling back to Axios: ${crawlResult.error}`, 'warn');
+          log(`[KEYWORDS_ANALYZE] Crawler returned insufficient content (${crawlResult.text?.length || 0} chars), trying Axios: ${crawlResult.error}`, 'warn');
           websiteContent = await extractFullSiteContent(url);
         }
       } catch (e: any) {
-        log(`[KEYWORDS_ANALYZE] Crawler error, falling back to Axios: ${e.message}`, 'warn');
-        websiteContent = await extractFullSiteContent(url);
+        log(`[KEYWORDS_ANALYZE] Crawler error, trying Axios: ${e.message}`, 'warn');
+        try {
+          websiteContent = await extractFullSiteContent(url);
+        } catch (axErr: any) {
+          log(`[KEYWORDS_ANALYZE] Axios also failed: ${axErr.message}`, 'error');
+        }
       }
 
       if (!websiteContent || websiteContent.length < 50 || websiteContent.includes("Ошибка загрузки сайта")) {
-        log(`[KEYWORDS_ANALYZE] Failed to get website content: ${websiteContent.substring(0, 100)}`, 'error');
-        throw new Error("Не удалось получить контент сайта для анализа ключевых слов");
+        log(`[KEYWORDS_ANALYZE] Failed to get website content for ${url} (${websiteContent.length} chars)`, 'error');
+        throw new Error(`Не удалось загрузить содержимое сайта ${url}. Сайт может блокировать автоматические запросы.`);
       }
 
       const prompt = `Проанализируй контент сайта и извлеки 10-15 РЕАЛЬНЫХ ключевых слов и фраз, которые ДЕЙСТВИТЕЛЬНО присутствуют или напрямую связаны с содержимым этого конкретного сайта.

@@ -471,15 +471,22 @@ export function registerAiRoutes(app: Express) {
   app.post("/api/keywords/analyze-website", authenticateUser, async (req, res) => {
     try {
       const { url, campaignId } = req.body;
+      const locale = req.headers['x-locale'] as string || 'ru';
       const token = req.user?.token;
-      if (!url) return res.status(400).json({ error: "URL не указан" });
-      
+      if (!url) return res.status(400).json({ error: locale === 'en' ? 'URL is required' : locale === 'es' ? 'URL es obligatoria' : 'URL не указан' });
+
       const keywords = await aiService.analyzeWebsiteKeywords(url, campaignId, token);
 
       return res.json({ success: true, data: { keywords } });
     } catch (error: any) {
       console.error("[KEYWORDS_ANALYZE] Critical Error:", error.message);
-      res.status(500).json({ success: false, error: error.message });
+      const locale = req.headers['x-locale'] as string || 'ru';
+      const localizedMsg = locale === 'en'
+        ? 'Failed to load website content. The site may be blocking automated requests. Try a different URL.'
+        : locale === 'es'
+        ? 'No se pudo cargar el contenido del sitio. El sitio puede estar bloqueando solicitudes automáticas. Intente con otra URL.'
+        : error.message || 'Не удалось загрузить содержимое сайта. Сайт может блокировать автоматические запросы.';
+      res.status(500).json({ success: false, error: localizedMsg });
     }
   });
 

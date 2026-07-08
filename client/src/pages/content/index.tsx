@@ -459,7 +459,7 @@ export default function ContentPage() {
 
   // Запрос полных данных выбранной кампании для получения socialMediaSettings
   const { data: fullCampaignData, isLoading: isLoadingCampaign } = useQuery({
-    queryKey: ["/api/campaigns", selectedCampaignId],
+    queryKey: ["campaign-detail", selectedCampaignId],
     queryFn: async () => {
       if (!selectedCampaignId) return null;
 
@@ -481,23 +481,28 @@ export default function ContentPage() {
   // Возвращает null если данные ещё не загружены (→ UI показывает все платформы активными).
   // Возвращает объект с явными true/false когда данные есть.
   const getConnectedPlatforms = (): Record<string, boolean> | null => {
-    // Приоритет: полные данные кампании → список кампаний (уже загружен)
-    const campaignData =
-      fullCampaignData?.data ||
-      (campaigns as any[])?.find((c: any) => c.id === selectedCampaignId);
+    // fullCampaignData.data может быть объектом (detail) или массивом (если React Query вернул кэш списка)
+    const rawData = fullCampaignData?.data;
+    const campaignData = Array.isArray(rawData)
+      ? rawData.find((c: any) => c.id === selectedCampaignId)
+      : rawData || (campaigns as any[])?.find((c: any) => c.id === selectedCampaignId);
 
-    const settings =
+    const settingsRaw =
       campaignData?.social_media_settings ||
       campaignData?.socialMediaSettings ||
       campaignData?.social_settings;
 
-    // Если настройки не загружены совсем — вернуть null (не блокировать UI)
-    if (!settings || typeof settings !== 'object') {
-      console.log('[getConnectedPlatforms] no settings found. campaignData:', JSON.stringify(campaignData)?.slice(0, 300));
-      return null;
+    // Directus может отдать JSON как строку — парсим
+    let settings: any;
+    try {
+      settings = typeof settingsRaw === 'string' ? JSON.parse(settingsRaw) : settingsRaw;
+    } catch {
+      settings = settingsRaw;
     }
 
-    console.log('[getConnectedPlatforms] settings keys:', Object.keys(settings), 'settings:', JSON.stringify(settings)?.slice(0, 400));
+    if (!settings || typeof settings !== 'object') {
+      return null;
+    }
 
     // Настройки загружены — проверяем что реально подключено
     const result: Record<string, boolean> = {

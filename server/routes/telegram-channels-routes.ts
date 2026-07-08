@@ -506,7 +506,7 @@ ${searchTerms.map(t => `- ${t}`).join('\n')}
           const geminiKey = process.env.GEMINI_API_KEY;
           const aiResponse = await geminiProxyService.generateText({
             prompt: aiPrompt,
-            model: 'gemini-2.0-flash',
+            model: 'gemini-2.5-flash',
             apiKey: geminiKey,
           });
 
@@ -591,6 +591,27 @@ ${searchTerms.map(t => `- ${t}`).join('\n')}
 
       // Сортируем по подписчикам
       channels.sort((a, b) => (b.subscribers || 0) - (a.subscribers || 0));
+
+      console.log(`[Suggest Sources] Найдено каналов до AI-фильтрации: ${channels.length}`);
+
+      // 5. AI-фильтрация релевантности — оставляем только то, что совпадает с тематикой кампании
+      if (channels.length > 0) {
+        try {
+          const { filterByRelevance } = await import('../services/ai-relevance-filter');
+          const filterResult = await filterByRelevance(channels, searchTerms, 'telegram', limit);
+          console.log(`[Suggest Sources] AI-фильтрация: ${filterResult.relevant.length}/${channels.length} релевантных`);
+          if (filterResult.relevant.length > 0) {
+            channels.length = 0;
+            channels.push(...filterResult.relevant);
+          }
+          // Если AI отсеял всё — оставляем как есть (лучше показать что нашли)
+          if (filterResult.relevant.length === 0 && channels.length > 0) {
+            console.log(`[Suggest Sources] AI отсеял все каналы, оставляем оригинальные результаты`);
+          }
+        } catch (filterErr: any) {
+          console.error(`[Suggest Sources] ⚠️ AI-фильтрация не удалась: ${filterErr.message}`);
+        }
+      }
 
       console.log(`[Suggest Sources] Найдено каналов: ${channels.length}`);
 

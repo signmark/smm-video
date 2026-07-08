@@ -727,6 +727,21 @@ export function registerTrendsRoutes(app: Express) {
         }
       }
 
+      // AI-фильтрация релевантности перед сохранением
+      if (channels.length > 0 && task?.keywords?.length > 0) {
+        try {
+          const { filterByRelevance } = await import('../services/ai-relevance-filter');
+          const filterResult = await filterByRelevance(channels, task.keywords, 'telegram');
+          console.log(`[TG FindGroups Webhook] AI-фильтрация: ${filterResult.relevant.length}/${channels.length} релевантных`);
+          if (filterResult.relevant.length > 0) {
+            channels.length = 0;
+            channels.push(...filterResult.relevant);
+          }
+        } catch (filterErr: any) {
+          console.error(`[TG FindGroups Webhook] ⚠️ AI-фильтрация не удалась: ${filterErr.message}, сохраняем все`);
+        }
+      }
+
       // Сохраняем найденные каналы как источники
       if (channels.length > 0) {
         if (campaignId) {
@@ -828,6 +843,21 @@ export function registerTrendsRoutes(app: Express) {
           }
         } catch (aiErr: any) {
           console.error(`[VK FindGroups Webhook] ❌ Ошибка ИИ фоллбэка: ${aiErr.message}`);
+        }
+      }
+
+      // AI-фильтрация релевантности перед сохранением
+      if (groups.length > 0 && task?.keywords?.length > 0) {
+        try {
+          const { filterByRelevance } = await import('../services/ai-relevance-filter');
+          const filterResult = await filterByRelevance(groups, task.keywords, 'vk');
+          console.log(`[VK FindGroups Webhook] AI-фильтрация: ${filterResult.relevant.length}/${groups.length} релевантных`);
+          if (filterResult.relevant.length > 0) {
+            groups.length = 0;
+            groups.push(...filterResult.relevant);
+          }
+        } catch (filterErr: any) {
+          console.error(`[VK FindGroups Webhook] ⚠️ AI-фильтрация не удалась: ${filterErr.message}, сохраняем все`);
         }
       }
 

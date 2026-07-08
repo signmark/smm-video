@@ -4,6 +4,14 @@ import * as logger from '../utils/logger';
 import { execSync } from 'child_process';
 import { aiService } from './ai-service';
 
+// Puppeteer опционален — если не установлен, работаем через Axios
+let puppeteer: any = null;
+try {
+  puppeteer = (await import('puppeteer')).default;
+} catch {
+  console.log('[WEB-CRAWLER] Puppeteer не установлен, работаем через Axios');
+}
+
 type Browser = any;
 type Page = any;
 
@@ -50,13 +58,17 @@ export class WebCrawlerAgent {
    */
   async crawlSite(options: CrawlerOptions): Promise<CrawlerResult> {
     const startTime = Date.now();
-    
+
+    // Если Puppeteer не установлен — сразу Axios fallback
+    if (!puppeteer) {
+      console.log(`[WEB-CRAWLER] Puppeteer недоступен, Axios fallback для: ${options.url}`);
+      return await this.fallbackAxios(options, startTime);
+    }
+
     try {
-      console.log(`[WEB-CRAWLER] 🕷️ Начинаем парсинг: ${options.url}`);
-      
-      // Запускаем браузер Puppeteer
-      console.log(`[WEB-CRAWLER] 🚀 Запуск Puppeteer Chromium...`);
-      
+      console.log(`[WEB-CRAWLER] Начинаем парсинг: ${options.url}`);
+      console.log(`[WEB-CRAWLER] Запуск Puppeteer Chromium...`);
+
       const launchOptions: any = {
         headless: true,
         args: [
@@ -201,6 +213,46 @@ export class WebCrawlerAgent {
         await this.browser.close();
         this.browser = null;
       }
+    }
+  }
+
+  private async fallbackAxios(options: CrawlerOptions, startTime: number): Promise<CrawlerResult> {
+    try {
+      const response = await axios.get(options.url, {
+        timeout: 30000,
+        maxContentLength: 5 * 1024 * 1024,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.7',
+        },
+      });
+
+      const cheerio = await import('cheerio').catch(() => null);
+      let text = '';
+
+      if (cheerio) {
+        const $ = cheerio.load(response.data);
+        $('script, style, noscript, iframe, svg, header, footer, nav').remove();
+        text = $('body').text().replace(/\s+/g, ' ').trim();
+      } else {
+        text = String(response.data).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+      }
+
+      const loadTime = Date.now() - startTime;
+      console.log(`[WEB-CRAWLER] Axios fallback: ${text.length} chars за ${loadTime}ms`);
+
+      return {
+        success: text.length > 50,
+        text,
+        html: String(response.data).substring(0, 10000),
+        metadata: {
+          title: response.data.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1]?.trim(),
+          loadTime
+        }
+      };
+    } catch (err: any) {
+      return { success: false, error: err.message };
     }
   }
   

@@ -105,10 +105,11 @@ export default function PlatformSelector({
           let isDisabled = false;
           let tooltipMessage = '';
           
-          // null = данные ещё не загружены → считаем всё подключённым (не блокируем UI)
+          // null = данные ещё не загружены → считаем всё ОТКЛЮЧЁННЫМ (не пускаем публиковать)
           // объект = данные есть, смотрим явное значение (undefined тоже = подключено)
-          const isConnected = connectedPlatforms == null
-            ? true
+          const isLoading = connectedPlatforms == null;
+          const isConnected = isLoading
+            ? false
             : (connectedPlatforms[platform.id as SafeSocialPlatform] ?? true);
           
           // For Stories - only show VK and Instagram
@@ -119,9 +120,12 @@ export default function PlatformSelector({
             // For Clips/Shorts/Reels - only show VK, YouTube and Instagram
             isDisabled = true;
             tooltipMessage = 'Клипы/Shorts/Reels поддерживаются только в Instagram, ВКонтакте и YouTube';
+          } else if (isLoading) {
+            isDisabled = true;
+            tooltipMessage = 'Загрузка настроек кампании...';
           } else if (!isConnected) {
             isDisabled = true;
-            tooltipMessage = 'Нужно настроить подключение в настройках кампании';
+            tooltipMessage = 'Не подключено. Настройте подключение в настройках кампании.';
           } else if (platform.id === 'instagram' && !hasImages && !isStory && !isClip) {
             isDisabled = true;
             tooltipMessage = 'Instagram требует изображения или видео';

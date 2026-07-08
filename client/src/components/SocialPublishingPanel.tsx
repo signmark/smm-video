@@ -209,93 +209,41 @@ export function SocialPublishingPanel({ content, connectedPlatforms, onClose }: 
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex flex-wrap gap-4 mb-4">
-          <div className="flex items-center space-x-2">
-            <Checkbox 
-              id="instagram" 
-              checked={selectedPlatforms.includes('instagram')}
-              onCheckedChange={() => handleTogglePlatform('instagram')}
-            />
-            <Label htmlFor="instagram" className="flex items-center gap-1">
-              <Instagram className="h-4 w-4" /> Instagram
-            </Label>
-          </div>
-          
-          <div className="flex items-center space-x-2">
-            <Checkbox 
-              id="telegram" 
-              checked={selectedPlatforms.includes('telegram')}
-              onCheckedChange={() => handleTogglePlatform('telegram')}
-            />
-            <Label htmlFor="telegram" className="flex items-center gap-1">
-              <MessageCircle className="h-4 w-4" /> Telegram
-            </Label>
-          </div>
-          
-          <div className="flex items-center space-x-2">
-            <Checkbox 
-              id="vk" 
-              checked={selectedPlatforms.includes('vk')}
-              onCheckedChange={() => handleTogglePlatform('vk')}
-            />
-            <Label htmlFor="vk" className="flex items-center gap-1">
-              <SiVk className="h-4 w-4" /> ВКонтакте
-            </Label>
-          </div>
-          
-          <div className="flex items-center space-x-2">
-            <Checkbox 
-              id="facebook" 
-              checked={selectedPlatforms.includes('facebook')}
-              onCheckedChange={() => handleTogglePlatform('facebook')}
-            />
-            <Label htmlFor="facebook" className="flex items-center gap-1">
-              <SiFacebook className="h-4 w-4" /> Facebook
-            </Label>
-          </div>
+        <PlatformSelector
+          selectedPlatforms={selectedPlatforms}
+          onChange={handlePlatformChange}
+          content={{
+            contentType: content.contentType,
+            imageUrl: content.imageUrl ?? undefined,
+            images: content.images,
+            videoUrl: content.videoUrl ?? undefined,
+          }}
+          connectedPlatforms={connectedPlatforms as any}
+        />
 
-          <div className="flex items-center space-x-2">
-            <Checkbox 
-              id="threads"
-              data-testid="checkbox-threads"
-              checked={selectedPlatforms['threads'] || false}
-              onCheckedChange={(checked) => handlePlatformChange('threads', !!checked)}
-            />
-            <Label htmlFor="threads" className="flex items-center gap-1">
-              <SiThreads className="h-4 w-4" /> Threads
-            </Label>
-          </div>
-        </div>
-
-        {selectedPlatforms.map(platform => (
-          <div key={platform} className="space-y-2">
-            <Label className="flex items-center gap-2">
-              {platform === 'instagram' && <Instagram className="h-4 w-4" />}
-              {platform === 'telegram' && <MessageCircle className="h-4 w-4" />}
-              {platform === 'vk' && <SiVk className="h-4 w-4" />}
-              {platform === 'facebook' && <SiFacebook className="h-4 w-4" />}
-              {platform === 'threads' && <SiThreads className="h-4 w-4" />}
-              Контент для {platform === 'instagram' ? 'Instagram' :
-                          platform === 'telegram' ? 'Telegram' :
-                          platform === 'vk' ? 'ВКонтакте' :
-                          platform === 'facebook' ? 'Facebook' : 'Threads'}
-            </Label>
-            <RichTextEditor
-              content={adaptedContent[platform]}
-              onChange={(html: string) => handleContentChange(platform, html)}
-              placeholder={`Введите контент для ${platformNames[platform as keyof typeof platformNames] || platform}`}
-              minHeight={150}
-            />
-            <Button 
-              variant="outline" 
-              size="sm"
-              onClick={() => handleContentChange(platform, adaptContentForPlatform(platform))}
-              className="w-full"
-            >
-              Автоматически адаптировать
-            </Button>
-          </div>
-        ))}
+        {Object.entries(selectedPlatforms)
+          .filter(([_, isSelected]) => isSelected)
+          .map(([platform]) => (
+            <div key={platform} className="space-y-2">
+              <Label className="flex items-center gap-2">
+                Контент для {platformNames[platform as keyof typeof platformNames] || platform}
+              </Label>
+              <RichTextEditor
+                content={adaptedContent[platform]}
+                onChange={(html: string) => handleContentChange(platform, html)}
+                placeholder={`Введите контент для ${platformNames[platform as keyof typeof platformNames] || platform}`}
+                minHeight={150}
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleContentChange(platform, adaptContentForPlatform(platform))}
+                className="w-full"
+              >
+                Автоматически адаптировать
+              </Button>
+            </div>
+          ))}
       </CardContent>
       <CardFooter className="flex justify-between">
         <Button variant="outline" onClick={onClose}>

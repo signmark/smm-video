@@ -366,7 +366,12 @@ export default function ContentPage() {
   // Состояние для отображения фильтра по датам
   const [isDateFilterOpen, setIsDateFilterOpen] = useState(false);
 
-  const { toast, dismiss: dismissToast } = useToast();
+  const { toast, dismiss: dismissToast, update: updateToast } = useToast();
+  const [publishState, setPublishState] = useState<'idle' | 'publishing' | 'done'>('idle');
+  const [publishResults, setPublishResults] = useState<{
+    succeeded: Array<{ platform: string; name: string }>;
+    failed: Array<{ platform: string; name: string; error: string }>;
+  } | null>(null);
   const queryClient = useQueryClient();
 
   // Обёртка: открыть генерацию изображений только если это не ограничено тарифом
@@ -3194,6 +3199,7 @@ export default function ContentPage() {
               <Button
                 type="button"
                 variant="default"
+                disabled={publishState === 'publishing'}
                 onClick={async () => {
                   // Проверка на выбор хотя бы одной платформы
                   if (!Object.values(selectedPlatforms).some(Boolean)) {
@@ -3204,12 +3210,8 @@ export default function ContentPage() {
                     return;
                   }
 
-                  // Сразу закрываем диалог и показываем тост о начале процесса
-                  setIsScheduleDialogOpen(false);
-                  const loadingToastId = toast({
-                    title: 'Публикация запущена...',
-                    description: 'Отправляем контент в выбранные соцсети',
-                  });
+                  setPublishState('publishing');
+                  setPublishResults(null);
 
                   try {
                     // Получаем выбранные платформы как массив строк для N8N API
@@ -3222,152 +3224,90 @@ export default function ContentPage() {
                       platforms: selectedPlatformList
                     };
 
-                    console.log("Публикация контента - contentId:", currentContent?.id);
-                    console.log("Публикация контента - type:", currentContent?.contentType);
-                    console.log("Публикация контента - platforms:", selectedPlatformList);
-                    console.log("Публикация контента - полный объект:", requestData);
-
                     // Определяем API endpoint в зависимости от типа контента
-                    let publishEndpoint = '/api/publish/now'; // ИСПРАВЛЕНО: используем правильный эндпоинт для публикации
+                    let publishEndpoint = '/api/publish/now';
 
                     // Проверяем является ли контент clip/shorts/reels
                     const CLIPS_CONTENT_TYPES = ['clip', 'shorts', 'video_clip', 'short_video', 'video_story'];
                     const isClipContent = CLIPS_CONTENT_TYPES.includes(currentContent?.contentType || '');
 
-                    // Для Clips/Shorts/Reels используем прямую публикацию через Replit
+                    const platformNames: Record<string, string> = {
+                      telegram: 'Telegram',
+                      vk: 'ВКонтакте',
+                      instagram: 'Instagram',
+                      facebook: 'Facebook',
+                      threads: 'Threads',
+                      youtube: 'YouTube',
+                    };
+
+                    let result: { succeeded: Array<{ platform: string; name: string }>; failed: Array<{ platform: string; name: string; error: string }> } = { succeeded: [], failed: [] };
+
                     if (isClipContent) {
-                      console.log(`[DEV] [content-publish-dialog] 🎬 Using Clips/Shorts/Reels direct publishing`);
                       publishEndpoint = '/api/clips/publish';
-
-                      const response = await apiRequest(publishEndpoint, {
-                        method: 'POST',
-                        data: requestData
-                      });
-
+                      const response = await apiRequest(publishEndpoint, { method: 'POST', data: requestData });
                       if (response.success) {
-                        toast({
-                          description: response.message || "Clip/Reels отправлен на публикацию",
-                          variant: "default"
-                        });
+                        result = { succeeded: selectedPlatformList.map(p => ({ platform: p, name: platformNames[p] || p })), failed: [] };
                       } else {
-                        toast({
-                          description: response.error || "Ошибка при отправке Clip/Reels на публикацию",
-                          variant: "destructive"
-                        });
+                        result = { succeeded: [], failed: selectedPlatformList.map(p => ({ platform: p, name: platformNames[p] || p, error: response.error || 'Не удалось опубликовать' })) };
                       }
-                      return;
-                    }
-
-                    // Для Stories используем специальную функцию с генерацией изображений
-                    if (currentContent?.contentType === 'story') {
-                      console.log(`[DEV] [content-publish-dialog] 🎬 Using Stories with image generation`);
-
-                      // Получаем полные данные Stories с textOverlays
-                      const storyResponse = await apiRequest(`/api/stories/simple/${currentContent.id}`, {
-                        method: 'GET'
-                      });
-
-                      if (!storyResponse.success) {
-                        throw new Error('Не удалось получить данные Stories');
-                      }
-
-                      const storyData = storyResponse.data;
-                      console.log('[DEV] [content-publish] Story data for generation:', storyData);
-
-                      // Вызываем публикацию с генерацией изображений
+                    } else if (currentContent?.contentType === 'story') {
+                      const storyResponse = await apiRequest(`/api/stories/simple/${currentContent.id}`, { method: 'GET' });
+                      if (!storyResponse.success) throw new Error('Не удалось получить данные Stories');
                       const response = await publishWithImageGeneration({
                         contentId: currentContent.id,
                         platforms: selectedPlatformList,
-                        story: storyData
+                        story: storyResponse.data
                       });
-
                       if (response.success) {
-                        toast({
-                          description: response.imageGenerated
-                            ? "Stories отправлена на публикацию с автоматически сгенерированным изображением"
-                            : "Stories отправлена на публикацию",
-                          variant: "default"
-                        });
-                        return;
+                        result = { succeeded: selectedPlatformList.map(p => ({ platform: p, name: platformNames[p] || p })), failed: [] };
                       } else {
-                        throw new Error(response.message || 'Ошибка публикации Stories');
+                        result = { succeeded: [], failed: selectedPlatformList.map(p => ({ platform: p, name: platformNames[p] || p, error: response.message || 'Ошибка публикации Stories' })) };
                       }
                     } else {
-                      console.log(`[DEV] [content-publish-dialog] 🎬 Using general endpoint: ${publishEndpoint}`);
-
-                      // Вызываем обычный API эндпоинт для не-Stories контента
-                      const response = await apiRequest(publishEndpoint, {
-                        method: 'POST',
-                        data: requestData
-                      });
-
-                      // Показываем детальные тосты по каждой платформе
-                      const platformNames: Record<string, string> = {
-                        telegram: '📱 Telegram',
-                        vk: '🔵 ВКонтакте',
-                        instagram: '📷 Instagram',
-                        facebook: '👥 Facebook',
-                        threads: '🧵 Threads',
-                        youtube: '🎬 YouTube',
-                      };
-
-                      const results: Array<{ platform: string; success: boolean; error?: string }> =
-                        response.results || response.publishResults || [];
-
-                      dismissToast(loadingToastId);
+                      const response = await apiRequest(publishEndpoint, { method: 'POST', data: requestData });
+                      const results: Array<{ platform: string; success: boolean; error?: string }> = response.results || response.publishResults || [];
 
                       if (results.length > 0) {
-                        const succeeded = results.filter(r => r.success);
-                        const failed = results.filter(r => !r.success);
-
-                        // Один тост для успешных платформ
-                        if (succeeded.length > 0) {
-                          const names = succeeded.map(r => platformNames[r.platform] || r.platform).join(', ');
-                          toast({
-                            title: '✅ Опубликовано',
-                            description: names,
-                            variant: 'default',
-                          });
-                        }
-
-                        // Отдельный тост для каждой ошибки
-                        for (const r of failed) {
-                          const name = platformNames[r.platform] || r.platform;
-                          toast({
-                            title: `Ошибка: ${name}`,
-                            description: r.error || 'Не удалось опубликовать',
-                            variant: 'destructive',
-                          });
-                        }
+                        result = {
+                          succeeded: results.filter(r => r.success).map(r => ({ platform: r.platform, name: platformNames[r.platform] || r.platform })),
+                          failed: results.filter(r => !r.success).map(r => ({ platform: r.platform, name: platformNames[r.platform] || r.platform, error: r.error || 'Не удалось опубликовать' })),
+                        };
+                      } else if (response.success !== false) {
+                        result = { succeeded: selectedPlatformList.map(p => ({ platform: p, name: platformNames[p] || p })), failed: [] };
                       } else {
-                        // Если сервер не вернул результаты — общий тост
-                        if (response.success !== false) {
-                          toast({ title: '✅ Опубликовано', description: response.message || 'Контент отправлен на публикацию', variant: 'default' });
-                        } else {
-                          toast({ title: 'Ошибка', description: response.error || 'Ошибка при публикации', variant: 'destructive' });
-                        }
+                        result = { succeeded: [], failed: selectedPlatformList.map(p => ({ platform: p, name: platformNames[p] || p, error: response.error || 'Ошибка при публикации' })) };
                       }
                     }
 
+                    setPublishResults(result);
+                    setPublishState('done');
 
                   } catch (error: any) {
-                    dismissToast(loadingToastId);
                     console.error("Ошибка публикации контента:", error);
                     const rawMsg = error.message || "Ошибка при публикации контента";
                     const cleanMsg = rawMsg.includes('<') ? "Ошибка при публикации контента" : rawMsg;
-                    toast({
-                      title: 'Ошибка публикации',
-                      description: cleanMsg,
-                      variant: "destructive"
+                    const selectedPlatformList = Object.entries(selectedPlatforms)
+                      .filter(([_, isSelected]) => isSelected)
+                      .map(([platform]) => platform);
+                    const platformNames: Record<string, string> = {
+                      telegram: 'Telegram', vk: 'ВКонтакте', instagram: 'Instagram',
+                      facebook: 'Facebook', threads: 'Threads', youtube: 'YouTube',
+                    };
+                    setPublishResults({
+                      succeeded: [],
+                      failed: selectedPlatformList.map(p => ({ platform: p, name: platformNames[p] || p, error: cleanMsg })),
                     });
+                    setPublishState('done');
                   }
                 }}
                 disabled={
+                  publishState === 'publishing' ||
                   publishContentMutation.isPending ||
                   !Object.values(selectedPlatforms).some(Boolean) ||
+                  connectedPlatforms == null ||
                   isExpired
                 }
-                title={isExpired ? 'Выберите тариф для публикации' : undefined}
+                title={connectedPlatforms == null ? 'Загрузка настроек кампании...' : isExpired ? 'Выберите тариф для публикации' : undefined}
               >
                 {publishContentMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 {isExpired && <Lock className="mr-2 h-4 w-4" />}
@@ -3381,9 +3321,10 @@ export default function ContentPage() {
                   scheduleContentMutation.isPending ||
                   !scheduleDate ||
                   !Object.values(selectedPlatforms).some(Boolean) ||
+                  connectedPlatforms == null ||
                   isExpired
                 }
-                title={isExpired ? 'Выберите тариф для планирования' : undefined}
+                title={connectedPlatforms == null ? 'Загрузка настроек кампании...' : isExpired ? 'Выберите тариф для планирования' : undefined}
               >
                 {scheduleContentMutation.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                 {isExpired && <Lock className="mr-2 h-4 w-4" />}

@@ -1581,7 +1581,7 @@ export async function handleCreateCampaign(request: AIAssistantRequest, paramete
     }
 
     const campaignData = await response.json();
-    const campaignId = campaignData.id;
+    const campaignId = campaignData.data?.id || campaignData.id;
 
     // 2. Если указан URL — анализируем сайт, заполняем анкету и генерируем ключевые слова
     if (websiteUrl) {

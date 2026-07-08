@@ -1544,9 +1544,7 @@ export function SocialMediaSettings({
     try {
       setIsLoading(true);
 
-      // Preserve tiktok fields not managed by the form (connected, accessToken, openId, etc.)
-      // Preserve VK refresh fields (refreshToken, clientId, deviceId, tokenExpiresAt)
-      // that are saved by the token-webhook but absent from the form schema
+      // Preserve fields not managed by the form but saved by OAuth callbacks/webhooks
       const submittedData = {
         ...data,
         tiktok: {
@@ -1556,6 +1554,10 @@ export function SocialMediaSettings({
         vk: {
           ...(vkSettings || {}),
           ...data.vk
+        },
+        youtube: {
+          ...(initialSettings as any)?.youtube,
+          ...(data as any).youtube
         }
       };
 

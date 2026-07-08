@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useMutation } from "@tanstack/react-query";
+import { useState, useEffect } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -70,10 +70,28 @@ export function ContentGenerationPanel({ selectedTopics, onGenerated }: ContentG
 
   const campaignId = selectedTopics[0]?.campaign_id || selectedTopics[0]?.campaignId;
 
-  const trendTitles = selectedTopics.map(t => t.title).join('\n- ');
-  const systemPrompt = `Вы — профессиональный SMM-копирайтер. Ваша задача — написать пост для социальных сетей, СТРОГО выполняя инструкцию пользователя.
+  // Подтягиваем ключевые слова кампании
+  const { data: keywordsData } = useQuery({
+    queryKey: ["/api/keywords", campaignId],
+    queryFn: async () => {
+      if (!campaignId) return [];
+      const res = await fetch(`/api/keywords/${campaignId}`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('auth_token')}` }
+      });
+      if (!res.ok) return [];
+      const data = await res.json();
+      return data.data || data || [];
+    },
+    enabled: !!campaignId,
+  });
+  const campaignKeywords = (keywordsData || []).map((k: any) => k.keyword).filter(Boolean);
 
-Тренды для вдохновения (используйте как контекст, не как главную тему, если пользователь не просит об этом):
+  const trendTitles = selectedTopics.map(t => t.title).join('\n- ');
+  const systemPrompt = `Ты — опытный автор контента для социальных сетей. Твоя задача — создать качественный пост, СТРОГО выполняя инструкцию пользователя.
+
+Пиши на тему, которую определяет пользователь. Ключевые слова кампании — это подсказка контекста, но НЕ ограничивай тему только ими.
+
+Тренды для вдохновения (используй как контекст, если уместно):
 - ${trendTitles}
 
 ПРАВИЛА ФОРМАТИРОВАНИЯ (обязательно):
@@ -97,7 +115,7 @@ export function ContentGenerationPanel({ selectedTopics, onGenerated }: ContentG
         },
         body: JSON.stringify({
           prompt: prompt.trim(),
-          keywords: selectedTopics.map(t => t.title),
+          keywords: campaignKeywords.length > 0 ? campaignKeywords : selectedTopics.map(t => t.title),
           campaignId,
           platform: 'general',
           systemPrompt,

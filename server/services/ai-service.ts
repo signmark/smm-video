@@ -187,7 +187,7 @@ export class AiService {
       const keywordContext = keywords.length > 0 ? `\nКлючевые слова для использования: ${keywords.join(', ')}.` : '';
       const platformContext = platform ? `\nПлатформа: ${platform}.` : '';
       const toneContext = tone ? `\nТон текста: ${tone}.` : '';
-      const fullPrompt = `${systemPrompt || 'Вы — профессиональный SMM-менеджер.'}${platformContext}${toneContext}${keywordContext}\n\nЗадание: ${prompt}`;
+      const fullPrompt = `${systemPrompt || 'Ты — опытный автор контента для социальных сетей.'}${platformContext}${toneContext}${keywordContext}\n\nЗадание: ${prompt}`;
 
       // 3. Используем Gemini Proxy (Cloudflare Worker) — основной способ
       logger.log(`[AiService] Using Gemini Proxy`, 'gemini');
@@ -346,7 +346,7 @@ export class AiService {
       const keywordContext = keywords.length > 0 ? `\nКлючевые слова для использования: ${keywords.join(', ')}.` : '';
       const platformContext = platform ? `\nПлатформа: ${platform}.` : '';
       const toneContext = tone ? `\nТон текста: ${tone}.` : '';
-      const fullPrompt = `${systemPrompt || 'Вы — профессиональный SMM-менеджер.'}${platformContext}${toneContext}${keywordContext}\n\nЗадание: ${prompt}`;
+      const fullPrompt = `${systemPrompt || 'Ты — опытный автор контента для социальных сетей.'}${platformContext}${toneContext}${keywordContext}\n\nЗадание: ${prompt}`;
 
       const qwenService = new QwenService({ apiKey });
       const content = await qwenService.generateText(fullPrompt, {

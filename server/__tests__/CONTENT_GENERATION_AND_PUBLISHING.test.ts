@@ -83,8 +83,8 @@ vi.mock('../services/gemini-proxy', () => ({
   }
 }));
 
-vi.mock('../services/gemini-vertex-direct', () => ({
-  geminiVertexDirect: {
+vi.mock('../services/gemini-direct', () => ({
+  geminiDirect: {
     generateContent: vi.fn()
   }
 }));

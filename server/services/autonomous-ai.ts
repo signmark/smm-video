@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { directusCrud } from './directus-crud';
-import { geminiVertexDirect } from './gemini-vertex-direct';
+import { geminiDirect } from './gemini-direct';
 import { aiService } from './ai-service';
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';

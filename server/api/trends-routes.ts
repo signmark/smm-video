@@ -8,6 +8,7 @@ import { DeepSeekService } from '../services/deepseek';
 import { apiKeyService, ApiServiceName } from '../services/api-keys';
 import { globalApiKeysService } from '../services/global-api-keys';
 import { getPublicBaseUrl, SCRAPER_BASE, getScraperApiKey } from '../services/trend-collector';
+import { geminiDirect } from '../services/gemini-direct';
 
 // ─── AI фоллбэк для поиска каналов ───────────────────────────────────────────
 
@@ -224,7 +225,7 @@ ${commentTexts.map((t: string, i: number) => `${i + 1}. ${t}`).join('\n')}
 - Учитывай сарказм, эмодзи, сленг`;
 
   try {
-    const aiResponse = await geminiVertexDirect.generateContent({
+    const aiResponse = await geminiDirect.generateContent({
       prompt,
       model: 'gemini-3-pro-preview'
     });
@@ -1577,7 +1578,7 @@ ${trendsForAi}
         try {
           let aiResponse = '';
           try {
-            aiResponse = await geminiVertexDirect.generateContent({
+            aiResponse = await geminiDirect.generateContent({
               prompt: enrichPrompt,
               model: 'gemini-3-pro-preview'
             });
@@ -2031,7 +2032,7 @@ ${trendSummaries.length > 0 ? `ВЫВОДЫ ПО ТРЕНДАМ:\n${trendSummari
   "recommendation": "одна ключевая рекомендация по работе с этим источником"
 }`;
 
-          const aiResponse = await geminiVertexDirect.generateContent({
+          const aiResponse = await geminiDirect.generateContent({
             prompt: summaryPrompt,
             model: 'gemini-3-pro-preview'
           });

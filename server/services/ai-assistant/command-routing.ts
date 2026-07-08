@@ -1,5 +1,5 @@
 import { CommandAnalysis, AvailableFunction } from './types';
-import { geminiVertexDirect } from '../gemini-vertex-direct';
+import { geminiDirect } from '../gemini-direct';
 
 export function initializeAvailableFunctions(): AvailableFunction[] {
   return [
@@ -197,7 +197,7 @@ ${JSON.stringify(functionsSchema, null, 2)}
 
 ОТВЕТ (ТОЛЬКО JSON):`;
 
-    const response = await geminiVertexDirect.generateContent({
+    const response = await geminiDirect.generateContent({
       prompt: aiPrompt,
       model: 'gemini-3-pro-preview'
     });
@@ -351,7 +351,7 @@ export async function analyzeCommand(message: string): Promise<CommandAnalysis> 
 }
 `;
 
-    const response = await geminiVertexDirect.generateContent({ 
+    const response = await geminiDirect.generateContent({ 
       prompt,
       model: 'gemini-3-pro-preview'
     });

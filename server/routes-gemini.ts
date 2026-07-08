@@ -1,7 +1,6 @@
 import { Router, type Request, type Response, Express } from 'express';
 import { GeminiService, geminiService } from './services/gemini';
-import { geminiVertexService } from './services/gemini-vertex';
-import { geminiVertexDirect } from './services/gemini-vertex-direct';
+import { geminiDirect } from './services/gemini-direct';
 import { GeminiProxyService } from './services/gemini-proxy';
 import { ApiKeyService, ApiServiceName } from './services/api-keys';
 import * as logger from './utils/logger';

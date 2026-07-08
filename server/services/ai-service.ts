@@ -3,7 +3,7 @@ import { globalApiKeysService } from './global-api-keys';
 import { apiKeyService, ApiServiceName } from './api-keys';
 import * as logger from '../utils/logger';
 import { log } from '../utils/logger';
-import { geminiVertexDirect } from './gemini-vertex-direct';
+import { geminiDirect } from './gemini-direct';
 import { QwenService } from './qwen';
 import { geminiProxyService } from './gemini-proxy';
 
@@ -189,211 +189,8 @@ export class AiService {
       const toneContext = tone ? `\nТон текста: ${tone}.` : '';
       const fullPrompt = `${systemPrompt || 'Вы — профессиональный SMM-менеджер.'}${platformContext}${toneContext}${keywordContext}\n\nЗадание: ${prompt}`;
 
-      // 3. Выбор метода вызова в зависимости от формата ключа
-      // ВАЖНО: ключи с префиксом AQ. — это НЕ Vertex AI ключи, а новый формат
-      // AI Studio API key (Google переключил префикс с AIzaSy на AQ. для ключей с биллингом).
-      // Vertex AI работает только через OAuth2/Service Account, не через ?key=. Поэтому
-      // не маршрутизируем AQ. ключи на aiplatform.googleapis.com — отправляем в общий поток
-      // через geminiProxyService, который дёргает правильный endpoint generativelanguage.googleapis.com.
-      const isVertexKey = false;
-
-      if (isVertexKey) {
-        log(`[AiService] Detected Vertex AI API Key (AQ. format), routing to Vertex AI endpoint`, 'info');
-        try {
-          // Получаем Project ID: Service Account → env → ничего (тогда Vertex full-URL пропускаем)
-          let projectId = process.env.GOOGLE_CLOUD_PROJECT || process.env.VERTEX_AI_PROJECT_ID || '';
-          try {
-            const credentials = await globalApiKeysService.getGoogleServiceAccountKey();
-            if (credentials?.project_id) {
-              projectId = credentials.project_id;
-              log(`[AiService] Using Project ID from Service Account: ${projectId}`, 'info');
-            }
-          } catch (e: any) {
-            log(`[AiService] Could not get Project ID from Service Account: ${e?.message || e}`, 'warn');
-          }
-
-          const vertexModels = [
-            modelId,
-            'gemini-2.5-pro',
-            'gemini-2.5-flash',
-            'gemini-2.0-flash'
-          ].filter((v, i, a) => a.indexOf(v) === i);
-
-          for (const vModel of vertexModels) {
-            try {
-              // Пытаемся использовать упрощенный URL
-              let vertexUrl = `https://aiplatform.googleapis.com/v1/publishers/google/models/${vModel}:generateContent?key=${apiKey}`;
-              
-              // Если задан прокси-воркер Cloudflare, подменяем домен
-              const workerProxy = process.env.GEMINI_PROXY_URL;
-              if (workerProxy) {
-                try {
-                  const pUrl = new URL(workerProxy);
-                  const vUrl = new URL(vertexUrl);
-                  vUrl.host = pUrl.host;
-                  vUrl.protocol = pUrl.protocol;
-                  vertexUrl = vUrl.toString();
-                } catch (e) {}
-              }
-
-              log(`[AiService] Vertex API Key Request: ${vModel}`, 'info');
-              
-              const requestData = {
-                contents: [{ role: 'user', parts: [{ text: fullPrompt }] }],
-                generationConfig: { 
-                  temperature, 
-                  maxOutputTokens: maxTokens,
-                  topP: 0.95,
-                  topK: 40
-                }
-              };
-
-              const isStaging = process.env.NODE_ENV === 'staging' || process.env.NODE_ENV === 'production';
-              
-              let useProxy = false;
-              if (process.env.FORCE_GEMINI_PROXY === 'true') {
-                useProxy = true;
-              } else if (process.env.FORCE_GEMINI_PROXY === 'false') {
-                useProxy = false;
-              } else {
-                useProxy = isStaging;
-              }
-              
-              const fetchOptions: any = {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(requestData),
-                timeout: 60000
-              };
-
-              // Используем прокси для Vertex AI API Key в продакшене только если он настроен
-              if (useProxy) {
-                try {
-                  const { SocksProxyAgent } = await import('socks-proxy-agent');
-                  const proxyHost = process.env.PROXY_HOST;
-                  const proxyPort = process.env.PROXY_PORT;
-                  const proxyUsername = process.env.PROXY_USERNAME;
-                  const proxyPassword = process.env.PROXY_PASSWORD;
-                  
-                  if (proxyHost && proxyPort) {
-                    const authPart = (proxyUsername && proxyPassword) ? `${proxyUsername}:${proxyPassword}@` : '';
-                    const proxyUrl = `socks5://${authPart}${proxyHost}:${proxyPort}`;
-                    fetchOptions.agent = new SocksProxyAgent(proxyUrl);
-                    log(`[AiService] Using configured proxy for Vertex AI API Key request`, 'info');
-                  } else {
-                    log(`[AiService] Proxy requested but not configured in .env, using direct connection`, 'warn');
-                  }
-                } catch (proxyErr) {
-                  log(`[AiService] Failed to initialize proxy for Vertex AI API Key: ${proxyErr}`, 'warn');
-                }
-              }
-
-              const vertexResponse = await fetch(vertexUrl, fetchOptions);
-              const vertexData = await vertexResponse.json() as any;
-
-              if (vertexData?.candidates?.[0]?.content?.parts?.[0]?.text) {
-                log(`[AiService] Success with Vertex AI API Key (Simple URL), model: ${vModel}`, 'info');
-                return {
-                  success: true,
-                  content: vertexData.candidates[0].content.parts[0].text.trim(),
-                  model: vModel,
-                  service: 'vertex-api-key'
-                };
-              }
-            } catch (vErr: any) {
-              log(`[AiService] Vertex API Key (Simple URL) failed for ${vModel}: ${vErr.response?.status || vErr.message}`, 'warn');
-              
-              // Если упрощенный URL не сработал, пробуем полный URL с Project ID
-              try {
-                const region = 'us-central1';
-                let fullVertexUrl = `https://${region}-aiplatform.googleapis.com/v1/projects/${projectId}/locations/${region}/publishers/google/models/${vModel}:generateContent?key=${apiKey}`;
-                
-                // Если задан прокси-воркер Cloudflare, подменяем домен
-                const workerProxy = process.env.GEMINI_PROXY_URL;
-                if (workerProxy) {
-                  try {
-                    const pUrl = new URL(workerProxy);
-                    const vUrl = new URL(fullVertexUrl);
-                    vUrl.host = pUrl.host;
-                    vUrl.protocol = pUrl.protocol;
-                    fullVertexUrl = vUrl.toString();
-                  } catch (e) {}
-                }
-
-                log(`[AiService] Vertex API Key Request (Full URL): ${vModel}`, 'info');
-                
-                const isStaging = process.env.NODE_ENV === 'staging' || process.env.NODE_ENV === 'production';
-                
-                let useProxy = false;
-                if (process.env.FORCE_GEMINI_PROXY === 'true') {
-                  useProxy = true;
-                } else if (process.env.FORCE_GEMINI_PROXY === 'false') {
-                  useProxy = false;
-                } else {
-                  useProxy = isStaging;
-                }
-                
-                const fetchOptions: any = {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    contents: [{ role: 'user', parts: [{ text: fullPrompt }] }],
-                    generationConfig: { 
-                      temperature, 
-                      maxOutputTokens: maxTokens,
-                      topP: 0.95,
-                      topK: 40
-                    }
-                  }),
-                  timeout: 60000
-                };
-
-                // Используем прокси для Vertex AI API Key (Full URL) в продакшене
-                if (useProxy) {
-                  try {
-                    const proxyHost = process.env.PROXY_HOST;
-                    const proxyPort = process.env.PROXY_PORT;
-                    const proxyUsername = process.env.PROXY_USERNAME;
-                    const proxyPassword = process.env.PROXY_PASSWORD;
-                    if (proxyHost && proxyPort) {
-                      const { SocksProxyAgent } = await import('socks-proxy-agent');
-                      const auth = (proxyUsername && proxyPassword) ? `${proxyUsername}:${proxyPassword}@` : '';
-                      const proxyUrl = `socks5://${auth}${proxyHost}:${proxyPort}`;
-                      fetchOptions.agent = new SocksProxyAgent(proxyUrl);
-                      log(`[AiService] Using proxy ${proxyHost}:${proxyPort} for Vertex AI API Key (Full URL) request`, 'info');
-                    }
-                  } catch (proxyErr) {
-                    log(`[AiService] Failed to initialize proxy for Vertex AI API Key (Full URL): ${proxyErr}`, 'warn');
-                  }
-                }
-
-                const vertexResponse = await fetch(fullVertexUrl, fetchOptions);
-                const vertexData = await vertexResponse.json() as any;
-
-                if (vertexData?.candidates?.[0]?.content?.parts?.[0]?.text) {
-                  log(`[AiService] Success with Vertex AI API Key (Full URL), model: ${vModel}`, 'info');
-                  return {
-                    success: true,
-                    content: vertexData.candidates[0].content.parts[0].text.trim(),
-                    model: vModel,
-                    service: 'vertex-api-key'
-                  };
-                }
-              } catch (fullErr: any) {
-                const errorStatus = fullErr.response?.status || 'unknown';
-                const errorData = fullErr.response?.data ? JSON.stringify(fullErr.response.data) : fullErr.message;
-                log(`[AiService] Vertex API Key (Full URL) failed for ${vModel}: ${errorStatus}`, 'warn');
-                console.error(`[CRITICAL-VERTEX-ERROR] ${vModel}:`, errorData);
-              }
-              continue;
-            }
-          }
-        } catch (vertexApiKeyError: any) {
-          log(`[AiService] Vertex AI API Key logic failed: ${vertexApiKeyError.message}`, 'error');
-        }
-      } else {
-        // Сначала пробуем Gemini Proxy (Google AI Studio, AIzaSy ключ) — быстрее и надёжнее в dev
-        logger.log(`[AiService] Using Gemini Proxy (primary)`, 'gemini');
+      // 3. Используем Gemini Proxy (Cloudflare Worker) — основной способ
+      logger.log(`[AiService] Using Gemini Proxy`, 'gemini');
         try {
           geminiProxyService.setApiKey(apiKey);
           const generatedText = await geminiProxyService.generateText({
@@ -445,7 +242,6 @@ export class AiService {
           }
           throw proxyError;
         }
-      }
 
       throw new Error("Не удалось получить ответ от Gemini API всеми доступными методами.");
 

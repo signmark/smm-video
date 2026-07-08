@@ -1,4 +1,4 @@
-import { geminiVertexDirect } from './gemini-vertex-direct';
+import { geminiDirect } from './gemini-direct';
 import * as logger from '../utils/logger';
 
 interface SupportMessage {
@@ -144,7 +144,7 @@ ${conversationHistory}
 Твой ответ (краткий и полезный):`;
 
       // Генерируем ответ через Gemini
-      const aiResponse = await geminiVertexDirect.generateContent({
+      const aiResponse = await geminiDirect.generateContent({
         prompt: fullPrompt,
         model: 'gemini-3-flash-preview'
       });

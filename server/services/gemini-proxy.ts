@@ -2,7 +2,6 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import * as logger from '../utils/logger';
 import { SocksProxyAgent } from 'socks-proxy-agent';
 import fetch from 'node-fetch';
-import { vertexAIAuth } from './vertex-ai-auth';
 
 
 interface GeminiProxyOptions {
@@ -28,45 +27,27 @@ export class GeminiProxyService {
    * @param apiKey API ключ (если используется Google AI Studio)
    * @returns Объект с версией API и базовым URL
    */
-  private async getApiVersionForModel(model: string, apiKey?: string): Promise<{ version: string; baseUrl: string; isVertexAI?: boolean }> {
-    // AI Studio API key: старый формат AIzaSy... или новый AQ.... — оба используют generativelanguage.googleapis.com
-    if (apiKey && (apiKey.startsWith('AIzaSy') || apiKey.startsWith('AQ.'))) {
-      let baseUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-      
-      const workerProxy = process.env.GEMINI_PROXY_URL;
-      if (workerProxy) {
-        try {
-          const proxyUrl = new URL(workerProxy);
-          const originalUrl = new URL(baseUrl);
-          originalUrl.host = proxyUrl.host;
-          originalUrl.protocol = proxyUrl.protocol;
-          baseUrl = originalUrl.toString();
-          const keyPreview = apiKey.length > 18
-            ? `${apiKey.substring(0, 10)}...${apiKey.substring(apiKey.length - 8)}`
-            : 'short-key';
-          logger.log(`[gemini-proxy] 🚀 REDIRECTING to Worker Proxy with key=${keyPreview} (len=${apiKey.length})`, 'gemini');
-        } catch (e) {
-          logger.log(`[gemini-proxy] ❌ Invalid GEMINI_PROXY_URL: ${workerProxy}`, 'error');
-        }
-      } else {
-        logger.log(`[gemini-proxy] ⚠️ GEMINI_PROXY_URL is NOT SET in process.env`, 'gemini');
-      }
+  private async getApiVersionForModel(model: string, apiKey?: string): Promise<{ version: string; baseUrl: string }> {
+    let baseUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-      return {
-        version: 'v1beta',
-        baseUrl,
-        isVertexAI: false
-      };
+    const workerProxy = process.env.GEMINI_PROXY_URL;
+    if (workerProxy) {
+      try {
+        const proxyUrl = new URL(workerProxy);
+        const originalUrl = new URL(baseUrl);
+        originalUrl.host = proxyUrl.host;
+        originalUrl.protocol = proxyUrl.protocol;
+        baseUrl = originalUrl.toString();
+        const keyPreview = apiKey && apiKey.length > 18
+          ? `${apiKey.substring(0, 10)}...${apiKey.substring(apiKey.length - 8)}`
+          : 'short-key';
+        logger.log(`[gemini-proxy] REDIRECTING to Worker Proxy with key=${keyPreview}`, 'gemini');
+      } catch (e) {
+        logger.log(`[gemini-proxy] Invalid GEMINI_PROXY_URL: ${workerProxy}`, 'error');
+      }
     }
 
-    // По умолчанию используем Vertex AI
-    const baseUrl = await vertexAIAuth.getVertexAIUrl(model);
-    
-    return {
-      version: 'v1',
-      baseUrl: baseUrl || '',
-      isVertexAI: true
-    };
+    return { version: 'v1beta', baseUrl };
   }
 
   /**
@@ -138,13 +119,12 @@ export class GeminiProxyService {
   }
 
   /**
-   * Отправляет запрос к Gemini API через SOCKS5 прокси
+   * Отправляет запрос к Gemini API через Cloudflare Worker прокси
    * @param url URL для запроса
    * @param body Тело запроса
-   * @param isVertexAI Использовать ли Vertex AI
    * @returns Ответ от API в виде JSON
    */
-  async sendRequest(url: string, body: any, isVertexAI = false): Promise<any> {
+  async sendRequest(url: string, body: any): Promise<any> {
     let retries = 0;
     let lastError: Error | null = null;
     
@@ -179,22 +159,7 @@ export class GeminiProxyService {
           body: JSON.stringify(body)
         };
         
-        // Для Vertex AI используем Service Account авторизацию
-        if (url.includes('aiplatform.googleapis.com')) {
-          logger.log(`[gemini-proxy] Используется Vertex AI, получаем Service Account токен`, 'gemini');
-          const accessToken = await vertexAIAuth.getAccessToken();
-          if (accessToken) {
-            fetchOptions.headers = {
-              ...fetchOptions.headers,
-              'Authorization': `Bearer ${accessToken}`
-            };
-            logger.log(`[gemini-proxy] Service Account токен добавлен для Vertex AI`, 'gemini');
-          } else {
-            throw new Error('Не удалось получить Service Account токен для Vertex AI');
-          }
-        }
-        
-        // Используем прокси для доступа к Gemini API (обязательно для продакшена)
+        // Используем прокси для доступа к Gemini API
         const isReplit = process.env.REPLIT_DOMAINS || process.env.REPL_ID;
         const isStaging = process.env.NODE_ENV === 'staging' || process.env.NODE_ENV === 'production';
         
@@ -262,9 +227,8 @@ export class GeminiProxyService {
    */
   async testApiKey(): Promise<boolean> {
     try {
-      // Используем Vertex AI для тестирования
-      const url = await vertexAIAuth.getVertexAIUrl('gemini-2.5-flash');
-      
+      const { baseUrl } = await this.getApiVersionForModel('gemini-2.5-flash', this.apiKey);
+
       // Тестовый промпт
       const requestData = {
         contents: [
@@ -305,7 +269,7 @@ export class GeminiProxyService {
       logger.log(`[gemini-proxy] Mapped model ${model} to API model: ${apiModel}`, 'gemini');
       
       // Определяем правильную версию API для модели
-      const { baseUrl, isVertexAI } = await this.getApiVersionForModel(apiModel, this.apiKey);
+      const { baseUrl } = await this.getApiVersionForModel(apiModel, this.apiKey);
       
       // Все запросы теперь идут через Vertex AI или Google AI Studio
       const url = typeof baseUrl === 'string' ? baseUrl : `${baseUrl}`;
@@ -330,7 +294,7 @@ export class GeminiProxyService {
       };
       
       // Отправляем запрос
-      const response = await this.sendRequest(url, requestData, isVertexAI);
+      const response = await this.sendRequest(url, requestData);
       
       // Обрабатываем ответ
       if (response.candidates && response.candidates.length > 0 && 
@@ -385,7 +349,7 @@ export class GeminiProxyService {
       logger.log(`[gemini-proxy] Mapped model ${model} to API model: ${apiModel}`, 'gemini');
       
       // Определяем правильную версию API для модели
-      const { baseUrl, isVertexAI } = await this.getApiVersionForModel(apiModel, effectiveKey);
+      const { baseUrl } = await this.getApiVersionForModel(apiModel, effectiveKey);
       
       // Все запросы теперь идут через Vertex AI или Google AI Studio
       const url = typeof baseUrl === 'string' ? baseUrl : `${baseUrl}`;
@@ -411,7 +375,7 @@ export class GeminiProxyService {
       };
       
       // Отправляем запрос
-      const response = await this.sendRequest(url, requestData, isVertexAI);
+      const response = await this.sendRequest(url, requestData);
       
       // Обрабатываем ответ
       if (response.candidates && response.candidates.length > 0 && 
@@ -451,7 +415,7 @@ export class GeminiProxyService {
 
 // Создаем глобальный экземпляр сервиса - теперь используем только Vertex AI без API ключей
 export const geminiProxyService = new GeminiProxyService({ 
-  apiKey: 'vertex-ai-only' // Заглушка, фактически не используется
+  apiKey: '' // Заглушка, фактически не используется
 });
 
 // Безопасная инициализация без логирования ключей

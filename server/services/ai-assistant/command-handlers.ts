@@ -1,5 +1,5 @@
 import { AIAssistantRequest, AIAssistantResponse } from './types';
-import { geminiVertexDirect } from '../gemini-vertex-direct';
+import { geminiDirect } from '../gemini-direct';
 import { CampaignDataService } from '../campaign-data';
 import { directusCrud } from '../directus-crud';
 import { falAiUniversalService, FalAiModelName } from '../fal-ai-universal';
@@ -86,7 +86,7 @@ export async function generatePostTitle(topic: string, postNumber: number, conte
 
 Ответ — ТОЛЬКО заголовок, одна строка.`;
 
-    const generatedTitle = await geminiVertexDirect.generateContent({ 
+    const generatedTitle = await geminiDirect.generateContent({ 
       prompt: titlePrompt,
       model: 'gemini-2.0-flash'
     });
@@ -334,7 +334,7 @@ export async function handleCreatePostsFromQuestionnaire(request: AIAssistantReq
 Затем пустая строка, затем текст поста.`;
       }
 
-      const rawContent = await geminiVertexDirect.generateContent({ 
+      const rawContent = await geminiDirect.generateContent({ 
         prompt: postPrompt,
         model: 'gemini-3-pro-preview'
       });
@@ -645,7 +645,7 @@ ${campaignContext ? `Контекст кампании: ${campaignContext}` : ''
 Общая идея серии: [общая концепция и цель]
 `;
 
-        seriesPlan = await geminiVertexDirect.generateContent({ 
+        seriesPlan = await geminiDirect.generateContent({ 
           prompt: planPrompt,
           model: 'gemini-3-pro-preview'
         });
@@ -736,7 +736,7 @@ ${campaignContext ? `Контекст компании: ${campaignContext}` : ''
 `;
         }
 
-        const rawContent = await geminiVertexDirect.generateContent({ 
+        const rawContent = await geminiDirect.generateContent({ 
           prompt: postPrompt,
           model: 'gemini-3-pro-preview'
         });
@@ -1115,7 +1115,7 @@ export async function generateQuestionnaireFromWebsite(websiteUrl: string, compa
 `;
 
   try {
-    const response = await geminiVertexDirect.generateContent({ 
+    const response = await geminiDirect.generateContent({ 
       prompt,
       model: 'gemini-3-pro-preview'
     });
@@ -1165,7 +1165,7 @@ export async function handleAnalyzeCampaign(request: AIAssistantRequest, paramet
 
 Проведи анализ по критериям: эффективность, качество контента, соответствие аудитории, рекомендации.`;
 
-    const analysis = await geminiVertexDirect.generateContent({ 
+    const analysis = await geminiDirect.generateContent({ 
       prompt: analysisPrompt,
       model: 'gemini-3-pro-preview'
     });
@@ -1458,7 +1458,7 @@ ${sources.slice(0, 3).map((s: any) => `• ${s?.name || 'Без названия
 
 Дай краткую сводку по трендам и рекомендации для контента.`;
 
-    const analysis = await geminiVertexDirect.generateContent({ 
+    const analysis = await geminiDirect.generateContent({ 
       prompt: analysisPrompt,
       model: 'gemini-3-pro-preview'
     });
@@ -1675,7 +1675,7 @@ export async function handleOptimizeContent(request: AIAssistantRequest, paramet
     const optimizationPrompt = `Дай рекомендации по оптимизации контента для социальных сетей:
 Предоставь советы по улучшению текстов, визуального контента, времени публикации, вовлеченности и хештегов.`;
 
-    const recommendations = await geminiVertexDirect.generateContent({ 
+    const recommendations = await geminiDirect.generateContent({ 
       prompt: optimizationPrompt,
       model: 'gemini-3-pro-preview'
     });
@@ -1697,7 +1697,7 @@ export async function handleGetTrends(request: AIAssistantRequest, parameters: a
   try {
     const trendsPrompt = `Предоставь актуальные тренды в социальных сетях: популярные темы, форматы контента, актуальные челленджи и рекомендации по их использованию.`;
 
-    const trends = await geminiVertexDirect.generateContent({ 
+    const trends = await geminiDirect.generateContent({ 
       prompt: trendsPrompt,
       model: 'gemini-3-pro-preview'
     });
@@ -1719,7 +1719,7 @@ export async function handleAnalyzeCompetitors(request: AIAssistantRequest, para
   try {
     const competitorPrompt = `Проведи анализ стратегий конкурентов, их сильных и слабых сторон, возможностей для дифференциации и рекомендации по контент-стратегии.`;
 
-    const analysis = await geminiVertexDirect.generateContent({ 
+    const analysis = await geminiDirect.generateContent({ 
       prompt: competitorPrompt,
       model: 'gemini-3-pro-preview'
     });
@@ -1852,7 +1852,7 @@ ${contextPrompt}
 
     console.log(`[AI-ASSISTANT] Генерируем ключевые слова с умным промптом`);
     
-    const keywordsText = await geminiVertexDirect.generateContent({ 
+    const keywordsText = await geminiDirect.generateContent({ 
       prompt: intelligentPrompt,
       model: 'gemini-3-pro-preview'
     });
@@ -1933,7 +1933,7 @@ export async function handleScheduleOptimalTime(request: AIAssistantRequest, par
     const timePrompt = `Определи оптимальное время для публикации контента на платформах: ${platforms.join(', ')}.
 Учитывай активность аудитории, специфику платформ и часовой пояс МСК.`;
 
-    const schedule = await geminiVertexDirect.generateContent({ 
+    const schedule = await geminiDirect.generateContent({ 
       prompt: timePrompt,
       model: 'gemini-3-pro-preview'
     });

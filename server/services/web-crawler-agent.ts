@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { geminiVertexDirect } from './gemini-vertex-direct';
+import { geminiDirect } from './gemini-direct';
 import * as logger from '../utils/logger';
 import { execSync } from 'child_process';
 import { aiService } from './ai-service';

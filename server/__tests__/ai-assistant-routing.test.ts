@@ -4,14 +4,14 @@ import { sanitizeContent, generatePostTitle } from '../services/ai-assistant/com
 import { shouldUseAutonomousAI, getActionName, getSuccessMessage } from '../services/ai-assistant/autonomous';
 import { AvailableFunction } from '../services/ai-assistant/types';
 
-// Mock geminiVertexDirect for generatePostTitle
-vi.mock('../services/gemini-vertex-direct', () => ({
-  geminiVertexDirect: {
+// Mock geminiDirect for generatePostTitle
+vi.mock('../services/gemini-direct', () => ({
+  geminiDirect: {
     generateContent: vi.fn(),
   },
 }));
 
-import { geminiVertexDirect } from '../services/gemini-vertex-direct';
+import { geminiDirect } from '../services/gemini-direct';
 
 describe('ai-assistant logic', () => {
   describe('validateAndNormalizeParameters', () => {
@@ -126,13 +126,13 @@ describe('ai-assistant logic', () => {
 
   describe('generatePostTitle', () => {
     it('should return cleaned title from AI', async () => {
-      vi.mocked(geminiVertexDirect.generateContent).mockResolvedValue('"Цепляющий Заголовок"');
+      vi.mocked(geminiDirect.generateContent).mockResolvedValue('"Цепляющий Заголовок"');
       const title = await generatePostTitle('Тема', 1, 'Контент поста');
       expect(title).toBe('Цепляющий Заголовок');
     });
 
     it('should fallback to first sentence if AI title is invalid', async () => {
-      vi.mocked(geminiVertexDirect.generateContent).mockResolvedValue('No');
+      vi.mocked(geminiDirect.generateContent).mockResolvedValue('No');
       const title = await generatePostTitle('Тема', 1, 'Это очень длинное и интересное первое предложение. Второе предложение.');
       expect(title).toBe('Это очень длинное и интересное первое предложение');
     });

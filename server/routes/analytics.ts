@@ -5,7 +5,7 @@ import { directusCrud } from '../services/directus-crud';
 import { log } from '../utils/logger';
 import { isUserAdmin } from '../routes-global-api-keys';
 import { directusAuthManager } from '../services/directus-auth-manager';
-import { geminiVertexDirect } from '../services/gemini-vertex-direct';
+import { geminiDirect } from '../services/gemini-direct';
 import { AnalyticsService } from '../services/analytics-service';
 import axios from 'axios';
 

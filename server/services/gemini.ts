@@ -1,4 +1,4 @@
-import { geminiVertexDirect } from './gemini-vertex-direct';
+import { geminiDirect } from './gemini-direct';
 import * as logger from '../utils/logger';
 
 /**
@@ -25,7 +25,7 @@ export class GeminiService {
     try {
       // Проверка API ключа
       // Тестируем через Vertex AI
-      await geminiVertexDirect.generateContent({ prompt: 'test' });
+      await geminiDirect.generateContent({ prompt: 'test' });
       return true;
     } catch (error) {
       logger.error('[gemini-service] Error testing API key:', error);
@@ -43,7 +43,7 @@ export class GeminiService {
     try {
       // Генерация текста через прокси-сервис
       
-      return await geminiVertexDirect.generateContent({ 
+      return await geminiDirect.generateContent({ 
         prompt, 
         model: modelName 
       });
@@ -69,7 +69,7 @@ export class GeminiService {
       // Используем прокси сервис для улучшения текста
       // Используем Vertex AI для улучшения текста
       const improvePrompt = `${prompt}\n\nOriginal text: ${text}`;
-      return await geminiVertexDirect.generateContent({
+      return await geminiDirect.generateContent({
         prompt: improvePrompt,
         model
       });

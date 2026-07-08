@@ -37,8 +37,8 @@ vi.mock('../services/web-crawler-agent', () => ({
   }
 }));
 
-vi.mock('../services/gemini-vertex-direct', () => ({
-  geminiVertexDirect: {
+vi.mock('../services/gemini-direct', () => ({
+  geminiDirect: {
     generateContent: vi.fn()
   }
 }));
@@ -47,7 +47,7 @@ import { TOOL_IMPLEMENTATIONS } from '../services/autonomous-ai';
 import axios from 'axios';
 import { directusCrud } from '../services/directus-crud';
 import { webCrawlerAgent } from '../services/web-crawler-agent';
-import { geminiVertexDirect } from '../services/gemini-vertex-direct';
+import { geminiDirect } from '../services/gemini-direct';
 
 describe('AutonomousAI Tool Implementations', () => {
   const mockRequest: any = {
@@ -191,7 +191,7 @@ describe('AutonomousAI Tool Implementations', () => {
 
   describe('rewriteContent', () => {
     it('should rewrite text using AI', async () => {
-      vi.mocked(geminiVertexDirect.generateContent).mockResolvedValueOnce('Shorter version');
+      vi.mocked(geminiDirect.generateContent).mockResolvedValueOnce('Shorter version');
 
       const params = { originalText: 'Long text', instructions: 'Make it shorter' };
       const result = await TOOL_IMPLEMENTATIONS.rewriteContent(params, mockRequest);

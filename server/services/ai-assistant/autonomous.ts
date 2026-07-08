@@ -1,5 +1,5 @@
 import { AIAssistantRequest, AIAssistantResponse } from './types';
-import { geminiVertexDirect } from '../gemini-vertex-direct';
+import { geminiDirect } from '../gemini-direct';
 import { directusCrud } from '../directus-crud';
 import { AutonomousAI } from '../autonomous-ai';
 import axios from 'axios';
@@ -465,7 +465,7 @@ export async function handleAutonomousCommand(request: AIAssistantRequest): Prom
 }
 `;
 
-    const planResponse = await geminiVertexDirect.generateContent({
+    const planResponse = await geminiDirect.generateContent({
       prompt: planPrompt,
       model: 'gemini-3-pro-preview'
     });
@@ -552,7 +552,7 @@ ${results.map(r => r.result.data ? JSON.stringify(r.result.data, null, 2) : 'Н�
 Создай короткое (2-3 предложения) резюме того, что было сделано и какие результаты получены.
 `;
 
-      const summaryResponse = await geminiVertexDirect.generateContent({
+      const summaryResponse = await geminiDirect.generateContent({
         prompt: summaryPrompt,
         model: 'gemini-3-pro-preview'
       });

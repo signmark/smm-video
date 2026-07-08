@@ -30,8 +30,8 @@ vi.mock('../directus-crud', () => ({
   }
 }));
 
-vi.mock('../gemini-vertex-direct', () => ({
-  geminiVertexDirect: {
+vi.mock('../gemini-direct', () => ({
+  geminiDirect: {
     generateContent: vi.fn()
   }
 }));

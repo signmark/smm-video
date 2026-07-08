@@ -1,7 +1,6 @@
 /**
- * Сервис для генерации изображений через Vertex AI Gemini Image API
- * Использует GA модель gemini-2.5-flash-image через Vertex AI endpoint
- * Поддерживает text-to-image генерацию с retry logic и географическую независимость
+ * Сервис для генерации изображений через Gemini API
+ * Работает через Cloudflare Worker прокси (GEMINI_PROXY_URL)
  */
 
 import { GoogleGenAI, Modality } from "@google/genai";
@@ -128,227 +127,56 @@ export class GeminiImageService {
   }
 
   /**
-   * Генерирует изображение через Vertex AI Gemini Image API (gemini-2.5-flash-image)
-   * Использует Vertex AI endpoint для обхода географических ограничений
+   * Генерирует изображение через Gemini API (Cloudflare Worker прокси)
    */
   async generateImage(options: GeminiImageOptions): Promise<GeminiImageResult> {
     const startTime = Date.now();
-    
+
     try {
-      console.log('[GEMINI-IMAGE] 🎨 Начинаем генерацию изображения через Vertex AI');
-      console.log('[GEMINI-IMAGE] 📝 Промт:', options.prompt);
-      console.log('[GEMINI-IMAGE] 🎭 Стиль:', options.style || 'default');
+      console.log('[GEMINI-IMAGE] Начинаем генерацию изображения через Gemini API');
+      console.log('[GEMINI-IMAGE] Промт:', options.prompt);
 
-      // Получаем Google Service Account credentials (те же что для текста)
-      const { globalApiKeysService } = await import('./global-api-keys.js');
-      const credentials = await globalApiKeysService.getGoogleServiceAccountKey();
-      
-      if (!credentials) {
-        throw new Error('Google Service Account credentials не найдены в Directus');
-      }
-
-      const projectId = credentials.project_id;
-      const clientEmail = credentials.client_email;
-      const privateKey = credentials.private_key;
-
-      console.log('[GEMINI-IMAGE] 📧 Project ID:', projectId);
-      console.log('[GEMINI-IMAGE] 📧 Client Email:', clientEmail);
-
-      // Получаем OAuth2 access token через GoogleAuth
-      const { GoogleAuth } = await import('google-auth-library');
-      const auth = new GoogleAuth({
-        credentials: credentials,
-        scopes: ['https://www.googleapis.com/auth/cloud-platform']
-      });
-
-      const client = await auth.getClient();
-      const accessTokenResponse = await client.getAccessToken();
-      const accessToken = accessTokenResponse.token;
-
-      if (!accessToken) {
-        throw new Error('Не удалось получить access token для Vertex AI');
-      }
-
-      console.log('[GEMINI-IMAGE] ✅ Access token получен для Vertex AI');
-
-      // Строим расширенный промт
-      const enhancedPrompt = this.buildEnhancedPrompt(options);
-      console.log('[GEMINI-IMAGE] 🚀 Расширенный промт:', enhancedPrompt);
-
-      // Используем GA модель gemini-2.5-flash-image через Vertex AI
-      const vertexModel = 'gemini-2.5-flash-image';
-      const vertexUrl = `https://us-central1-aiplatform.googleapis.com/v1/projects/${projectId}/locations/us-central1/publishers/google/models/${vertexModel}:generateContent`;
-
-      console.log('[GEMINI-IMAGE] 🌐 Vertex AI URL:', vertexUrl);
-
-      // Выполняем HTTP запрос к Vertex AI с retry logic и таймаутом 60 сек
-      const VERTEX_TIMEOUT_MS = 60_000;
-      const response = await this.retryWithBackoff(async () => {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), VERTEX_TIMEOUT_MS);
-
-        let res: Response;
-        try {
-          res = await fetch(vertexUrl, {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${accessToken}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              contents: [{ 
-                role: "user", 
-                parts: [{ text: enhancedPrompt }] 
-              }],
-              generationConfig: {
-                responseModalities: ["TEXT", "IMAGE"],
-                temperature: 0.8,
-                maxOutputTokens: 2048
-              }
-            }),
-            signal: controller.signal
-          });
-        } catch (fetchErr: any) {
-          if (fetchErr.name === 'AbortError') {
-            throw new Error(`Vertex AI timeout after ${VERTEX_TIMEOUT_MS / 1000}s — попробуйте ещё раз`);
-          }
-          throw fetchErr;
-        } finally {
-          clearTimeout(timeoutId);
-        }
-
-        // КРИТИЧНО: Проверяем статус и выбрасываем ошибку для retry logic
-        if (!res.ok) {
-          const errorText = await res.text();
-          console.error('[GEMINI-IMAGE] ❌ HTTP Error:', res.status, res.statusText);
-          console.error('[GEMINI-IMAGE] ❌ Error details:', errorText.substring(0, 300));
-          throw new Error(`HTTP ${res.status}: ${res.statusText} - ${errorText.substring(0, 200)}`);
-        }
-
-        return res;
-      });
-
-      console.log('[GEMINI-IMAGE] 📦 Получен успешный ответ от Gemini API');
-
-      // Парсим JSON ответ
-      const responseData = await response.json();
-      console.log('[GEMINI-IMAGE] 📋 Получен ответ от API (детали скрыты для безопасности)');
-
-      const candidates = responseData.candidates;
-      if (!candidates || candidates.length === 0) {
-        throw new Error('Нет кандидатов в ответе от Gemini API');
-      }
-
-      const content = candidates[0].content;
-      if (!content || !content.parts) {
-        throw new Error('Нет контента в ответе от Gemini API');
-      }
-
-      // Ищем изображение в ответе
-      let imageData: string | undefined;
-      let textResponse: string | undefined;
-
-      for (const part of content.parts) {
-        if (part.text) {
-          textResponse = part.text;
-          console.log('[GEMINI-IMAGE] 💬 Текстовый ответ:', part.text);
-        } else if (part.inlineData && part.inlineData.data) {
-          imageData = part.inlineData.data;
-          console.log('[GEMINI-IMAGE] 🖼️ Получены данные изображения');
-        }
-      }
-
-      if (!imageData) {
-        throw new Error('Изображение не найдено в ответе от Gemini API');
-      }
-
-      console.log('[GEMINI-IMAGE] 📤 Начинаем загрузку изображения на постоянное хранилище...');
-
-      // Загружаем изображение на Beget S3 для постоянного хранения
-      let permanentImageUrl: string | undefined = undefined;
-      try {
-        const { begetS3StorageAws } = await import('./beget-s3-storage-aws');
-        
-        // Генерируем уникальное имя файла
-        const fileName = `images/generated/gemini-${Date.now()}-${Math.random().toString(36).substring(7)}.png`;
-        
-        // Конвертируем base64 в Buffer
-        const imageBuffer = Buffer.from(imageData, 'base64');
-        
-        // Загружаем на Beget S3
-        const uploadResult = await begetS3StorageAws.uploadFile({
-          key: fileName,
-          fileData: imageBuffer,
-          contentType: 'image/png'
-        });
-        
-        if (uploadResult.success && uploadResult.url) {
-          permanentImageUrl = uploadResult.url;
-          console.log('[GEMINI-IMAGE] ✅ Изображение успешно загружено:', permanentImageUrl);
-        } else {
-          console.warn('[GEMINI-IMAGE] ⚠️ Не удалось загрузить изображение, используем base64 fallback');
-        }
-      } catch (uploadError) {
-        console.error('[GEMINI-IMAGE] ❌ Ошибка загрузки изображения:', uploadError);
-      }
-
-      const generationTime = Date.now() - startTime;
-      console.log('[GEMINI-IMAGE] ✅ Изображение сгенерировано за', generationTime, 'мс');
-
-      return {
-        success: true,
-        imageUrl: permanentImageUrl, // Постоянный URL если загрузка успешна
-        imageData: permanentImageUrl ? undefined : imageData, // base64 только как fallback
-        generationTime,
-        model: 'gemini-2.5-flash-image (Vertex AI)',
+      const urls = await this.generateImageViaRegularApi({
         prompt: options.prompt,
-        metadata: {
-          width: options.width || 1024,
-          height: options.height || 1024,
-          format: 'png'
-        }
-      };
+        numImages: 1,
+        style: options.style,
+      });
+
+      if (urls.length > 0) {
+        const generationTime = Date.now() - startTime;
+        console.log('[GEMINI-IMAGE] Изображение сгенерировано за', generationTime, 'мс');
+        return {
+          success: true,
+          imageUrl: urls[0],
+          generationTime,
+          model: 'gemini-2.5-flash-image (Cloudflare Worker)',
+          prompt: options.prompt,
+          metadata: {
+            width: options.width || 1024,
+            height: options.height || 1024,
+            format: 'png'
+          }
+        };
+      }
+
+      throw new Error('Изображение не сгенерировано');
 
     } catch (error: any) {
       const generationTime = Date.now() - startTime;
-      console.error('[GEMINI-IMAGE] ❌ Ошибка Vertex AI:', error.message);
-
-      // Fallback: billing not enabled — пробуем через обычный Gemini API (Cloudflare Worker прокси)
-      const isBillingError = error.message?.includes('billing') || error.message?.includes('403');
-      if (isBillingError) {
-        console.log('[GEMINI-IMAGE] 🔄 Billing error — fallback на обычный Gemini API через Cloudflare Worker');
-        try {
-          const urls = await this.generateImageViaRegularApi({
-            prompt: options.prompt,
-            numImages: 1,
-            style: options.style,
-          });
-          if (urls.length > 0) {
-            return {
-              success: true,
-              imageUrl: urls[0],
-              generationTime: Date.now() - startTime,
-              model: 'gemini-2.5-flash-image (Cloudflare Worker)',
-              prompt: options.prompt,
-            };
-          }
-        } catch (fallbackErr: any) {
-          console.error('[GEMINI-IMAGE] ❌ Fallback тоже не удался:', fallbackErr.message);
-        }
-      }
+      console.error('[GEMINI-IMAGE] Ошибка генерации:', error.message);
 
       return {
         success: false,
         error: error.message || 'Неизвестная ошибка при генерации изображения',
         generationTime,
-        model: 'gemini-2.5-flash-image (Vertex AI)',
+        model: 'gemini-2.5-flash-image',
         prompt: options.prompt
       };
     }
   }
 
   /**
-   * Генерирует изображение через обычный Gemini API (не Vertex AI),
+   * Генерирует изображение через обычный Gemini API (Cloudflare Worker прокси),
    * с поддержкой Cloudflare Worker прокси (GEMINI_PROXY_URL).
    * Возвращает массив постоянных URL (через Beget S3).
    */
@@ -475,7 +303,7 @@ export class GeminiImageService {
    */
   getCapabilities() {
     return {
-      provider: 'Gemini Vertex AI',
+      provider: 'Gemini (Cloudflare Worker)',
       model: 'gemini-2.5-flash-image',
       features: [
         'Text-to-image generation',

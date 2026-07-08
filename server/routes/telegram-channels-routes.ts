@@ -293,18 +293,21 @@ export function registerTelegramChannelsRoutes(app: Express) {
 
 Верни ТОЛЬКО название категории на английском (одно слово). Ничего больше.`;
 
-          const { GoogleAuth } = await import('google-auth-library');
-          const auth = new GoogleAuth({
-            credentials: credentials,
-            scopes: ['https://www.googleapis.com/auth/cloud-platform'],
-          });
+          // Вызываем Gemini API через Cloudflare Worker прокси
+          let geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_API_KEY || ''}`;
+          const workerProxy = process.env.GEMINI_PROXY_URL;
+          if (workerProxy) {
+            try {
+              const proxyUrl = new URL(workerProxy);
+              const originalUrl = new URL(geminiUrl);
+              originalUrl.host = proxyUrl.host;
+              originalUrl.protocol = proxyUrl.protocol;
+              geminiUrl = originalUrl.toString();
+            } catch { /* ignore */ }
+          }
 
-          const accessToken = await auth.getAccessToken();
-          const projectId = credentials.project_id;
-
-          // Вызываем Gemini API
           const geminiResponse = await axios.post(
-            `https://aiplatform.googleapis.com/v1/projects/${projectId}/locations/global/publishers/google/models/gemini-3-flash-preview:generateContent`,
+            geminiUrl,
             {
               contents: [{
                 role: 'user',
@@ -316,10 +319,7 @@ export function registerTelegramChannelsRoutes(app: Express) {
               }
             },
             {
-              headers: {
-                'Authorization': `Bearer ${accessToken}`,
-                'Content-Type': 'application/json',
-              },
+              headers: { 'Content-Type': 'application/json' },
             }
           );
 

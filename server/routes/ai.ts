@@ -4,7 +4,7 @@ import { storage } from '../storage';
 import { log } from '../utils/logger';
 import { directusApi } from '../directus';
 import { deepseekService, DeepSeekMessage } from '../services/deepseek';
-import { geminiVertexDirect } from '../services/gemini-vertex-direct';
+import { geminiDirect } from '../services/gemini-direct';
 import { GeminiImageService } from '../services/gemini-image';
 import { aiService } from '../services/ai-service';
 import { globalApiKeysService } from '../services/global-api-keys';
@@ -353,7 +353,7 @@ export function registerAiRoutes(app: Express) {
       const { text } = req.body;
       if (!text?.trim()) return res.json({ success: true, translatedText: text || '' });
 
-      const translatedText = await geminiVertexDirect.generateContent({
+      const translatedText = await geminiDirect.generateContent({
         prompt: `Translate the following text to English. Return ONLY the translated text, no explanations, no quotes, no extra text:\n\n${text}`
       });
 

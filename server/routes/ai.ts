@@ -146,16 +146,17 @@ export function registerAiRoutes(app: Express) {
   // Генерация изображений Fal.ai
   app.post('/api/generate-image', authenticateUser, async (req, res) => {
     try {
-      const { 
-        prompt, 
-        model: modelField, 
+      const locale = req.headers['x-locale'] as string || 'ru';
+      const {
+        prompt,
+        model: modelField,
         modelName,
-        imageSize, 
-        translatePrompt, 
-        numImages, 
-        width, 
-        height, 
-        negativePrompt, 
+        imageSize,
+        translatePrompt,
+        numImages,
+        width,
+        height,
+        negativePrompt,
         stylePreset,
         imageUrls, // для редактирования (nano-banana-pro/edit)
         quality,   // для gpt-image-1: 'low' | 'medium' | 'high'
@@ -237,6 +238,7 @@ export function registerAiRoutes(app: Express) {
           size: resolvedSize,
           quality: (quality as any) || 'medium',
           outputFormat: 'png',
+          locale,
         });
         if (!gptResult.success || gptResult.imageUrls.length === 0) {
           throw new Error(gptResult.error || 'Не удалось сгенерировать изображение через OpenAI');
@@ -336,14 +338,17 @@ export function registerAiRoutes(app: Express) {
       return res.json({ success: true, images: result, ...usageInfo });
     } catch (error: any) {
       console.error('[API] Ошибка генерации изображения:', error);
+      const { localizedError, classifyOpenaiError, classifyGeminiError } = await import('../utils/locale-errors');
+      const locale = req.headers['x-locale'] as string || 'ru';
       const msg: string = error.message || '';
       if (msg.toLowerCase().includes('timeout') || msg.includes('AbortError')) {
-        return res.status(504).json({ error: 'Превышен таймаут генерации изображения. Попробуйте ещё раз или уменьшите количество изображений.' });
+        return res.status(504).json({ error: localizedError('timeout', locale) });
       }
       if (msg.includes('429') || msg.toLowerCase().includes('quota')) {
-        return res.status(429).json({ error: 'Превышен лимит запросов к Gemini API. Попробуйте позже или выберите другую модель (Flux/Schnell).' });
+        return res.status(429).json({ error: localizedError('openai_quota', locale) });
       }
-      res.status(500).json({ error: msg });
+      const errorKey = classifyOpenaiError(msg) || classifyGeminiError(msg);
+      res.status(500).json({ error: errorKey !== 'generic' ? localizedError(errorKey, locale) : msg });
     }
   });
 

@@ -12,6 +12,7 @@ export interface GptImageOptions {
   quality?: 'low' | 'medium' | 'high' | 'auto';
   background?: 'transparent' | 'opaque' | 'auto';
   outputFormat?: 'png' | 'jpeg' | 'webp';
+  locale?: string;            // ru, en, es
 }
 
 export interface GptImageResult {
@@ -94,11 +95,16 @@ export async function generateWithGptImage(options: GptImageOptions): Promise<Gp
 
     return { success: true, imageUrls: filtered };
   } catch (err: any) {
-    const detail =
+    const raw =
       err.response?.data?.error?.message ||
       err.message ||
-      'Неизвестная ошибка OpenAI';
-    console.error('[openai-image] ❌ Ошибка:', detail);
-    return { success: false, imageUrls: [], error: detail };
+      'Unknown OpenAI error';
+    console.error('[openai-image] ❌ Ошибка:', raw);
+
+    const { classifyOpenaiError, localizedError } = await import('../utils/locale-errors');
+    const errorKey = classifyOpenaiError(raw);
+    const locale = options.locale || 'ru';
+
+    return { success: false, imageUrls: [], error: localizedError(errorKey, locale) };
   }
 }

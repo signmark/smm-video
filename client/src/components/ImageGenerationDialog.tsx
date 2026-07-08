@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { useTranslation } from "react-i18next";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Checkbox } from "@/components/ui/checkbox";
 import { 
@@ -133,6 +134,7 @@ export function ImageGenerationDialog({
   onImageGenerated,
   onClose
 }: ImageGenerationDialogProps) {
+  const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<string>("prompt");
 
   const { data: imageGenUsage } = useQuery<{
@@ -663,23 +665,23 @@ export function ImageGenerationDialog({
       }
     },
     onError: (error: unknown) => {
-      console.error('Ошибка при генерации изображения:', error);
+      console.error('Image generation error:', error);
       const axiosError = error as any;
       const serverMsg = axiosError?.response?.data?.error;
       const statusCode = axiosError?.response?.status;
       let errorMessage: string;
       if (serverMsg) {
-        errorMessage = serverMsg;
+        errorMessage = serverMsg; // Уже локализован на бэкенде
       } else if (statusCode === 429) {
-        errorMessage = "Превышен лимит запросов к сервису генерации. Попробуйте позже или выберите другую модель (Flux / Schnell).";
+        errorMessage = t('errors.rateLimit', 'Превышен лимит запросов. Попробуйте позже или выберите другую модель.');
       } else if (statusCode === 400 && (String(axiosError?.response?.data?.error || '')).includes('paid')) {
-        errorMessage = "Генерация изображений доступна только на платном плане. Выберите модель Flux или Schnell.";
+        errorMessage = t('errors.paidOnly', 'Генерация изображений доступна только на платном плане. Выберите модель Flux или Schnell.');
       } else {
-        errorMessage = error instanceof Error ? error.message : "Произошла ошибка при генерации изображения";
+        errorMessage = error instanceof Error ? error.message : t('errors.generationFailed', 'Произошла ошибка при генерации изображения');
       }
       toast({
         variant: "destructive",
-        title: "Ошибка генерации",
+        title: t('errors.generationError', 'Ошибка генерации'),
         description: errorMessage
       });
     }

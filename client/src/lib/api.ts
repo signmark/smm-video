@@ -144,9 +144,11 @@ api.interceptors.response.use(
   }
 );
 
-// Добавляем интерцептор для включения токена в заголовок Authorization
+// Добавляем интерцептор для включения токена и локали в заголовки
 api.interceptors.request.use(config => {
   const token = localStorage.getItem('auth_token');
+  const locale = localStorage.getItem('language') || 'ru';
+  config.headers['x-locale'] = locale;
   const userId = localStorage.getItem('user_id');
   
   if (token) {

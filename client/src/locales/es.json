@@ -543,7 +543,11 @@
     "unauthorized": "No autorizado",
     "forbidden": "Acceso denegado",
     "serverError": "Error del servidor",
-    "validationError": "Error de validación"
+    "validationError": "Error de validación",
+    "generationError": "Error de generación",
+    "generationFailed": "Ocurrió un error durante la generación de imágenes",
+    "rateLimit": "Límite de velocidad excedido. Intente más tarde o elija otro modelo.",
+    "paidOnly": "La generación de imágenes solo está disponible en un plan de pago. Elija el modelo Flux o Schnell."
   },
   "messages": {
     "saved": "Guardado",

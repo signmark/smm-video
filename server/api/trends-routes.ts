@@ -497,7 +497,18 @@ export function registerTrendsRoutes(app: Express) {
 
       // Достаём посты (несколько возможных форматов вложенности)
       const result = body?.result || body;
-      const posts: any[] = result?.posts || result?.items || result?.data || body?.posts || [];
+
+      // result может быть массивом каналов (каждый со своим posts) или объектом с posts
+      let posts: any[] = [];
+      if (Array.isArray(result)) {
+        for (const item of result) {
+          if (Array.isArray(item?.posts) && item.posts.length > 0) {
+            posts.push(...item.posts);
+          }
+        }
+      } else {
+        posts = result?.posts || result?.items || result?.data || body?.posts || [];
+      }
 
       console.log(`[TG Webhook] task_id=${taskId} | status=${status || '—'} | posts=${posts.length}`);
 
@@ -556,7 +567,18 @@ export function registerTrendsRoutes(app: Express) {
       }
 
       const result = body?.result || body;
-      const posts: any[] = result?.posts || result?.items || result?.data || body?.posts || [];
+
+      // result может быть массивом групп (каждая со своим posts) или объектом с posts
+      let posts: any[] = [];
+      if (Array.isArray(result)) {
+        for (const item of result) {
+          if (Array.isArray(item?.posts) && item.posts.length > 0) {
+            posts.push(...item.posts);
+          }
+        }
+      } else {
+        posts = result?.posts || result?.items || result?.data || body?.posts || [];
+      }
 
       console.log(`[VK Webhook] task_id=${taskId} | status=${status || '—'} | posts=${posts.length}`);
 

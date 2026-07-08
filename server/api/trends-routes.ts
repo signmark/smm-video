@@ -982,12 +982,16 @@ export function registerTrendsRoutes(app: Express) {
 
       if (saved > 0) {
         try {
-          const trendRec = await directusCrud.list('campaign_trend_topics', {
-            filter: { id: { _eq: trendId } }, fields: ['id', 'comments'], limit: 1, useAdminToken: true
-          });
-          const existing = Number(trendRec?.[0]?.comments ?? 0);
-          await directusCrud.update('campaign_trend_topics', trendId, { comments: existing + saved }, { useAdminToken: true });
-          console.log(`[${label}] trend ${trendId} comments updated: ${existing} → ${existing + saved}`);
+          // Считаем реальное кол-во комментариев из БД, а не инкремент
+          const actualComments = await directusCrud.list('post_comment', {
+            filter: { trent_post_id: { _eq: trendId } },
+            fields: ['id'],
+            limit: -1,
+            useAdminToken: true
+          }) as any[];
+          const actualCount = actualComments?.length ?? 0;
+          await directusCrud.update('campaign_trend_topics', trendId, { comments: actualCount }, { useAdminToken: true });
+          console.log(`[${label}] trend ${trendId} comments set to actual count: ${actualCount}`);
         } catch (upd: any) {
           console.warn(`[${label}] Failed to update trend comments count: ${upd.message}`);
         }

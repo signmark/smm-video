@@ -1557,10 +1557,13 @@ export async function handleCollectTrends(request: AIAssistantRequest, parameter
 export async function handleCreateCampaign(request: AIAssistantRequest, parameters: any): Promise<AIAssistantResponse> {
   try {
     const campaignName = parameters?.name || 'Новая кампания';
-    
-    const baseUrl = process.env.REPLIT_DEV_DOMAIN 
-      ? `https://${process.env.REPLIT_DEV_DOMAIN}` 
+    const websiteUrl = parameters?.url;
+
+    const baseUrl = process.env.REPLIT_DEV_DOMAIN
+      ? `https://${process.env.REPLIT_DEV_DOMAIN}`
       : 'http://localhost:5000';
+
+    // 1. Создаём кампанию
     const response = await fetch(`${baseUrl}/api/campaigns`, {
       method: 'POST',
       headers: {
@@ -1569,7 +1572,7 @@ export async function handleCreateCampaign(request: AIAssistantRequest, paramete
       },
       body: JSON.stringify({
         name: campaignName,
-        description: `Кампания "${campaignName}" создана через AI ассистента`
+        description: websiteUrl ? `Кампания для ${websiteUrl}` : `Кампания "${campaignName}" создана через AI ассистента`
       })
     });
 
@@ -1578,35 +1581,88 @@ export async function handleCreateCampaign(request: AIAssistantRequest, paramete
     }
 
     const campaignData = await response.json();
-    
+    const campaignId = campaignData.id;
+
+    // 2. Если указан URL — анализируем сайт, заполняем анкету и генерируем ключевые слова
+    if (websiteUrl) {
+      const authHeaders = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${request.userToken || request.authToken}`
+      };
+
+      // Анализируем сайт и заполняем анкету
+      try {
+        const analysisRes = await fetch(`${baseUrl}/api/website-analysis`, {
+          method: 'POST',
+          headers: authHeaders,
+          body: JSON.stringify({ campaignId, url: websiteUrl })
+        });
+        if (analysisRes.ok) {
+          console.log(`[AI-ASSISTANT] Сайт ${websiteUrl} проанализирован, анкета заполнена`);
+        }
+      } catch (e: any) {
+        console.warn(`[AI-ASSISTANT] Анализ сайта не удался: ${e.message}`);
+      }
+
+      // Генерируем ключевые слова
+      try {
+        const kwRes = await fetch(`${baseUrl}/api/keywords/analyze-website`, {
+          method: 'POST',
+          headers: authHeaders,
+          body: JSON.stringify({ campaignId, url: websiteUrl })
+        });
+        if (kwRes.ok) {
+          console.log(`[AI-ASSISTANT] Ключевые слова для ${websiteUrl} сгенерированы`);
+        }
+      } catch (e: any) {
+        console.warn(`[AI-ASSISTANT] Генерация ключевых слов не удалась: ${e.message}`);
+      }
+    }
+
     return {
-      response: `✅ **Кампания успешно создана!**
+      response: websiteUrl
+        ? `✅ **Кампания создана по сайту!**
+
+🌐 **Сайт:** ${websiteUrl}
+🎯 **Название:** ${campaignName}
+📊 **ID:** ${campaignId}
+
+**Что уже сделано:**
+• Бизнес-анкета заполнена автоматически на основе анализа сайта
+• Ключевые слова сгенерированы
+
+**Что можно сделать дальше:**
+• Проверить анкету: "покажи анкету"
+• Найти источники: "найди TG каналы"
+• Собрать тренды: "собери тренды"
+• Создать контент: "создай посты"
+
+Кампания готова к работе! 🚀`
+        : `✅ **Кампания успешно создана!**
 
 🎯 **Название:** ${campaignName}
-📊 **ID:** ${campaignData.id}
+📊 **ID:** ${campaignId}
 
 **📋 Что можно сделать дальше:**
 • Заполнить бизнес-анкету: "заполни анкету"
 • Создать контент: "создай 5 постов про ${campaignName}"
 • Настроить соцсети: "настрой соцсети"
-• Получить аналитику: "покажи аналитику"
 
 Кампания готова к работе! 🚀`,
       success: true,
-      action: `Создана кампания "${campaignName}"`,
+      action: `Создана кампания "${campaignName}"${websiteUrl ? ` для ${websiteUrl}` : ''}`,
       data: { campaign: campaignData }
     };
   } catch (error) {
     console.error('[AI-ASSISTANT] Ошибка создания кампании:', error);
     return {
-      response: `❌ Не удалось создать кампанию "${parameters?.name || 'Новая кампания'}". 
+      response: `❌ Не удалось создать кампанию "${parameters?.name || 'Новая кампания'}".
 
 **Возможные причины:**
 • Проблемы с авторизацией
 • Ошибка сервера
-• Недостаточно прав доступа
 
-Попробуйте еще раз или создайте кампанию вручную в интерфейсе.`,
+Попробуйте еще раз или создайте кампанию вручную.`,
       success: false
     };
   }

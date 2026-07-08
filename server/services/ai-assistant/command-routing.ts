@@ -346,7 +346,8 @@ export async function analyzeCommand(message: string): Promise<CommandAnalysis> 
     "count": число_постов_если_указано,
     "platforms": ["платформы_если_указаны"],
     "generateImages": true/false,
-    "scheduleTime": "время_если_указано"
+    "scheduleTime": "время_если_указано",
+    "url": "URL_сайта_если_указан"
   }
 }
 `;
@@ -373,12 +374,17 @@ export function fallbackAnalyzeCommand(message: string): CommandAnalysis {
     const nameMatch = lowerMessage.match(/(?:с названием|названием|name)\s*["']?([^"']+)["']?/i) ||
                      lowerMessage.match(/кампанию\s*["']?([^"']+)["']?/i);
     const campaignName = nameMatch ? nameMatch[1].trim() : 'Новая кампания';
-    
+
+    // Извлекаем URL если есть
+    const urlMatch = lowerMessage.match(/(https?:\/\/[^\s]+)/i);
+    const url = urlMatch ? urlMatch[1] : undefined;
+
     return {
       intent: 'create_campaign',
       confidence: 0.8,
       parameters: {
-        name: campaignName
+        name: campaignName,
+        url
       }
     };
   }

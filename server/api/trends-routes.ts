@@ -148,6 +148,7 @@ async function callScraperRetry(
         minMembers: body.min_members,
         maxGroups: body.limit,
         createdAt: Date.now(),
+        isAiRetry: true,
       });
       console.log(`[TG AI Retry] 📝 Зарегистрирована задача ${tid} для кампании ${campaignId}`);
     }
@@ -676,8 +677,8 @@ export function registerTrendsRoutes(app: Express) {
         pendingTgFindGroupsTasks.delete(String(taskId));
       }
 
-      // Если каналов 0 — генерируем альтернативные запросы через ИИ и повторяем поиск
-      if (channels.length === 0 && task?.keywords?.length > 0 && campaignId) {
+      // Если каналов 0 — генерируем альтернативные запросы через ИИ и повторяем поиск (только для НЕ retry задач)
+      if (channels.length === 0 && task?.keywords?.length > 0 && campaignId && !task?.isAiRetry) {
         console.log(`[TG FindGroups Webhook] 🔄 0 каналов — генерирую альтернативные запросы через ИИ`);
         try {
           const altQueries = await generateAIAlternativeQueries(task.keywords, 'telegram');
@@ -762,8 +763,8 @@ export function registerTrendsRoutes(app: Express) {
         pendingVkFindGroupsTasks.delete(String(taskId));
       }
 
-      // Если групп 0 — генерируем альтернативные запросы через ИИ и повторяем поиск
-      if (groups.length === 0 && task?.keywords?.length > 0 && campaignId) {
+      // Если групп 0 — генерируем альтернативные запросы через ИИ и повторяем поиск (только для НЕ retry задач)
+      if (groups.length === 0 && task?.keywords?.length > 0 && campaignId && !task?.isAiRetry) {
         console.log(`[VK FindGroups Webhook] 🔄 0 групп — генерирую альтернативные запросы через ИИ`);
         try {
           const altQueries = await generateAIAlternativeQueries(task.keywords, 'vk');
@@ -798,7 +799,7 @@ export function registerTrendsRoutes(app: Express) {
             for (const tid of retryTaskIds) {
               pendingVkFindGroupsTasks.set(String(tid), {
                 campaignId, keywords: altQueries, minMembers: task.minMembers,
-                maxGroups: task.maxGroups, createdAt: Date.now(),
+                maxGroups: task.maxGroups, createdAt: Date.now(), isAiRetry: true,
               });
               console.log(`[VK AI Retry] 📝 Зарегистрирована задача ${tid}`);
             }

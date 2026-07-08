@@ -9,9 +9,10 @@ interface SourceCollectionDialogProps {
   isOpen: boolean;
   onClose: () => void;
   campaignId: string;
+  onCollect?: () => void;
 }
 
-export function SourceCollectionDialog({ isOpen, onClose, campaignId }: SourceCollectionDialogProps) {
+export function SourceCollectionDialog({ isOpen, onClose, campaignId, onCollect }: SourceCollectionDialogProps) {
   const { toast } = useToast();
   const [selectedPlatforms, setSelectedPlatforms] = useState({
     instagram: true,
@@ -83,6 +84,7 @@ export function SourceCollectionDialog({ isOpen, onClose, campaignId }: SourceCo
         description: "Новые источники будут добавлены автоматически",
       });
 
+      onCollect?.();
       onClose();
     } catch (error) {
       toast({

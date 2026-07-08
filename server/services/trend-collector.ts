@@ -35,6 +35,7 @@ export interface PendingFindGroupsTask {
   minMembers: number;
   maxGroups: number;
   createdAt: number;
+  isAiRetry?: boolean;
 }
 export const pendingTgFindGroupsTasks = new Map<string, PendingFindGroupsTask>();
 export const pendingVkFindGroupsTasks = new Map<string, PendingFindGroupsTask>();

@@ -399,6 +399,7 @@ export default function Trends() {
   const [selectedSourcesForComments, setSelectedSourcesForComments] = useState<Set<string>>(new Set());
   const [isCollectingBulkComments, setIsCollectingBulkComments] = useState(false);
   const [isCollectingTrendComments, setIsCollectingTrendComments] = useState(false);
+  const [sourcesPollingFast, setSourcesPollingFast] = useState(false);
 
   // Состояние для выбора трендов для массового сбора комментариев
   const [selectedTrendsForComments, setSelectedTrendsForComments] = useState<Set<string>>(new Set());
@@ -445,7 +446,7 @@ export default function Trends() {
       }
     },
     enabled: !!selectedCampaignId,
-    refetchInterval: 30000,
+    refetchInterval: sourcesPollingFast ? 5000 : 30000,
     retry: 1
   });
 
@@ -1301,6 +1302,9 @@ export default function Trends() {
       queryClient.invalidateQueries({ queryKey: ["trends", selectedPeriod, selectedCampaignId] });
       if (collectSources) {
         queryClient.invalidateQueries({ queryKey: ["campaign_content_sources"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/proxy/sources", selectedCampaignId] });
+        // Keep fast polling for 2 minutes while webhook saves sources
+        setTimeout(() => setSourcesPollingFast(false), 120000);
       }
 
       // Если запущен сбор комментариев
@@ -3494,6 +3498,10 @@ export default function Trends() {
         isOpen={isSourceCollectionDialogOpen}
         onClose={() => setIsSourceCollectionDialogOpen(false)}
         campaignId={selectedCampaignId || ''}
+        onCollect={() => {
+          setSourcesPollingFast(true);
+          setTimeout(() => setSourcesPollingFast(false), 120000);
+        }}
       />
 
       {/* Диалог поиска источников */}
@@ -3518,6 +3526,9 @@ export default function Trends() {
         onClose={() => setIsSocialNetworkDialogOpen(false)}
         onConfirm={(platforms, collectSources, collectComments) => {
           setIsSocialNetworkDialogOpen(false);
+          if (collectSources) {
+            setSourcesPollingFast(true);
+          }
           collectTrendsWithPlatforms({ platforms, collectSources, collectComments });
         }}
         isLoading={isCollecting}

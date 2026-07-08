@@ -917,12 +917,12 @@ export function ImageGenerationDialog({
               <Input
                 type="number"
                 min={1}
-                max={6}
+                max={3}
                 value={numImages}
-                onChange={(e) => setNumImages(Math.max(1, Math.min(6, parseInt(e.target.value) || 1)))}
+                onChange={(e) => setNumImages(Math.max(1, Math.min(3, parseInt(e.target.value) || 1)))}
                 className="w-16 h-8 text-sm"
               />
-              <span className="text-xs text-muted-foreground">(от 1 до 6)</span>
+              <span className="text-xs text-muted-foreground">(от 1 до 3)</span>
             </div>
           </div>
           
@@ -976,12 +976,12 @@ export function ImageGenerationDialog({
               <Input
                 type="number"
                 min={1}
-                max={6}
+                max={3}
                 value={numImages}
-                onChange={(e) => setNumImages(Math.max(1, Math.min(6, parseInt(e.target.value) || 1)))}
+                onChange={(e) => setNumImages(Math.max(1, Math.min(3, parseInt(e.target.value) || 1)))}
                 className="w-16 h-8 text-sm"
               />
-              <span className="text-xs text-muted-foreground">(от 1 до 6)</span>
+              <span className="text-xs text-muted-foreground">(от 1 до 3)</span>
             </div>
           </div>
           

@@ -131,13 +131,13 @@ export default function PlatformSelector({
           }
           
           const platformComponent = (
-            <div 
+            <div
               key={platform.id}
               className={`flex items-center gap-2 p-3 border rounded-md ${
-                isDisabled 
-                  ? 'border-muted bg-muted/30 opacity-50' 
-                  : isSelected 
-                    ? 'border-primary bg-primary/5' 
+                isDisabled
+                  ? 'border-destructive/30 bg-destructive/5'
+                  : isSelected
+                    ? 'border-primary bg-primary/5'
                     : 'border-input'
               }`}
             >
@@ -151,29 +151,20 @@ export default function PlatformSelector({
                   }
                 }}
               />
-              <Label 
-                htmlFor={`platform-${platform.id}`}
-                className={`flex items-center gap-2 ${isDisabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
-              >
-                <platform.icon className={`h-5 w-5 ${platform.color}`} />
-                <span>{platform.name}</span>
-              </Label>
+              <div className="flex flex-col">
+                <Label
+                  htmlFor={`platform-${platform.id}`}
+                  className={`flex items-center gap-2 ${isDisabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                >
+                  <platform.icon className={`h-5 w-5 ${platform.color}`} />
+                  <span>{platform.name}</span>
+                </Label>
+                {isDisabled && tooltipMessage && (
+                  <span className="text-xs text-destructive mt-0.5 ml-7">{tooltipMessage}</span>
+                )}
+              </div>
             </div>
           );
-
-          // Wrap disabled platforms with tooltip
-          if (isDisabled) {
-            return (
-              <Tooltip key={platform.id}>
-                <TooltipTrigger asChild>
-                  {platformComponent}
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>{tooltipMessage}</p>
-                </TooltipContent>
-              </Tooltip>
-            );
-          }
 
           return platformComponent;
         })}

@@ -554,21 +554,32 @@ ${websiteContent.substring(0, 6000)}
       
       log(`[KEYWORDS_ANALYZE] AI returned ${keywords.length} keywords.`, 'info');
 
-      if (campaignId && keywords.length > 0 && token) {
+      if (campaignId && keywords.length > 0) {
         log(`[KEYWORDS_ANALYZE] Saving ${keywords.length} keywords for campaign ${campaignId}...`, 'info');
-        for (const kw of keywords) {
-          try {
-            await directusApi.post('/items/campaign_keywords', {
-              campaign_id: campaignId,
-              keyword: (kw.keyword || "").substring(0, 255),
-              trend_score: kw.trend || 0,
-              mentions_count: kw.competition || 0,
-              last_checked: new Date().toISOString()
-            }, {
-              headers: { 'Authorization': `Bearer ${token}` }
-            });
-          } catch (e: any) {
-            log(`[KEYWORDS_SAVE] Failed to save keyword "${kw.keyword}": ${e.message}`, 'error');
+        // Admin token для надёжности — пользовательский токен мог истечь за время AI-вызова
+        let saveToken = token;
+        try {
+          const { adminTokenManager } = await import('../services/admin-token-manager');
+          const adminToken = await adminTokenManager.getAdminToken();
+          if (adminToken) saveToken = adminToken;
+        } catch {}
+        if (!saveToken) {
+          log(`[KEYWORDS_ANALYZE] No token available for saving keywords`, 'warn');
+        } else {
+          for (const kw of keywords) {
+            try {
+              await directusApi.post('/items/campaign_keywords', {
+                campaign_id: campaignId,
+                keyword: (kw.keyword || "").substring(0, 255),
+                trend_score: kw.trend || 0,
+                mentions_count: kw.competition || 0,
+                last_checked: new Date().toISOString()
+              }, {
+                headers: { 'Authorization': `Bearer ${saveToken}` }
+              });
+            } catch (e: any) {
+              log(`[KEYWORDS_SAVE] Failed to save keyword "${kw.keyword}": ${e.message}`, 'error');
+            }
           }
         }
       }

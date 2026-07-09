@@ -139,7 +139,7 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
 
   // Загружаем полный профиль пользователя из API
   const { data: userProfile, isLoading, error } = useQuery<UserProfile>({
-    queryKey: ['/api/user/profile', userId || 'me'],
+    queryKey: ['/api/user/profile', userId || 'me', token],
     enabled: !!token,
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: true,

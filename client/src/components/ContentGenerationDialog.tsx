@@ -406,7 +406,7 @@ export function ContentGenerationDialog({ campaignId, keywords, onClose }: Conte
                   className="!border-gray-300 dark:!border-gray-600 data-[state=checked]:!bg-blue-600 data-[state=checked]:!text-white"
                 />
                 <Label htmlFor="useCampaignData" className="text-sm cursor-pointer">
-                  Использовать данные кампании (сайт, анкета)
+                  Данные компании из анкеты (название, описание, аудитория)
                 </Label>
               </div>
             </div>
@@ -430,33 +430,51 @@ export function ContentGenerationDialog({ campaignId, keywords, onClose }: Conte
               <Label className="text-right pt-2 text-sm">
                 Ключевые слова
               </Label>
-              <div className="col-span-3 grid grid-cols-2 gap-1 max-h-[150px] overflow-y-auto !border !border-gray-300 dark:!border-gray-600 rounded p-1 !bg-white dark:!bg-gray-800">
-                {keywords.length === 0 ? (
-                  <p className="text-xs text-muted-foreground col-span-2">
-                    Нет доступных ключевых слов. Добавьте их в раздел "Ключевые слова".
-                  </p>
-                ) : (
-                  // Отфильтруем ключевые слова, оставив непустые
-                  keywords
-                    .filter(kw => kw.keyword && kw.keyword.trim() !== '')
-                    .map((kw) => (
-                      <div key={kw.id} className="flex items-start space-x-1">
-                        <Checkbox
-                          id={`keyword-${kw.id}`}
-                          data-testid={`keyword-checkbox-${kw.id}`}
-                          checked={selectedKeywords.includes(kw.keyword)}
-                          onCheckedChange={() => handleKeywordToggle(kw.keyword)}
-                          className="mt-0.5 !border-gray-300 dark:!border-gray-600 data-[state=checked]:!bg-blue-600 data-[state=checked]:!text-white"
-                        />
-                        <Label
-                          htmlFor={`keyword-${kw.id}`}
-                          className="cursor-pointer text-xs"
-                        >
-                          {kw.keyword} ({kw.trendScore})
-                        </Label>
-                      </div>
-                    ))
+              <div className="col-span-3">
+                {keywords.length > 0 && (
+                  <div className="flex items-center space-x-2 mb-1">
+                    <Checkbox
+                      id="all-keywords"
+                      checked={selectedKeywords.length === keywords.filter(kw => kw.keyword?.trim()).length}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setSelectedKeywords(keywords.filter(kw => kw.keyword?.trim()).map(kw => kw.keyword));
+                        } else {
+                          setSelectedKeywords([]);
+                        }
+                      }}
+                      className="!border-gray-300 dark:!border-gray-600 data-[state=checked]:!bg-blue-600 data-[state=checked]:!text-white"
+                    />
+                    <Label htmlFor="all-keywords" className="text-xs font-medium cursor-pointer">Все ключевые слова</Label>
+                  </div>
                 )}
+                <div className="grid grid-cols-2 gap-1 max-h-[150px] overflow-y-auto !border !border-gray-300 dark:!border-gray-600 rounded p-1 !bg-white dark:!bg-gray-800">
+                  {keywords.length === 0 ? (
+                    <p className="text-xs text-muted-foreground col-span-2">
+                      Нет доступных ключевых слов. Добавьте их в раздел "Ключевые слова".
+                    </p>
+                  ) : (
+                    keywords
+                      .filter(kw => kw.keyword && kw.keyword.trim() !== '')
+                      .map((kw) => (
+                        <div key={kw.id} className="flex items-start space-x-1">
+                          <Checkbox
+                            id={`keyword-${kw.id}`}
+                            data-testid={`keyword-checkbox-${kw.id}`}
+                            checked={selectedKeywords.includes(kw.keyword)}
+                            onCheckedChange={() => handleKeywordToggle(kw.keyword)}
+                            className="mt-0.5 !border-gray-300 dark:!border-gray-600 data-[state=checked]:!bg-blue-600 data-[state=checked]:!text-white"
+                          />
+                          <Label
+                            htmlFor={`keyword-${kw.id}`}
+                            className="cursor-pointer text-xs"
+                          >
+                            {kw.keyword} ({kw.trendScore})
+                          </Label>
+                        </div>
+                      ))
+                  )}
+                </div>
               </div>
             </div>
             <div className="flex justify-end space-x-2 mt-2">

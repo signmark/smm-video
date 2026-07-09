@@ -77,18 +77,18 @@ export function registerAiRoutes(app: Express) {
   // Прямая генерация контента (DeepSeek / Gemini) - теперь через унифицированный AiService
   app.post(['/api/generate', '/api/generate-content'], authenticateUser, async (req, res) => {
     try {
-      const { prompt, keywords, tone, platform, service, model, temperature, max_tokens, systemPrompt } = req.body;
+      const { prompt, keywords, tone, platform, service, model, temperature, max_tokens, systemPrompt, campaignId, useCampaignData } = req.body;
       const userId = req.user?.id;
       const token = req.user?.token;
-      
+
       if (!userId || !token) return res.status(401).json({ error: "Не авторизован" });
 
       if (!req.user?.is_smm_admin && req.user?.expire_date && new Date(req.user.expire_date) <= new Date()) {
         return res.status(403).json({ error: 'Подписка истекла', message: 'Выберите тариф для продолжения работы.', subscriptionExpired: true });
       }
-    
-      log(`[API] Запрос на генерацию контента: service=${service}, model=${model}`, 'info');
-      
+
+      log(`[API] Запрос на генерацию контента: service=${service}, model=${model}, useCampaignData=${useCampaignData}`, 'info');
+
       const result = await aiService.generateContent({
         prompt,
         keywords,
@@ -100,7 +100,9 @@ export function registerAiRoutes(app: Express) {
         maxTokens: max_tokens,
         systemPrompt,
         userId,
-        token
+        token,
+        campaignId,
+        useCampaignData
       });
 
       // КРИТИЧНО: Логируем полный ответ перед отправкой на фронтенд

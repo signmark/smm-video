@@ -23,6 +23,8 @@ export interface GenerateContentParams {
   maxTokens?: number;
   userId?: string;
   token?: string;
+  campaignId?: string;
+  useCampaignData?: boolean;
 }
 
 export class AiService {
@@ -375,7 +377,46 @@ export class AiService {
    */
   async generateContent(params: GenerateContentParams): Promise<any> {
     const service = params.service || 'gemini';
-    log(`[AiService] generateContent: service=${service}, model=${params.model || 'none'}`, 'info');
+    log(`[AiService] generateContent: service=${service}, model=${params.model || 'none'}, useCampaignData=${params.useCampaignData}`, 'info');
+
+    // Подтягиваем данные анкеты кампании если включён чекбокс
+    if (params.useCampaignData && params.campaignId && params.token) {
+      try {
+        const { directusApiManager } = await import('../directus');
+        const directusUrl = process.env.DIRECTUS_URL;
+        const resp = await fetch(`${directusUrl}/items/business_questionnaire?filter[campaign_id][_eq]=${params.campaignId}`, {
+          headers: { 'Authorization': `Bearer ${params.token}` }
+        });
+        if (resp.ok) {
+          const data = await resp.json() as any;
+          const q = data?.data?.[0];
+          if (q) {
+            const parts: string[] = [];
+            if (q.business_name) parts.push(`Название компании: ${q.business_name}`);
+            if (q.business_description) parts.push(`Описание бизнеса: ${q.business_description}`);
+            if (q.business_goals?.length) parts.push(`Цели бизнеса: ${q.business_goals.join(', ')}`);
+            if (q.target_audience) {
+              const ta = typeof q.target_audience === 'string' ? q.target_audience : JSON.stringify(q.target_audience);
+              parts.push(`Целевая аудитория: ${ta}`);
+            }
+            if (q.competitors?.length) parts.push(`Конкуренты: ${q.competitors.join(', ')}`);
+            if (q.keywords?.length) parts.push(`Ключевые слова бизнеса: ${q.keywords.join(', ')}`);
+            if (q.tone_of_voice) parts.push(`Тон общения бренда: ${q.tone_of_voice}`);
+            if (q.content_preferences) {
+              const cp = typeof q.content_preferences === 'string' ? q.content_preferences : JSON.stringify(q.content_preferences);
+              parts.push(`Предпочтения по контенту: ${cp}`);
+            }
+            if (parts.length > 0) {
+              const campaignContext = `\n\nДАННЫЕ КАМПАНИИ (используй эту информацию вместо шаблонных плейсхолдеров типа [Ваше Имя], [Название компании] и т.д.):\n${parts.join('\n')}`;
+              params = { ...params, systemPrompt: (params.systemPrompt || '') + campaignContext };
+              log(`[AiService] Подтянута анкета кампании: ${parts.length} полей`, 'info');
+            }
+          }
+        }
+      } catch (e: any) {
+        log(`[AiService] Не удалось подтянуть анкету кампании: ${e.message}`, 'warn');
+      }
+    }
 
     const isQuotaError = (err: any) => {
       const msg: string = err?.message || '';

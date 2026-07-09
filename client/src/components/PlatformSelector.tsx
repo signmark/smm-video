@@ -129,39 +129,42 @@ export default function PlatformSelector({
           }
           
           const platformComponent = (
-            <div
-              key={platform.id}
-              className={`flex items-center gap-2 p-3 border rounded-md ${
-                isDisabled
-                  ? 'border-destructive/30 bg-destructive/5'
-                  : isSelected
-                    ? 'border-primary bg-primary/5'
-                    : 'border-input'
-              }`}
-            >
-              <Checkbox
-                id={`platform-${platform.id}`}
-                checked={isSelected}
-                disabled={isDisabled && !isSelected}
-                onCheckedChange={(checked) => {
-                  if (!isDisabled || (isDisabled && isSelected)) {
-                    onChange(platform.id, checked === true);
-                  }
-                }}
-              />
-              <div className="flex flex-col">
-                <Label
-                  htmlFor={`platform-${platform.id}`}
-                  className={`flex items-center gap-2 ${isDisabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+            <Tooltip key={platform.id}>
+              <TooltipTrigger asChild>
+                <div
+                  className={`flex items-center gap-2 p-3 border rounded-md ${
+                    isDisabled
+                      ? 'border-destructive/30 bg-destructive/5'
+                      : isSelected
+                        ? 'border-primary bg-primary/5'
+                        : 'border-input'
+                  }`}
                 >
-                  <platform.icon className={`h-5 w-5 ${platform.color}`} />
-                  <span>{platform.name}</span>
-                </Label>
-                {isDisabled && tooltipMessage && (
-                  <span className="text-xs text-destructive mt-0.5 ml-7">{tooltipMessage}</span>
-                )}
-              </div>
-            </div>
+                  <Checkbox
+                    id={`platform-${platform.id}`}
+                    checked={isSelected}
+                    disabled={isDisabled && !isSelected}
+                    onCheckedChange={(checked) => {
+                      if (!isDisabled || (isDisabled && isSelected)) {
+                        onChange(platform.id, checked === true);
+                      }
+                    }}
+                  />
+                  <Label
+                    htmlFor={`platform-${platform.id}`}
+                    className={`flex items-center gap-2 ${isDisabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                  >
+                    <platform.icon className={`h-5 w-5 ${platform.color}`} />
+                    <span>{platform.name}</span>
+                  </Label>
+                </div>
+              </TooltipTrigger>
+              {isDisabled && tooltipMessage && (
+                <TooltipContent side="bottom" className="text-xs">
+                  {tooltipMessage}
+                </TooltipContent>
+              )}
+            </Tooltip>
           );
 
           return platformComponent;

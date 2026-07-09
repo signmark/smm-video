@@ -50,3 +50,57 @@ chmod +x deploy.sh
 ```
 
 Следуйте инструкциям на экране для завершения процесса деплоя.
+
+---
+
+## Быстрая пересборка фронта (без Docker)
+
+При изменении только клиентского кода (`client/`) не нужно пересобирать весь Docker-образ (3-5 мин). Достаточно:
+
+```bash
+cd /root/smm
+git pull
+npm run build
+docker cp ./dist smm:/app/
+docker restart smm
+```
+
+Это занимает **~10 секунд** вместо 3-5 минут.
+
+**Когда нужен полный `docker compose build --no-cache smm`:**
+- Изменения в `server/` (Node.js бэкенд)
+- Изменения в `Dockerfile`
+- Изменения в `package.json` (новые зависимости)
+- Изменения в `esbuild` конфиге
+
+**Когда достаточно быстрой сборки:**
+- Изменения только в `client/src/` (React, CSS, компоненты)
+- Обновление UI без затрагивания серверной логики
+
+---
+
+## Важные находки (для других агентов/сессий)
+
+### Структура useAuth() — ловушка
+
+`useAuth()` возвращает объект из React Context. Структура `user` зависит от того, откуда данные:
+
+| Источник | `user` structure | Как читать email |
+|----------|-----------------|-----------------|
+| `/api/auth/me` (query) | `{ user: { id, email, isAdmin } }` | `user?.user?.email` |
+| После логина (setQueryData) | `{ id, email, isAdmin }` | `user?.email` |
+
+**Правильный способ** — доставать email из JWT токена (как в `Layout.tsx:54`):
+```typescript
+const token = localStorage.getItem('auth_token');
+const payload = JSON.parse(atob(token.split('.')[1]));
+const email = payload.email; // "signmark@gmail.com"
+```
+
+### Container name
+
+Контейнер называется `smm` (не `root-smm-1`):
+```bash
+docker cp ./dist smm:/app/
+docker restart smm
+```

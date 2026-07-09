@@ -312,6 +312,17 @@ export function ContentStyleSettings({ campaignId, initialStyle, onStyleUpdated 
         </div>
       )}
 
+      {getAllPostsText().length > 0 && (
+        <div className="text-xs text-muted-foreground">
+          {getAllPostsText().length.toLocaleString()} символов
+          {getAllPostsText().length > 100000 && (
+            <span className="text-amber-600 ml-2">
+              (контент будет обрезан до выборки из ~100K символов для анализа)
+            </span>
+          )}
+        </div>
+      )}
+
       <Button
         onClick={() => analyzeMutation.mutate()}
         disabled={analyzeMutation.isPending || getAllPostsText().length < 50}

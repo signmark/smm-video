@@ -880,17 +880,26 @@ ${campaignBusinessContext ? `КОНТЕКСТ БИЗНЕСА:\n${campaignBusines
         return res.status(400).json({ error: 'Минимум 50 символов текста для анализа' });
       }
 
-      if (posts.length > 50000) {
-        return res.status(400).json({ error: 'Максимум 50 000 символов' });
+      // Smart sampling: if content exceeds limit, take representative sample
+      const MAX_CHARS = 100000;
+      let sampledPosts = posts;
+      if (posts.length > MAX_CHARS) {
+        const third = Math.floor(MAX_CHARS / 3);
+        const mid = Math.floor(posts.length / 2);
+        const start = posts.slice(0, third);
+        const middle = posts.slice(mid - Math.floor(third / 2), mid + Math.floor(third / 2));
+        const end = posts.slice(-third);
+        sampledPosts = [start, middle, end].join('\n\n---\n\n');
+        log(`[ContentStyle] Контент обрезан: ${posts.length} → ${sampledPosts.length} символов (выборка начало+середина+конец)`, 'info');
       }
 
-      log(`[ContentStyle] Анализ стиля для кампании ${campaignId}, длина текста: ${posts.length}`, 'info');
+      log(`[ContentStyle] Анализ стиля для кампании ${campaignId}, длина текста: ${sampledPosts.length}`, 'info');
 
       const analysisPrompt = `Проанализируй стиль написания постов для социальных сетей.
 Опиши максимально конкретно, чтобы другой автор мог писать в таком же стиле.
 
 ПОСТЫ ДЛЯ АНАЛИЗА:
-${posts}
+${sampledPosts}
 
 Верни ТОЛЬКО JSON без markdown-обертки (без \`\`\`json):
 {

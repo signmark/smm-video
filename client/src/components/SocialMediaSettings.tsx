@@ -213,6 +213,7 @@ export function SocialMediaSettings({
   const [vkShowManual, setVkShowManual] = useState(false);
   const vkPollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const vkPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const vkGroupsFetchedRef = useRef(false);
 
   // Состояние для инлайн-переподключения VK (PKCE popup)
   const [isVkReconnecting, setIsVkReconnecting] = useState(false);
@@ -389,6 +390,7 @@ export function SocialMediaSettings({
       form.setValue('vk.groupName', groupName);
       await loadVkSettings();
       setVkGroups([]);
+      vkGroupsFetchedRef.current = false;
 
       toast({ title: "Группа выбрана", description: `Выбрана группа: ${groupName}` });
       console.log('✅ VK Group Select: Group saved with full settings');
@@ -591,6 +593,11 @@ export function SocialMediaSettings({
 
         
         if (data.success && data.settings) {
+          // Сброс guard если токен изменился (переподключение VK)
+          const oldToken = form.getValues('vk.token');
+          if (data.settings.token && data.settings.token !== oldToken) {
+            vkGroupsFetchedRef.current = false;
+          }
           setVkSettings(data.settings);
           
           // Обновляем поля формы с полученными данными
@@ -645,7 +652,8 @@ export function SocialMediaSettings({
             if (d2.settings.groupId) {
               form.setValue('vk.groupId', d2.settings.groupId);
               toast({ title: "VK переподключён", description: "Группа сохранена, публикации возобновлены." });
-            } else {
+            } else if (!vkGroupsFetchedRef.current) {
+              vkGroupsFetchedRef.current = true;
               fetchVkGroups();
               toast({ title: "VK переподключён", description: "Выберите группу для публикации." });
             }
@@ -700,7 +708,8 @@ export function SocialMediaSettings({
             form.setValue('vk.token', d2.settings.token);
             if (d2.settings.groupId) {
               form.setValue('vk.groupId', d2.settings.groupId);
-            } else {
+            } else if (!vkGroupsFetchedRef.current) {
+              vkGroupsFetchedRef.current = true;
               fetchVkGroups();
             }
           }
@@ -715,7 +724,7 @@ export function SocialMediaSettings({
       }
       vkPollTimeoutRef.current = null;
     }, 5 * 60 * 1000);
-  }, [campaignId, vkPolling, form, fetchVkGroups]);
+  }, [campaignId, form, fetchVkGroups]);
 
   const stopVkPolling = useCallback(() => {
     if (vkPollRef.current) {

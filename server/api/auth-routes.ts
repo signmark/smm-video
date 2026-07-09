@@ -558,16 +558,16 @@ export function registerAuthRoutes(app: Express): void {
         throw new Error('Invalid token payload');
       }
       
-      const response = { 
-        data: { 
-          data: { 
-            id: payload.id, 
+      const response = {
+        data: {
+          data: {
+            id: payload.id,
             email: payload.email || 'unknown@email.com',
             role: payload.role,
             first_name: payload.first_name || '',
             last_name: payload.last_name || ''
-          } 
-        } 
+          }
+        }
       };
 
       const userData = response.data.data;

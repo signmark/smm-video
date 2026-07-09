@@ -71,22 +71,11 @@ export default function CampaignDetails() {
   const { user } = useAuth();
 
   // Feature flag: стиль доступен только для signmark@gmail.com
-  const { styleDebugInfo, isStyleFeatureEnabled } = (() => {
-    try {
-      const token = localStorage.getItem('auth_token');
-      if (!token) return { styleDebugInfo: 'NO_TOKEN', isStyleFeatureEnabled: false };
-      const parts = token.split('.');
-      if (parts.length < 2) return { styleDebugInfo: 'NOT_JWT: parts=' + parts.length, isStyleFeatureEnabled: false };
-      const payload = JSON.parse(atob(parts[1]));
-      const email = payload.email;
-      return {
-        styleDebugInfo: `email=${email} | match=${email === 'signmark@gmail.com'} | keys=${Object.keys(payload).join(',')}`,
-        isStyleFeatureEnabled: email === 'signmark@gmail.com',
-      };
-    } catch (e: any) {
-      return { styleDebugInfo: 'ERROR: ' + e.message, isStyleFeatureEnabled: false };
-    }
-  })();
+  const { data: userProfile } = useQuery<{ email: string }>({
+    queryKey: ['/api/user/profile', user?.id || 'me'],
+    enabled: !!user?.id,
+  });
+  const isStyleFeatureEnabled = userProfile?.email === 'signmark@gmail.com';
   const [isSearchingKeywords, setIsSearchingKeywords] = useState(false);
   const [suggestedKeywords, setSuggestedKeywords] = useState<
     SuggestedKeyword[]
@@ -1158,11 +1147,6 @@ export default function CampaignDetails() {
             </div>
           </AccordionContent>
         </AccordionItem>
-
-        {/* DEBUG BANNER - TEMPORARY */}
-        <div className="mx-6 mb-2 p-2 bg-yellow-100 border border-yellow-400 rounded text-xs font-mono">
-          STYLE DEBUG: enabled={String(isStyleFeatureEnabled)} | {styleDebugInfo}
-        </div>
 
         {isStyleFeatureEnabled && (
           <AccordionItem

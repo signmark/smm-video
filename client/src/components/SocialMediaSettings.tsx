@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -211,6 +211,7 @@ export function SocialMediaSettings({
   const [vkPolling, setVkPolling] = useState(false);
   const [vkWebhookCopied, setVkWebhookCopied] = useState(false);
   const [vkShowManual, setVkShowManual] = useState(false);
+  const vkPollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const vkPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Состояние для инлайн-переподключения VK (PKCE popup)
@@ -669,6 +670,55 @@ export function SocialMediaSettings({
     setIsVkReconnecting(false);
   };
 
+  // Запуск polling VK токена (общий для auto-start и ручного запуска)
+  const startVkPolling = useCallback(() => {
+    if (vkPollRef.current || vkPolling) return; // уже запущен
+    setVkPolling(true);
+    vkPollRef.current = setInterval(async () => {
+      try {
+        const resp = await fetch(`/api/vk/token-webhook/${campaignId}/status`);
+        const data = await resp.json();
+        if (data.ready) {
+          clearInterval(vkPollRef.current!);
+          vkPollRef.current = null;
+          setVkPolling(false);
+          if (vkPollTimeoutRef.current) {
+            clearTimeout(vkPollTimeoutRef.current);
+            vkPollTimeoutRef.current = null;
+          }
+          const resp2 = await fetch(`/api/campaigns/${campaignId}/vk-settings`, {
+            headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` }
+          });
+          const d2 = await resp2.json();
+          if (d2.settings?.token) {
+            form.setValue('vk.token', d2.settings.token);
+            fetchVkGroups();
+          }
+        }
+      } catch {}
+    }, 3000);
+    vkPollTimeoutRef.current = setTimeout(() => {
+      if (vkPollRef.current) {
+        clearInterval(vkPollRef.current);
+        vkPollRef.current = null;
+        setVkPolling(false);
+      }
+      vkPollTimeoutRef.current = null;
+    }, 5 * 60 * 1000);
+  }, [campaignId, vkPolling, form, fetchVkGroups]);
+
+  const stopVkPolling = useCallback(() => {
+    if (vkPollRef.current) {
+      clearInterval(vkPollRef.current);
+      vkPollRef.current = null;
+    }
+    if (vkPollTimeoutRef.current) {
+      clearTimeout(vkPollTimeoutRef.current);
+      vkPollTimeoutRef.current = null;
+    }
+    setVkPolling(false);
+  }, []);
+
   // Функция загрузки Instagram настроек из базы данных
   // Функция для переключения Instagram аккаунтов
   const handleSwitchInstagramAccount = async () => {
@@ -992,8 +1042,18 @@ export function SocialMediaSettings({
     return () => {
       if (vkReconnectListenerRef.current) window.removeEventListener("message", vkReconnectListenerRef.current);
       if (vkReconnectCheckRef.current) clearInterval(vkReconnectCheckRef.current);
+      if (vkPollRef.current) clearInterval(vkPollRef.current);
+      if (vkPollTimeoutRef.current) clearTimeout(vkPollTimeoutRef.current);
     };
   }, []);
+
+  // Auto-polling: запускаем poll когда инструкции needanapp видны (VK не настроен / токен невалиден / authExpired)
+  useEffect(() => {
+    const shouldShowNeedanapp = !isConfigured('vk') || vkStatus.isValid === false || vkSettings?.authExpired;
+    if (shouldShowNeedanapp && !vkPolling && !vkPollRef.current) {
+      startVkPolling();
+    }
+  }, [vkSettings, vkStatus, isConfigured, vkPolling, startVkPolling]);
 
   // Обновляем форму когда Instagram настройки загружены
   useEffect(() => {
@@ -1819,34 +1879,7 @@ export function SocialMediaSettings({
                     size="sm"
                     className="w-full"
                     data-testid="button-vk-wait-token"
-                    onClick={() => {
-                      setVkPolling(true);
-                      vkPollRef.current = setInterval(async () => {
-                        try {
-                          const resp = await fetch(`/api/vk/token-webhook/${campaignId}/status`);
-                          const data = await resp.json();
-                          if (data.ready) {
-                            clearInterval(vkPollRef.current!);
-                            setVkPolling(false);
-                            // загружаем группы
-                            const resp2 = await fetch(`/api/campaigns/${campaignId}/vk-settings`, {
-                              headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` }
-                            });
-                            const d2 = await resp2.json();
-                            if (d2.settings?.token) {
-                              form.setValue('vk.token', d2.settings.token);
-                              fetchVkGroups();
-                            }
-                          }
-                        } catch {}
-                      }, 3000);
-                      setTimeout(() => {
-                        if (vkPollRef.current) {
-                          clearInterval(vkPollRef.current);
-                          setVkPolling(false);
-                        }
-                      }, 5 * 60 * 1000);
-                    }}
+                    onClick={startVkPolling}
                   >
                     ⏳ Жду токен от needanapp
                   </Button>
@@ -1855,10 +1888,7 @@ export function SocialMediaSettings({
                     <div className="flex-1 text-center text-sm text-blue-700 dark:text-blue-300 py-2 border rounded bg-white dark:bg-gray-900 animate-pulse">
                       Ожидаю токен...
                     </div>
-                    <Button type="button" variant="outline" size="sm" onClick={() => {
-                      if (vkPollRef.current) clearInterval(vkPollRef.current);
-                      setVkPolling(false);
-                    }}>
+                    <Button type="button" variant="outline" size="sm" onClick={stopVkPolling}>
                       Отмена
                     </Button>
                   </div>

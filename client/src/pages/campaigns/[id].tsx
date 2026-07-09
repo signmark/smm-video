@@ -1145,7 +1145,7 @@ export default function CampaignDetails() {
           </AccordionContent>
         </AccordionItem>
 
-        {true && (
+        {isStyleFeatureEnabled && (
           <AccordionItem
             value="content-style"
             campaignId={id}

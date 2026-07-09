@@ -71,16 +71,8 @@ export default function CampaignDetails() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  // Достаём email из JWT токена (надёжнее чем структура useAuth)
-  let userEmail: string | null = null;
-  try {
-    const token = localStorage.getItem('auth_token');
-    if (token) {
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      userEmail = payload.email || null;
-    }
-  } catch {}
-  const isStyleFeatureEnabled = !!userEmail && STYLE_FEATURE_EMAILS.includes(userEmail);
+  // useAuth().user = { id, email, ... } — email на верхнем уровне
+  const isStyleFeatureEnabled = !!(user as any)?.email && STYLE_FEATURE_EMAILS.includes((user as any).email);
   const [isSearchingKeywords, setIsSearchingKeywords] = useState(false);
   const [suggestedKeywords, setSuggestedKeywords] = useState<
     SuggestedKeyword[]

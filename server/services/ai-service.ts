@@ -25,6 +25,7 @@ export interface GenerateContentParams {
   token?: string;
   campaignId?: string;
   useCampaignData?: boolean;
+  matchStyle?: boolean;
 }
 
 export class AiService {
@@ -415,6 +416,39 @@ export class AiService {
         }
       } catch (e: any) {
         log(`[AiService] Не удалось подтянуть анкету кампании: ${e.message}`, 'warn');
+      }
+    }
+
+    // Подтягиваем стиль контента если включён чекбокс "Соответствовать стилю"
+    if (params.matchStyle && params.campaignId && params.token) {
+      try {
+        const directusUrl = process.env.DIRECTUS_URL;
+        const resp = await fetch(`${directusUrl}/items/user_campaigns/${params.campaignId}`, {
+          headers: { 'Authorization': `Bearer ${params.token}` }
+        });
+        if (resp.ok) {
+          const data = await resp.json() as any;
+          const cs = data?.data?.content_style?.style;
+          if (cs) {
+            const parts: string[] = [];
+            if (cs.tone) parts.push(`Тон: ${cs.tone}`);
+            if (cs.vocabulary) parts.push(`Лексика: ${cs.vocabulary}`);
+            if (cs.sentenceStructure) parts.push(`Структура предложений: ${cs.sentenceStructure}`);
+            if (cs.emojiUsage) parts.push(`Эмодзи: ${cs.emojiUsage}`);
+            if (cs.formattingPatterns) parts.push(`Форматирование: ${cs.formattingPatterns}`);
+            if (cs.hashtagStyle) parts.push(`Хештеги: ${cs.hashtagStyle}`);
+            if (cs.callToAction) parts.push(`Призывы к действию: ${cs.callToAction}`);
+            if (cs.averagePostLength) parts.push(`Длина поста: ${cs.averagePostLength}`);
+            if (cs.distinctiveFeatures) parts.push(`Фирменные особенности: ${cs.distinctiveFeatures}`);
+            if (parts.length > 0) {
+              const styleContext = `\n\nСТИЛЬ КОНТЕНТА (ОБЯЗАТЕЛЬНО соблюдай этот стиль при написании):\n${parts.join('\n')}`;
+              params = { ...params, systemPrompt: (params.systemPrompt || '') + styleContext };
+              log(`[AiService] Подтянут стиль контента: ${parts.length} характеристик`, 'info');
+            }
+          }
+        }
+      } catch (e: any) {
+        log(`[AiService] Не удалось подтянуть стиль контента: ${e.message}`, 'warn');
       }
     }
 

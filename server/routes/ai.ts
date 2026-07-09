@@ -77,7 +77,7 @@ export function registerAiRoutes(app: Express) {
   // Прямая генерация контента (DeepSeek / Gemini) - теперь через унифицированный AiService
   app.post(['/api/generate', '/api/generate-content'], authenticateUser, async (req, res) => {
     try {
-      const { prompt, keywords, tone, platform, service, model, temperature, max_tokens, systemPrompt, campaignId, useCampaignData } = req.body;
+      const { prompt, keywords, tone, platform, service, model, temperature, max_tokens, systemPrompt, campaignId, useCampaignData, matchStyle } = req.body;
       const userId = req.user?.id;
       const token = req.user?.token;
 
@@ -102,7 +102,8 @@ export function registerAiRoutes(app: Express) {
         userId,
         token,
         campaignId,
-        useCampaignData
+        useCampaignData,
+        matchStyle
       });
 
       // КРИТИЧНО: Логируем полный ответ перед отправкой на фронтенд

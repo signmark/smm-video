@@ -33,6 +33,10 @@ import AutonomousSettings from "@/components/AutonomousSettings";
 import { TrendAnalysisSettings } from "@/components/TrendAnalysisSettings";
 import { ContentPlanDialog } from "@/components/ContentPlanApproval";
 import { BusinessQuestionnaireForm } from "@/components/BusinessQuestionnaireForm";
+import { ContentStyleSettings } from "@/components/ContentStyleSettings";
+
+// Feature flag: стиль контента доступен только для этих email
+const STYLE_FEATURE_EMAILS = ["signmark@gmail.com"];
 import {
   Accordion,
   AccordionContent,
@@ -67,6 +71,7 @@ export default function CampaignDetails() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
+  const isStyleFeatureEnabled = !!user?.email && STYLE_FEATURE_EMAILS.includes(user.email);
   const [isSearchingKeywords, setIsSearchingKeywords] = useState(false);
   const [suggestedKeywords, setSuggestedKeywords] = useState<
     SuggestedKeyword[]
@@ -1139,6 +1144,55 @@ export default function CampaignDetails() {
           </AccordionContent>
         </AccordionItem>
 
+        {isStyleFeatureEnabled && (
+          <AccordionItem
+            value="content-style"
+            campaignId={id}
+            className="accordion-item px-6"
+          >
+            <AccordionTrigger
+              value="content-style"
+              campaignId={id}
+              className="py-4 hover:no-underline hover:bg-accent hover:text-accent-foreground"
+            >
+              <div className="flex items-center gap-3">
+                {(campaign as any)?.content_style?.style ? (
+                  <CheckCircle className="h-5 w-5 text-green-500" />
+                ) : (
+                  <Circle className="h-5 w-5 text-gray-400" />
+                )}
+                <span>Стиль контента</span>
+                <span className="text-sm text-muted-foreground ml-auto">
+                  {(campaign as any)?.content_style?.style ? 'Настроено' : 'Не настроен'}
+                </span>
+              </div>
+            </AccordionTrigger>
+            <AccordionContent className="px-6 pt-2 pb-4">
+              <div className="space-y-4">
+                <div className="flex flex-col">
+                  <h3 className="text-xl font-semibold">
+                    Анализ стиля написания
+                  </h3>
+                  <p className="text-muted-foreground mt-1 mb-3">
+                    Загрузите ваши существующие посты, чтобы AI определил стиль написания.
+                    При генерации нового контента можно включить «Соответствовать стилю» —
+                    и AI будет писать в том же духе.
+                  </p>
+                </div>
+                <ContentStyleSettings
+                  campaignId={id!}
+                  initialStyle={(campaign as any)?.content_style}
+                  onStyleUpdated={() => {
+                    queryClient.invalidateQueries({
+                      queryKey: ["/api/proxy/campaign", id],
+                    });
+                  }}
+                />
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+        )}
+
         <AccordionItem
           value="content-generation"
           campaignId={id}
@@ -1232,6 +1286,7 @@ export default function CampaignDetails() {
             trendScore: kw.trend_score,
             campaignId: kw.campaign_id
           }))}
+          contentStyle={(campaign as any)?.content_style}
           onClose={() => {
             setIsGenerationDialogOpen(false);
             queryClient.invalidateQueries({ queryKey: ["/api/campaign-content", id] });

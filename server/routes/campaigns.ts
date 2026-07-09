@@ -864,4 +864,102 @@ ${campaignBusinessContext ? `КОНТЕКСТ БИЗНЕСА:\n${campaignBusines
 
   // GET /api/campaigns/:campaignId/instagram-settings регистрируется в routes/analytics.ts —
   // идентичная копия, которая была здесь, никогда не достигалась (Express берёт первый совпавший).
+
+  // === Content Style Analysis ===
+
+  app.post('/api/campaigns/:campaignId/analyze-style', authenticateUser, async (req: Request, res: Response) => {
+    try {
+      const { campaignId } = req.params;
+      const { posts } = req.body;
+      const userId = req.user?.id;
+      const token = req.user?.token;
+
+      if (!userId || !token) return res.status(401).json({ error: 'Не авторизован' });
+
+      if (!posts || typeof posts !== 'string' || posts.length < 50) {
+        return res.status(400).json({ error: 'Минимум 50 символов текста для анализа' });
+      }
+
+      if (posts.length > 50000) {
+        return res.status(400).json({ error: 'Максимум 50 000 символов' });
+      }
+
+      log(`[ContentStyle] Анализ стиля для кампании ${campaignId}, длина текста: ${posts.length}`, 'info');
+
+      const analysisPrompt = `Проанализируй стиль написания постов для социальных сетей.
+Опиши максимально конкретно, чтобы другой автор мог писать в таком же стиле.
+
+ПОСТЫ ДЛЯ АНАЛИЗА:
+${posts}
+
+Верни ТОЛЬКО JSON без markdown-обертки (без \`\`\`json):
+{
+  "tone": "тон и настроение постов",
+  "vocabulary": "уровень лексики, типичные слова",
+  "sentenceStructure": "длина предложений, структура абзацев",
+  "emojiUsage": "как используются эмодзи, какие именно",
+  "formattingPatterns": "как оформлен текст, переносы, списки",
+  "hashtagStyle": "хештеги: количество, язык, расположение",
+  "callToAction": "призывы к действию, вовлечение",
+  "averagePostLength": "средняя длина поста",
+  "distinctiveFeatures": "уникальные особенности, фирменный стиль"
+}
+
+Описывай на том же языке что и посты. Приводи конкретные примеры из текста.`;
+
+      const result = await aiService.generateContent({
+        prompt: analysisPrompt,
+        model: 'gemini-2.5-flash',
+        service: 'gemini',
+        userId,
+        token,
+      });
+
+      const rawContent = (result.content || '').trim();
+      let styleData: Record<string, string>;
+      try {
+        const cleaned = rawContent.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+        styleData = JSON.parse(cleaned);
+      } catch {
+        log(`[ContentStyle] AI вернул некорректный JSON: ${rawContent.substring(0, 200)}`, 'warn');
+        return res.status(500).json({ error: 'AI вернул некорректный результат, попробуйте ещё раз' });
+      }
+
+      const contentStyle = {
+        analyzedAt: new Date().toISOString(),
+        rawPostCount: (posts.split(/\n\s*\n/).filter((p: string) => p.trim()).length),
+        style: styleData,
+        samplePosts: posts.substring(0, 500),
+      };
+
+      await directusApi.patch(`/items/user_campaigns/${campaignId}`, { content_style: contentStyle }, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+
+      log(`[ContentStyle] Стиль сохранён для кампании ${campaignId}`, 'info');
+      res.json({ success: true, style: contentStyle });
+    } catch (error: any) {
+      console.error('[analyze-style] error:', error.message);
+      res.status(500).json({ error: error.message || 'Ошибка анализа стиля' });
+    }
+  });
+
+  app.delete('/api/campaigns/:campaignId/content-style', authenticateUser, async (req: Request, res: Response) => {
+    try {
+      const { campaignId } = req.params;
+      const userId = req.user?.id;
+      const token = req.user?.token;
+
+      if (!userId || !token) return res.status(401).json({ error: 'Не авторизован' });
+
+      await directusApi.patch(`/items/user_campaigns/${campaignId}`, { content_style: null }, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+
+      res.json({ success: true });
+    } catch (error: any) {
+      console.error('[delete-content-style] error:', error.message);
+      res.status(500).json({ error: error.message || 'Ошибка удаления стиля' });
+    }
+  });
 }

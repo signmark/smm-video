@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Sparkles, Save, Copy } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
@@ -67,8 +68,26 @@ export function ContentGenerationPanel({ selectedTopics, onGenerated }: ContentG
   const { toast } = useToast();
   const [prompt, setPrompt] = useState("");
   const [generatedContent, setGeneratedContent] = useState<string | null>(null);
+  const [matchStyle, setMatchStyle] = useState(false);
 
   const campaignId = selectedTopics[0]?.campaign_id || selectedTopics[0]?.campaignId;
+
+  // Подтягиваем данные кампании для проверки наличия стиля
+  const { data: campaignData } = useQuery({
+    queryKey: ["campaign-detail-style", campaignId],
+    queryFn: async () => {
+      if (!campaignId) return null;
+      const res = await fetch(`/api/campaigns/${campaignId}`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('auth_token')}` }
+      });
+      if (!res.ok) return null;
+      const data = await res.json();
+      return data.data || data || null;
+    },
+    enabled: !!campaignId,
+  });
+
+  const contentStyle = (campaignData as any)?.content_style;
 
   // Подтягиваем ключевые слова кампании
   const { data: keywordsData } = useQuery({
@@ -119,6 +138,7 @@ export function ContentGenerationPanel({ selectedTopics, onGenerated }: ContentG
           campaignId,
           platform: 'general',
           systemPrompt,
+          matchStyle,
         })
       });
 
@@ -216,6 +236,20 @@ export function ContentGenerationPanel({ selectedTopics, onGenerated }: ContentG
             className="resize-none"
           />
         </div>
+
+        {contentStyle?.style && (
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              id="matchStylePanel"
+              checked={matchStyle}
+              onCheckedChange={(checked) => setMatchStyle(checked === true)}
+              className="!border-gray-300 dark:!border-gray-600 data-[state=checked]:!bg-purple-600 data-[state=checked]:!text-white"
+            />
+            <Label htmlFor="matchStylePanel" className="text-sm cursor-pointer">
+              Соответствовать стилю ({contentStyle.rawPostCount} постов)
+            </Label>
+          </div>
+        )}
 
         <Button
           data-testid="button-generate-content"

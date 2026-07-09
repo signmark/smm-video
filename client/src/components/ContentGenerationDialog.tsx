@@ -18,16 +18,23 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import { CampaignKeyword } from "@/types";
 
+interface ContentStyle {
+  analyzedAt: string;
+  rawPostCount: number;
+  style: Record<string, string>;
+}
+
 interface ContentGenerationDialogProps {
   campaignId: string;
   keywords: CampaignKeyword[];
   onClose: () => void;
+  contentStyle?: ContentStyle | null;
 }
 
 type ApiService = 'apiservice' | 'deepseek' | 'qwen' | 'gemini-2.5-flash' | 'gemini-2.5-pro' | 'gemini-3.0-pro' | 'gemini-3.5-flash';
 
 // UPDATED: 2025-11-22 15:13 - Added Gemini 3.0 Pro
-export function ContentGenerationDialog({ campaignId, keywords, onClose }: ContentGenerationDialogProps) {
+export function ContentGenerationDialog({ campaignId, keywords, onClose, contentStyle }: ContentGenerationDialogProps) {
   const { toast } = useToast();
   const { isExpired } = usePlan();
   const [isGenerating, setIsGenerating] = useState(false);
@@ -40,6 +47,7 @@ export function ContentGenerationDialog({ campaignId, keywords, onClose }: Conte
   const [platform, setPlatform] = useState('facebook');
   const [selectedService, setSelectedService] = useState<ApiService>('gemini-3.5-flash');
   const [useCampaignData, setUseCampaignData] = useState(false);
+  const [matchStyle, setMatchStyle] = useState(false);
 
   const { mutate: generateContent, isPending } = useMutation({
     mutationFn: async () => {
@@ -79,7 +87,8 @@ export function ContentGenerationDialog({ campaignId, keywords, onClose }: Conte
           campaignId,
           platform: platform, // Используется для всех сервисов
           service: selectedService, // Указываем выбранный сервис
-          useCampaignData: useCampaignData // Использовать данные кампании
+          useCampaignData: useCampaignData, // Использовать данные кампании
+          matchStyle: matchStyle // Соответствовать стилю контента
         })
       });
 
@@ -410,6 +419,25 @@ export function ContentGenerationDialog({ campaignId, keywords, onClose }: Conte
                 </Label>
               </div>
             </div>
+
+            {contentStyle?.style && (
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label className="text-right">
+                  Стиль
+                </Label>
+                <div className="col-span-3 flex items-center space-x-2">
+                  <Checkbox
+                    id="matchStyle"
+                    checked={matchStyle}
+                    onCheckedChange={(checked) => setMatchStyle(checked === true)}
+                    className="!border-gray-300 dark:!border-gray-600 data-[state=checked]:!bg-purple-600 data-[state=checked]:!text-white"
+                  />
+                  <Label htmlFor="matchStyle" className="text-sm cursor-pointer">
+                    Соответствовать стилю ({contentStyle.rawPostCount} постов)
+                  </Label>
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="prompt" className="text-right">

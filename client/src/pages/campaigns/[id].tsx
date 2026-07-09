@@ -35,8 +35,6 @@ import { ContentPlanDialog } from "@/components/ContentPlanApproval";
 import { BusinessQuestionnaireForm } from "@/components/BusinessQuestionnaireForm";
 import { ContentStyleSettings } from "@/components/ContentStyleSettings";
 
-// Feature flag: стиль контента доступен только для этих email
-const STYLE_FEATURE_EMAILS = ["signmark@gmail.com"];
 import {
   Accordion,
   AccordionContent,
@@ -70,18 +68,9 @@ export default function CampaignDetails() {
   const [location, navigate] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { user, isLoading } = useAuth();
-  // Достаём email из JWT токена (надёжнее structure useAuth)
-  // Layout.tsx использует тот же подход — line 54
-  let featureUserEmail: string | null = null;
-  try {
-    const token = localStorage.getItem('auth_token');
-    if (token && token.includes('.')) {
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      featureUserEmail = payload.email || null;
-    }
-  } catch {}
-  const isStyleFeatureEnabled = !isLoading && !!featureUserEmail && STYLE_FEATURE_EMAILS.includes(featureUserEmail);
+  const { user } = useAuth();
+  // Feature flag: временно включён для тестирования
+  const isStyleFeatureEnabled = true;
   const [isSearchingKeywords, setIsSearchingKeywords] = useState(false);
   const [suggestedKeywords, setSuggestedKeywords] = useState<
     SuggestedKeyword[]

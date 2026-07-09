@@ -79,11 +79,10 @@ export function ContentStyleSettings({ campaignId, initialStyle, onStyleUpdated 
         throw new Error('Минимум 50 символов текста для анализа');
       }
 
-      const response = await apiRequest(`/api/campaigns/${campaignId}/analyze-style`, {
+      return await apiRequest(`/api/campaigns/${campaignId}/analyze-style`, {
         method: 'POST',
         data: { posts },
       });
-      return response.json();
     },
     onSuccess: (data) => {
       toast({ title: 'Стиль проанализирован', description: 'Результаты сохранены' });
@@ -98,10 +97,9 @@ export function ContentStyleSettings({ campaignId, initialStyle, onStyleUpdated 
 
   const deleteMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest(`/api/campaigns/${campaignId}/content-style`, {
+      return await apiRequest(`/api/campaigns/${campaignId}/content-style`, {
         method: 'DELETE',
       });
-      return response.json();
     },
     onSuccess: () => {
       toast({ title: 'Стиль удалён' });

@@ -324,6 +324,7 @@ export default function ContentPage() {
   const [aiPromptText, setAiPromptText] = useState('');
   const [aiTone, setAiTone] = useState('informative');
   const [aiUseCampaignData, setAiUseCampaignData] = useState(true);
+  const [aiSelectedKeywords, setAiSelectedKeywords] = useState<string[]>([]);
   const [isAiGenerating, setIsAiGenerating] = useState(false);
   const [showAiImagePanel, setShowAiImagePanel] = useState(false);
 
@@ -1115,7 +1116,7 @@ export default function ContentPage() {
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
         body: JSON.stringify({
           prompt: aiPromptText,
-          keywords: newContent.keywords,
+          keywords: aiSelectedKeywords.length > 0 ? aiSelectedKeywords : newContent.keywords,
           tone: aiTone,
           campaignId: selectedCampaignId,
           platform: 'telegram',
@@ -2366,6 +2367,23 @@ export default function ContentPage() {
                             Данные компании
                           </label>
                         </div>
+                        {campaignKeywords.length > 0 && (
+                          <div className="flex flex-wrap gap-1 items-center">
+                            <button
+                              type="button"
+                              className={`text-[10px] px-1.5 py-0.5 rounded border ${aiSelectedKeywords.length === campaignKeywords.length ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-gray-800 text-muted-foreground border-gray-300 dark:border-gray-600'}`}
+                              onClick={() => setAiSelectedKeywords(aiSelectedKeywords.length === campaignKeywords.length ? [] : campaignKeywords.map(k => k.keyword))}
+                            >Все</button>
+                            {campaignKeywords.filter(k => k.keyword?.trim()).map(kw => (
+                              <button
+                                key={kw.id}
+                                type="button"
+                                className={`text-[10px] px-1.5 py-0.5 rounded border ${aiSelectedKeywords.includes(kw.keyword) ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-gray-800 text-muted-foreground border-gray-300 dark:border-gray-600'}`}
+                                onClick={() => setAiSelectedKeywords(prev => prev.includes(kw.keyword) ? prev.filter(k => k !== kw.keyword) : [...prev, kw.keyword])}
+                              >{kw.keyword}</button>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )}
                     <div>
@@ -2479,6 +2497,23 @@ export default function ContentPage() {
                           Данные компании
                         </label>
                       </div>
+                      {campaignKeywords.length > 0 && (
+                        <div className="flex flex-wrap gap-1 items-center">
+                          <button
+                            type="button"
+                            className={`text-[10px] px-1.5 py-0.5 rounded border ${aiSelectedKeywords.length === campaignKeywords.length ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-gray-800 text-muted-foreground border-gray-300 dark:border-gray-600'}`}
+                            onClick={() => setAiSelectedKeywords(aiSelectedKeywords.length === campaignKeywords.length ? [] : campaignKeywords.map(k => k.keyword))}
+                          >Все</button>
+                          {campaignKeywords.filter(k => k.keyword?.trim()).map(kw => (
+                            <button
+                              key={kw.id}
+                              type="button"
+                              className={`text-[10px] px-1.5 py-0.5 rounded border ${aiSelectedKeywords.includes(kw.keyword) ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-gray-800 text-muted-foreground border-gray-300 dark:border-gray-600'}`}
+                              onClick={() => setAiSelectedKeywords(prev => prev.includes(kw.keyword) ? prev.filter(k => k !== kw.keyword) : [...prev, kw.keyword])}
+                            >{kw.keyword}</button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                   <RichTextEditor
@@ -2569,6 +2604,23 @@ export default function ContentPage() {
                           Данные компании
                         </label>
                       </div>
+                      {campaignKeywords.length > 0 && (
+                        <div className="flex flex-wrap gap-1 items-center">
+                          <button
+                            type="button"
+                            className={`text-[10px] px-1.5 py-0.5 rounded border ${aiSelectedKeywords.length === campaignKeywords.length ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-gray-800 text-muted-foreground border-gray-300 dark:border-gray-600'}`}
+                            onClick={() => setAiSelectedKeywords(aiSelectedKeywords.length === campaignKeywords.length ? [] : campaignKeywords.map(k => k.keyword))}
+                          >Все</button>
+                          {campaignKeywords.filter(k => k.keyword?.trim()).map(kw => (
+                            <button
+                              key={kw.id}
+                              type="button"
+                              className={`text-[10px] px-1.5 py-0.5 rounded border ${aiSelectedKeywords.includes(kw.keyword) ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-gray-800 text-muted-foreground border-gray-300 dark:border-gray-600'}`}
+                              onClick={() => setAiSelectedKeywords(prev => prev.includes(kw.keyword) ? prev.filter(k => k !== kw.keyword) : [...prev, kw.keyword])}
+                            >{kw.keyword}</button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                   <RichTextEditor

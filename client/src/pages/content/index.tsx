@@ -2368,20 +2368,25 @@ export default function ContentPage() {
                           </label>
                         </div>
                         {campaignKeywords.length > 0 && (
-                          <div className="flex flex-wrap gap-1.5 items-center">
-                            <button
-                              type="button"
-                              className={`text-[10px] px-1.5 py-0.5 rounded border ${aiSelectedKeywords.length === campaignKeywords.length ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-gray-800 text-muted-foreground border-gray-300 dark:border-gray-600'}`}
-                              onClick={() => setAiSelectedKeywords(aiSelectedKeywords.length === campaignKeywords.length ? [] : campaignKeywords.map(k => k.keyword))}
-                            >Все</button>
-                            {campaignKeywords.filter(k => k.keyword?.trim()).map(kw => (
-                              <button
-                                key={kw.id}
-                                type="button"
-                                className={`text-xs px-2 py-0.5 rounded-md transition-colors ${aiSelectedKeywords.includes(kw.keyword) ? 'bg-indigo-600 text-white border border-indigo-600' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
-                                onClick={() => setAiSelectedKeywords(prev => prev.includes(kw.keyword) ? prev.filter(k => k !== kw.keyword) : [...prev, kw.keyword])}
-                              >{kw.keyword}</button>
-                            ))}
+                          <div className="space-y-1.5">
+                            <label className="flex items-center gap-1.5 cursor-pointer text-muted-foreground">
+                              <Checkbox
+                                checked={aiSelectedKeywords.length === campaignKeywords.length}
+                                onCheckedChange={(c) => setAiSelectedKeywords(c ? campaignKeywords.map(k => k.keyword) : [])}
+                                className="h-3.5 w-3.5"
+                              />
+                              <span className="text-xs">Все ключевые слова ({campaignKeywords.length})</span>
+                            </label>
+                            <div className="flex flex-wrap gap-1.5">
+                              {campaignKeywords.filter(k => k.keyword?.trim()).map(kw => (
+                                <button
+                                  key={kw.id}
+                                  type="button"
+                                  className={`text-xs px-2 py-0.5 rounded-md transition-colors ${aiSelectedKeywords.includes(kw.keyword) ? 'bg-indigo-600 text-white border border-indigo-600' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                                  onClick={() => setAiSelectedKeywords(prev => prev.includes(kw.keyword) ? prev.filter(k => k !== kw.keyword) : [...prev, kw.keyword])}
+                                >{kw.keyword}</button>
+                              ))}
+                            </div>
                           </div>
                         )}
                       </div>
@@ -2498,21 +2503,25 @@ export default function ContentPage() {
                         </label>
                       </div>
                       {campaignKeywords.length > 0 && (
-                        <div className="flex flex-wrap gap-1 items-center">
-                          <span className="text-[10px] text-muted-foreground mr-0.5">Ключевые слова:</span>
-                          <button
-                            type="button"
-                            className={`text-xs px-2 py-1 rounded-md font-medium transition-colors ${aiSelectedKeywords.length === campaignKeywords.length ? 'bg-indigo-600 text-white border border-indigo-600' : 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-700 hover:bg-indigo-100 dark:hover:bg-indigo-800/40'}`}
-                            onClick={() => setAiSelectedKeywords(aiSelectedKeywords.length === campaignKeywords.length ? [] : campaignKeywords.map(k => k.keyword))}
-                          >{aiSelectedKeywords.length === campaignKeywords.length ? 'Снять все' : 'Выбрать все'}</button>
-                          {campaignKeywords.filter(k => k.keyword?.trim()).map(kw => (
-                            <button
-                              key={kw.id}
-                              type="button"
-                              className={`text-[10px] px-1.5 py-0.5 rounded border ${aiSelectedKeywords.includes(kw.keyword) ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-gray-800 text-muted-foreground border-gray-300 dark:border-gray-600'}`}
-                              onClick={() => setAiSelectedKeywords(prev => prev.includes(kw.keyword) ? prev.filter(k => k !== kw.keyword) : [...prev, kw.keyword])}
-                            >{kw.keyword}</button>
-                          ))}
+                        <div className="space-y-1.5">
+                          <label className="flex items-center gap-1.5 cursor-pointer text-muted-foreground">
+                            <Checkbox
+                              checked={aiSelectedKeywords.length === campaignKeywords.length}
+                              onCheckedChange={(c) => setAiSelectedKeywords(c ? campaignKeywords.map(k => k.keyword) : [])}
+                              className="h-3.5 w-3.5"
+                            />
+                            <span className="text-xs">Все ключевые слова ({campaignKeywords.length})</span>
+                          </label>
+                          <div className="flex flex-wrap gap-1.5">
+                            {campaignKeywords.filter(k => k.keyword?.trim()).map(kw => (
+                              <button
+                                key={kw.id}
+                                type="button"
+                                className={`text-xs px-2 py-0.5 rounded-md transition-colors ${aiSelectedKeywords.includes(kw.keyword) ? 'bg-indigo-600 text-white border border-indigo-600' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                                onClick={() => setAiSelectedKeywords(prev => prev.includes(kw.keyword) ? prev.filter(k => k !== kw.keyword) : [...prev, kw.keyword])}
+                              >{kw.keyword}</button>
+                            ))}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -2606,21 +2615,25 @@ export default function ContentPage() {
                         </label>
                       </div>
                       {campaignKeywords.length > 0 && (
-                        <div className="flex flex-wrap gap-1 items-center">
-                          <span className="text-[10px] text-muted-foreground mr-0.5">Ключевые слова:</span>
-                          <button
-                            type="button"
-                            className={`text-xs px-2 py-1 rounded-md font-medium transition-colors ${aiSelectedKeywords.length === campaignKeywords.length ? 'bg-indigo-600 text-white border border-indigo-600' : 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border border-indigo-300 dark:border-indigo-700 hover:bg-indigo-100 dark:hover:bg-indigo-800/40'}`}
-                            onClick={() => setAiSelectedKeywords(aiSelectedKeywords.length === campaignKeywords.length ? [] : campaignKeywords.map(k => k.keyword))}
-                          >{aiSelectedKeywords.length === campaignKeywords.length ? 'Снять все' : 'Выбрать все'}</button>
-                          {campaignKeywords.filter(k => k.keyword?.trim()).map(kw => (
-                            <button
-                              key={kw.id}
-                              type="button"
-                              className={`text-[10px] px-1.5 py-0.5 rounded border ${aiSelectedKeywords.includes(kw.keyword) ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-gray-800 text-muted-foreground border-gray-300 dark:border-gray-600'}`}
-                              onClick={() => setAiSelectedKeywords(prev => prev.includes(kw.keyword) ? prev.filter(k => k !== kw.keyword) : [...prev, kw.keyword])}
-                            >{kw.keyword}</button>
-                          ))}
+                        <div className="space-y-1.5">
+                          <label className="flex items-center gap-1.5 cursor-pointer text-muted-foreground">
+                            <Checkbox
+                              checked={aiSelectedKeywords.length === campaignKeywords.length}
+                              onCheckedChange={(c) => setAiSelectedKeywords(c ? campaignKeywords.map(k => k.keyword) : [])}
+                              className="h-3.5 w-3.5"
+                            />
+                            <span className="text-xs">Все ключевые слова ({campaignKeywords.length})</span>
+                          </label>
+                          <div className="flex flex-wrap gap-1.5">
+                            {campaignKeywords.filter(k => k.keyword?.trim()).map(kw => (
+                              <button
+                                key={kw.id}
+                                type="button"
+                                className={`text-xs px-2 py-0.5 rounded-md transition-colors ${aiSelectedKeywords.includes(kw.keyword) ? 'bg-indigo-600 text-white border border-indigo-600' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                                onClick={() => setAiSelectedKeywords(prev => prev.includes(kw.keyword) ? prev.filter(k => k !== kw.keyword) : [...prev, kw.keyword])}
+                              >{kw.keyword}</button>
+                            ))}
+                          </div>
                         </div>
                       )}
                     </div>

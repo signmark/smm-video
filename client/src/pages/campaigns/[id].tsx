@@ -71,8 +71,17 @@ export default function CampaignDetails() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user, isLoading } = useAuth();
-  // Feature flag через isAdmin (Layout.tsx уже использует этот паттерн)
-  const isStyleFeatureEnabled = !isLoading && !!(user as any)?.isAdmin;
+  // Достаём email из JWT токена (надёжнее structure useAuth)
+  // Layout.tsx использует тот же подход — line 54
+  let featureUserEmail: string | null = null;
+  try {
+    const token = localStorage.getItem('auth_token');
+    if (token && token.includes('.')) {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      featureUserEmail = payload.email || null;
+    }
+  } catch {}
+  const isStyleFeatureEnabled = !isLoading && !!featureUserEmail && STYLE_FEATURE_EMAILS.includes(featureUserEmail);
   const [isSearchingKeywords, setIsSearchingKeywords] = useState(false);
   const [suggestedKeywords, setSuggestedKeywords] = useState<
     SuggestedKeyword[]

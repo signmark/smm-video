@@ -70,9 +70,9 @@ export default function CampaignDetails() {
   const [location, navigate] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const { user } = useAuth();
-  // useAuth().user = { id, email, ... } — email на верхнем уровне
-  const isStyleFeatureEnabled = !!(user as any)?.email && STYLE_FEATURE_EMAILS.includes((user as any).email);
+  const { user, isLoading } = useAuth();
+  // Feature flag через isAdmin (Layout.tsx уже использует этот паттерн)
+  const isStyleFeatureEnabled = !isLoading && !!(user as any)?.isAdmin;
   const [isSearchingKeywords, setIsSearchingKeywords] = useState(false);
   const [suggestedKeywords, setSuggestedKeywords] = useState<
     SuggestedKeyword[]

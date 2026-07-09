@@ -480,6 +480,8 @@ export default function ContentPage() {
     staleTime: 30 * 1000,
   });
 
+  const contentStyle = (fullCampaignData?.data as any)?.content_style || null;
+
   // Определяем подключенные платформы из настроек кампании.
   // Возвращает null если данные ещё не загружены (→ UI показывает все платформы активными).
   // Возвращает объект с явными true/false когда данные есть.
@@ -3474,6 +3476,7 @@ export default function ContentPage() {
             trendScore: k.trend_score || 0,
             campaignId: k.campaign_id
           }))}
+          contentStyle={contentStyle}
           onClose={() => {
             setIsGenerateDialogOpen(false);
             queryClient.invalidateQueries({ queryKey: ['/api/campaign-content', selectedCampaignId] });

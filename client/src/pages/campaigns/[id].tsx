@@ -69,8 +69,18 @@ export default function CampaignDetails() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  // Feature flag: временно включён для тестирования
-  const isStyleFeatureEnabled = true;
+
+  // Feature flag: стиль доступен только для signmark@gmail.com
+  const isStyleFeatureEnabled = (() => {
+    try {
+      const token = localStorage.getItem('auth_token');
+      if (!token) return false;
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      return payload.email === 'signmark@gmail.com';
+    } catch {
+      return false;
+    }
+  })();
   const [isSearchingKeywords, setIsSearchingKeywords] = useState(false);
   const [suggestedKeywords, setSuggestedKeywords] = useState<
     SuggestedKeyword[]

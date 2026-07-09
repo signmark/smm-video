@@ -221,7 +221,8 @@ export function registerCampaignRoutes(app: Express) {
         socialMediaSettings: item.social_media_settings || {},
         social_media_settings: item.social_media_settings || {},
         trend_analysis_settings: item.trend_analysis_settings || {},
-        autonomous_settings: item.autonomous_settings || null
+        autonomous_settings: item.autonomous_settings || null,
+        content_style: item.content_style || null
       };
 
       res.json({ success: true, data: campaign });

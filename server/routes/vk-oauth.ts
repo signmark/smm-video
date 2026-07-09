@@ -293,7 +293,8 @@ router.post('/vk/token-webhook/:campaignId', async (req, res) => {
       accessToken: token,
       tokenReceivedAt: new Date().toISOString(),
       configured: true,
-      authExpired: false
+      authExpired: false,
+      reconnecting: false
     };
     if (rToken)        vkUpdate.refreshToken  = rToken;
     if (dId)           vkUpdate.deviceId      = dId;
@@ -358,6 +359,34 @@ router.post('/vk/token-webhook/:campaignId', async (req, res) => {
 });
 
 /**
+ * PATCH /api/vk/token-webhook/:campaignId/reconnecting
+ * Устанавливает флаг reconnecting при начале переподключения
+ */
+router.patch('/vk/token-webhook/:campaignId/reconnecting', async (req, res) => {
+  const { campaignId } = req.params;
+  try {
+    const adminAuthToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+    const directusUrl = process.env.DIRECTUS_URL;
+    const campaignResp = await axios.get(`${directusUrl}/items/user_campaigns/${campaignId}`, {
+      headers: { Authorization: `Bearer ${adminAuthToken}` }
+    });
+    const existingSettings = campaignResp.data.data?.social_media_settings || {};
+    const existingVk = existingSettings.vk || {};
+
+    await axios.patch(`${directusUrl}/items/user_campaigns/${campaignId}`, {
+      social_media_settings: {
+        ...existingSettings,
+        vk: { ...existingVk, reconnecting: true }
+      }
+    }, { headers: { Authorization: `Bearer ${adminAuthToken}` } });
+
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * GET /api/vk/token-webhook/:campaignId/status
  * Проверяет, пришли ли токены (для polling из визарда)
  */
@@ -377,7 +406,13 @@ router.get('/vk/token-webhook/:campaignId/status', async (req, res) => {
     // Через 15 сек после получения токена считаем ready в любом случае (рефреш мог упасть).
     let ready = false;
     if (hasToken && serverRefreshDone) {
-      ready = true;
+      // Если стоит флаг reconnecting — ждём новый токен (tokenReceivedAt должен обновиться)
+      if (vk.reconnecting && vk.tokenReceivedAt) {
+        const elapsed = Date.now() - new Date(vk.tokenReceivedAt).getTime();
+        ready = elapsed > 3000; // даём 3 сек на обновление
+      } else {
+        ready = true;
+      }
     } else if (hasToken && vk.tokenReceivedAt) {
       const elapsed = Date.now() - new Date(vk.tokenReceivedAt).getTime();
       if (elapsed > 15000) ready = true; // fallback: 15 сек прошло

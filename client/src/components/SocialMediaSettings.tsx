@@ -624,7 +624,12 @@ export function SocialMediaSettings({
   };
 
   // Переподключение VK через needanapp (webhook polling)
-  const startVkReconnect = () => {
+  const startVkReconnect = async () => {
+    // Ставим флаг reconnecting чтобы polling не срабатывал на старом токене
+    try {
+      await fetch(`/api/vk/token-webhook/${campaignId}/reconnecting`, { method: 'PATCH' });
+    } catch {}
+
     // Открываем needanapp в новой вкладке
     window.open('https://vk.needanapp.ru', '_blank');
     setIsVkReconnecting(true);

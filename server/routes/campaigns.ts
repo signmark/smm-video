@@ -941,12 +941,26 @@ ${sampledPosts}
         samplePosts: sampledPosts.substring(0, 500),
       };
 
-      const adminToken = await adminTokenManager.getAdminToken();
-      await directusApi.patch(`/items/user_campaigns/${campaignId}`, { content_style: contentStyle }, {
-        headers: { 'Authorization': `Bearer ${adminToken}` },
-      });
+      try {
+        await directusApi.patch(`/items/user_campaigns/${campaignId}`, { content_style: contentStyle }, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        log(`[ContentStyle] Стиль сохранён для кампании ${campaignId}`, 'info');
+      } catch (saveErr: any) {
+        log(`[ContentStyle] Ошибка сохранения для кампании ${campaignId}: ${saveErr.message}`, 'error');
+        // Fallback: try with admin token
+        try {
+          const adminToken = await adminTokenManager.getAdminToken();
+          await directusApi.patch(`/items/user_campaigns/${campaignId}`, { content_style: contentStyle }, {
+            headers: { 'Authorization': `Bearer ${adminToken}` },
+          });
+          log(`[ContentStyle] Стиль сохранён через admin token для кампании ${campaignId}`, 'info');
+        } catch (adminErr: any) {
+          log(`[ContentStyle] Admin save also failed: ${adminErr.message}`, 'error');
+          return res.status(500).json({ error: 'Не удалось сохранить стиль' });
+        }
+      }
 
-      log(`[ContentStyle] Стиль сохранён для кампании ${campaignId}`, 'info');
       res.json({ success: true, style: contentStyle });
     } catch (error: any) {
       console.error('[analyze-style] error:', error.message);
@@ -962,9 +976,8 @@ ${sampledPosts}
 
       if (!userId || !token) return res.status(401).json({ error: 'Не авторизован' });
 
-      const adminToken = await adminTokenManager.getAdminToken();
       await directusApi.patch(`/items/user_campaigns/${campaignId}`, { content_style: null }, {
-        headers: { 'Authorization': `Bearer ${adminToken}` },
+        headers: { 'Authorization': `Bearer ${token}` },
       });
 
       res.json({ success: true });

@@ -71,20 +71,20 @@ export default function CampaignDetails() {
   const { user } = useAuth();
 
   // Feature flag: стиль доступен только для signmark@gmail.com
-  const [styleDebugInfo, setStyleDebugInfo] = useState<string>('');
-  const isStyleFeatureEnabled = (() => {
+  const { styleDebugInfo, isStyleFeatureEnabled } = (() => {
     try {
       const token = localStorage.getItem('auth_token');
-      if (!token) { setStyleDebugInfo('NO_TOKEN'); return false; }
+      if (!token) return { styleDebugInfo: 'NO_TOKEN', isStyleFeatureEnabled: false };
       const parts = token.split('.');
-      if (parts.length < 2) { setStyleDebugInfo('NOT_JWT: parts=' + parts.length); return false; }
+      if (parts.length < 2) return { styleDebugInfo: 'NOT_JWT: parts=' + parts.length, isStyleFeatureEnabled: false };
       const payload = JSON.parse(atob(parts[1]));
       const email = payload.email;
-      setStyleDebugInfo(`email=${email} | match=${email === 'signmark@gmail.com'} | keys=${Object.keys(payload).join(',')}`);
-      return email === 'signmark@gmail.com';
+      return {
+        styleDebugInfo: `email=${email} | match=${email === 'signmark@gmail.com'} | keys=${Object.keys(payload).join(',')}`,
+        isStyleFeatureEnabled: email === 'signmark@gmail.com',
+      };
     } catch (e: any) {
-      setStyleDebugInfo('ERROR: ' + e.message);
-      return false;
+      return { styleDebugInfo: 'ERROR: ' + e.message, isStyleFeatureEnabled: false };
     }
   })();
   const [isSearchingKeywords, setIsSearchingKeywords] = useState(false);

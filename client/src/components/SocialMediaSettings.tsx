@@ -634,17 +634,23 @@ export function SocialMediaSettings({
         const data = await resp.json();
         if (data.ready) {
           cleanupVkReconnect();
-          // Загружаем настройки и подтягиваем группы для выбора
+          // Загружаем настройки
           const resp2 = await fetch(`/api/campaigns/${campaignId}/vk-settings`, {
             headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` }
           });
           const d2 = await resp2.json();
           if (d2.settings?.token) {
             form.setValue('vk.token', d2.settings.token);
-            fetchVkGroups();
+            // Группа уже выбрана — не показываем селектор повторно
+            if (d2.settings.groupId) {
+              form.setValue('vk.groupId', d2.settings.groupId);
+              toast({ title: "VK переподключён", description: "Группа сохранена, публикации возобновлены." });
+            } else {
+              fetchVkGroups();
+              toast({ title: "VK переподключён", description: "Выберите группу для публикации." });
+            }
           }
           loadVkSettings();
-          toast({ title: "VK переподключён", description: "Выберите группу для публикации." });
         }
       } catch {}
     }, 3000);
@@ -692,7 +698,11 @@ export function SocialMediaSettings({
           const d2 = await resp2.json();
           if (d2.settings?.token) {
             form.setValue('vk.token', d2.settings.token);
-            fetchVkGroups();
+            if (d2.settings.groupId) {
+              form.setValue('vk.groupId', d2.settings.groupId);
+            } else {
+              fetchVkGroups();
+            }
           }
         }
       } catch {}

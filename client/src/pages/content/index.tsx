@@ -322,6 +322,8 @@ export default function ContentPage() {
   const [showAiPanel, setShowAiPanel] = useState(false);
   const [aiModel, setAiModel] = useState<'gemini-3.5-flash' | 'gemini-2.5-flash' | 'gemini-2.5-pro' | 'gemini-3.0-pro' | 'deepseek' | 'qwen'>('gemini-3.5-flash');
   const [aiPromptText, setAiPromptText] = useState('');
+  const [aiTone, setAiTone] = useState('informative');
+  const [aiUseCampaignData, setAiUseCampaignData] = useState(true);
   const [isAiGenerating, setIsAiGenerating] = useState(false);
   const [showAiImagePanel, setShowAiImagePanel] = useState(false);
 
@@ -1114,11 +1116,11 @@ export default function ContentPage() {
         body: JSON.stringify({
           prompt: aiPromptText,
           keywords: newContent.keywords,
-          tone: 'informative',
+          tone: aiTone,
           campaignId: selectedCampaignId,
           platform: 'telegram',
           service: aiModel,
-          useCampaignData: true
+          useCampaignData: aiUseCampaignData
         })
       });
       if (!response.ok) {
@@ -2342,6 +2344,28 @@ export default function ContentPage() {
                             </Button>
                           </div>
                         </div>
+                        <div className="flex items-center gap-3 text-xs">
+                          <Select value={aiTone} onValueChange={setAiTone}>
+                            <SelectTrigger className="h-7 w-[130px] text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="informative">Информативный</SelectItem>
+                              <SelectItem value="friendly">Дружелюбный</SelectItem>
+                              <SelectItem value="professional">Профессиональный</SelectItem>
+                              <SelectItem value="casual">Повседневный</SelectItem>
+                              <SelectItem value="humorous">С юмором</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <label className="flex items-center gap-1.5 cursor-pointer text-muted-foreground">
+                            <Checkbox
+                              checked={aiUseCampaignData}
+                              onCheckedChange={(c) => setAiUseCampaignData(c === true)}
+                              className="h-3.5 w-3.5"
+                            />
+                            Данные компании
+                          </label>
+                        </div>
                       </div>
                     )}
                     <div>
@@ -2433,6 +2457,28 @@ export default function ContentPage() {
                           </Button>
                         </div>
                       </div>
+                      <div className="flex items-center gap-3 text-xs">
+                        <Select value={aiTone} onValueChange={setAiTone}>
+                          <SelectTrigger className="h-7 w-[130px] text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="informative">Информативный</SelectItem>
+                            <SelectItem value="friendly">Дружелюбный</SelectItem>
+                            <SelectItem value="professional">Профессиональный</SelectItem>
+                            <SelectItem value="casual">Повседневный</SelectItem>
+                            <SelectItem value="humorous">С юмором</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <label className="flex items-center gap-1.5 cursor-pointer text-muted-foreground">
+                          <Checkbox
+                            checked={aiUseCampaignData}
+                            onCheckedChange={(c) => setAiUseCampaignData(c === true)}
+                            className="h-3.5 w-3.5"
+                          />
+                          Данные компании
+                        </label>
+                      </div>
                     </div>
                   )}
                   <RichTextEditor
@@ -2500,6 +2546,28 @@ export default function ContentPage() {
                             {isAiGenerating ? 'Генерация...' : 'Создать'}
                           </Button>
                         </div>
+                      </div>
+                      <div className="flex items-center gap-3 text-xs">
+                        <Select value={aiTone} onValueChange={setAiTone}>
+                          <SelectTrigger className="h-7 w-[130px] text-xs">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="informative">Информативный</SelectItem>
+                            <SelectItem value="friendly">Дружелюбный</SelectItem>
+                            <SelectItem value="professional">Профессиональный</SelectItem>
+                            <SelectItem value="casual">Повседневный</SelectItem>
+                            <SelectItem value="humorous">С юмором</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <label className="flex items-center gap-1.5 cursor-pointer text-muted-foreground">
+                          <Checkbox
+                            checked={aiUseCampaignData}
+                            onCheckedChange={(c) => setAiUseCampaignData(c === true)}
+                            className="h-3.5 w-3.5"
+                          />
+                          Данные компании
+                        </label>
                       </div>
                     </div>
                   )}

@@ -4,6 +4,7 @@
 
 ## Содержание
 
+- [AUTH_ARCHITECTURE_FINDINGS.md](../AUTH_ARCHITECTURE_FINDINGS.md) - Auth и feature flags: три механизма токенов, email, типичные ловушки
 - ANALYTICS_DIRECTUS_INTEGRATION_GUIDE.md - Руководство по интеграции аналитики с Directus
 - ANALYTICS_IMPLEMENTATION_GUIDE.md - Руководство по реализации аналитики
 - PLATFORM_PERSISTENCE_IMPLEMENTATION.md - Реализация персистентности платформы

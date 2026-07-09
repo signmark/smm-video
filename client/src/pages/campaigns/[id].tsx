@@ -71,11 +71,12 @@ export default function CampaignDetails() {
   const { user } = useAuth();
 
   // Feature flag: стиль доступен только для signmark@gmail.com
-  const { data: userProfile } = useQuery<{ email: string }>({
+  const { data: userProfile, isLoading: profileLoading, error: profileError } = useQuery<{ email: string }>({
     queryKey: ['/api/user/profile', user?.id || 'me'],
     enabled: !!user?.id,
   });
   const isStyleFeatureEnabled = userProfile?.email === 'signmark@gmail.com';
+  const styleDebug = `userId=${user?.id} | loading=${profileLoading} | email=${userProfile?.email} | enabled=${!!user?.id} | error=${profileError?.message || 'none'}`;
   const [isSearchingKeywords, setIsSearchingKeywords] = useState(false);
   const [suggestedKeywords, setSuggestedKeywords] = useState<
     SuggestedKeyword[]
@@ -1147,6 +1148,10 @@ export default function CampaignDetails() {
             </div>
           </AccordionContent>
         </AccordionItem>
+
+        <div className="mx-6 mb-2 p-2 bg-yellow-100 border border-yellow-400 rounded text-xs font-mono">
+          STYLE DEBUG: {styleDebug}
+        </div>
 
         {isStyleFeatureEnabled && (
           <AccordionItem

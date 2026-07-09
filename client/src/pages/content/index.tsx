@@ -3331,7 +3331,6 @@ export default function ContentPage() {
               <Button
                 type="button"
                 variant="default"
-                disabled={publishState === 'publishing'}
                 onClick={async () => {
                   // Проверка на выбор хотя бы одной платформы
                   if (!Object.values(selectedPlatforms).some(Boolean)) {

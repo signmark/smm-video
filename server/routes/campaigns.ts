@@ -881,7 +881,7 @@ ${campaignBusinessContext ? `КОНТЕКСТ БИЗНЕСА:\n${campaignBusines
       }
 
       // Smart sampling: if content exceeds limit, take representative sample
-      const MAX_CHARS = 100000;
+      const MAX_CHARS = 50000;
       let sampledPosts = posts;
       if (posts.length > MAX_CHARS) {
         const third = Math.floor(MAX_CHARS / 3);
@@ -890,10 +890,10 @@ ${campaignBusinessContext ? `КОНТЕКСТ БИЗНЕСА:\n${campaignBusines
         const middle = posts.slice(mid - Math.floor(third / 2), mid + Math.floor(third / 2));
         const end = posts.slice(-third);
         sampledPosts = [start, middle, end].join('\n\n---\n\n');
-        log(`[ContentStyle] Контент обрезан: ${posts.length} → ${sampledPosts.length} символов (выборка начало+середина+конец)`, 'info');
+        console.log(`[ContentStyle] Контент обрезан: ${posts.length} → ${sampledPosts.length} символов`);
       }
 
-      log(`[ContentStyle] Анализ стиля для кампании ${campaignId}, длина текста: ${sampledPosts.length}`, 'info');
+      console.log(`[ContentStyle] Анализ стиля для кампании ${campaignId}, длина текста: ${sampledPosts.length}`);
 
       const analysisPrompt = `Проанализируй стиль написания постов для социальных сетей.
 Опиши максимально конкретно, чтобы другой автор мог писать в таком же стиле.
@@ -926,11 +926,29 @@ ${sampledPosts}
 
       const rawContent = (result.content || '').trim();
       let styleData: Record<string, string>;
-      try {
-        const cleaned = rawContent.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-        styleData = JSON.parse(cleaned);
-      } catch {
-        log(`[ContentStyle] AI вернул некорректный JSON: ${rawContent.substring(0, 200)}`, 'warn');
+
+      // Try multiple extraction strategies for JSON from AI response
+      const extractJson = (text: string): Record<string, string> | null => {
+        // Strategy 1: direct parse
+        try { return JSON.parse(text); } catch {}
+
+        // Strategy 2: strip markdown code blocks
+        const noMarkdown = text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+        try { return JSON.parse(noMarkdown); } catch {}
+
+        // Strategy 3: find first { to last }
+        const firstBrace = noMarkdown.indexOf('{');
+        const lastBrace = noMarkdown.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace > firstBrace) {
+          try { return JSON.parse(noMarkdown.slice(firstBrace, lastBrace + 1)); } catch {}
+        }
+
+        return null;
+      };
+
+      styleData = extractJson(rawContent);
+      if (!styleData) {
+        console.error(`[ContentStyle] AI returned non-JSON (first 500 chars): ${rawContent.substring(0, 500)}`);
         return res.status(500).json({ error: 'AI вернул некорректный результат, попробуйте ещё раз' });
       }
 

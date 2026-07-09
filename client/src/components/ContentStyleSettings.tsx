@@ -313,9 +313,9 @@ export function ContentStyleSettings({ campaignId, initialStyle, onStyleUpdated 
       {getAllPostsText().length > 0 && (
         <div className="text-xs text-muted-foreground">
           {getAllPostsText().length.toLocaleString()} символов
-          {getAllPostsText().length > 100000 && (
+          {getAllPostsText().length > 50000 && (
             <span className="text-amber-600 ml-2">
-              (контент будет обрезан до выборки из ~100K символов для анализа)
+              (контент будет обрезан до выборки из ~50K символов для анализа)
             </span>
           )}
         </div>

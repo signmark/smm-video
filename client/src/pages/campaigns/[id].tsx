@@ -71,13 +71,19 @@ export default function CampaignDetails() {
   const { user } = useAuth();
 
   // Feature flag: стиль доступен только для signmark@gmail.com
+  const [styleDebugInfo, setStyleDebugInfo] = useState<string>('');
   const isStyleFeatureEnabled = (() => {
     try {
       const token = localStorage.getItem('auth_token');
-      if (!token) return false;
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      return payload.email === 'signmark@gmail.com';
-    } catch {
+      if (!token) { setStyleDebugInfo('NO_TOKEN'); return false; }
+      const parts = token.split('.');
+      if (parts.length < 2) { setStyleDebugInfo('NOT_JWT: parts=' + parts.length); return false; }
+      const payload = JSON.parse(atob(parts[1]));
+      const email = payload.email;
+      setStyleDebugInfo(`email=${email} | match=${email === 'signmark@gmail.com'} | keys=${Object.keys(payload).join(',')}`);
+      return email === 'signmark@gmail.com';
+    } catch (e: any) {
+      setStyleDebugInfo('ERROR: ' + e.message);
       return false;
     }
   })();
@@ -1152,6 +1158,11 @@ export default function CampaignDetails() {
             </div>
           </AccordionContent>
         </AccordionItem>
+
+        {/* DEBUG BANNER - TEMPORARY */}
+        <div className="mx-6 mb-2 p-2 bg-yellow-100 border border-yellow-400 rounded text-xs font-mono">
+          STYLE DEBUG: enabled={String(isStyleFeatureEnabled)} | {styleDebugInfo}
+        </div>
 
         {isStyleFeatureEnabled && (
           <AccordionItem

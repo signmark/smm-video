@@ -936,13 +936,14 @@ ${sampledPosts}
 
       const contentStyle = {
         analyzedAt: new Date().toISOString(),
-        rawPostCount: (posts.split(/\n\s*\n/).filter((p: string) => p.trim()).length),
+        rawPostCount: (sampledPosts.split(/\n\s*\n/).filter((p: string) => p.trim()).length),
         style: styleData,
-        samplePosts: posts.substring(0, 500),
+        samplePosts: sampledPosts.substring(0, 500),
       };
 
+      const adminToken = await adminTokenManager.getAdminToken();
       await directusApi.patch(`/items/user_campaigns/${campaignId}`, { content_style: contentStyle }, {
-        headers: { 'Authorization': `Bearer ${token}` },
+        headers: { 'Authorization': `Bearer ${adminToken}` },
       });
 
       log(`[ContentStyle] Стиль сохранён для кампании ${campaignId}`, 'info');
@@ -961,8 +962,9 @@ ${sampledPosts}
 
       if (!userId || !token) return res.status(401).json({ error: 'Не авторизован' });
 
+      const adminToken = await adminTokenManager.getAdminToken();
       await directusApi.patch(`/items/user_campaigns/${campaignId}`, { content_style: null }, {
-        headers: { 'Authorization': `Bearer ${token}` },
+        headers: { 'Authorization': `Bearer ${adminToken}` },
       });
 
       res.json({ success: true });

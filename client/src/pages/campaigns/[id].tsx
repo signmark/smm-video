@@ -71,7 +71,9 @@ export default function CampaignDetails() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  const isStyleFeatureEnabled = !!user?.email && STYLE_FEATURE_EMAILS.includes(user.email);
+  // useAuth возвращает { user: { id, email, ... } }, email на втором уровне
+  const userEmail = (user as any)?.user?.email || (user as any)?.email;
+  const isStyleFeatureEnabled = !!userEmail && STYLE_FEATURE_EMAILS.includes(userEmail);
   const [isSearchingKeywords, setIsSearchingKeywords] = useState(false);
   const [suggestedKeywords, setSuggestedKeywords] = useState<
     SuggestedKeyword[]

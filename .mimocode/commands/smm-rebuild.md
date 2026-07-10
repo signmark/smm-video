@@ -38,5 +38,6 @@ cd /root/smm && npm run build 2>&1 | tail -2 && docker cp ./dist smm:/app/ && do
 ## Notes
 
 - Container name is `smm` (not `root-smm-1`).
-- `docker cp` does NOT work for deployment — files in container owned by `node:node`, `docker cp` writes as `root` → permission denied. Always use `docker compose build` for backend changes.
-- After rebuild, verify with `docker ps --format "table {{.Names}}\t{{.Status}}" | grep smm`.
+- `docker cp` ИНОГДА не работает — файлы в контейнере owned by `node:node`, `docker cp` пишет как `root` → permission denied. Если `docker cp` упал с ошибкой — используй `docker compose build`.
+- После деплоя проверяй: `docker ps --format "table {{.Names}}\t{{.Status}}" | grep smm`.
+- **Для мелких правок (фронтенд/CSS/JS)** — достаточно быстрого деплоя через `docker cp`. Для бэкенда или если `docker cp` не работает — полный rebuild.

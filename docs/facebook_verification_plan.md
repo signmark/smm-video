@@ -21,9 +21,9 @@
 #### Valid OAuth Redirect URIs:
 ```
 Продакшн:
-- https://smmniap.pw/auth/facebook/callback
-- https://smmniap.pw/auth/instagram/callback
-- https://smmniap.pw/oauth/success
+- https://smm.omemo.tech/auth/facebook/callback
+- https://smm.omemo.tech/auth/instagram/callback
+- https://smm.omemo.tech/oauth/success
 
 Разработка:
 - http://localhost:5000/auth/facebook/callback
@@ -31,10 +31,10 @@
 ```
 
 #### Информация о приложении:
-- **Website URL:** https://smmniap.pw
-- **Privacy Policy URL:** https://smmniap.pw/privacy.html
-- **Terms of Service URL:** https://smmniap.pw/terms.html
-- **Cookie Policy URL:** https://smmniap.pw/cookies.html
+- **Website URL:** https://smm.omemo.tech
+- **Privacy Policy URL:** https://smm.omemo.tech/privacy.html
+- **Terms of Service URL:** https://smm.omemo.tech/terms.html
+- **Cookie Policy URL:** https://smm.omemo.tech/cookies.html
 - **App Icon:** 1024x1024 логотип SMM Manager
 - **Category:** Business Tools
 

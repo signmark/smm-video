@@ -7,6 +7,8 @@ description: Rebuild and restart the SMM Docker container. Use --no-cache for fu
 
 Rebuilds the `smm` service from docker-compose and restarts it.
 
+**ВАЖНО:** `docker-compose.yml` лежит в `/root/` (родительская директория проекта). ВСЕГДА используй полный путь `-f /root/docker-compose.yml`.
+
 ## Usage
 
 **Standard rebuild (cached):** fastest for code-only changes.

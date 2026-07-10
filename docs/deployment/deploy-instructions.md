@@ -1,4 +1,8 @@
-# Инструкция по обновлению скрипта deploy.sh
+# Инструкция по деплою
+
+**ВАЖНО:** `docker-compose.yml` лежит в `/root/` (родительская директория проекта). ВСЕГДА используй полный путь `-f /root/docker-compose.yml`. Не используй `cd /root/smm && docker compose up` — это не найдёт compose-файл.
+
+## Обновление deploy.sh
 
 Для улучшения процесса деплоя обновите ваш скрипт `deploy.sh`, который находится в родительской директории (уровнем выше директории smm).
 
@@ -67,7 +71,10 @@ docker restart smm
 
 Это занимает **~10 секунд** вместо 3-5 минут.
 
-**Когда нужен полный `docker compose build --no-cache smm`:**
+**Когда нужен полный rebuild:**
+```bash
+docker compose -f /root/docker-compose.yml build --no-cache smm 2>&1 | tail -5 && docker compose -f /root/docker-compose.yml up -d smm 2>&1 | tail -3
+```
 - Изменения в `server/` (Node.js бэкенд)
 - Изменения в `Dockerfile`
 - Изменения в `package.json` (новые зависимости)

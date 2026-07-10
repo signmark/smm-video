@@ -30,6 +30,8 @@
 - PUBLISHING_WORKFLOW.md - Рабочий процесс публикации
 - SOCIAL_MEDIA_URL_GUIDE.md - Руководство по URL социальных сетей
 - WEBHOOK_INTEGRATION_CHANGES.md - Изменения в интеграции вебхуков
-- N8N_WEBHOOK_MIGRATION_GUIDE.md - Руководство по миграции вебхуков n8n
 - content-format.md - Формат контента для публикации
-- n8n-integration.md - Интеграция с n8n
+
+### Устаревшее (n8n удалён)
+- ~~N8N_WEBHOOK_MIGRATION_GUIDE.md~~ — Устарело (n8n удалён)
+- ~~n8n-integration.md~~ — Устарело (n8n удалён)

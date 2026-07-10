@@ -1,38 +1,26 @@
-# Google Cloud Vertex AI - Учетные данные
+# Google Cloud Vertex AI — Учетные данные
+
+**Статус:** Используется как запасной вариант (Priority 5). Основной метод — Cloudflare Worker proxy.
 
 ## Информация о проекте
 - **Project ID**: gen-lang-client-0762407615
 - **Service Account Email**: vertexai@gen-lang-client-0762407615.iam.gserviceaccount.com
-- **Client ID**: 101608073551091542897
-- **Private Key ID**: 1d404280ad34bf873985b4c7556172af935276e5
 
-## Доступные модели Gemini 2.5
-- **gemini-2.5-flash** - Быстрая модель для генерации коротких текстов
-- **gemini-2.5-pro** - Продвинутая модель для сложных задач
+## Приоритеты API ключей Gemini
 
-## Регионы для использования
-- us-central1 (рекомендуемый)
-- us-east1
-- europe-west1
+1. `.env` → `GEMINI_API_KEY` (через Cloudflare proxy)
+2. Global Directus keys → `GEMINI_API_KEY` или `GOOGLE_API_KEY`
+3. User-specific keys
+4. Vertex AI → `.env` → `VERTEX_AI_API_KEY` (запасной вариант)
 
-## Service Account Key
-Файл сохранен в `google-service-account.json` в корне проекта
-Содержит полный приватный ключ для OAuth аутентификации с Vertex AI
-
-## Реализованные функции
-✅ Интеграция с существующей системой генерации контента
-✅ Поддержка функции "Использовать данные кампании"  
-✅ Обогащение промптов информацией о НИАП и сайте nplanner.ru
-✅ Автоматическое переключение между стандартным Gemini API и Vertex AI
-
-## Как использовать
-1. В интерфейсе генерации контента выберите модель:
-   - `gemini-2.5-flash` для быстрой генерации
-   - `gemini-2.5-pro` для качественных результатов
-2. Включите опцию "Использовать данные кампании" для персонализации
-3. Система автоматически применит Vertex AI для новых моделей
+## Доступные модели
+- **gemini-3.5-flash** — основная модель (по умолчанию)
+- **gemini-3.0-pro** — высокое качество
+- **gemini-2.5-pro** — проверенная модель
+- **gemini-2.5-flash** — быстрая и дешёвая
 
 ## Примечания
-- Модели 2.5 доступны только через Vertex AI (не через стандартный Gemini API)
-- Требуется активация Vertex AI API в консоли Google Cloud
-- Учетные данные автоматически загружаются при запуске сервера
+- Vertex AI используется только как запасной вариант при недоступности Cloudflare proxy
+- Основной метод — Cloudflare Worker proxy (`GEMINI_PROXY_URL`)
+- Прямое использование `google-auth-library` запрещено
+- Продакшн домен: `smm.omemo.tech`

@@ -1,6 +1,5 @@
-- [Scraper API config](scraper-api-config.md) — скрейпер 217.26.25.95:3030, auth: api-key header, ключ из Directus telegram_collect_comments или trends_scraper, фолбэк в SCRAPER_API_KEY_FALLBACK
+- [Scraper API config](scraper-api-config.md) — скрейпер 217.26.25.95:3030, auth: api-key header, ключ из Directus telegram_collect_comments или trends_scraper, фолбэк в SCRAPER_API_KEY_FALLBACK; analytics: Bearer токен SCRAPER_ANALYTICS_API_KEY
 - [Comment collector scraper](comment-collector-scraper.md) — новый скрейпер 31.129.109.216:3030, Bearer токен, пакетный API; ключ в Directus collect_comments_bearer
-- [Analytics API auth](analytics-api-auth.md) — scraper-analytics.ts использует Bearer токен из env SCRAPER_ANALYTICS_API_KEY (не api-key header); base URL тот же SCRAPER_BASE
 - [N8n removal](n8n-removal.md) — n8n полностью удалён; все вебхуки заменены прямыми сервисами; publish-scheduler.ts — главный путь публикации
 - [User token policy](user-token-policy.md) — UI-операции ТОЛЬКО через user token; admin-token только для серверных задач; tokenExpired флаг → 401 sessionExpired
 - [Vite build memory](vite-build-memory.md) — vite build падает с exit -1 без вывода; нужно NODE_OPTIONS="--max-old-space-size=1024" npx vite build

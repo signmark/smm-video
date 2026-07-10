@@ -8,7 +8,7 @@
 **БД:** PostgreSQL через Directus (headless CMS)  
 **Auth:** Directus (JWT access_token + refresh_token)  
 **Хранилище:** Beget S3 (AWS SDK v3) для изображений  
-**AI:** Gemini 2.5 Flash/Pro (основной), Claude (fallback), DeepSeek, Qwen  
+**AI:** Gemini 3.5 Flash / 3.0 Pro / 2.5 Pro (основной), DeepSeek, Qwen (fallback)  
 **Изображения:** Vertex AI (Nanobanana), FAL.AI (Flux, Juggernaut XL)  
 **Оркестрация:** N8N (Docker) — сбор трендов, часть публикаций  
 **Dev:** Replit (порт 5000) | **Prod:** VPS smm.omemo.tech  
@@ -151,7 +151,7 @@ POST `/api/auth/register` → сервер через admin-токен созд�
 
 ### Генерация текста
 1. Контекст: анкета бизнеса + ключевые слова + тренды
-2. Генерация: Gemini 2.5 Flash → Claude / DeepSeek (fallback)
+2. Генерация: Gemini 3.5 Flash → DeepSeek → Qwen (fallback)
 3. Санитизация: удаление Markdown, HTML, «разговорных» вставок AI
 4. Заголовок: отдельный вызов AI, 3–6 слов
 5. Сохранение в `campaign_content` со статусом `draft`

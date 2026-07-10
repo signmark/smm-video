@@ -87,15 +87,19 @@ docker restart smm
 
 | Источник | `user` structure | Как читать email |
 |----------|-----------------|-----------------|
-| `/api/auth/me` (query) | `{ user: { id, email, isAdmin } }` | `user?.user?.email` |
+| `/api/auth/me` (query) | `{ user: { id, email, isAdmin } }` | email **всегда** `unknown@email.com` (JWT не содержит email) |
 | После логина (setQueryData) | `{ id, email, isAdmin }` | `user?.email` |
 
-**Правильный способ** — доставать email из JWT токена (как в `Layout.tsx:54`):
+**Правильный способ** — запрашивать email через `/api/user/profile` (использует admin token для запроса к Directus):
 ```typescript
-const token = localStorage.getItem('auth_token');
-const payload = JSON.parse(atob(token.split('.')[1]));
-const email = payload.email; // "signmark@gmail.com"
+const { data: userProfile } = useQuery<{ email: string }>({
+  queryKey: ['/api/user/profile', userId, token],
+  enabled: !!userId,
+});
+const email = userProfile?.email; // "signmark@gmail.com"
 ```
+
+**НЕ ИСПОЛЬЗУЙ** `JSON.parse(atob(token.split('.')[1]))` — JWT Directus НЕ содержит email, только `id, role, app_access, admin_access`.
 
 ### Container name
 

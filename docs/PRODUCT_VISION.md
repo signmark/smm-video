@@ -41,7 +41,7 @@ Instagram, VK, Telegram, Facebook, YouTube, Threads, TikTok — с учётом 
 ### Реализовано
 - Управление кампаниями (анкета бизнеса, ключевые слова, настройки платформ)
 - Сбор трендов из Telegram, VK, Instagram, YouTube через Scraper API + Pexels
-- AI-генерация текста: Gemini 2.5 Flash → Claude → DeepSeek (fallback-цепочка)
+- AI-генерация текста: Gemini 3.5 Flash / 3.0 Pro / 2.5 Pro → DeepSeek → Qwen (fallback-цепочка)
 - AI-генерация изображений: Imagen 4 / Gemini Flash / FAL.AI (Flux, Juggernaut XL, SDXL)
 - Публикация: Telegram, VK, VK Stories/Clips, Instagram, Instagram Reels, Facebook, Threads, YouTube, TikTok
 - Планировщик с 4-уровневой защитой от дублей, ретраями, автовосстановлением

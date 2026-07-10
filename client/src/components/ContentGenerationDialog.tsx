@@ -420,24 +420,30 @@ export function ContentGenerationDialog({ campaignId, keywords, onClose, content
               </div>
             </div>
 
-            {contentStyle?.style && (
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label className="text-right">
-                  Стиль
-                </Label>
-                <div className="col-span-3 flex items-center space-x-2">
-                  <Checkbox
-                    id="matchStyle"
-                    checked={matchStyle}
-                    onCheckedChange={(checked) => setMatchStyle(checked === true)}
-                    className="!border-gray-300 dark:!border-gray-600 data-[state=checked]:!bg-purple-600 data-[state=checked]:!text-white"
-                  />
-                  <Label htmlFor="matchStyle" className="text-sm cursor-pointer">
-                    Соответствовать стилю ({contentStyle.rawPostCount} постов)
-                  </Label>
-                </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label className="text-right">
+                Стиль
+              </Label>
+              <div className="col-span-3 flex items-center space-x-2">
+                {contentStyle?.style ? (
+                  <>
+                    <Checkbox
+                      id="matchStyle"
+                      checked={matchStyle}
+                      onCheckedChange={(checked) => setMatchStyle(checked === true)}
+                      className="!border-gray-300 dark:!border-gray-600 data-[state=checked]:!bg-purple-600 data-[state=checked]:!text-white"
+                    />
+                    <Label htmlFor="matchStyle" className="text-sm cursor-pointer">
+                      Соответствовать стилю ({contentStyle.rawPostCount} постов)
+                    </Label>
+                  </>
+                ) : (
+                  <span className="text-sm text-muted-foreground">
+                    Анализ стиля не проведён. Настройте в настройках кампании.
+                  </span>
+                )}
               </div>
-            )}
+            </div>
 
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="prompt" className="text-right">

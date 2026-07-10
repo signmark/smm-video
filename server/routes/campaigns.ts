@@ -195,8 +195,10 @@ export function registerCampaignRoutes(app: Express) {
         return res.status(401).json({ error: "Сессия истекла. Пожалуйста, войдите заново.", sessionExpired: true });
       }
 
+      // Use admin token to ensure all fields (including content_style) are returned
+      const adminToken = await adminTokenManager.getAdminToken();
       const response = await directusApi.get(`/items/user_campaigns/${id}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: { 'Authorization': `Bearer ${adminToken || token}` }
       });
 
       const item = response.data.data;

@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { usePlan } from "@/hooks/use-plan";
+import { useAuth } from "@/hooks/use-auth";
 import { PublishingStatus } from "@/components/PublishingStatus";
 import { ScheduledPostInfo } from "@/components/ScheduledPostInfo";
 import { Textarea } from "@/components/ui/textarea";
@@ -163,6 +164,16 @@ const cleanAiText = (text: string): string => {
 export default function ContentPage() {
   const { t } = useTranslation();
   const { limits, effectivePlan, isExpired } = usePlan();
+  const { user } = useAuth();
+
+  // Feature flag: стиль доступен только для signmark@gmail.com
+  const userId = user?.user?.id || user?.id;
+  const token = localStorage.getItem('auth_token');
+  const { data: userProfile } = useQuery<{ email: string }>({
+    queryKey: ['/api/user/profile', userId || 'me', token],
+    enabled: !!userId,
+  });
+  const isStyleFeatureEnabled = userProfile?.email === 'signmark@gmail.com';
 
   const { data: imageGenUsage } = useQuery<{
     count: number; limit: number | null; remaining: number | null; month: string;
@@ -3476,7 +3487,7 @@ export default function ContentPage() {
             trendScore: k.trend_score || 0,
             campaignId: k.campaign_id
           }))}
-          contentStyle={contentStyle}
+          contentStyle={isStyleFeatureEnabled ? contentStyle : null}
           onClose={() => {
             setIsGenerateDialogOpen(false);
             queryClient.invalidateQueries({ queryKey: ['/api/campaign-content', selectedCampaignId] });

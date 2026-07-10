@@ -237,19 +237,25 @@ export function ContentGenerationPanel({ selectedTopics, onGenerated }: ContentG
           />
         </div>
 
-        {contentStyle?.style && (
-          <div className="flex items-center space-x-2">
-            <Checkbox
-              id="matchStylePanel"
-              checked={matchStyle}
-              onCheckedChange={(checked) => setMatchStyle(checked === true)}
-              className="!border-gray-300 dark:!border-gray-600 data-[state=checked]:!bg-purple-600 data-[state=checked]:!text-white"
-            />
-            <Label htmlFor="matchStylePanel" className="text-sm cursor-pointer">
-              Соответствовать стилю ({contentStyle.rawPostCount} постов)
-            </Label>
-          </div>
-        )}
+        <div className="flex items-center space-x-2">
+          {contentStyle?.style ? (
+            <>
+              <Checkbox
+                id="matchStylePanel"
+                checked={matchStyle}
+                onCheckedChange={(checked) => setMatchStyle(checked === true)}
+                className="!border-gray-300 dark:!border-gray-600 data-[state=checked]:!bg-purple-600 data-[state=checked]:!text-white"
+              />
+              <Label htmlFor="matchStylePanel" className="text-sm cursor-pointer">
+                Соответствовать стилю ({contentStyle.rawPostCount} постов)
+              </Label>
+            </>
+          ) : (
+            <span className="text-sm text-muted-foreground">
+              Анализ стиля не проведён. Настройте в настройках кампании.
+            </span>
+          )}
+        </div>
 
         <Button
           data-testid="button-generate-content"

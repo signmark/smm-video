@@ -336,6 +336,7 @@ export default function ContentPage() {
   const [aiTone, setAiTone] = useState('informative');
   const [aiUseCampaignData, setAiUseCampaignData] = useState(true);
   const [aiSelectedKeywords, setAiSelectedKeywords] = useState<string[]>([]);
+  const [aiMatchStyle, setAiMatchStyle] = useState(false);
   const [isAiGenerating, setIsAiGenerating] = useState(false);
   const [showAiImagePanel, setShowAiImagePanel] = useState(false);
 
@@ -1134,7 +1135,8 @@ export default function ContentPage() {
           campaignId: selectedCampaignId,
           platform: 'telegram',
           service: aiModel,
-          useCampaignData: aiUseCampaignData
+          useCampaignData: aiUseCampaignData,
+          matchStyle: aiMatchStyle && contentStyle?.style
         })
       });
       if (!response.ok) {
@@ -2379,6 +2381,16 @@ export default function ContentPage() {
                             />
                             Данные компании
                           </label>
+                          {contentStyle?.style && (
+                            <label className="flex items-center gap-1.5 cursor-pointer text-muted-foreground">
+                              <Checkbox
+                                checked={aiMatchStyle}
+                                onCheckedChange={(c) => setAiMatchStyle(c === true)}
+                                className="h-3.5 w-3.5"
+                              />
+                              Соответствовать стилю
+                            </label>
+                          )}
                         </div>
                         {campaignKeywords.length > 0 && (
                           <div className="space-y-1.5">
@@ -2514,6 +2526,16 @@ export default function ContentPage() {
                           />
                           Данные компании
                         </label>
+                        {contentStyle?.style && (
+                          <label className="flex items-center gap-1.5 cursor-pointer text-muted-foreground">
+                            <Checkbox
+                              checked={aiMatchStyle}
+                              onCheckedChange={(c) => setAiMatchStyle(c === true)}
+                              className="h-3.5 w-3.5"
+                            />
+                            Соответствовать стилю
+                          </label>
+                        )}
                       </div>
                       {campaignKeywords.length > 0 && (
                         <div className="space-y-1.5">
@@ -2626,6 +2648,16 @@ export default function ContentPage() {
                           />
                           Данные компании
                         </label>
+                        {contentStyle?.style && (
+                          <label className="flex items-center gap-1.5 cursor-pointer text-muted-foreground">
+                            <Checkbox
+                              checked={aiMatchStyle}
+                              onCheckedChange={(c) => setAiMatchStyle(c === true)}
+                              className="h-3.5 w-3.5"
+                            />
+                            Соответствовать стилю
+                          </label>
+                        )}
                       </div>
                       {campaignKeywords.length > 0 && (
                         <div className="space-y-1.5">

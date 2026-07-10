@@ -158,6 +158,21 @@ const cleanAiText = (text: string): string => {
     cleaned = cleaned.replace(pattern, '');
   }
 
+  // Markdown-заголовки ### → жирный текст (для совместимости с соцсетями)
+  cleaned = cleaned.replace(/^#{1,6}\s+(.+)$/gm, '**$1**');
+
+  // Удаляем блоки кода
+  cleaned = cleaned.replace(/```[\s\S]*?```/g, (m) => m.replace(/```/g, '').trim());
+
+  // Инлайн-код
+  cleaned = cleaned.replace(/`([^`]+)`/g, '$1');
+
+  // Зачёркнутый
+  cleaned = cleaned.replace(/~~(.+?)~~/g, '$1');
+
+  // Маркированные списки - • вместо -
+  cleaned = cleaned.replace(/^[-*]\s+/gm, '• ');
+
   return cleaned.trim();
 };
 

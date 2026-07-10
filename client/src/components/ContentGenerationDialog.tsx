@@ -178,12 +178,11 @@ export function ContentGenerationDialog({ campaignId, keywords, onClose, content
                   .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') // Полужирный
                   .replace(/\*(.*?)\*/g, '<em>$1</em>'); // Курсив
 
-                // Обрабатываем заголовки
+                // Обрабатываем заголовки → жирный (h-теги не работают в соцсетях)
                 if (/^#+ /.test(processed)) {
                   const match = processed.match(/^(#+) (.*)/);
                   if (match) {
-                    const level = Math.min(match[1].length, 6); // ограничиваем h1-h6
-                    return `<h${level}>${match[2]}</h${level}>`;
+                    return `<p><strong>${match[2]}</strong></p>`;
                   }
                 }
 

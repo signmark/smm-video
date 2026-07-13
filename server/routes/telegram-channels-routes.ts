@@ -666,7 +666,7 @@ ${searchTerms.map(t => `- ${t}`).join('\n')}
       res.json({
         success: true,
         data: {
-          searchTerms: finalSearchTerms,
+          searchTerms: searchTerms,
           channels,
           totalFound: channels.length,
           added: addToSources ? addedSources.length : 0,

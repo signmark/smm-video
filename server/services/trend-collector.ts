@@ -266,9 +266,9 @@ async function findGroups(
     // Async: регистрируем задачи для callback
     for (const tid of taskIds) {
       if (platform === 'telegram') {
-        pendingTgFindGroupsTasks.set(String(tid), { campaignId: campaignId || '', keywords: searchQueries, minMembers, maxGroups, createdAt: Date.now() });
+        pendingTgFindGroupsTasks.set(String(tid), { campaignId: campaignId || '', keywords, minMembers, maxGroups, createdAt: Date.now() });
       } else {
-        pendingVkFindGroupsTasks.set(String(tid), { campaignId: campaignId || '', keywords: searchQueries, minMembers, maxGroups, createdAt: Date.now() });
+        pendingVkFindGroupsTasks.set(String(tid), { campaignId: campaignId || '', keywords, minMembers, maxGroups, createdAt: Date.now() });
       }
     }
     console.error(`[TrendCollector] ← ${batchEndpoint}: task_ids=${taskIds.join(',')} (async, ждём callback)`);

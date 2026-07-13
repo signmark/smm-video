@@ -1705,6 +1705,7 @@ export default function Trends() {
         const added = result.data.added ?? 0;
         const skipped = result.data.skippedDuplicates ?? 0;
         const terms = result.data.searchTerms?.join(', ') || '';
+        const skipped_text = skipped > 0 ? `, ${skipped} пропущено` : '';
 
         const totalFound = result.data.totalFound ?? 0;
 
@@ -1722,7 +1723,7 @@ export default function Trends() {
         } else {
           toast({
             title: t('trends.toasts.channelsFound'),
-            description: t('trends.toasts.channelsFoundDesc', { added, skipped, terms }),
+            description: t('trends.toasts.channelsFoundDesc', { added, skipped_text, terms }),
           });
         }
       } else if (!result.success) {

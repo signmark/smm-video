@@ -538,22 +538,38 @@ export function SocialMediaSettings({
         });
       }
     } else {
-      // Обычное сохранение в текущую кампанию
-      form.setValue('youtube.channelId', data.channelId);
-      form.setValue('youtube.channelTitle', data.channelTitle);
-      form.setValue('youtube.accessToken', data.accessToken);
-      form.setValue('youtube.refreshToken', data.refreshToken);
-      
+      // Сохраняем YouTube настройки напрямую через API (form.setValue асинхронен)
       try {
-        await onSubmit(form.getValues());
-        console.log('✅ [YouTube Complete] Settings automatically saved to current campaign');
+        const currentValues = form.getValues();
+        const mergedData = {
+          ...currentValues,
+          youtube: {
+            channelId: data.channelId,
+            channelTitle: data.channelTitle,
+            accessToken: data.accessToken,
+            refreshToken: data.refreshToken
+          }
+        };
+
+        const response = await apiRequest(`/api/campaigns/${campaignId}`, {
+          method: 'PATCH',
+          data: { social_media_settings: mergedData }
+        });
+
+        // Обновляем form state для UI
+        form.setValue('youtube.channelId', data.channelId);
+        form.setValue('youtube.channelTitle', data.channelTitle);
+        form.setValue('youtube.accessToken', data.accessToken);
+        form.setValue('youtube.refreshToken', data.refreshToken);
+
+        console.log('✅ [YouTube Complete] Settings saved to current campaign');
 
         toast({
           title: "YouTube настроен!",
           description: `Канал "${data.channelTitle}" готов к публикации видео`
         });
 
-        // Обновляем кэш кампании чтобы UI показывал актуальные данные
+        // Обновляем кэш кампании чтобы accordion показывал "Настроено"
         if (onSettingsUpdated) onSettingsUpdated();
       } catch (error) {
         console.error('❌ [YouTube Complete] Error saving settings:', error);

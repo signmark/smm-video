@@ -404,35 +404,38 @@ export default function ContentPage() {
   } | null>(null);
   const queryClient = useQueryClient();
 
-  // Показ toast и закрытие диалога после завершения публикации
+  // Закрытие диалога и показ toast после завершения публикации
   useEffect(() => {
     if (publishState === 'done' && publishResults) {
+      // Сначала закрываем диалог
+      setIsScheduleDialogOpen(false);
+
+      // Затем показываем toast через небольшую задержку
       const { succeeded, failed } = publishResults;
-      if (succeeded.length > 0 && failed.length === 0) {
-        toast({
-          title: 'Опубликовано',
-          description: `Успешно: ${succeeded.map(s => s.name).join(', ')}`,
-        });
-      } else if (succeeded.length > 0 && failed.length > 0) {
-        toast({
-          title: 'Частично опубликовано',
-          description: `Успешно: ${succeeded.map(s => s.name).join(', ')}. Ошибки: ${failed.map(f => `${f.name}: ${f.error}`).join(', ')}`,
-          variant: 'destructive',
-        });
-      } else {
-        toast({
-          title: 'Ошибка публикации',
-          description: failed.map(f => `${f.name}: ${f.error}`).join('; '),
-          variant: 'destructive',
-        });
-      }
-      // Закрываем диалог и сбрасываем состояние через короткую задержку
       const timer = setTimeout(() => {
-        setIsScheduleDialogOpen(false);
+        if (succeeded.length > 0 && failed.length === 0) {
+          toast({
+            title: 'Опубликовано',
+            description: `Успешно: ${succeeded.map(s => s.name).join(', ')}`,
+          });
+        } else if (succeeded.length > 0 && failed.length > 0) {
+          toast({
+            title: 'Частично опубликовано',
+            description: `Успешно: ${succeeded.map(s => s.name).join(', ')}. Ошибки: ${failed.map(f => `${f.name}: ${f.error}`).join(', ')}`,
+            variant: 'destructive',
+          });
+        } else {
+          toast({
+            title: 'Ошибка публикации',
+            description: failed.map(f => `${f.name}: ${f.error}`).join('; '),
+            variant: 'destructive',
+          });
+        }
+        // Сбрасываем состояние
         setPublishState('idle');
         setPublishResults(null);
         queryClient.invalidateQueries({ queryKey: ['/api/campaign-content'] });
-      }, 2000);
+      }, 300);
       return () => clearTimeout(timer);
     }
   }, [publishState, publishResults, toast, queryClient]);

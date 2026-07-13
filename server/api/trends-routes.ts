@@ -1585,7 +1585,7 @@ ${trendsForAi}
           try {
             aiResponse = await geminiDirect.generateContent({
               prompt: enrichPrompt,
-              model: 'gemini-3-pro-preview'
+              model: 'gemini-2.5-flash'
             });
           } catch (geminiErr: any) {
             log(`[Trends Route] Gemini недоступен для обогащения: ${geminiErr.message}`, 'warn');

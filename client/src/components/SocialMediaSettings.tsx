@@ -1642,8 +1642,8 @@ export function SocialMediaSettings({
           ...(vkSettings || {}),
           ...data.vk
         },
+        // YouTube: form data has priority (wizard just set fresh values)
         youtube: {
-          ...(initialSettings as any)?.youtube,
           ...(data as any).youtube
         }
       };

@@ -494,14 +494,14 @@ export function registerTelegramChannelsRoutes(app: Express) {
 Исходные ключевые слова/фразы:
 ${searchTerms.map(t => `- ${t}`).join('\n')}
 
-Твоя задача: для каждой фразы придумать 3-5 коротких поисковых слов или словосочетаний (1-3 слова), которые РЕАЛЬНО могут встречаться в названиях или описаниях Telegram-каналов на эту тему.
-- Включай русские синонимы и смежные понятия
-- Включай английские термины если они распространены (например "no-code", "AI", "ChatGPT")
-- НЕ включай длинные фразы — только отдельные слова или короткие термины
+Твоя задача: для каждой фразы придумать 2-3 коротких поисковых слова (1-2 слова), которые ТОЧНО связаны с исходной темой.
+- Только прямые синонимы или очень близкие понятия (например "маркетинг" → "реклама", "продвижение")
+- Английские термины если они распространены в этой теме
+- НЕ генерируй широкие смежные темы — только ТОЧНЫЕ соответствия
 - НЕ повторяй исходные фразы целиком
-- Верни ТОЛЬКО список слов/терминов через запятую, без пояснений
+- Верни ТОЛЬКО список слов через запятую, без пояснений
 
-Пример ответа: программирование, no-code, автоматизация, нейросети, ChatGPT, ИИ`;
+Пример: если исходное "SMM-продвижение", ответ: "маркетинг, реклама, таргет"`;
 
           // Берём ключ напрямую из env и передаём явно — никаких побочных эффектов на singleton.
           const geminiKey = process.env.GEMINI_API_KEY;
@@ -595,22 +595,17 @@ ${searchTerms.map(t => `- ${t}`).join('\n')}
 
       console.log(`[Suggest Sources] Найдено каналов до AI-фильтрации: ${channels.length}`);
 
-      // 5. AI-фильтрация релевантности — оставляем только то, что совпадает с тематикой кампании
+      // 5. AI-фильтрация релевантности — оставляем только то, что точно совпадает с ключевыми словами кампании
       if (channels.length > 0) {
         try {
           const { filterByRelevance } = await import('../services/ai-relevance-filter');
           const filterResult = await filterByRelevance(channels, searchTerms, 'telegram', hasLimit ? Number(limit) : undefined);
           console.log(`[Suggest Sources] AI-фильтрация: ${filterResult.relevant.length}/${channels.length} релевантных`);
-          if (filterResult.relevant.length > 0) {
-            channels.length = 0;
-            channels.push(...filterResult.relevant);
-          }
-          // Если AI отсеял всё — оставляем как есть (лучше показать что нашли)
-          if (filterResult.relevant.length === 0 && channels.length > 0) {
-            console.log(`[Suggest Sources] AI отсеял все каналы, оставляем оригинальные результаты`);
-          }
+          // Всегда заменяем результаты отфильтрованными (включая пустой список)
+          channels.length = 0;
+          channels.push(...filterResult.relevant);
         } catch (filterErr: any) {
-          console.error(`[Suggest Sources] ⚠️ AI-фильтрация не удалась: ${filterErr.message}`);
+          console.error(`[Suggest Sources] ⚠️ AI-фильтрация не удалась: ${filterErr.message}, сохраняем все`);
         }
       }
 

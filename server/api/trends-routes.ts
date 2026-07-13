@@ -740,10 +740,9 @@ export function registerTrendsRoutes(app: Express) {
           const { filterByRelevance } = await import('../services/ai-relevance-filter');
           const filterResult = await filterByRelevance(channels, task.keywords, 'telegram');
           console.log(`[TG FindGroups Webhook] AI-фильтрация: ${filterResult.relevant.length}/${channels.length} релевантных`);
-          if (filterResult.relevant.length > 0) {
-            channels.length = 0;
-            channels.push(...filterResult.relevant);
-          }
+          // Всегда заменяем результаты отфильтрованными (включая пустой список)
+          channels.length = 0;
+          channels.push(...filterResult.relevant);
         } catch (filterErr: any) {
           console.error(`[TG FindGroups Webhook] ⚠️ AI-фильтрация не удалась: ${filterErr.message}, сохраняем все`);
         }
@@ -859,10 +858,9 @@ export function registerTrendsRoutes(app: Express) {
           const { filterByRelevance } = await import('../services/ai-relevance-filter');
           const filterResult = await filterByRelevance(groups, task.keywords, 'vk');
           console.log(`[VK FindGroups Webhook] AI-фильтрация: ${filterResult.relevant.length}/${groups.length} релевантных`);
-          if (filterResult.relevant.length > 0) {
-            groups.length = 0;
-            groups.push(...filterResult.relevant);
-          }
+          // Всегда заменяем результаты отфильтрованными (включая пустой список)
+          groups.length = 0;
+          groups.push(...filterResult.relevant);
         } catch (filterErr: any) {
           console.error(`[VK FindGroups Webhook] ⚠️ AI-фильтрация не удалась: ${filterErr.message}, сохраняем все`);
         }

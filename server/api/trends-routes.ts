@@ -187,7 +187,7 @@ async function analyzeSentimentWithAI(comments: any[]): Promise<Record<string, a
   const commentTexts = comments
     .map((c: any) => (c.text || c.content || '').trim())
     .filter((t: string) => t.length > 0)
-    .slice(0, 200);
+    .slice(0, 50);
 
   if (commentTexts.length === 0) {
     return {
@@ -227,7 +227,9 @@ ${commentTexts.map((t: string, i: number) => `${i + 1}. ${t}`).join('\n')}
   try {
     const aiResponse = await geminiDirect.generateContent({
       prompt,
-      model: 'gemini-2.5-flash'
+      model: 'gemini-2.5-flash',
+      temperature: 0.3,
+      maxOutputTokens: 1024
     });
 
     const cleanJson = aiResponse.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
@@ -2039,7 +2041,7 @@ ${trendSummaries.length > 0 ? `ВЫВОДЫ ПО ТРЕНДАМ:\n${trendSummari
 
           const aiResponse = await geminiDirect.generateContent({
             prompt: summaryPrompt,
-            model: 'gemini-3-pro-preview'
+            model: 'gemini-2.5-flash'
           });
 
           try {

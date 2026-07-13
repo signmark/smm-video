@@ -231,7 +231,8 @@ export function registerCampaignRoutes(app: Express) {
     } catch (error: any) {
       const status = error.response?.status;
       console.error(`[CAMPAIGN_GET_ERROR] Error fetching campaign ${req.params.id}:`, error.response?.data || error.message);
-      if (status === 401 || status === 403) {
+      // 403 от Directus = кампания удалена или нет доступа, НЕ истечение сессии
+      if (status === 401) {
         return res.status(401).json({ error: "Сессия истекла. Пожалуйста, войдите заново.", sessionExpired: true });
       }
       res.status(404).json({ error: "Campaign not found" });

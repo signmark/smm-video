@@ -227,7 +227,7 @@ ${commentTexts.map((t: string, i: number) => `${i + 1}. ${t}`).join('\n')}
   try {
     const aiResponse = await geminiDirect.generateContent({
       prompt,
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3.5-flash',
       temperature: 0.3,
       maxOutputTokens: 1024
     });
@@ -1587,7 +1587,7 @@ ${trendsForAi}
           try {
             aiResponse = await geminiDirect.generateContent({
               prompt: enrichPrompt,
-              model: 'gemini-2.5-flash'
+              model: 'gemini-3.5-flash'
             });
           } catch (geminiErr: any) {
             log(`[Trends Route] Gemini недоступен для обогащения: ${geminiErr.message}`, 'warn');

@@ -151,8 +151,15 @@ export function ContentGenerationPanel({ selectedTopics, onGenerated }: ContentG
       return genData.content as string;
     },
     onSuccess: (rawContent) => {
-      const isHtml = /<[a-z][\s\S]*>/i.test(rawContent);
-      const html = isHtml ? rawContent : markdownToHtml(rawContent);
+      // Всегда очищаем Markdown (даже если есть HTML-теги)
+      let cleaned = rawContent
+        .replace(/^#{1,6}\s+(.+)$/gm, '<p><strong>$1</strong></p>')
+        .replace(/```[\s\S]*?```/g, (m) => m.replace(/```/g, '').trim())
+        .replace(/`([^`]+)`/g, '$1')
+        .replace(/~~(.+?)~~/g, '$1');
+
+      const isHtml = /<[a-z][\s\S]*>/i.test(cleaned);
+      const html = isHtml ? cleaned : markdownToHtml(cleaned);
       setGeneratedContent(html);
     },
     onError: (error: Error) => {

@@ -154,57 +154,51 @@ export function ContentGenerationDialog({ campaignId, keywords, onClose, content
 
 
 
-      // Простая проверка на наличие HTML-тегов
-      if (content.includes('<p>') || content.includes('<div>') || content.includes('<h1>')) {
+      // Всегда очищаем Markdown-артефакты (даже если есть HTML-теги)
+      let cleaned = content
+        // Заголовки ### → жирный (h-теги не работают в соцсетях)
+        .replace(/^#{1,6}\s+(.+)$/gm, '<p><strong>$1</strong></p>')
+        // Удаляем блоки кода
+        .replace(/```[\s\S]*?```/g, (m) => m.replace(/```/g, '').trim())
+        // Инлайн-код
+        .replace(/`([^`]+)`/g, '$1')
+        // Зачёркнутый
+        .replace(/~~(.+?)~~/g, '$1')
+        // Маркированные списки
+        .replace(/^[-*]\s+(.+)$/gm, '• $1');
 
-        setGenerationResult(content);
-      } else {
-        // Форматируем обычный текст в HTML
+      // Если нет HTML-тегов — форматируем plain text
+      if (!/<[a-z][\s\S]*>/i.test(cleaned)) {
         try {
-          let formattedContent = '';
-
-          // Разбиваем текст на параграфы по двойному переносу строки
-          const paragraphs = content.split('\n\n')
+          const paragraphs = cleaned.split('\n\n')
             .map((p: string) => p.trim())
             .filter((p: string) => p.length > 0);
 
-
-
           if (paragraphs.length > 0) {
-            formattedContent = paragraphs
+            cleaned = paragraphs
               .map((paragraph: string) => {
-                // Обрабатываем маркдаун-форматирование
                 let processed = paragraph
-                  .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') // Полужирный
-                  .replace(/\*(.*?)\*/g, '<em>$1</em>'); // Курсив
-
-                // Обрабатываем заголовки → жирный (h-теги не работают в соцсетях)
+                  .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+                  .replace(/\*(.*?)\*/g, '<em>$1</em>');
                 if (/^#+ /.test(processed)) {
                   const match = processed.match(/^(#+) (.*)/);
-                  if (match) {
-                    return `<p><strong>${match[2]}</strong></p>`;
-                  }
+                  if (match) return `<p><strong>${match[2]}</strong></p>`;
                 }
-
-                // Оборачиваем в параграф, если это не заголовок
                 return `<p>${processed}</p>`;
               })
               .join('');
           } else {
-            // Если разбивка на параграфы не сработала, оборачиваем весь текст в один параграф
-            formattedContent = `<p>${content
+            cleaned = `<p>${cleaned
               .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
               .replace(/\*(.*?)\*/g, '<em>$1</em>')}</p>`;
           }
-
-
-          setGenerationResult(formattedContent);
         } catch (error) {
           console.error('Ошибка при форматировании контента:', error);
-          // В случае ошибки форматирования просто используем текст как есть, обернутый в параграф
-          setGenerationResult(`<p>${content}</p>`);
+          cleaned = `<p>${cleaned}</p>`;
         }
       }
+
+      setGenerationResult(cleaned);
 
       setIsGenerating(false);
     },

@@ -1196,9 +1196,15 @@ export default function ContentPage() {
       }
       const data = await response.json();
       const rawText = data.content || '';
-      const cleaned = cleanAiText(rawText);
-      // Конвертируем plain text в HTML для редактора
-      const html = cleaned.includes('<p>') || cleaned.includes('<div>')
+      let cleaned = cleanAiText(rawText);
+      // Дополнительная очистка Markdown (даже если уже есть HTML)
+      cleaned = cleaned
+        .replace(/^#{1,6}\s+(.+)$/gm, '<p><strong>$1</strong></p>')
+        .replace(/```[\s\S]*?```/g, (m) => m.replace(/```/g, '').trim())
+        .replace(/`([^`]+)`/g, '$1')
+        .replace(/~~(.+?)~~/g, '$1');
+      // Если нет HTML — форматируем plain text
+      const html = /<[a-z][\s\S]*>/i.test(cleaned)
         ? cleaned
         : cleaned.split('\n\n').filter(p => p.trim()).map(p => `<p>${p.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>')}</p>`).join('');
       targetSetter(html || `<p>${cleaned}</p>`);

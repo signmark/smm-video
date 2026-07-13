@@ -146,9 +146,11 @@ export function ContentGenerationDialog({ campaignId, keywords, onClose, content
         });
         setSelectedService(data.model.includes('deepseek') ? 'deepseek-chat' : 'gemini-2.5-flash' as any);
       } else {
+        // Показываем оригинальную выбранную модель, а не замапленную сервером
+        const displayModel = data.originalService || data.model || '';
         toast({
           title: 'Успешно',
-          description: `Контент сгенерирован с помощью ${modelLabel(data.model || '')}`
+          description: `Контент сгенерирован с помощью ${modelLabel(displayModel)}`
         });
       }
 

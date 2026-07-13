@@ -1223,7 +1223,9 @@ export default function ContentPage() {
         'deepseek': 'DeepSeek',
         'qwen': 'Qwen',
       };
-      const svcLabel = MODEL_NAMES[data.model] ?? MODEL_NAMES[data.service] ?? MODEL_NAMES[aiModel] ?? data.model ?? data.service ?? aiModel ?? 'Gemini';
+      // Показываем оригинальную выбранную модель, а не замапленную сервером
+      const displayModel = data.originalService || data.model || data.service || aiModel;
+      const svcLabel = MODEL_NAMES[displayModel] ?? displayModel ?? 'Gemini';
       const originalLabel = data.originalService ? (MODEL_NAMES[data.originalService] ?? data.originalService) : null;
       if (data.isFallback && originalLabel) {
         toast({ title: 'Модель переключена', description: `${originalLabel} была недоступна. Ответ через ${svcLabel}.` });

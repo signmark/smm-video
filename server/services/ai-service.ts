@@ -208,7 +208,8 @@ export class AiService {
               success: true,
               content: generatedText.trim(),
               model: modelId,
-              service: 'gemini-proxy'
+              service: 'gemini-proxy',
+              originalService: params.service || params.model  // original user-selected model
             };
           }
         } catch (proxyError: any) {
@@ -236,7 +237,7 @@ export class AiService {
                 });
                 if (fallbackText) {
                   log(`[AiService] Fallback success with ${fallbackModel}`, 'info');
-                  return { success: true, content: fallbackText.trim(), model: fallbackModel, service: 'gemini-proxy-fallback' };
+                  return { success: true, content: fallbackText.trim(), model: fallbackModel, service: 'gemini-proxy-fallback', originalService: params.service || params.model };
                 }
               } catch (fallbackErr: any) {
                 log(`[AiService] Fallback model ${fallbackModel} also failed: ${fallbackErr.message?.slice(0,80)}`, 'warn');

@@ -227,10 +227,11 @@ ${commentTexts.map((t: string, i: number) => `${i + 1}. ${t}`).join('\n')}
   try {
     const aiResponse = await geminiDirect.generateContent({
       prompt,
-      model: 'gemini-3-pro-preview'
+      model: 'gemini-2.5-flash'
     });
 
     const cleanJson = aiResponse.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+    console.log(`[Sentiment AI] Ответ от AI (первые 500 символов): ${cleanJson.substring(0, 500)}`);
     const parsed = JSON.parse(cleanJson);
 
     return {
@@ -253,7 +254,7 @@ ${commentTexts.map((t: string, i: number) => `${i + 1}. ${t}`).join('\n')}
       commentsAnalyzed: commentTexts.length,
     };
   } catch (err: any) {
-    log(`[Sentiment AI] ⚠️ Ошибка AI анализа: ${err.message}. Fallback на базовый анализ.`, 'warn');
+    console.error(`[Sentiment AI] ⚠️ Ошибка AI анализа: ${err.message}. Fallback на базовый анализ.`);
     return analyzeSentimentFallback(comments);
   }
 }

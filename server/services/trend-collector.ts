@@ -66,7 +66,6 @@ export interface CollectTrendsParams {
   platforms?: string[];
   collectSources?: boolean;
   keywords?: string[];
-  maxSourcesPerPlatform?: number;
   minFollowers?: Record<string, number>;
   sourcesList?: string[];
 }
@@ -219,7 +218,6 @@ async function findGroups(
   platform: 'telegram' | 'vk',
   keywords: string[],
   minMembers: number,
-  maxGroups: number,
   apiKey: string,
   campaignId?: string
 ): Promise<TgGroup[] | VkGroup[]> {
@@ -237,7 +235,6 @@ async function findGroups(
   // Скрейпер сам разбивает на батчи по 5 ключей
   const batchBody: any = {
     queries: searchQueries,
-    limit: maxGroups,
     min_members: minMembers,
     unified: false,
     strict_min_members: true,
@@ -252,7 +249,7 @@ async function findGroups(
     batchBody.check_missing_activity = true;
   }
 
-  console.error(`[TrendCollector] → ${batchEndpoint} queries=${JSON.stringify(searchQueries)} min_members=${minMembers} limit=${maxGroups}`);
+  console.error(`[TrendCollector] → ${batchEndpoint} queries=${JSON.stringify(searchQueries)} min_members=${minMembers}`);
   const data = await callScraper(batchEndpoint, batchBody, apiKey);
 
   if (!data) {
@@ -266,9 +263,9 @@ async function findGroups(
     // Async: регистрируем задачи для callback
     for (const tid of taskIds) {
       if (platform === 'telegram') {
-        pendingTgFindGroupsTasks.set(String(tid), { campaignId: campaignId || '', keywords, minMembers, maxGroups, createdAt: Date.now() });
+        pendingTgFindGroupsTasks.set(String(tid), { campaignId: campaignId || '', keywords, minMembers, createdAt: Date.now() });
       } else {
-        pendingVkFindGroupsTasks.set(String(tid), { campaignId: campaignId || '', keywords, minMembers, maxGroups, createdAt: Date.now() });
+        pendingVkFindGroupsTasks.set(String(tid), { campaignId: campaignId || '', keywords, minMembers, createdAt: Date.now() });
       }
     }
     console.error(`[TrendCollector] ← ${batchEndpoint}: task_ids=${taskIds.join(',')} (async, ждём callback)`);
@@ -875,7 +872,6 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
   const daysBack = params.daysSince || 7;
   const collectSources = params.collectSources ?? false;
   const keywords = params.keywords || [];
-  const maxSourcesPerPlatform = params.maxSourcesPerPlatform || 10;
   const minFollowers = params.minFollowers || { telegram: 2000, vk: 3000, youtube: 10000, instagram: 5000 };
   const platforms = params.platforms || ['telegram', 'vk', 'youtube', 'instagram'];
   const sourcesList = params.sourcesList;
@@ -896,7 +892,7 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
 
       if (collectSources && keywords.length > 0) {
         console.error(`[TrendCollector][TG] Поиск каналов по ${keywords.length} ключевым словам`);
-        const groups = await findGroups('telegram', keywords, minFollowers.telegram || 2000, maxSourcesPerPlatform, apiKey, campaignId) as TgGroup[];
+        const groups = await findGroups('telegram', keywords, minFollowers.telegram || 2000, apiKey, campaignId) as TgGroup[];
         log(`[TrendCollector][TG] Найдено каналов: ${groups.length}`, 'info');
         results.sourcesFound!.telegram = groups.length;
 
@@ -1016,7 +1012,7 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
 
       if (collectSources && keywords.length > 0) {
         log(`[TrendCollector][VK] Поиск групп по ${keywords.length} ключевым словам`, 'info');
-        const groups = await findGroups('vk', keywords, minFollowers.vk || 3000, maxSourcesPerPlatform, apiKey, campaignId) as VkGroup[];
+        const groups = await findGroups('vk', keywords, minFollowers.vk || 3000, apiKey, campaignId) as VkGroup[];
         log(`[TrendCollector][VK] Найдено открытых групп: ${groups.length}`, 'info');
         results.sourcesFound!.vk = groups.length;
 

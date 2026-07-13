@@ -16,10 +16,10 @@ export interface TrendAnalysisSettings {
     facebook: number;
     youtube: number;
   };
-  maxSourcesPerPlatform: number;
+  maxSourcesPerPlatform?: number;
   maxTrendsPerSource: number;
-  minViews?: number; // Минимальное количество просмотров для тренда
-  collectionDays?: number; // Количество дней для сбора постов
+  minViews?: number;
+  collectionDays?: number;
 }
 
 export interface Campaign {

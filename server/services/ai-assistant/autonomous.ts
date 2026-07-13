@@ -655,22 +655,6 @@ export async function executeAutonomousAction(action: string, request: AIAssista
             platforms: platforms,
             collectSources: 1,
             collectComments: [],
-            minFollowers: {
-              instagram: 5000,
-              telegram: 2000,
-              vk: 3000,
-              facebook: 5000,
-              youtube: 10000
-            },
-            maxSourcesPerPlatform: 10,
-            maxTrendsPerSource: 5,
-            day_past: 7,
-            language: "ru",
-            filters: {
-              minReactions: 10,
-              minViews: 500,
-              contentTypes: ["text", "image", "video"]
-            }
           })
         });
         
@@ -801,22 +785,6 @@ export async function executeWithSelectedPlatforms(request: AIAssistantRequest, 
         platforms: validPlatforms,
         collectSources: 1,
         collectComments: [],
-        minFollowers: {
-          instagram: 5000,
-          telegram: 2000,
-          vk: 3000,
-          facebook: 5000,
-          youtube: 10000
-        },
-        maxSourcesPerPlatform: 10,
-        maxTrendsPerSource: 5,
-        day_past: 7,
-        language: "ru",
-        filters: {
-          minReactions: 10,
-          minViews: 500,
-          contentTypes: ["text", "image", "video"]
-        }
       })
     });
 

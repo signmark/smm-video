@@ -29,10 +29,10 @@ export function TrendAnalysisSettings({
       facebook: 5000,
       youtube: 10000
     },
-    maxSourcesPerPlatform: 10,
+    maxSourcesPerPlatform: 30,
     maxTrendsPerSource: 5,
     minViews: 500,
-    collectionDays: 7 // По умолчанию 7 дней
+    collectionDays: 7
   };
   
   const [settings, setSettings] = useState<TrendSettings>(
@@ -59,14 +59,6 @@ export function TrendAnalysisSettings({
     });
   };
   
-  const handleMaxSourcesChange = (value: string) => {
-    const numValue = parseInt(value) || 0;
-    setSettings({
-      ...settings,
-      maxSourcesPerPlatform: numValue
-    });
-  };
-  
   const handleMaxTrendsChange = (value: string) => {
     const numValue = parseInt(value) || 0;
     setSettings({
@@ -88,6 +80,14 @@ export function TrendAnalysisSettings({
     setSettings({
       ...settings,
       collectionDays: numValue
+    });
+  };
+
+  const handleMaxSourcesChange = (value: string) => {
+    const numValue = parseInt(value) || 0;
+    setSettings({
+      ...settings,
+      maxSourcesPerPlatform: numValue
     });
   };
   
@@ -295,19 +295,19 @@ export function TrendAnalysisSettings({
                   <Input 
                     id="max-sources"
                     type="number" 
-                    value={settings.maxSourcesPerPlatform} 
+                    value={settings.maxSourcesPerPlatform || 30} 
                     onChange={(e) => handleMaxSourcesChange(e.target.value)}
                     min={1}
-                    max={100}
+                    max={500}
                     className="mt-1"
                   />
                   <p className="text-xs text-muted-foreground mt-1">
-                    Максимальное количество источников, которые будут проанализированы для каждой платформы
+                    Максимальное количество источников для скрейпера. Подбор из TGStat работает без лимитов.
                   </p>
                 </div>
               </div>
             </div>
-            
+
             <div className="space-y-2 bg-muted/50 p-4 rounded-lg border">
               <Label htmlFor="max-trends" className="text-base font-medium">Лимиты трендов</Label>
               <div className="mt-2">

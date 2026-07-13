@@ -426,7 +426,8 @@ export function registerTelegramChannelsRoutes(app: Express) {
   app.post('/api/campaigns/:campaignId/suggest-sources', authenticateRequest, async (req: Request & { userToken?: string; userId?: string }, res: Response) => {
     try {
       const { campaignId } = req.params;
-      const { limit = 30, addToSources = false, query: customQuery } = req.body;
+      const { limit, addToSources = false, query: customQuery } = req.body;
+      const hasLimit = limit && Number(limit) > 0;
 
       console.log(`[Suggest Sources] Начинаем подбор каналов для кампании ${campaignId}`);
 
@@ -569,7 +570,7 @@ ${searchTerms.map(t => `- ${t}`).join('\n')}
             ]
           },
           sort: ['-subscribers'],
-          limit: Math.ceil(limit * 1.5),
+          ...(hasLimit ? { limit: Math.ceil(Number(limit) * 1.5) } : { limit: 500 }),
           fields: ['id', 'username', 'title', 'description', 'subscribers', 'category_id.name_ru', 'category_id.icon'],
           authToken: req.userToken
         }).catch((err: any) => {
@@ -582,7 +583,7 @@ ${searchTerms.map(t => `- ${t}`).join('\n')}
 
       for (const batch of results) {
         for (const ch of (batch || []) as any[]) {
-          if (!seen.has(ch.id) && channels.length < limit) {
+          if (!seen.has(ch.id) && (!hasLimit || channels.length < Number(limit))) {
             seen.add(ch.id);
             channels.push(ch);
           }
@@ -598,7 +599,7 @@ ${searchTerms.map(t => `- ${t}`).join('\n')}
       if (channels.length > 0) {
         try {
           const { filterByRelevance } = await import('../services/ai-relevance-filter');
-          const filterResult = await filterByRelevance(channels, searchTerms, 'telegram', limit);
+          const filterResult = await filterByRelevance(channels, searchTerms, 'telegram', hasLimit ? Number(limit) : undefined);
           console.log(`[Suggest Sources] AI-фильтрация: ${filterResult.relevant.length}/${channels.length} релевантных`);
           if (filterResult.relevant.length > 0) {
             channels.length = 0;

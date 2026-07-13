@@ -330,11 +330,11 @@ export function registerTrendsRoutes(app: Express) {
         log(`[Trends Route] Не удалось получить trend_analysis_settings для ${campaignId}: ${e.message}`, 'warn');
       }
 
-      // Параметры: настройки кампании → перекрываются явными значениями из req.body
+      // Параметры: читаются из настроек кампании (campaignTrendSettings)
       const collectionDays = req.body.collectionDays ?? req.body.day_past ?? campaignTrendSettings.collectionDays ?? 7;
       const minViews = req.body.minViews ?? campaignTrendSettings.minViews ?? 300;
       const maxTrendsPerSource = req.body.maxTrendsPerSource ?? campaignTrendSettings.maxTrendsPerSource ?? 5;
-      const maxSourcesPerPlatform = req.body.maxSourcesPerPlatform ?? campaignTrendSettings.maxSourcesPerPlatform ?? 10;
+      const maxSourcesPerPlatform = campaignTrendSettings.maxSourcesPerPlatform || undefined; // Из настроек кампании
       const minFollowers = req.body.minFollowers ?? campaignTrendSettings.minFollowers ?? {
         instagram: 5000,
         telegram: 2000,
@@ -363,7 +363,15 @@ export function registerTrendsRoutes(app: Express) {
         }
       }
 
-      log(`[Trends Route] Параметры: days=${collectionDays}, maxTrends=${maxTrendsPerSource}, maxSources=${maxSourcesPerPlatform}, collectSources=${collectSources}, keywords=${resolvedKeywords.length}, platforms=${JSON.stringify(platforms)}`, 'info');
+      log(`[Trends Route] Параметры: days=${collectionDays}, maxTrends=${maxTrendsPerSource}, collectSources=${collectSources}, keywords=${resolvedKeywords.length}, platforms=${JSON.stringify(platforms)}`, 'info');
+
+      // Если запущен сбор источников (скрейпер), проверяем что в настройках кампании задан лимит
+      if (collectSources && !maxSourcesPerPlatform) {
+        return res.status(400).json({
+          success: false,
+          error: 'Настройте лимит источников в настройках кампании (Параметры сбора трендов → Лимиты источников), иначе запуск сбора невозможен.'
+        });
+      }
 
       // Запускаем прямой сбор фоново, сразу отвечаем клиенту
       (async () => {
@@ -378,7 +386,6 @@ export function registerTrendsRoutes(app: Express) {
             platforms: platforms || ['telegram', 'vk', 'youtube', 'instagram'],
             collectSources: collectSources ?? false,
             keywords: resolvedKeywords,
-            maxSourcesPerPlatform,
             minFollowers,
             sourcesList: Array.isArray(sourcesList) && sourcesList.length > 0 ? sourcesList : undefined
           });
@@ -398,8 +405,7 @@ export function registerTrendsRoutes(app: Express) {
           collectSources: collectSources ?? false,
           keywords: resolvedKeywords.length,
           days: collectionDays,
-          maxTrendsPerSource,
-          maxSourcesPerPlatform
+          maxTrendsPerSource
         }
       });
     } catch (error: any) {

@@ -357,7 +357,6 @@ export default function Trends() {
   const [isBulkImportDialogOpen, setIsBulkImportDialogOpen] = useState(false);
   const [isSourceCollectionDialogOpen, setIsSourceCollectionDialogOpen] = useState(false);
   const [isSuggestingChannels, setIsSuggestingChannels] = useState(false);
-  const [suggestLimit, setSuggestLimit] = useState(30);
   const [tgstatSearchQuery, setTgstatSearchQuery] = useState('');
   const [hiddenTrendIds, setHiddenTrendIds] = useState<Set<string>>(new Set());
   const [selectedTrendTopic, setSelectedTrendTopic] = useState<TrendTopic | null>(null);
@@ -1685,7 +1684,7 @@ export default function Trends() {
 
     try {
       const authToken = localStorage.getItem('auth_token');
-      const body: Record<string, any> = { limit: suggestLimit, addToSources: true };
+      const body: Record<string, any> = { addToSources: true };
       if (tgstatSearchQuery.trim()) {
         body.query = tgstatSearchQuery.trim();
       }
@@ -1820,25 +1819,9 @@ export default function Trends() {
                   <Bot className="mr-2 h-4 w-4" />
                 )}
                 {t('trends.page.fromTGStat')}
-                <span className="ml-auto text-xs text-muted-foreground">{suggestLimit}</span>
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-          <Select
-            value={String(suggestLimit)}
-            onValueChange={(v) => setSuggestLimit(Number(v))}
-            disabled={!isValidCampaignSelected || isSuggestingChannels}
-          >
-            <SelectTrigger className="h-9 w-20" data-testid="select-suggest-limit">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="10">10</SelectItem>
-              <SelectItem value="30">30</SelectItem>
-              <SelectItem value="50">50</SelectItem>
-              <SelectItem value="100">100</SelectItem>
-            </SelectContent>
-          </Select>
         </div>
       </div>
       {isValidCampaignSelected && (

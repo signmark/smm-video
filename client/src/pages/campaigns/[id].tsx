@@ -165,7 +165,9 @@ export default function CampaignDetails() {
       }
     },
     enabled: !!id,
-    staleTime: 5 * 60 * 1000,
+    staleTime: 30 * 1000,  // 30 секунд — обновляемся чаще
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
     retry: false,
   });
 
@@ -1134,7 +1136,11 @@ export default function CampaignDetails() {
                 campaignId={id}
                 initialSettings={campaign?.social_media_settings}
                 onSettingsUpdated={() => {
+                  // Принудительный рефetch — invalidateQueries + refetchQueries
                   queryClient.invalidateQueries({
+                    queryKey: ["/api/proxy/campaign", id],
+                  });
+                  queryClient.refetchQueries({
                     queryKey: ["/api/proxy/campaign", id],
                   });
                 }}

@@ -63,7 +63,7 @@ export function SocialNetworkSelectorDialog({
   };
 
   return (
-    <Dialog open={isOpen}>
+    <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Выберите социальные сети для сбора трендов</DialogTitle>

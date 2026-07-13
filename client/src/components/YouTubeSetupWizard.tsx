@@ -223,42 +223,24 @@ export function YouTubeSetupWizard({ campaignId, initialSettings, onComplete }: 
         };
 
         const popupOpenedAt = Date.now();
-        const MIN_WAIT_MS = 3000; // минимум 3 секунды — popup должен успеть загрузить Google
 
+        // Проверяем только localStorage флаги — НЕ проверяем popup.closed
+        // (при редиректах Google popup.closed временно true → ложные срабатывания)
         const checkClosed = setInterval(() => {
-          // Не проверяем первые 3 секунд — popup ещё грузит страницу Google
-          if (Date.now() - popupOpenedAt < MIN_WAIT_MS) return;
+          const successFlag = localStorage.getItem('youtubeOAuthSuccess');
+          const oauthTokens = localStorage.getItem('youtubeOAuthTokens');
+          if (successFlag || oauthTokens) {
+            handlePopupDone();
+            return;
+          }
 
+          // Если popup закрылся И прошло больше 15 секунд — пользователь закрыл вручную
           try {
-            // Сначала проверяем флаги — возможно OAuth уже завершился
-            const successFlag = localStorage.getItem('youtubeOAuthSuccess');
-            const oauthTokens = localStorage.getItem('youtubeOAuthTokens');
-            if (successFlag || oauthTokens) {
+            if (popup.closed && (Date.now() - popupOpenedAt > 15000)) {
               handlePopupDone();
-              return;
-            }
-
-            if (popup.closed) {
-              // Popup закрылся без токенов — но не показываем ошибку сразу,
-              // мог быть редирект. Ждём ещё 2 секунды на случай задержки.
-              setTimeout(() => {
-                const lateSuccess = localStorage.getItem('youtubeOAuthSuccess');
-                const lateTokens = localStorage.getItem('youtubeOAuthTokens');
-                if (lateSuccess || lateTokens) {
-                  handlePopupDone();
-                } else {
-                  handlePopupDone(); // покажет toast "отменена"
-                }
-              }, 2000);
-              clearInterval(checkClosed);
             }
           } catch (error) {
-            // COOP ошибка — проверяем флаги только если они уже есть
-            const successFlag = localStorage.getItem('youtubeOAuthSuccess');
-            const oauthTokens = localStorage.getItem('youtubeOAuthTokens');
-            if (successFlag || oauthTokens) {
-              handlePopupDone();
-            }
+            // COOP ошибка — игнорируем, ждём флаги в localStorage
           }
         }, 1000);
         

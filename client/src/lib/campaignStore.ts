@@ -11,19 +11,20 @@ interface Campaign {
 interface CampaignState {
   // Старые поля для поддержки существующих компонентов
   selectedCampaign: Campaign | null;
-  
+
   // Новые поля для более простого доступа
   selectedCampaignId: string | null;
   selectedCampaignName: string | null;
-  
+
   // Список ID удаленных кампаний
   deletedCampaignIds: string[];
-  
+
   // Функции для изменения состояния
   setSelectedCampaign: (campaignIdOrObj: string | Campaign | null, name?: string) => void;
   clearSelectedCampaign: () => void;
-  markCampaignAsDeleted: (id: string) => void; // Новая функция для отметки удаленных кампаний
-  isDeleted: (id: string) => boolean; // Проверка, была ли кампания удалена
+  markCampaignAsDeleted: (id: string, remainingCampaigns?: Campaign[]) => void;
+  isDeleted: (id: string) => boolean;
+  selectFirstAvailable: (campaigns: Campaign[]) => void;
 }
 
 export const useCampaignStore = create<CampaignState>()(
@@ -110,50 +111,68 @@ export const useCampaignStore = create<CampaignState>()(
         });
       },
       
-      // Новая функция для отметки кампании как удаленной
-      markCampaignAsDeleted: (id: string) => {
+      // Отметка кампании как удаленной + автовыбор следующей
+      markCampaignAsDeleted: (id: string, remainingCampaigns?: Campaign[]) => {
         const { deletedCampaignIds, selectedCampaignId } = get();
-        
+
         // Добавляем ID в список удаленных
         const newDeletedIds = [...deletedCampaignIds, id];
         set({ deletedCampaignIds: newDeletedIds });
-        
-        // Если удаленная кампания была выбрана, сбрасываем выбор
-        if (selectedCampaignId === id) {
-          localStorage.removeItem('selected_campaign_id');
-          localStorage.removeItem('selected_campaign_name');
-          set({
-            selectedCampaign: null,
-            selectedCampaignId: null,
-            selectedCampaignName: null
-          });
-        }
-        
-        // Обновляем данные в кэше запросов React Query
+
+        // Обновляем кэш React Query
         try {
           const userId = localStorage.getItem('user_id');
-          
-          // Попытка обновить кэш запросов
           queryClient.setQueryData(['/api/campaigns', userId], (oldData: any) => {
             if (!oldData || !oldData.data) return oldData;
-            
-            return {
-              ...oldData,
-              data: oldData.data.filter((campaign: any) => campaign.id !== id)
-            };
+            return { ...oldData, data: oldData.data.filter((c: any) => c.id !== id) };
           });
-          
-          // Также обновляем альтернативный ключ запроса без userId
           queryClient.setQueryData(['/api/campaigns'], (oldData: any) => {
             if (!oldData || !oldData.data) return oldData;
-            
-            return {
-              ...oldData,
-              data: oldData.data.filter((campaign: any) => campaign.id !== id)
-            };
+            return { ...oldData, data: oldData.data.filter((c: any) => c.id !== id) };
           });
         } catch (err) {
           console.error('Ошибка при обновлении кэша React Query:', err);
+        }
+
+        // Если удаленная кампания была выбрана — выбираем следующую
+        if (selectedCampaignId === id) {
+          const available = (remainingCampaigns || []).filter(
+            c => c.id !== id && !newDeletedIds.includes(c.id)
+          );
+          if (available.length > 0) {
+            const next = available[0];
+            localStorage.setItem('selected_campaign_id', next.id);
+            localStorage.setItem('selected_campaign_name', next.name);
+            set({
+              selectedCampaign: next,
+              selectedCampaignId: next.id,
+              selectedCampaignName: next.name
+            });
+          } else {
+            localStorage.removeItem('selected_campaign_id');
+            localStorage.removeItem('selected_campaign_name');
+            set({
+              selectedCampaign: null,
+              selectedCampaignId: null,
+              selectedCampaignName: null
+            });
+          }
+        }
+      },
+
+      // Выбрать первую доступную кампанию из списка
+      selectFirstAvailable: (campaigns: Campaign[]) => {
+        const { deletedCampaignIds } = get();
+        const available = campaigns.filter(c => !deletedCampaignIds.includes(c.id));
+        if (available.length > 0) {
+          const first = available[0];
+          localStorage.setItem('selected_campaign_id', first.id);
+          localStorage.setItem('selected_campaign_name', first.name);
+          set({
+            selectedCampaign: first,
+            selectedCampaignId: first.id,
+            selectedCampaignName: first.name
+          });
         }
       },
       

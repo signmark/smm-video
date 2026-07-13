@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Trash } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { useCampaignStore } from "@/lib/campaignStore";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -47,6 +48,7 @@ export function DeleteCampaignConfirmDialog({
 }: DeleteCampaignConfirmDialogProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const markCampaignAsDeleted = useCampaignStore(s => s.markCampaignAsDeleted);
   const [isCheckingData, setIsCheckingData] = useState(false);
   const [relatedData, setRelatedData] = useState<RelatedDataInfo | null>(null);
   const userId = localStorage.getItem('user_id') || '';
@@ -167,21 +169,22 @@ export function DeleteCampaignConfirmDialog({
       return { success: true };
     },
     onSuccess: (data) => {
-      // Если требуется подтверждение, просто ждем действия пользователя
-      if (data.requireConfirmation) {
-        return;
-      }
-      
-      // Если удаление выполнено успешно, обновляем список кампаний
+      if (data.requireConfirmation) return;
+
+      // Получаем текущий список кампаний из кэша перед инвалидацией
+      const cachedData = queryClient.getQueryData(['/api/campaigns', userId]) as any;
+      const remainingCampaigns = (cachedData?.data || []).filter((c: any) => c.id !== campaign?.id);
+
+      // Инвалидируем кэш
       queryClient.invalidateQueries({ queryKey: ["/api/campaigns", userId] });
-      
-      // Показываем сообщение об успехе
-      toast({
-        title: "Успешно",
-        description: "Кампания успешно удалена"
-      });
-      
-      // Закрываем диалог и вызываем onDelete если он предоставлен
+
+      // Отмечаем как удалённую + автовыбор следующей
+      if (campaign?.id) {
+        markCampaignAsDeleted(campaign.id, remainingCampaigns);
+      }
+
+      toast({ title: "Успешно", description: "Кампания успешно удалена" });
+
       onOpenChange(false);
       if (onDelete) onDelete();
     },

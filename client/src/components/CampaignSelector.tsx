@@ -81,8 +81,9 @@ export function CampaignSelector({ persistSelection = false }: CampaignSelectorP
 
   // При первой загрузке, проверяем:
   // 1. Если persistSelection=true и у нас уже есть сохраненный ID, используем его
-  // 2. Если есть сохранённая кампания в сторе, пропускаем авто-выбор
-  // 3. Если нет, выбираем первую из списка
+  // 2. Если есть сохранённая кампания в сторе и она существует — пропускаем авто-выбор
+  // 3. Если сохранённая кампания не существует — выбираем первую из списка
+  // 4. Если нет сохранённой — выбираем первую из списка
   useEffect(() => {
     if (!campaignsResponse?.data?.length || !isFirstLoad) return;
 
@@ -90,29 +91,31 @@ export function CampaignSelector({ persistSelection = false }: CampaignSelectorP
     if (persistSelection && initiallySelectedId) {
       const savedCampaign = campaignsResponse.data.find((c: Campaign) => c.id === initiallySelectedId);
       if (savedCampaign) {
-
         setSelectedCampaign(savedCampaign.id, savedCampaign.name);
         setIsFirstLoad(false);
         return;
       }
     }
-    
-    // Если кампания уже выбрана в сторе, обновляем название если его нет
-    if (selectedCampaignId) {
-      // Если название не сохранено (legacy данные), находим и обновляем
-      if (!selectedCampaignName) {
-        const existingCampaign = campaignsResponse.data.find((c: Campaign) => c.id === selectedCampaignId);
-        if (existingCampaign) {
-          setSelectedCampaign(existingCampaign.id, existingCampaign.name);
-        }
-      }
-      setIsFirstLoad(false);
-      return;
-    }
-    
-    // Если нет, выбираем первую из списка
-    const firstCampaign = campaignsResponse.data[0];
 
+    // Если кампания уже выбрана в сторе — проверяем существует ли она
+    if (selectedCampaignId) {
+      const exists = campaignsResponse.data.some((c: Campaign) => c.id === selectedCampaignId);
+      if (exists) {
+        // Обновляем название если его нет (legacy данные)
+        if (!selectedCampaignName) {
+          const existingCampaign = campaignsResponse.data.find((c: Campaign) => c.id === selectedCampaignId);
+          if (existingCampaign) {
+            setSelectedCampaign(existingCampaign.id, existingCampaign.name);
+          }
+        }
+        setIsFirstLoad(false);
+        return;
+      }
+      // Сохранённая кампания не существует — выберем первую доступную
+    }
+
+    // Выбираем первую из списка
+    const firstCampaign = campaignsResponse.data[0];
     setSelectedCampaign(firstCampaign.id, firstCampaign.name);
     setIsFirstLoad(false);
   }, [campaignsResponse, selectedCampaignId, selectedCampaignName, setSelectedCampaign, isFirstLoad, persistSelection, initiallySelectedId]);

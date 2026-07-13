@@ -547,11 +547,14 @@ export function SocialMediaSettings({
       try {
         await onSubmit(form.getValues());
         console.log('✅ [YouTube Complete] Settings automatically saved to current campaign');
-        
+
         toast({
           title: "YouTube настроен!",
           description: `Канал "${data.channelTitle}" готов к публикации видео`
         });
+
+        // Обновляем кэш кампании чтобы UI показывал актуальные данные
+        if (onSettingsUpdated) onSettingsUpdated();
       } catch (error) {
         console.error('❌ [YouTube Complete] Error saving settings:', error);
         toast({

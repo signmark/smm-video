@@ -223,15 +223,34 @@ export function YouTubeSetupWizard({ campaignId, initialSettings, onComplete }: 
         };
 
         const popupOpenedAt = Date.now();
-        const MIN_WAIT_MS = 5000; // минимум 5 секунд — popup должен успеть загрузить Google
+        const MIN_WAIT_MS = 3000; // минимум 3 секунды — popup должен успеть загрузить Google
 
         const checkClosed = setInterval(() => {
-          // Не проверяем первые 5 секунд — popup ещё грузит страницу Google
+          // Не проверяем первые 3 секунд — popup ещё грузит страницу Google
           if (Date.now() - popupOpenedAt < MIN_WAIT_MS) return;
 
           try {
-            if (popup.closed) {
+            // Сначала проверяем флаги — возможно OAuth уже завершился
+            const successFlag = localStorage.getItem('youtubeOAuthSuccess');
+            const oauthTokens = localStorage.getItem('youtubeOAuthTokens');
+            if (successFlag || oauthTokens) {
               handlePopupDone();
+              return;
+            }
+
+            if (popup.closed) {
+              // Popup закрылся без токенов — но не показываем ошибку сразу,
+              // мог быть редирект. Ждём ещё 2 секунды на случай задержки.
+              setTimeout(() => {
+                const lateSuccess = localStorage.getItem('youtubeOAuthSuccess');
+                const lateTokens = localStorage.getItem('youtubeOAuthTokens');
+                if (lateSuccess || lateTokens) {
+                  handlePopupDone();
+                } else {
+                  handlePopupDone(); // покажет toast "отменена"
+                }
+              }, 2000);
+              clearInterval(checkClosed);
             }
           } catch (error) {
             // COOP ошибка — проверяем флаги только если они уже есть

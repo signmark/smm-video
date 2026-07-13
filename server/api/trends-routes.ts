@@ -2041,7 +2041,7 @@ ${trendSummaries.length > 0 ? `ВЫВОДЫ ПО ТРЕНДАМ:\n${trendSummari
 
           const aiResponse = await geminiDirect.generateContent({
             prompt: summaryPrompt,
-            model: 'gemini-2.5-flash'
+            model: 'gemini-3.5-flash'
           });
 
           try {

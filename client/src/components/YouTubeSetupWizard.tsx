@@ -126,6 +126,9 @@ export function YouTubeSetupWizard({ campaignId, initialSettings, onComplete }: 
   const handleOAuthStart = async () => {
     setIsLoading(true);
     try {
+      // Очищаем старые флаги от прошлых попыток — иначе интервал сразу найдёт их
+      localStorage.removeItem('youtubeOAuthSuccess');
+      localStorage.removeItem('youtubeOAuthTokens');
       console.log('🚀 [YouTube Wizard] Starting OAuth process...');
       
       const response = await fetch(`/api/youtube/auth/start`, {

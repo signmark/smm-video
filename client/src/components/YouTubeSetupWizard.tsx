@@ -219,31 +219,30 @@ export function YouTubeSetupWizard({ campaignId, initialSettings, onComplete }: 
               toast({ title: "Ошибка", description: "Не удалось обработать результат авторизации", variant: "destructive" });
             }
           } else {
-            console.log('⚠️ [YouTube Wizard] OAuth popup closed without tokens');
+            // Если popup был открыт достаточно долго — не показываем ошибку,
+            // возможно пользователь ещё в процессе
+            const elapsed = Date.now() - popupOpenedAt;
+            console.log(`⚠️ [YouTube Wizard] No tokens after ${elapsed}ms`);
             setIsLoading(false);
-            toast({ title: "Авторизация отменена", description: "OAuth окно закрыто без получения токенов", variant: "destructive" });
+            if (elapsed < 10000) {
+              // Popup закрылся очень быстро —真的 отмена
+              toast({ title: "Авторизация отменена", description: "Окно авторизации было закрыто", variant: "destructive" });
+            } else {
+              // Popup был открыт достаточно — возможно редирект не сработал
+              toast({ title: "Авторизация не завершена", description: "Попробуйте ещё раз. Если проблема повторяется, проверьте настройки popup в браузере." });
+            }
           }
         };
 
         const popupOpenedAt = Date.now();
 
         // Проверяем только localStorage флаги — НЕ проверяем popup.closed
-        // (при редиректах Google popup.closed временно true → ложные срабатывания)
+        // (при редиректах Google popup.closed невалиден → ложные срабатывания)
         const checkClosed = setInterval(() => {
           const successFlag = localStorage.getItem('youtubeOAuthSuccess');
           const oauthTokens = localStorage.getItem('youtubeOAuthTokens');
           if (successFlag || oauthTokens) {
             handlePopupDone();
-            return;
-          }
-
-          // Если popup закрылся И прошло больше 15 секунд — пользователь закрыл вручную
-          try {
-            if (popup.closed && (Date.now() - popupOpenedAt > 15000)) {
-              handlePopupDone();
-            }
-          } catch (error) {
-            // COOP ошибка — игнорируем, ждём флаги в localStorage
           }
         }, 1000);
         

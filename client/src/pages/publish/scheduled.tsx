@@ -280,8 +280,13 @@ export default function ScheduledPublications() {
       title: "Публикация отменена",
       description: "Запланированная публикация была успешно отменена",
     });
-    // Фоновый refetch для синхронизации с сервером
-    if (selectedCampaign?.id) refetchScheduled();
+    // Инвалидируем все связанные кэши
+    if (selectedCampaign?.id) {
+      queryClient.invalidateQueries({ queryKey: ['/api/campaign-content', selectedCampaign.id] });
+      queryClient.invalidateQueries({ queryKey: ['/api/campaign-content', selectedCampaign.id, 'scheduled'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/publish/scheduled'] });
+      refetchScheduled();
+    }
   };
   
   const handleViewDetails = (content: CampaignContent) => {

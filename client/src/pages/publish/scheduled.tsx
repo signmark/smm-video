@@ -63,36 +63,50 @@ export default function ScheduledPublications() {
   const moveToDraftMutation = useMutation({
     mutationFn: async (contentId: string) => {
       console.log(`Перемещение контента ${contentId} в черновики`);
-      
-      // Используем API для обновления контента вместо отмены публикации
-      // Указываем только те поля, которые нужно изменить
       return await apiRequest(`/api/publish/update-content/${contentId}`, {
         method: 'PATCH',
         data: {
           status: 'draft',
-          scheduled_at: null, // Важно: используем snake_case для имени поля, т.к. API ожидает такой формат
-          // Обновляем статус для всех платформ
-          social_platforms: null // Очищаем платформы публикации
+          scheduled_at: null,
+          social_platforms: null
         }
       });
     },
+    // Оптимистичное обновление — мгновенно убираем из списка
+    onMutate: async (contentId: string) => {
+      await queryClient.cancelQueries({ queryKey: ['/api/campaign-content', selectedCampaign?.id, 'scheduled'] });
+      const prevScheduled = queryClient.getQueryData(['/api/campaign-content', selectedCampaign?.id, 'scheduled']);
+      queryClient.setQueryData(
+        ['/api/campaign-content', selectedCampaign?.id, 'scheduled'],
+        (old: any) => {
+          const items = Array.isArray(old) ? old : (old?.data || []);
+          return items.filter((item: any) => item.id !== contentId);
+        }
+      );
+      return { prevScheduled };
+    },
     onSuccess: () => {
-      // Обновляем данные в интерфейсе
-      refetchScheduled();
-      
       toast({
         title: "Перемещено в черновики",
         description: "Публикация была успешно перемещена в черновики",
         variant: "default"
       });
     },
-    onError: (error: Error) => {
+    onError: (error: Error, contentId: string, context: any) => {
+      if (context?.prevScheduled) {
+        queryClient.setQueryData(['/api/campaign-content', selectedCampaign?.id, 'scheduled'], context.prevScheduled);
+      }
       console.error("Ошибка при перемещении в черновики:", error);
       toast({
         title: "Ошибка",
         description: `Не удалось переместить публикацию в черновики: ${error.message || 'Неизвестная ошибка'}`,
         variant: "destructive"
       });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/campaign-content', selectedCampaign?.id] });
+      queryClient.invalidateQueries({ queryKey: ['/api/campaign-content', selectedCampaign?.id, 'scheduled'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/publish/scheduled'] });
     }
   });
   
@@ -269,11 +283,28 @@ export default function ScheduledPublications() {
   
   const handleCancelSuccess = (updatedContent?: CampaignContent) => {
     if (updatedContent) {
-      // Мгновенно убираем пост из кеша React Query, не дожидаясь refetch
+      // Мгновенно убираем пост из кеша запланированных
       queryClient.setQueryData(
         ['/api/campaign-content', selectedCampaign?.id, 'scheduled'],
-        (old: CampaignContent[] | undefined) =>
-          (old || []).filter(c => c.id !== updatedContent.id)
+        (old: any) => {
+          const items = Array.isArray(old) ? old : (old?.data || []);
+          return items.filter((c: any) => c.id !== updatedContent.id);
+        }
+      );
+      // Обновляем основной список — меняем статус на draft
+      queryClient.setQueryData(
+        ['/api/campaign-content', selectedCampaign?.id],
+        (old: any) => {
+          if (!old?.data) return old;
+          return {
+            ...old,
+            data: old.data.map((item: any) =>
+              item.id === updatedContent.id
+                ? { ...item, status: 'draft', scheduledAt: null, socialPlatforms: {} }
+                : item
+            )
+          };
+        }
       );
     }
     toast({

@@ -1122,47 +1122,74 @@ export default function ContentPage() {
       triggerFastPolling();
       console.log(`Перемещение контента ${contentId} в черновики`);
 
-      // Сначала получаем текущие данные контента
-      const content = await apiRequest(`/api/campaign-content/${contentId}`, {
-        method: 'GET'
-      });
-
-      if (!content || !content.data) {
-        throw new Error('Не удалось получить данные контента');
-      }
-
-      console.log(`Получен контент для перемещения в черновики:`, content.data);
-
       // Используем API для обновления контента
       return await apiRequest(`/api/publish/update-content/${contentId}`, {
         method: 'PATCH',
         data: {
           status: 'draft',
-          scheduled_at: null, // Важно: используем snake_case для имени поля, т.к. API ожидает такой формат
-          // Очищаем информацию о публикации на платформах, но сохраняем структуру
-          social_platforms: {} // Пустой объект вместо null, чтобы не потерять структуру
+          scheduled_at: null,
+          social_platforms: {}
         }
       });
     },
-    onSuccess: () => {
-      // Обновляем данные в интерфейсе
-      queryClient.invalidateQueries({ queryKey: ["/api/campaign-content", selectedCampaignId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/campaign-content", selectedCampaignId, "scheduled"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/publish/scheduled"] });
+    // Оптимистичное обновление — мгновенно чистим UI
+    onMutate: async (contentId: string) => {
+      // Отменяем текущие refetch
+      await queryClient.cancelQueries({ queryKey: ["/api/campaign-content", selectedCampaignId] });
+      await queryClient.cancelQueries({ queryKey: ["/api/campaign-content", selectedCampaignId, "scheduled"] });
 
+      // Сохраняем текущий кэш для отката
+      const prevContent = queryClient.getQueryData(["/api/campaign-content", selectedCampaignId]);
+      const prevScheduled = queryClient.getQueryData(["/api/campaign-content", selectedCampaignId, "scheduled"]);
+
+      // Оптимистично обновляем основной список
+      queryClient.setQueryData(["/api/campaign-content", selectedCampaignId], (old: any) => {
+        if (!old?.data) return old;
+        return {
+          ...old,
+          data: old.data.map((item: any) =>
+            item.id === contentId
+              ? { ...item, status: 'draft', scheduledAt: null, socialPlatforms: {} }
+              : item
+          )
+        };
+      });
+
+      // Оптимистично убираем из запланированных
+      queryClient.setQueryData(
+        ["/api/campaign-content", selectedCampaignId, "scheduled"],
+        (old: any) => {
+          if (!old) return old;
+          const items = Array.isArray(old) ? old : (old?.data || []);
+          return items.filter((item: any) => item.id !== contentId);
+        }
+      );
+
+      return { prevContent, prevScheduled };
+    },
+    onSuccess: () => {
       toast({
         title: t('content.messages.movedToDrafts'),
         description: t('content.messages.movedToDraftsDesc'),
         variant: "default"
       });
     },
-    onError: (error: Error) => {
+    onError: (error: Error, contentId: string, context: any) => {
+      // Откат при ошибке
+      if (context?.prevContent) queryClient.setQueryData(["/api/campaign-content", selectedCampaignId], context.prevContent);
+      if (context?.prevScheduled) queryClient.setQueryData(["/api/campaign-content", selectedCampaignId, "scheduled"], context.prevScheduled);
       console.error("Ошибка при перемещении в черновики:", error);
       toast({
         title: t('content.messages.error'),
         description: `${t('content.messages.moveToDraftsError')}: ${error.message || t('content.messages.error')}`,
         variant: "destructive"
       });
+    },
+    onSettled: () => {
+      // Финальная синхронизация с сервером
+      queryClient.invalidateQueries({ queryKey: ["/api/campaign-content", selectedCampaignId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/campaign-content", selectedCampaignId, "scheduled"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/publish/scheduled"] });
     }
   });
 

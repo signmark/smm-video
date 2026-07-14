@@ -1136,7 +1136,7 @@ export function registerPublishingRoutes(app: Express): void {
             data: {
               status: 'draft',
               scheduled_at: null,
-              social_platforms: updatedPlatforms
+              social_platforms: {} // Полностью очищаем платформы при отмене
             },
             headers: {
               'Authorization': `Bearer ${authToken}`
@@ -1155,7 +1155,7 @@ export function registerPublishingRoutes(app: Express): void {
         await storage.updateCampaignContent(contentId, {
           status: 'draft', // Возвращаем в статус черновика
           scheduledAt: null, // Убираем планирование
-          socialPlatforms: updatedPlatforms
+          socialPlatforms: {} // Полностью очищаем платформы при отмене
         });
         log(`Публикация ${contentId} отменена через storage`, 'api');
       } catch (storageError: any) {

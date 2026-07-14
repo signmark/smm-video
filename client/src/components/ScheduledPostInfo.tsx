@@ -94,7 +94,8 @@ const formatTelegramUrl = (url: string | null): string | null => {
 
 interface SocialPublicationStatus {
   platform: string;
-  status: 'pending' | 'published' | 'failed' | 'quota_exceeded';
+  status: 'connected' | 'pending' | 'published' | 'failed' | 'quota_exceeded';
+  selected?: boolean;
   publishedAt: string | null;
   postId?: string | null;
   postUrl?: string | null;
@@ -107,6 +108,7 @@ interface ScheduledPostInfoProps {
   socialPlatforms?: Record<string, SocialPublicationStatus> | null;
   compact?: boolean;
   className?: string;
+  showStatus?: boolean;
 }
 
 
@@ -119,7 +121,7 @@ const statusColors: Record<string, string> = {
   quota_exceeded: "bg-orange-100 text-orange-800 border-orange-200 dark:bg-orange-900/30 dark:text-orange-400 dark:border-orange-800/30",
 };
 
-export function ScheduledPostInfo({ scheduledAt, publishedAt, socialPlatforms, compact = false, className }: ScheduledPostInfoProps) {
+export function ScheduledPostInfo({ scheduledAt, publishedAt, socialPlatforms, compact = false, className, showStatus = true }: ScheduledPostInfoProps) {
   const hasPlatforms = socialPlatforms && Object.keys(socialPlatforms).length > 0;
   const isPublished = publishedAt !== null;
   const isScheduled = scheduledAt !== null && !isPublished;
@@ -138,10 +140,11 @@ export function ScheduledPostInfo({ scheduledAt, publishedAt, socialPlatforms, c
         {hasPlatforms && (
           <div className="flex gap-1">
             {Object.entries(safeSocialPlatforms).filter(([_, status]) => status.selected !== false).map(([platform, status]) => {
-              const statusIcon = 
-                status.status === 'published' ? <CheckCircle2 size={12} /> :
-                status.status === 'failed' ? <AlertTriangle size={12} /> :
-                <Clock size={12} />;
+              const statusIcon = showStatus
+                ? status.status === 'published' ? <CheckCircle2 size={12} />
+                  : status.status === 'failed' ? <AlertTriangle size={12} />
+                    : <Clock size={12} />
+                : null;
               
               return (
                 <TooltipProvider key={platform}>
@@ -160,7 +163,9 @@ export function ScheduledPostInfo({ scheduledAt, publishedAt, socialPlatforms, c
                     <TooltipContent side="bottom">
                       <p className="font-medium">{platformNames[platform as keyof typeof platformNames] || platform}</p>
                       <p className="text-xs">
-                        {status.status === 'published' 
+                        {!showStatus
+                          ? 'Подключено к кампании'
+                          : status.status === 'published'
                           ? `Опубликовано ${formatDateWithTimezone(status.publishedAt)}`
                           : status.status === 'failed'
                             ? `Не удалось опубликовать: ${status.error || 'Ошибка публикации'}`

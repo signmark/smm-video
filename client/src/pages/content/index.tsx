@@ -47,6 +47,7 @@ import { ImageGenerationDialog } from "@/components/ImageGenerationDialog";
 import { ContentPlanGenerator } from "@/components/ContentPlanGenerator";
 import { useCampaignStore } from "@/lib/campaignStore";
 import { publishWithImageGeneration } from "@/utils/publishWithImageGeneration";
+import { getVisibleCardPlatforms } from "@/lib/social-platforms";
 
 // FORCE REBUILD 2025-11-22 15:15
 import RichTextEditor from "@/components/RichTextEditor";
@@ -589,6 +590,11 @@ export default function ContentPage() {
   };
 
   const connectedPlatforms = getConnectedPlatforms();
+
+  const getCardPlatforms = (content: any) => getVisibleCardPlatforms(
+    content?.socialPlatforms || content?.social_platforms,
+    connectedPlatforms,
+  );
 
   // Автовыбор платформ при открытии диалога публикации:
   // выбираем все подключённые платформы, которые поддерживают тип контента
@@ -2234,14 +2240,13 @@ export default function ContentPage() {
                                   )}
 
                                 {/* Enhanced social platforms information */}
-                                {content.socialPlatforms &&
-                                  typeof content.socialPlatforms === 'object' &&
-                                  Object.keys(content.socialPlatforms).length > 0 && (
+                                {Object.keys(getCardPlatforms(content)).length > 0 && (
                                     <ScheduledPostInfo
-                                      socialPlatforms={content.socialPlatforms as Record<string, any>}
+                                      socialPlatforms={getCardPlatforms(content) as Record<string, any>}
                                       scheduledAt={content.scheduledAt || null}
                                       publishedAt={content.publishedAt || null}
                                       compact={true}
+                                      showStatus={!!content.scheduledAt || !!content.publishedAt}
                                     />
                                   )}
 

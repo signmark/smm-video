@@ -1,4 +1,4 @@
-import { SocialPlatform, PlatformPublishInfo } from "@/types";
+import type { SocialPlatform, PlatformPublishInfo } from "@/types";
 
 // Массив доступных социальных платформ для безопасного использования в коде
 export const safeSocialPlatforms: SocialPlatform[] = [
@@ -47,3 +47,48 @@ export const platformColors: Record<SocialPlatform, string> = {
   threads: 'bg-black',
   tiktok: 'bg-black'
 };
+
+type PlatformState = Record<string, any>;
+
+/**
+ * Returns only platforms that are meaningful on a content card.
+ *
+ * Draft and scheduled content is limited to accounts that are actually
+ * connected to the campaign. Published entries are retained even if the
+ * account was disconnected later, so publication history and links are not
+ * lost from the UI.
+ */
+export function getVisibleCardPlatforms(
+  socialPlatforms: Record<string, PlatformState> | null | undefined,
+  connectedPlatforms: Record<string, boolean> | null,
+): Record<string, PlatformState> {
+  const storedPlatforms = socialPlatforms && typeof socialPlatforms === 'object'
+    ? socialPlatforms
+    : {};
+  const platformOrder = Array.from(new Set([
+    ...safeSocialPlatforms,
+    ...Object.keys(storedPlatforms),
+  ]));
+
+  return platformOrder.reduce<Record<string, PlatformState>>((result, platform) => {
+    const storedState = storedPlatforms[platform];
+    const hasPublishedHistory = !!storedState && (
+      storedState.status === 'published' ||
+      !!storedState.publishedAt ||
+      !!storedState.published_at ||
+      !!storedState.postUrl ||
+      !!storedState.post_url
+    );
+
+    if (connectedPlatforms?.[platform] || hasPublishedHistory) {
+      result[platform] = storedState || {
+        platform,
+        status: 'connected',
+        publishedAt: null,
+        selected: true,
+      };
+    }
+
+    return result;
+  }, {});
+}

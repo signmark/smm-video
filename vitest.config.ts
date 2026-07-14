@@ -14,6 +14,7 @@ export default defineConfig({
       inline: [/express/],
     },
     include: [
+      'client/src/**/*.test.ts',
       'server/__tests__/**/*.test.ts',
       'shared/__tests__/**/*.test.ts'
     ],

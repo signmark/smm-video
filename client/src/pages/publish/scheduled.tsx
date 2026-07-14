@@ -77,8 +77,11 @@ export default function ScheduledPublications() {
         description: "Публикация была успешно перемещена в черновики",
         variant: "default"
       });
-      // Инвалидируем кэш — React Query сам подтянет свежие данные
-      queryClient.invalidateQueries({ queryKey: ['/api/campaign-content'] });
+      if (selectedCampaign?.id) {
+        queryClient.invalidateQueries({ queryKey: ['/api/campaign-content', selectedCampaign.id] });
+        queryClient.invalidateQueries({ queryKey: ['/api/campaign-content', selectedCampaign.id, 'scheduled'] });
+        queryClient.invalidateQueries({ queryKey: ['/api/publish/scheduled'] });
+      }
     },
     onError: (error: Error) => {
       toast({
@@ -266,8 +269,11 @@ export default function ScheduledPublications() {
       title: "Публикация отменена",
       description: "Запланированная публикация была успешно отменена",
     });
-    // Инвалидируем кэш — React Query сам подтянет свежие данные
-    queryClient.invalidateQueries({ queryKey: ['/api/campaign-content'] });
+    if (selectedCampaign?.id) {
+      queryClient.invalidateQueries({ queryKey: ['/api/campaign-content', selectedCampaign.id] });
+      queryClient.invalidateQueries({ queryKey: ['/api/campaign-content', selectedCampaign.id, 'scheduled'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/publish/scheduled'] });
+    }
   };
   
   const handleViewDetails = (content: CampaignContent) => {

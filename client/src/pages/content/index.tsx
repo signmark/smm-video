@@ -1135,7 +1135,10 @@ export default function ContentPage() {
         description: t('content.messages.movedToDraftsDesc'),
         variant: "default"
       });
-      queryClient.invalidateQueries({ queryKey: ["/api/campaign-content"] });
+      // ТЕ ЖЕ 3 ключа что и при планировании
+      queryClient.invalidateQueries({ queryKey: ["/api/campaign-content", selectedCampaignId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/campaign-content", selectedCampaignId, "scheduled"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/publish/scheduled"] });
     },
     onError: (error: Error) => {
       toast({

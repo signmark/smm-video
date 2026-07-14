@@ -1186,10 +1186,10 @@ export default function ContentPage() {
       });
     },
     onSettled: () => {
-      // Финальная синхронизация с сервером — принудительный refetch
-      queryClient.refetchQueries({ queryKey: ["/api/campaign-content", selectedCampaignId] });
-      queryClient.refetchQueries({ queryKey: ["/api/campaign-content", selectedCampaignId, "scheduled"] });
-      queryClient.refetchQueries({ queryKey: ["/api/publish/scheduled"] });
+      // Полностью сбрасываем кэш и загружаем заново
+      queryClient.removeQueries({ queryKey: ["/api/campaign-content", selectedCampaignId, "scheduled"] });
+      queryClient.removeQueries({ queryKey: ["/api/campaign-content", selectedCampaignId] });
+      queryClient.removeQueries({ queryKey: ["/api/publish/scheduled"] });
     }
   });
 

@@ -1190,6 +1190,9 @@ export default function ContentPage() {
       queryClient.setQueryData(["/api/campaign-content", selectedCampaignId, "scheduled"], []);
       queryClient.setQueryData(["/api/publish/scheduled"], []);
       queryClient.invalidateQueries({ queryKey: ["/api/campaign-content", selectedCampaignId] });
+      setTimeout(() => {
+        queryClient.refetchQueries({ queryKey: ["/api/campaign-content", selectedCampaignId] });
+      }, 500);
     }
   });
 

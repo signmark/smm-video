@@ -91,6 +91,9 @@ export default function ScheduledPublications() {
         description: "Публикация была успешно перемещена в черновики",
         variant: "default"
       });
+      // Принудительно обновляем через небольшую задержку
+      setTimeout(() => refetchScheduled(), 500);
+      setTimeout(() => refetchScheduled(), 2000);
     },
     onError: (error: Error, contentId: string, context: any) => {
       if (context?.prevScheduled) {
@@ -317,6 +320,8 @@ export default function ScheduledPublications() {
       queryClient.setQueryData(['/api/campaign-content', selectedCampaign.id, 'scheduled'], []);
       queryClient.setQueryData(['/api/publish/scheduled'], []);
       refetchScheduled();
+      setTimeout(() => refetchScheduled(), 500);
+      setTimeout(() => refetchScheduled(), 2000);
     }
   };
   

@@ -111,11 +111,12 @@ export default function ScheduledPublications() {
   });
   
   // Получаем запланированные публикации ТОЛЬКО для выбранной кампании
-  const { 
-    data: scheduledContent = [], 
+  const {
+    data: scheduledContent = [],
     isLoading: scheduledLoading,
     isFetching: scheduledFetching,
     refetch: refetchScheduled,
+    dataUpdatedAt,
   } = useQuery<CampaignContent[]>({
     queryKey: ['/api/campaign-content', selectedCampaign?.id, 'scheduled'],
     queryFn: async () => {
@@ -269,9 +270,22 @@ export default function ScheduledPublications() {
   };
   
   const handleCancelSuccess = async () => {
-    // Сервер уже обновил — подтягиваем РЕАЛЬНЫЕ данные
     if (selectedCampaign?.id) {
-      await refetchScheduled();
+      // Удаляем кэш — React Query загрузит заново с сервера
+      queryClient.removeQueries({ queryKey: ['/api/campaign-content', selectedCampaign.id, 'scheduled'] });
+      // Принудительно запрашиваем свежие данные
+      await queryClient.fetchQuery({
+        queryKey: ['/api/campaign-content', selectedCampaign.id, 'scheduled'],
+        queryFn: async () => {
+          const result = await apiRequest(
+            `/api/campaign-content?campaignId=${selectedCampaign!.id}&limit=500`,
+            { method: 'GET' }
+          );
+          const allContent = keysToCamel<CampaignContent[]>(result.data || []);
+          return allContent.filter((content: any) => content.status === 'scheduled');
+        },
+        staleTime: 0,
+      });
     }
     toast({
       title: "Публикация отменена",
@@ -420,7 +434,12 @@ export default function ScheduledPublications() {
           </Button>
         </div>
       </div>
-      
+
+      {/* DEBUG: показываем состояние загрузки */}
+      <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded mb-2 font-mono">
+        count={scheduledContent.length} | loading={String(scheduledLoading)} | fetching={String(scheduledFetching)} | updated={dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : 'never'} | campaign={selectedCampaign?.id?.slice(0,8)}
+      </div>
+
       <div className="flex justify-between items-center mb-4">
         <div className="flex-1">
           <div className="flex items-center">

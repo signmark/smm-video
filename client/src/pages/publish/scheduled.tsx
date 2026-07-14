@@ -271,13 +271,16 @@ export default function ScheduledPublications() {
   
   const handleCancelSuccess = async () => {
     if (selectedCampaign?.id) {
-      // Полностью удаляем кэш
-      queryClient.removeQueries({ queryKey: ['/api/campaign-content', selectedCampaign.id, 'scheduled'] });
-      queryClient.removeQueries({ queryKey: ['/api/campaign-content', selectedCampaign.id] });
       // Ждём 500ms чтобы сервер гарантированно обновился
       await new Promise(r => setTimeout(r, 500));
-      // Загружаем свежие данные
-      await refetchScheduled();
+      // Принудительно загружаем свежие данные через прямой fetch
+      const result = await apiRequest(
+        `/api/campaign-content?campaignId=${selectedCampaign.id}&limit=500&_t=${Date.now()}`,
+        { method: 'GET' }
+      );
+      const allContent = keysToCamel<CampaignContent[]>(result.data || []);
+      const scheduled = allContent.filter((content: any) => content.status === 'scheduled');
+      queryClient.setQueryData(['/api/campaign-content', selectedCampaign.id, 'scheduled'], scheduled);
     }
     toast({
       title: "Публикация отменена",

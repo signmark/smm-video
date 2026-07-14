@@ -271,21 +271,13 @@ export default function ScheduledPublications() {
   
   const handleCancelSuccess = async () => {
     if (selectedCampaign?.id) {
-      // Удаляем кэш — React Query загрузит заново с сервера
+      // Полностью удаляем кэш
       queryClient.removeQueries({ queryKey: ['/api/campaign-content', selectedCampaign.id, 'scheduled'] });
-      // Принудительно запрашиваем свежие данные
-      await queryClient.fetchQuery({
-        queryKey: ['/api/campaign-content', selectedCampaign.id, 'scheduled'],
-        queryFn: async () => {
-          const result = await apiRequest(
-            `/api/campaign-content?campaignId=${selectedCampaign!.id}&limit=500`,
-            { method: 'GET' }
-          );
-          const allContent = keysToCamel<CampaignContent[]>(result.data || []);
-          return allContent.filter((content: any) => content.status === 'scheduled');
-        },
-        staleTime: 0,
-      });
+      queryClient.removeQueries({ queryKey: ['/api/campaign-content', selectedCampaign.id] });
+      // Ждём 500ms чтобы сервер гарантированно обновился
+      await new Promise(r => setTimeout(r, 500));
+      // Загружаем свежие данные
+      await refetchScheduled();
     }
     toast({
       title: "Публикация отменена",

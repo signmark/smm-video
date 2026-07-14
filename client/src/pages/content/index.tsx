@@ -663,9 +663,9 @@ export default function ContentPage() {
 
       return data.data || [];
     },
-    refetchOnMount: false,
-    refetchOnWindowFocus: false,
-    staleTime: isActionActive || isAiGenerating || isBulkProcessing ? 0 : Infinity,
+    refetchOnMount: true,
+    refetchOnWindowFocus: true,
+    staleTime: 10 * 1000,
     gcTime: 1000 * 60 * 30,
     refetchInterval: isActionActive || isAiGenerating || isBulkProcessing ? 3000 : false,
     placeholderData: keepPreviousData,

@@ -13,6 +13,14 @@ import axios from 'axios';
 import { buildCacheKey, getFromCache, setToCache, invalidateContentCache } from '../utils/content-cache';
 export { invalidateContentCache };
 
+// Creation timestamps are owned by Directus. SMM panel requests must never
+// provide or overwrite them, including through generic POST/PATCH/PUT routes.
+const IMMUTABLE_CONTENT_FIELDS = new Set([
+  'createdAt',
+  'created_at',
+  'date_created',
+]);
+
 /**
  * Маппинг camelCase полей от фронтенда в snake_case для Directus campaign_content
  */
@@ -30,7 +38,7 @@ function mapContentFieldsToDirectus(body: Record<string, any>): Record<string, a
 
   const result: Record<string, any> = {};
   for (const [key, value] of Object.entries(body)) {
-    if (value === undefined) continue;
+    if (value === undefined || IMMUTABLE_CONTENT_FIELDS.has(key)) continue;
     const mappedKey = fieldMap[key] || key;
     result[mappedKey] = value;
   }

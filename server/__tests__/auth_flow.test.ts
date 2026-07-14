@@ -145,4 +145,56 @@ describe('Auth Flow Integration Tests', () => {
       expect(response.text).not.toContain('<!DOCTYPE html>');
     });
   });
+
+  describe('campaign content creation timestamp', () => {
+    it('does not forward a client-provided creation timestamp when creating content', async () => {
+      const mockToken = createMockToken({ id: 'test-user-id', email: 'test@example.com' });
+      (directusApi.post as any).mockResolvedValue({
+        status: 200,
+        data: { data: { id: 'content-1' } },
+      });
+
+      const response = await request(app)
+        .post('/api/campaign-content')
+        .set('Authorization', `Bearer ${mockToken}`)
+        .send({
+          campaignId: 'campaign-1',
+          title: 'Test content',
+          content: 'Text',
+          createdAt: '2000-01-01T00:00:00Z',
+          created_at: '2001-01-01T00:00:00Z',
+          date_created: '2002-01-01T00:00:00Z',
+        });
+
+      expect(response.status).toBe(201);
+      const directusPayload = (directusApi.post as any).mock.calls[0][1];
+      expect(directusPayload).not.toHaveProperty('createdAt');
+      expect(directusPayload).not.toHaveProperty('created_at');
+      expect(directusPayload).not.toHaveProperty('date_created');
+    });
+
+    it('does not forward a client-provided creation timestamp when updating content', async () => {
+      const mockToken = createMockToken({ id: 'test-user-id', email: 'test@example.com' });
+      (directusApi.patch as any).mockResolvedValue({
+        data: { data: { id: 'content-1', title: 'Updated title' } },
+      });
+
+      const response = await request(app)
+        .patch('/api/campaign-content/content-1')
+        .set('Authorization', `Bearer ${mockToken}`)
+        .send({
+          title: 'Updated title',
+          createdAt: '2000-01-01T00:00:00Z',
+          created_at: '2001-01-01T00:00:00Z',
+          date_created: '2002-01-01T00:00:00Z',
+        });
+
+      expect(response.status).toBe(200);
+      const directusPayload = (directusApi.patch as any).mock.calls[0][1];
+      expect(directusPayload.title).toBe('Updated title');
+      expect(directusPayload).not.toHaveProperty('createdAt');
+      expect(directusPayload).not.toHaveProperty('created_at');
+      expect(directusPayload).not.toHaveProperty('date_created');
+    });
+  });
 });

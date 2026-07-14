@@ -135,24 +135,6 @@ export function ScheduledPostInfo({ scheduledAt, publishedAt, socialPlatforms, c
   if (compact) {
     return (
       <div className={`flex flex-wrap gap-1.5 mt-2 ${className || ''}`}>
-        {isScheduled && (
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Badge variant="outline" className="flex items-center gap-1 px-2 py-0.5 h-5 bg-muted/40">
-                  <Clock size={12} />
-                  <span className="text-[10px]">
-                    {formatDateWithTimezone(scheduledAt)}
-                  </span>
-                </Badge>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">
-                <p>Запланировано на {formatDateWithTimezone(scheduledAt)}</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-        )}
-        
         {hasPlatforms && (
           <div className="flex gap-1">
             {Object.entries(safeSocialPlatforms).filter(([_, status]) => status.selected !== false).map(([platform, status]) => {

@@ -2247,6 +2247,15 @@ export default function ContentPage() {
 
                                 {/* Dates */}
                                 <div className="mt-1.5 pt-1.5 border-t text-xs text-muted-foreground flex flex-wrap gap-x-2">
+                                  {getCorrectCreatedTime(content) && (
+                                    <CreationTimeDisplay
+                                      createdAt={getCorrectCreatedTime(content)}
+                                      label="Создано:"
+                                      showIcon={false}
+                                      iconType="calendar"
+                                      className="text-xs"
+                                    />
+                                  )}
                                   {content.publishedAt && (
                                     <CreationTimeDisplay
                                       createdAt={content.publishedAt}
@@ -2258,21 +2267,12 @@ export default function ContentPage() {
                                       isPublishedTime={true}
                                     />
                                   )}
-                                  {content.scheduledAt && !content.publishedAt && content.status !== 'scheduled' && (
+                                  {content.scheduledAt && !content.publishedAt && (
                                     <CreationTimeDisplay
                                       createdAt={content.scheduledAt}
                                       label="План:"
                                       showIcon={false}
                                       iconType="clock"
-                                      className="text-xs"
-                                    />
-                                  )}
-                                  {!content.publishedAt && !content.scheduledAt && (
-                                    <CreationTimeDisplay
-                                      createdAt={getCorrectCreatedTime(content) || new Date()}
-                                      label="Создано:"
-                                      showIcon={false}
-                                      iconType="calendar"
                                       className="text-xs"
                                     />
                                   )}

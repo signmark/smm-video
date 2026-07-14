@@ -78,9 +78,9 @@ export default function ScheduledPublications() {
         variant: "default"
       });
       if (selectedCampaign?.id) {
-        queryClient.invalidateQueries({ queryKey: ['/api/campaign-content', selectedCampaign.id] });
-        queryClient.invalidateQueries({ queryKey: ['/api/campaign-content', selectedCampaign.id, 'scheduled'] });
-        queryClient.invalidateQueries({ queryKey: ['/api/publish/scheduled'] });
+        queryClient.refetchQueries({ queryKey: ['/api/campaign-content', selectedCampaign.id] });
+        queryClient.refetchQueries({ queryKey: ['/api/campaign-content', selectedCampaign.id, 'scheduled'] });
+        queryClient.refetchQueries({ queryKey: ['/api/publish/scheduled'] });
       }
     },
     onError: (error: Error) => {
@@ -269,10 +269,11 @@ export default function ScheduledPublications() {
       title: "Публикация отменена",
       description: "Запланированная публикация была успешно отменена",
     });
+    // Принудительный refetch — invalidateQueries не срабатывает
     if (selectedCampaign?.id) {
-      queryClient.invalidateQueries({ queryKey: ['/api/campaign-content', selectedCampaign.id] });
-      queryClient.invalidateQueries({ queryKey: ['/api/campaign-content', selectedCampaign.id, 'scheduled'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/publish/scheduled'] });
+      queryClient.refetchQueries({ queryKey: ['/api/campaign-content', selectedCampaign.id] });
+      queryClient.refetchQueries({ queryKey: ['/api/campaign-content', selectedCampaign.id, 'scheduled'] });
+      queryClient.refetchQueries({ queryKey: ['/api/publish/scheduled'] });
     }
   };
   

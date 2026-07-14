@@ -1135,10 +1135,10 @@ export default function ContentPage() {
         description: t('content.messages.movedToDraftsDesc'),
         variant: "default"
       });
-      // ТЕ ЖЕ 3 ключа что и при планировании
-      queryClient.invalidateQueries({ queryKey: ["/api/campaign-content", selectedCampaignId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/campaign-content", selectedCampaignId, "scheduled"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/publish/scheduled"] });
+      // Принудительный refetch — invalidateQueries не срабатывает
+      queryClient.refetchQueries({ queryKey: ["/api/campaign-content", selectedCampaignId] });
+      queryClient.refetchQueries({ queryKey: ["/api/campaign-content", selectedCampaignId, "scheduled"] });
+      queryClient.refetchQueries({ queryKey: ["/api/publish/scheduled"] });
     },
     onError: (error: Error) => {
       toast({

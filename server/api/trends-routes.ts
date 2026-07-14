@@ -229,7 +229,7 @@ ${commentTexts.map((t: string, i: number) => `${i + 1}. ${t}`).join('\n')}
       prompt,
       model: 'gemini-3.5-flash',
       temperature: 0.3,
-      maxOutputTokens: 1024
+      maxOutputTokens: 2048
     });
 
     const rawText = typeof aiResponse === 'string' ? aiResponse : (aiResponse as any).text || String(aiResponse);

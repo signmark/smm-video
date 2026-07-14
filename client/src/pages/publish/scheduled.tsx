@@ -63,27 +63,18 @@ export default function ScheduledPublications() {
   const moveToDraftMutation = useMutation({
     mutationFn: async (contentId: string) => {
       console.log(`Перемещение контента ${contentId} в черновики`);
-      return await apiRequest(`/api/publish/update-content/${contentId}`, {
+      // 1. Сервер очищает social_platforms и ставит status: draft
+      const result = await apiRequest(`/api/publish/update-content/${contentId}`, {
         method: 'PATCH',
         data: {
           status: 'draft',
           scheduled_at: null,
-          social_platforms: null
+          social_platforms: {}
         }
       });
-    },
-    // Оптимистичное обновление — мгновенно убираем из списка
-    onMutate: async (contentId: string) => {
-      await queryClient.cancelQueries({ queryKey: ['/api/campaign-content', selectedCampaign?.id, 'scheduled'] });
-      const prevScheduled = queryClient.getQueryData(['/api/campaign-content', selectedCampaign?.id, 'scheduled']);
-      queryClient.setQueryData(
-        ['/api/campaign-content', selectedCampaign?.id, 'scheduled'],
-        (old: any) => {
-          const items = Array.isArray(old) ? old : (old?.data || []);
-          return items.filter((item: any) => item.id !== contentId);
-        }
-      );
-      return { prevScheduled };
+      // 2. Ждём пока сервер реально обновит данные
+      await new Promise(r => setTimeout(r, 300));
+      return result;
     },
     onSuccess: () => {
       toast({
@@ -91,17 +82,12 @@ export default function ScheduledPublications() {
         description: "Публикация была успешно перемещена в черновики",
         variant: "default"
       });
-      // Только после успешного ответа сервера — обновляем данные
+      // 3. Только после подтверждения сервера — подтягиваем РЕАЛЬНЫЕ данные
       if (selectedCampaign?.id) {
-        queryClient.setQueryData(['/api/campaign-content', selectedCampaign.id, 'scheduled'], []);
-        queryClient.setQueryData(['/api/publish/scheduled'], []);
         refetchScheduled();
       }
     },
-    onError: (error: Error, contentId: string, context: any) => {
-      if (context?.prevScheduled) {
-        queryClient.setQueryData(['/api/campaign-content', selectedCampaign?.id, 'scheduled'], context.prevScheduled);
-      }
+    onError: (error: Error) => {
       console.error("Ошибка при перемещении в черновики:", error);
       toast({
         title: "Ошибка",
@@ -282,40 +268,13 @@ export default function ScheduledPublications() {
     });
   };
   
-  const handleCancelSuccess = (updatedContent?: CampaignContent) => {
-    if (updatedContent) {
-      // Мгновенно убираем пост из кеша запланированных
-      queryClient.setQueryData(
-        ['/api/campaign-content', selectedCampaign?.id, 'scheduled'],
-        (old: any) => {
-          const items = Array.isArray(old) ? old : (old?.data || []);
-          return items.filter((c: any) => c.id !== updatedContent.id);
-        }
-      );
-      // Обновляем основной список — меняем статус на draft
-      queryClient.setQueryData(
-        ['/api/campaign-content', selectedCampaign?.id],
-        (old: any) => {
-          if (!old?.data) return old;
-          return {
-            ...old,
-            data: old.data.map((item: any) =>
-              item.id === updatedContent.id
-                ? { ...item, status: 'draft', scheduledAt: null, socialPlatforms: {} }
-                : item
-            )
-          };
-        }
-      );
-    }
+  const handleCancelSuccess = () => {
     toast({
       title: "Публикация отменена",
       description: "Запланированная публикация была успешно отменена",
     });
-    // Только после успешного ответа сервера — обновляем данные
+    // Сервер уже обновил — подтягиваем РЕАЛЬНЫЕ данные
     if (selectedCampaign?.id) {
-      queryClient.setQueryData(['/api/campaign-content', selectedCampaign.id, 'scheduled'], []);
-      queryClient.setQueryData(['/api/publish/scheduled'], []);
       refetchScheduled();
     }
   };

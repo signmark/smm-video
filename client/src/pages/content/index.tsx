@@ -1122,8 +1122,8 @@ export default function ContentPage() {
       triggerFastPolling();
       console.log(`Перемещение контента ${contentId} в черновики`);
 
-      // Используем API для обновления контента
-      return await apiRequest(`/api/publish/update-content/${contentId}`, {
+      // 1. Сервер очищает social_platforms и ставит status: draft
+      const result = await apiRequest(`/api/publish/update-content/${contentId}`, {
         method: 'PATCH',
         data: {
           status: 'draft',
@@ -1131,41 +1131,9 @@ export default function ContentPage() {
           social_platforms: {}
         }
       });
-    },
-    // Оптимистичное обновление — мгновенно чистим UI
-    onMutate: async (contentId: string) => {
-      // Отменяем текущие refetch
-      await queryClient.cancelQueries({ queryKey: ["/api/campaign-content", selectedCampaignId] });
-      await queryClient.cancelQueries({ queryKey: ["/api/campaign-content", selectedCampaignId, "scheduled"] });
-
-      // Сохраняем текущий кэш для отката
-      const prevContent = queryClient.getQueryData(["/api/campaign-content", selectedCampaignId]);
-      const prevScheduled = queryClient.getQueryData(["/api/campaign-content", selectedCampaignId, "scheduled"]);
-
-      // Оптимистично обновляем основной список
-      queryClient.setQueryData(["/api/campaign-content", selectedCampaignId], (old: any) => {
-        if (!old?.data) return old;
-        return {
-          ...old,
-          data: old.data.map((item: any) =>
-            item.id === contentId
-              ? { ...item, status: 'draft', scheduledAt: null, socialPlatforms: {} }
-              : item
-          )
-        };
-      });
-
-      // Оптимистично убираем из запланированных
-      queryClient.setQueryData(
-        ["/api/campaign-content", selectedCampaignId, "scheduled"],
-        (old: any) => {
-          if (!old) return old;
-          const items = Array.isArray(old) ? old : (old?.data || []);
-          return items.filter((item: any) => item.id !== contentId);
-        }
-      );
-
-      return { prevContent, prevScheduled };
+      // 2. Ждём пока сервер реально обновит данные
+      await new Promise(r => setTimeout(r, 300));
+      return result;
     },
     onSuccess: () => {
       toast({
@@ -1173,15 +1141,10 @@ export default function ContentPage() {
         description: t('content.messages.movedToDraftsDesc'),
         variant: "default"
       });
-      // Только после успешного ответа сервера — обновляем данные
-      queryClient.setQueryData(["/api/campaign-content", selectedCampaignId, "scheduled"], []);
-      queryClient.setQueryData(["/api/publish/scheduled"], []);
+      // 3. Только после подтверждения сервера — подтягиваем РЕАЛЬНЫЕ данные
       queryClient.invalidateQueries({ queryKey: ["/api/campaign-content", selectedCampaignId] });
     },
-    onError: (error: Error, contentId: string, context: any) => {
-      // Откат при ошибке
-      if (context?.prevContent) queryClient.setQueryData(["/api/campaign-content", selectedCampaignId], context.prevContent);
-      if (context?.prevScheduled) queryClient.setQueryData(["/api/campaign-content", selectedCampaignId, "scheduled"], context.prevScheduled);
+    onError: (error: Error) => {
       console.error("Ошибка при перемещении в черновики:", error);
       toast({
         title: t('content.messages.error'),

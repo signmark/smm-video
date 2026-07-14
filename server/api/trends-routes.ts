@@ -232,7 +232,8 @@ ${commentTexts.map((t: string, i: number) => `${i + 1}. ${t}`).join('\n')}
       maxOutputTokens: 1024
     });
 
-    const cleanJson = aiResponse.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+    const rawText = typeof aiResponse === 'string' ? aiResponse : (aiResponse as any).text || String(aiResponse);
+    const cleanJson = rawText.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
     console.log(`[Sentiment AI] Ответ от AI (первые 500 символов): ${cleanJson.substring(0, 500)}`);
     const parsed = JSON.parse(cleanJson);
 
@@ -1583,12 +1584,13 @@ ${trendsForAi}
 Ответь на ${langName} языке.`;
 
         try {
-          let aiResponse = '';
+          let aiResponse: any = '';
           try {
-            aiResponse = await geminiDirect.generateContent({
+            const resp = await geminiDirect.generateContent({
               prompt: enrichPrompt,
               model: 'gemini-3.5-flash'
             });
+            aiResponse = typeof resp === 'string' ? resp : resp.text || String(resp);
           } catch (geminiErr: any) {
             log(`[Trends Route] Gemini недоступен для обогащения: ${geminiErr.message}`, 'warn');
             try {
@@ -2039,10 +2041,11 @@ ${trendSummaries.length > 0 ? `ВЫВОДЫ ПО ТРЕНДАМ:\n${trendSummari
   "recommendation": "одна ключевая рекомендация по работе с этим источником"
 }`;
 
-          const aiResponse = await geminiDirect.generateContent({
+          const aiResp = await geminiDirect.generateContent({
             prompt: summaryPrompt,
             model: 'gemini-3.5-flash'
           });
+          const aiResponse = typeof aiResp === 'string' ? aiResp : (aiResp as any).text || String(aiResp);
 
           try {
             const cleaned = aiResponse.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();

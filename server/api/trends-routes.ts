@@ -201,41 +201,37 @@ async function analyzeSentimentWithAI(comments: any[]): Promise<Record<string, a
     };
   }
 
-  const prompt = `Ты — эксперт по анализу тональности комментариев в социальных сетях. Проанализируй следующие ${commentTexts.length} комментариев и верни JSON.
+  const commentList = commentTexts.map((t: string, i: number) => `${i + 1}. ${t.substring(0, 200)}`).join('\n');
 
-Комментарии:
-${commentTexts.map((t: string, i: number) => `${i + 1}. ${t}`).join('\n')}
+  const prompt = `Проанализируй тональность комментариев. Верни ТОЛЬКО JSON:
 
-Верни ТОЛЬКО валидный JSON без markdown-обёрток, без \`\`\`json, строго в формате:
-{
-  "sentiment": "positive" | "negative" | "neutral",
-  "score": число от 0 до 10 (0 = максимально негативный, 10 = максимально позитивный),
-  "confidence": число от 0 до 100 (уверенность в анализе),
-  "positive_percentage": число от 0 до 100,
-  "negative_percentage": число от 0 до 100,
-  "neutral_percentage": число от 0 до 100,
-  "themes": ["тема1", "тема2", "тема3"],
-  "summary": "Краткое описание общего настроения аудитории на русском языке, 2-3 предложения"
-}
+${commentList}
 
-Важно:
-- positive_percentage + negative_percentage + neutral_percentage = 100
-- themes — основные темы обсуждения (3-5 штук)
-- summary должен быть информативным и содержательным
-- Учитывай сарказм, эмодзи, сленг`;
+Формат (строго JSON, без markdown):
+{"sentiment":"positive|negative|neutral","score":0-10,"confidence":0-100,"positive_percentage":0-100,"negative_percentage":0-100,"neutral_percentage":0-100,"themes":["тема1","тема2"],"summary":"2-3 предложения"}
+
+Проценты = 100 суммарно. Учитывай сарказм и эмодзи.`;
 
   try {
     const aiResponse = await geminiDirect.generateContent({
       prompt,
       model: 'gemini-3.5-flash',
       temperature: 0.3,
-      maxOutputTokens: 2048,
+      maxOutputTokens: 4096,
       responseMimeType: 'application/json'
     });
 
     const rawText = typeof aiResponse === 'string' ? aiResponse : (aiResponse as any).text || String(aiResponse);
     const cleanJson = rawText.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-    const parsed = JSON.parse(cleanJson);
+    let parsed: any;
+    try {
+      parsed = JSON.parse(cleanJson);
+    } catch (parseErr: any) {
+      console.error(`[Sentiment AI] JSON parse error at position ${parseErr.message?.match(/position (\d+)/)?.[1]}`);
+      console.error(`[Sentiment AI] Response length: ${cleanJson.length} chars`);
+      console.error(`[Sentiment AI] Last 200 chars: ...${cleanJson.slice(-200)}`);
+      throw parseErr;
+    }
 
     return {
       sentiment: parsed.sentiment || 'neutral',

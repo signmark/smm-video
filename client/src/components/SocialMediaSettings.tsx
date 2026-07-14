@@ -4,6 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useLocation } from "wouter";
 import { usePlan } from "@/hooks/use-plan";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -98,6 +99,7 @@ export function SocialMediaSettings({
   initialSettings,
   onSettingsUpdated
 }: SocialMediaSettingsProps) {
+  const queryClient = useQueryClient();
   const [isLoading, setIsLoading] = useState(false);
   const { toast } = useToast();
   const [, setLocation] = useLocation();
@@ -1059,6 +1061,7 @@ export function SocialMediaSettings({
 
       if (event.data.type === 'VK_OAUTH_SUCCESS') {
         console.log('📋 [SocialMediaSettings] Получено событие VK OAuth успеха');
+        queryClient.invalidateQueries({ queryKey: ['/api/campaigns'] });
         setTimeout(() => {
           loadVkSettings();
           toast({ title: "VK обновлен", description: "Настройки VK успешно обновлены" });

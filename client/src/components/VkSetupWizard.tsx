@@ -5,6 +5,7 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { CheckCircle, ExternalLink, ArrowRight, Loader2, ChevronDown, ChevronUp, RefreshCw, Webhook, Copy, Check, Shield } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface VkSetupWizardProps {
   campaignId: string;
@@ -13,6 +14,7 @@ interface VkSetupWizardProps {
 }
 
 const VkSetupWizard: React.FC<VkSetupWizardProps> = ({ campaignId, onComplete, onCancel }) => {
+  const queryClient = useQueryClient();
   const [currentStep, setCurrentStep] = useState(1);
   const [mode, setMode] = useState<'webhook' | 'manual'>('webhook');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -100,6 +102,7 @@ const VkSetupWizard: React.FC<VkSetupWizardProps> = ({ campaignId, onComplete, o
         oauth2ListenerRef.current = null;
         setIsOAuth2Waiting(false);
         toast({ title: 'Авторизация успешна!', description: 'Токен с автообновлением сохранён. Загружаем группы...' });
+        await queryClient.invalidateQueries({ queryKey: ['/api/campaigns'] });
         await fetchVkGroupsFromCampaign();
       } else if (e.data?.type === 'VK_OAUTH_ERROR') {
         window.removeEventListener('message', listener);

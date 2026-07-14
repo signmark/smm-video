@@ -518,7 +518,9 @@ export default function ContentPage() {
         throw new Error('Failed to fetch campaigns');
       }
       return response.json();
-    }
+    },
+    staleTime: 10 * 1000,
+    refetchOnWindowFocus: true,
   });
 
   const campaigns = campaignsResponse?.data || [];
@@ -541,6 +543,7 @@ export default function ContentPage() {
     },
     enabled: !!selectedCampaignId,
     staleTime: 30 * 1000,
+    refetchOnWindowFocus: true,
   });
 
   const contentStyle = (fullCampaignData?.data as any)?.content_style || null;

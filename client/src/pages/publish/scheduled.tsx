@@ -91,9 +91,12 @@ export default function ScheduledPublications() {
         description: "Публикация была успешно перемещена в черновики",
         variant: "default"
       });
-      // Принудительно обновляем через небольшую задержку
-      setTimeout(() => refetchScheduled(), 500);
-      setTimeout(() => refetchScheduled(), 2000);
+      // Только после успешного ответа сервера — обновляем данные
+      if (selectedCampaign?.id) {
+        queryClient.setQueryData(['/api/campaign-content', selectedCampaign.id, 'scheduled'], []);
+        queryClient.setQueryData(['/api/publish/scheduled'], []);
+        refetchScheduled();
+      }
     },
     onError: (error: Error, contentId: string, context: any) => {
       if (context?.prevScheduled) {
@@ -105,12 +108,6 @@ export default function ScheduledPublications() {
         description: `Не удалось переместить публикацию в черновики: ${error.message || 'Неизвестная ошибка'}`,
         variant: "destructive"
       });
-    },
-    onSettled: () => {
-      // Очищаем кэш и принудительно загружаем заново
-      queryClient.setQueryData(['/api/campaign-content', selectedCampaign?.id, 'scheduled'], []);
-      queryClient.setQueryData(['/api/publish/scheduled'], []);
-      refetchScheduled();
     }
   });
   
@@ -315,13 +312,11 @@ export default function ScheduledPublications() {
       title: "Публикация отменена",
       description: "Запланированная публикация была успешно отменена",
     });
-    // Очищаем кэш и принудительно загружаем заново
+    // Только после успешного ответа сервера — обновляем данные
     if (selectedCampaign?.id) {
       queryClient.setQueryData(['/api/campaign-content', selectedCampaign.id, 'scheduled'], []);
       queryClient.setQueryData(['/api/publish/scheduled'], []);
       refetchScheduled();
-      setTimeout(() => refetchScheduled(), 500);
-      setTimeout(() => refetchScheduled(), 2000);
     }
   };
   

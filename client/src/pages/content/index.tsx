@@ -1173,6 +1173,10 @@ export default function ContentPage() {
         description: t('content.messages.movedToDraftsDesc'),
         variant: "default"
       });
+      // Только после успешного ответа сервера — обновляем данные
+      queryClient.setQueryData(["/api/campaign-content", selectedCampaignId, "scheduled"], []);
+      queryClient.setQueryData(["/api/publish/scheduled"], []);
+      queryClient.invalidateQueries({ queryKey: ["/api/campaign-content", selectedCampaignId] });
     },
     onError: (error: Error, contentId: string, context: any) => {
       // Откат при ошибке
@@ -1184,15 +1188,6 @@ export default function ContentPage() {
         description: `${t('content.messages.moveToDraftsError')}: ${error.message || t('content.messages.error')}`,
         variant: "destructive"
       });
-    },
-    onSettled: () => {
-      // Очищаем кэш и принудительно загружаем заново
-      queryClient.setQueryData(["/api/campaign-content", selectedCampaignId, "scheduled"], []);
-      queryClient.setQueryData(["/api/publish/scheduled"], []);
-      queryClient.invalidateQueries({ queryKey: ["/api/campaign-content", selectedCampaignId] });
-      setTimeout(() => {
-        queryClient.refetchQueries({ queryKey: ["/api/campaign-content", selectedCampaignId] });
-      }, 500);
     }
   });
 

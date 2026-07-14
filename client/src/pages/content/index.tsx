@@ -1186,10 +1186,10 @@ export default function ContentPage() {
       });
     },
     onSettled: () => {
-      // Полностью сбрасываем кэш и загружаем заново
-      queryClient.removeQueries({ queryKey: ["/api/campaign-content", selectedCampaignId, "scheduled"] });
-      queryClient.removeQueries({ queryKey: ["/api/campaign-content", selectedCampaignId] });
-      queryClient.removeQueries({ queryKey: ["/api/publish/scheduled"] });
+      // Очищаем кэш и принудительно загружаем заново
+      queryClient.setQueryData(["/api/campaign-content", selectedCampaignId, "scheduled"], []);
+      queryClient.setQueryData(["/api/publish/scheduled"], []);
+      queryClient.invalidateQueries({ queryKey: ["/api/campaign-content", selectedCampaignId] });
     }
   });
 

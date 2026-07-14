@@ -104,10 +104,10 @@ export default function ScheduledPublications() {
       });
     },
     onSettled: () => {
-      // Полностью сбрасываем кэш и загружаем заново
-      queryClient.removeQueries({ queryKey: ['/api/campaign-content', selectedCampaign?.id, 'scheduled'] });
-      queryClient.removeQueries({ queryKey: ['/api/campaign-content', selectedCampaign?.id] });
-      queryClient.removeQueries({ queryKey: ['/api/publish/scheduled'] });
+      // Очищаем кэш и принудительно загружаем заново
+      queryClient.setQueryData(['/api/campaign-content', selectedCampaign?.id, 'scheduled'], []);
+      queryClient.setQueryData(['/api/publish/scheduled'], []);
+      refetchScheduled();
     }
   });
   
@@ -312,11 +312,11 @@ export default function ScheduledPublications() {
       title: "Публикация отменена",
       description: "Запланированная публикация была успешно отменена",
     });
-    // Полностью сбрасываем кэш
+    // Очищаем кэш и принудительно загружаем заново
     if (selectedCampaign?.id) {
-      queryClient.removeQueries({ queryKey: ['/api/campaign-content', selectedCampaign.id, 'scheduled'] });
-      queryClient.removeQueries({ queryKey: ['/api/campaign-content', selectedCampaign.id] });
-      queryClient.removeQueries({ queryKey: ['/api/publish/scheduled'] });
+      queryClient.setQueryData(['/api/campaign-content', selectedCampaign.id, 'scheduled'], []);
+      queryClient.setQueryData(['/api/publish/scheduled'], []);
+      refetchScheduled();
     }
   };
   

@@ -114,6 +114,7 @@ export async function apiRequest(
       headers,
       body: data ? JSON.stringify(data) : undefined,
       credentials: "include",
+      cache: method === 'GET' ? 'no-store' : 'default',
     });
   };
 
@@ -213,11 +214,11 @@ export const queryClient = new QueryClient({
     queries: {
       queryFn: getQueryFn({ on401: "throw" }),
       refetchInterval: false,
-      refetchOnWindowFocus: false,
-      staleTime: Infinity,
-      gcTime: 1000 * 60 * 30, // 30 минут
+      refetchOnWindowFocus: true,
+      staleTime: 30 * 1000,
+      gcTime: 1000 * 60 * 5,
       retry: false,
-      refetchOnMount: false,
+      refetchOnMount: true,
       structuralSharing: true,
     },
     mutations: {

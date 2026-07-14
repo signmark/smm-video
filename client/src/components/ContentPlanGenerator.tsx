@@ -329,13 +329,14 @@ export function ContentPlanGenerator({
   // Обработчик выбора/отмены тренда
   const toggleTopic = (topicId: string) => {
     const newSelectedTopics = new Set(selectedTopicIds);
-    
+
     if (newSelectedTopics.has(topicId)) {
       newSelectedTopics.delete(topicId);
     } else {
-      if (newSelectedTopics.size >= MAX_TRENDS) {
+      const limit = trendTopics.length <= MAX_TRENDS ? trendTopics.length : MAX_TRENDS;
+      if (newSelectedTopics.size >= limit) {
         toast({
-          title: `Максимум ${MAX_TRENDS} трендов`,
+          title: `Максимум ${limit} трендов`,
           description: "Снимите выбор с одного тренда, чтобы добавить другой.",
           variant: "destructive",
         });
@@ -343,15 +344,14 @@ export function ContentPlanGenerator({
       }
       newSelectedTopics.add(topicId);
     }
-    
+
     setSelectedTopicIds(newSelectedTopics);
   };
 
-  // Обработчик выбора всех трендов (не более MAX_TRENDS)
+  // Обработчик выбора всех трендов
   const selectAllTopics = () => {
-    const allTopicIds = trendTopics
-      .slice(0, MAX_TRENDS)
-      .map((topic: CampaignTrendTopic) => topic.id);
+    const limit = trendTopics.length <= MAX_TRENDS ? trendTopics.length : MAX_TRENDS;
+    const allTopicIds = trendTopics.slice(0, limit).map((topic: CampaignTrendTopic) => topic.id);
     setSelectedTopicIds(new Set(allTopicIds));
   };
 
@@ -476,19 +476,25 @@ export function ContentPlanGenerator({
             <>
               <div className="flex justify-between items-center mb-4">
                 <div>
-                  <span className={`text-sm font-medium ${selectedTopicIds.size >= MAX_TRENDS ? 'text-destructive' : 'text-muted-foreground'}`}>
-                    Выбрано {selectedTopicIds.size} / {MAX_TRENDS}
-                    {selectedTopicIds.size >= MAX_TRENDS && ' — лимит достигнут'}
-                  </span>
+                  {(() => {
+                    const limit = trendTopics.length <= MAX_TRENDS ? trendTopics.length : MAX_TRENDS;
+                    const atLimit = selectedTopicIds.size >= limit;
+                    return (
+                      <span className={`text-sm font-medium ${atLimit ? 'text-destructive' : 'text-muted-foreground'}`}>
+                        Выбрано {selectedTopicIds.size} / {limit}
+                        {atLimit && trendTopics.length > MAX_TRENDS && ' — лимит достигнут'}
+                      </span>
+                    );
+                  })()}
                 </div>
                 <div className="space-x-2">
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
+                  <Button
+                    variant="outline"
+                    size="sm"
                     onClick={selectAllTopics}
-                    disabled={trendTopics.length === 0 || selectedTopicIds.size >= MAX_TRENDS}
+                    disabled={trendTopics.length === 0 || selectedTopicIds.size >= (trendTopics.length <= MAX_TRENDS ? trendTopics.length : MAX_TRENDS)}
                   >
-                    Выбрать {MAX_TRENDS}
+                    Выбрать {trendTopics.length <= MAX_TRENDS ? trendTopics.length : MAX_TRENDS}
                   </Button>
                   <Button 
                     variant="outline" 
@@ -504,7 +510,8 @@ export function ContentPlanGenerator({
               <div className="grid grid-cols-1 gap-4 max-h-[50vh] overflow-y-auto pr-2">
                 {trendTopics.map((topic: CampaignTrendTopic) => {
                   const isSelected = selectedTopicIds.has(topic.id);
-                  const isDisabled = !isSelected && selectedTopicIds.size >= MAX_TRENDS;
+                  const limit = trendTopics.length <= MAX_TRENDS ? trendTopics.length : MAX_TRENDS;
+                  const isDisabled = !isSelected && selectedTopicIds.size >= limit;
                   return (
                   <Card 
                     key={topic.id} 

@@ -1120,10 +1120,7 @@ export default function ContentPage() {
   const moveToDraftMutation = useMutation({
     mutationFn: async (contentId: string) => {
       triggerFastPolling();
-      console.log(`Перемещение контента ${contentId} в черновики`);
-
-      // 1. Сервер очищает social_platforms и ставит status: draft
-      const result = await apiRequest(`/api/publish/update-content/${contentId}`, {
+      return await apiRequest(`/api/publish/update-content/${contentId}`, {
         method: 'PATCH',
         data: {
           status: 'draft',
@@ -1131,9 +1128,6 @@ export default function ContentPage() {
           social_platforms: {}
         }
       });
-      // 2. Ждём пока сервер реально обновит данные
-      await new Promise(r => setTimeout(r, 300));
-      return result;
     },
     onSuccess: () => {
       toast({
@@ -1141,11 +1135,9 @@ export default function ContentPage() {
         description: t('content.messages.movedToDraftsDesc'),
         variant: "default"
       });
-      // 3. Только после подтверждения сервера — подтягиваем РЕАЛЬНЫЕ данные
-      queryClient.invalidateQueries({ queryKey: ["/api/campaign-content", selectedCampaignId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/campaign-content"] });
     },
     onError: (error: Error) => {
-      console.error("Ошибка при перемещении в черновики:", error);
       toast({
         title: t('content.messages.error'),
         description: `${t('content.messages.moveToDraftsError')}: ${error.message || t('content.messages.error')}`,

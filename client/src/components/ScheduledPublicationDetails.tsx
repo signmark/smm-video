@@ -131,10 +131,7 @@ export default function ScheduledPublicationDetails({
 
       const response = await apiRequest(`/api/publish/cancel/${content.id}`, { method: 'POST', headers });
       if (response && !response.error) {
-        // Ждём 500ms чтобы сервер реально обновил данные
-        await new Promise(r => setTimeout(r, 500));
-        // Вызываем refetch — ждём завершения
-        if (onCancelSuccess) await onCancelSuccess();
+        if (onCancelSuccess) onCancelSuccess();
       } else {
         throw new Error(response?.error || 'Не удалось отменить');
       }
@@ -153,8 +150,7 @@ export default function ScheduledPublicationDetails({
         data: { status: 'draft', scheduled_at: null, social_platforms: {} }
       });
       if (response && !response.error) {
-        await new Promise(r => setTimeout(r, 500));
-        if (onCancelSuccess) await onCancelSuccess();
+        if (onCancelSuccess) onCancelSuccess();
       } else {
         throw new Error(response?.error || 'Не удалось переместить');
       }

@@ -62,9 +62,7 @@ export default function ScheduledPublications() {
   // Мутация для перемещения контента в черновики
   const moveToDraftMutation = useMutation({
     mutationFn: async (contentId: string) => {
-      console.log(`Перемещение контента ${contentId} в черновики`);
-      // 1. Сервер очищает social_platforms и ставит status: draft
-      const result = await apiRequest(`/api/publish/update-content/${contentId}`, {
+      return await apiRequest(`/api/publish/update-content/${contentId}`, {
         method: 'PATCH',
         data: {
           status: 'draft',
@@ -72,9 +70,6 @@ export default function ScheduledPublications() {
           social_platforms: {}
         }
       });
-      // 2. Ждём пока сервер реально обновит данные
-      await new Promise(r => setTimeout(r, 300));
-      return result;
     },
     onSuccess: () => {
       toast({
@@ -82,13 +77,10 @@ export default function ScheduledPublications() {
         description: "Публикация была успешно перемещена в черновики",
         variant: "default"
       });
-      // 3. Только после подтверждения сервера — подтягиваем РЕАЛЬНЫЕ данные
-      if (selectedCampaign?.id) {
-        refetchScheduled();
-      }
+      // Инвалидируем кэш — React Query сам подтянет свежие данные
+      queryClient.invalidateQueries({ queryKey: ['/api/campaign-content'] });
     },
     onError: (error: Error) => {
-      console.error("Ошибка при перемещении в черновики:", error);
       toast({
         title: "Ошибка",
         description: `Не удалось переместить публикацию в черновики: ${error.message || 'Неизвестная ошибка'}`,
@@ -269,23 +261,13 @@ export default function ScheduledPublications() {
     });
   };
   
-  const handleCancelSuccess = async () => {
-    if (selectedCampaign?.id) {
-      // Ждём 500ms чтобы сервер гарантированно обновился
-      await new Promise(r => setTimeout(r, 500));
-      // Принудительно загружаем свежие данные через прямой fetch
-      const result = await apiRequest(
-        `/api/campaign-content?campaignId=${selectedCampaign.id}&limit=500&_t=${Date.now()}`,
-        { method: 'GET' }
-      );
-      const allContent = keysToCamel<CampaignContent[]>(result.data || []);
-      const scheduled = allContent.filter((content: any) => content.status === 'scheduled');
-      queryClient.setQueryData(['/api/campaign-content', selectedCampaign.id, 'scheduled'], scheduled);
-    }
+  const handleCancelSuccess = () => {
     toast({
       title: "Публикация отменена",
       description: "Запланированная публикация была успешно отменена",
     });
+    // Инвалидируем кэш — React Query сам подтянет свежие данные
+    queryClient.invalidateQueries({ queryKey: ['/api/campaign-content'] });
   };
   
   const handleViewDetails = (content: CampaignContent) => {

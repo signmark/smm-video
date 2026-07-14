@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import request from 'supertest';
 import express from 'express';
 
@@ -54,6 +54,8 @@ vi.mock('../utils/logger', () => ({
 import { directusApiManager, directusApi } from '../directus';
 import { registerPublishingRoutes } from '../api/publishing-routes';
 import { registerContentRoutes } from '../routes/content';
+import { invalidateContentCache } from '../utils/content-cache';
+import { storage } from '../storage';
 
 // ── Хелперы ───────────────────────────────────────────────────────────────────
 
@@ -68,6 +70,32 @@ const makeApp = () => {
 const mockDirectusRequest = directusApiManager.request as ReturnType<typeof vi.fn>;
 const mockDirectusGet = (directusApi as any).get as ReturnType<typeof vi.fn>;
 const mockDirectusPost = (directusApi as any).post as ReturnType<typeof vi.fn>;
+
+describe('POST /api/publish/cancel/:contentId', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('invalidates the campaign content cache after cancellation', async () => {
+    const app = makeApp();
+    vi.spyOn(storage, 'getCampaignContentById').mockResolvedValue({
+      id: 'content-1',
+      userId: 'user-1',
+      campaignId: 'campaign-1',
+      status: 'scheduled',
+      scheduledAt: new Date('2026-07-15T10:00:00Z'),
+      socialPlatforms: { telegram: { status: 'scheduled' } },
+    } as any);
+    vi.spyOn(storage, 'updateCampaignContent').mockResolvedValue({ id: 'content-1' } as any);
+    mockDirectusRequest.mockResolvedValue({ data: { data: { id: 'content-1' } } });
+
+    const res = await request(app).post('/api/publish/cancel/content-1');
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(invalidateContentCache).toHaveBeenCalledWith('user-1', 'campaign-1');
+  });
+});
 
 // ── Tests: /api/retry-failed/:contentId ───────────────────────────────────────
 

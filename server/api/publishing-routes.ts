@@ -1169,6 +1169,16 @@ export function registerPublishingRoutes(app: Express): void {
       }
       
       log(`Публикация ${contentId} полностью отменена`, 'api');
+
+      // GET /api/campaign-content is cached for 60 seconds. Without invalidation,
+      // the scheduled publications page receives the pre-cancel version even
+      // after a successful refetch.
+      const userId = req.user?.id;
+      const campaignId = (content as any).campaignId || (content as any).campaign_id;
+      const normalizedCampaignId = typeof campaignId === 'object' ? campaignId?.id : campaignId;
+      if (userId) {
+        invalidateContentCache(userId, normalizedCampaignId);
+      }
       
       return res.status(200).json({ 
         success: true, 

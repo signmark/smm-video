@@ -264,16 +264,31 @@ export default function ScheduledPublications() {
     });
   };
   
-  const handleCancelSuccess = () => {
+  const handleCancelSuccess = (contentId: string) => {
     toast({
       title: "Публикация отменена",
       description: "Запланированная публикация была успешно отменена",
     });
-    // Принудительный refetch — invalidateQueries не срабатывает
     if (selectedCampaign?.id) {
-      queryClient.refetchQueries({ queryKey: ['/api/campaign-content', selectedCampaign.id] });
-      queryClient.refetchQueries({ queryKey: ['/api/campaign-content', selectedCampaign.id, 'scheduled'] });
-      queryClient.refetchQueries({ queryKey: ['/api/publish/scheduled'] });
+      const scheduledQueryKey = ['/api/campaign-content', selectedCampaign.id, 'scheduled'] as const;
+
+      // Убираем карточку сразу после успешной отмены, не дожидаясь сети.
+      queryClient.setQueryData<CampaignContent[]>(scheduledQueryKey, (current = []) =>
+        current.filter((item) => item.id !== contentId)
+      );
+
+      // Фоновая сверка с сервером обновит остальные представления контента.
+      void queryClient.invalidateQueries({
+        queryKey: ['/api/campaign-content', selectedCampaign.id],
+      });
+    }
+  };
+
+  const handleContentChanged = () => {
+    if (selectedCampaign?.id) {
+      void queryClient.invalidateQueries({
+        queryKey: ['/api/campaign-content', selectedCampaign.id],
+      });
     }
   };
   
@@ -494,6 +509,7 @@ export default function ScheduledPublications() {
                 key={content.id}
                 content={content}
                 onCancelSuccess={handleCancelSuccess}
+                onContentChanged={handleContentChanged}
                 onViewDetails={handleViewDetails}
               />
             ))}

@@ -30,7 +30,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 
 interface ScheduledPublicationDetailsProps {
   content: CampaignContent;
-  onCancelSuccess?: (updatedContent?: CampaignContent) => void;
+  onCancelSuccess?: (contentId: string) => void;
+  onContentChanged?: () => void;
   onViewDetails?: (content: CampaignContent) => void;
 }
 
@@ -113,6 +114,7 @@ function stripHtml(html: string): string {
 export default function ScheduledPublicationDetails({ 
   content,
   onCancelSuccess,
+  onContentChanged,
   onViewDetails 
 }: ScheduledPublicationDetailsProps) {
   const { toast } = useToast();
@@ -131,7 +133,7 @@ export default function ScheduledPublicationDetails({
 
       const response = await apiRequest(`/api/publish/cancel/${content.id}`, { method: 'POST', headers });
       if (response && !response.error) {
-        if (onCancelSuccess) onCancelSuccess();
+        onCancelSuccess?.(content.id);
       } else {
         throw new Error(response?.error || 'Не удалось отменить');
       }
@@ -150,7 +152,7 @@ export default function ScheduledPublicationDetails({
         data: { status: 'draft', scheduled_at: null, social_platforms: {} }
       });
       if (response && !response.error) {
-        if (onCancelSuccess) onCancelSuccess();
+        if (onCancelSuccess) onCancelSuccess(content.id);
       } else {
         throw new Error(response?.error || 'Не удалось переместить');
       }
@@ -168,7 +170,7 @@ export default function ScheduledPublicationDetails({
       if (response?.success) {
         const names = (response.retried || []).join(', ');
         toast({ title: "Повтор запущен", description: `Платформы поставлены в очередь: ${names}` });
-        if (onCancelSuccess) onCancelSuccess();
+        onContentChanged?.();
       } else {
         throw new Error(response?.error || 'Не удалось запустить повтор');
       }
@@ -181,7 +183,7 @@ export default function ScheduledPublicationDetails({
 
   const handleSaveSuccess = () => {
     setIsEditDialogOpen(false);
-    if (onCancelSuccess) onCancelSuccess();
+    onContentChanged?.();
     toast({ title: "Изменения сохранены", description: "Публикация обновлена." });
   };
 

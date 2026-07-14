@@ -118,7 +118,6 @@ export default function ScheduledPublications() {
     isLoading: scheduledLoading,
     isFetching: scheduledFetching,
     refetch: refetchScheduled,
-    dataUpdatedAt,
   } = useQuery<CampaignContent[]>({
     queryKey: ['/api/campaign-content', selectedCampaign?.id, 'scheduled'],
     queryFn: async () => {
@@ -439,11 +438,6 @@ export default function ScheduledPublications() {
             <span>{t('publish.scheduled.refresh')}</span>
           </Button>
         </div>
-      </div>
-
-      {/* DEBUG: показываем состояние загрузки */}
-      <div className="text-xs text-muted-foreground bg-muted/50 p-2 rounded mb-2 font-mono">
-        count={scheduledContent.length} | loading={String(scheduledLoading)} | fetching={String(scheduledFetching)} | updated={dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString() : 'never'} | campaign={selectedCampaign?.id?.slice(0,8)}
       </div>
 
       <div className="flex justify-between items-center mb-4">

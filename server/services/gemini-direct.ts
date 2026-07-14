@@ -12,6 +12,7 @@ interface GenerateContentOptions {
   temperature?: number;
   maxOutputTokens?: number;
   systemInstruction?: string;
+  responseMimeType?: string;
 }
 
 interface GenerateContentResult {
@@ -24,7 +25,7 @@ class GeminiDirect {
   private readonly defaultModel = 'gemini-2.5-flash';
 
   async generateContent(options: GenerateContentOptions): Promise<GenerateContentResult> {
-    const { prompt, model = this.defaultModel, temperature = 0.7, maxOutputTokens = 8192, systemInstruction } = options;
+    const { prompt, model = this.defaultModel, temperature = 0.7, maxOutputTokens = 8192, systemInstruction, responseMimeType } = options;
 
     // Получаем API ключ
     let apiKey = process.env.GEMINI_API_KEY;
@@ -49,9 +50,11 @@ class GeminiDirect {
     }
 
     const contents: any[] = [{ role: 'user', parts: [{ text: prompt }] }];
+    const genConfig: any = { temperature, maxOutputTokens };
+    if (responseMimeType) genConfig.responseMimeType = responseMimeType;
     const body: any = {
       contents,
-      generationConfig: { temperature, maxOutputTokens },
+      generationConfig: genConfig,
     };
     if (systemInstruction) {
       body.systemInstruction = { parts: [{ text: systemInstruction }] };

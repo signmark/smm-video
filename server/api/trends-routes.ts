@@ -229,12 +229,12 @@ ${commentTexts.map((t: string, i: number) => `${i + 1}. ${t}`).join('\n')}
       prompt,
       model: 'gemini-3.5-flash',
       temperature: 0.3,
-      maxOutputTokens: 2048
+      maxOutputTokens: 2048,
+      responseMimeType: 'application/json'
     });
 
     const rawText = typeof aiResponse === 'string' ? aiResponse : (aiResponse as any).text || String(aiResponse);
     const cleanJson = rawText.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
-    console.log(`[Sentiment AI] Ответ от AI (первые 500 символов): ${cleanJson.substring(0, 500)}`);
     const parsed = JSON.parse(cleanJson);
 
     return {

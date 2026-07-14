@@ -268,15 +268,15 @@ export default function ScheduledPublications() {
     });
   };
   
-  const handleCancelSuccess = () => {
+  const handleCancelSuccess = async () => {
+    // Сервер уже обновил — подтягиваем РЕАЛЬНЫЕ данные
+    if (selectedCampaign?.id) {
+      await refetchScheduled();
+    }
     toast({
       title: "Публикация отменена",
       description: "Запланированная публикация была успешно отменена",
     });
-    // Сервер уже обновил — подтягиваем РЕАЛЬНЫЕ данные
-    if (selectedCampaign?.id) {
-      refetchScheduled();
-    }
   };
   
   const handleViewDetails = (content: CampaignContent) => {

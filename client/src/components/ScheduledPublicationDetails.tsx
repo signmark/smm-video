@@ -129,19 +129,13 @@ export default function ScheduledPublicationDetails({
       const headers: Record<string, string> = {};
       if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
 
+      // 1. Сервер очищает social_platforms
       const response = await apiRequest(`/api/publish/cancel/${content.id}`, { method: 'POST', headers });
       if (response && !response.error) {
-        toast({ title: "Публикация отменена", description: "Успешно отменена.", variant: "default" });
-        const updatedContent: CampaignContent = { ...content, status: 'draft' as const, scheduledAt: null };
-        if (updatedContent.socialPlatforms) {
-          const platforms = { ...updatedContent.socialPlatforms };
-          Object.keys(platforms).forEach(k => {
-            const p = k as SocialPlatform;
-            if (platforms[p]) platforms[p] = { ...platforms[p], status: 'cancelled' };
-          });
-          updatedContent.socialPlatforms = platforms;
-        }
-        if (onCancelSuccess) onCancelSuccess(updatedContent);
+        // 2. Ждём пока сервер реально обновит данные
+        await new Promise(r => setTimeout(r, 500));
+        // 3. Только потом — тост + refetch
+        if (onCancelSuccess) onCancelSuccess();
       } else {
         throw new Error(response?.error || 'Не удалось отменить');
       }
@@ -155,14 +149,16 @@ export default function ScheduledPublicationDetails({
     if (isMovingToDraft) return;
     setIsMovingToDraft(true);
     try {
+      // 1. Сервер очищает social_platforms
       const response = await apiRequest(`/api/publish/update-content/${content.id}`, {
         method: 'PATCH',
         data: { status: 'draft', scheduled_at: null, social_platforms: {} }
       });
       if (response && !response.error) {
-        toast({ title: "В черновики", description: "Перемещено в черновики.", variant: "default" });
-        const updatedContent: CampaignContent = { ...content, status: 'draft' as const, scheduledAt: null, socialPlatforms: null };
-        if (onCancelSuccess) onCancelSuccess(updatedContent);
+        // 2. Ждём пока сервер реально обновит данные
+        await new Promise(r => setTimeout(r, 500));
+        // 3. Только потом — тост + refetch
+        if (onCancelSuccess) onCancelSuccess();
       } else {
         throw new Error(response?.error || 'Не удалось переместить');
       }

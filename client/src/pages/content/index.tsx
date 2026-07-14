@@ -1186,10 +1186,10 @@ export default function ContentPage() {
       });
     },
     onSettled: () => {
-      // Финальная синхронизация с сервером
-      queryClient.invalidateQueries({ queryKey: ["/api/campaign-content", selectedCampaignId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/campaign-content", selectedCampaignId, "scheduled"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/publish/scheduled"] });
+      // Финальная синхронизация с сервером — принудительный refetch
+      queryClient.refetchQueries({ queryKey: ["/api/campaign-content", selectedCampaignId] });
+      queryClient.refetchQueries({ queryKey: ["/api/campaign-content", selectedCampaignId, "scheduled"] });
+      queryClient.refetchQueries({ queryKey: ["/api/publish/scheduled"] });
     }
   });
 

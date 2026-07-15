@@ -16,6 +16,7 @@ import { aiAssistantService } from '../services/ai-assistant';
 import axios from 'axios';
 import * as crypto from 'crypto';
 import { cleanupText } from '../utils/text';
+import { cleanGeneratedSocialContent, getGeneratedSocialContentRules } from '../utils/generated-social-content';
 import { getUsage, incrementUsage, canGenerate } from '../services/image-gen-tracker';
 import { 
   getCachedResults, 
@@ -98,13 +99,17 @@ export function registerAiRoutes(app: Express) {
         model,
         temperature,
         maxTokens: max_tokens,
-        systemPrompt,
+        systemPrompt: `${systemPrompt || 'Ты — опытный автор контента для социальных сетей.'}${getGeneratedSocialContentRules(platform)}`,
         userId,
         token,
         campaignId,
         useCampaignData,
         matchStyle
       });
+
+      if (result?.content) {
+        result.content = cleanGeneratedSocialContent(result.content, platform);
+      }
 
       // КРИТИЧНО: Логируем полный ответ перед отправкой на фронтенд
       console.log('--- AI GENERATION RESPONSE START ---');

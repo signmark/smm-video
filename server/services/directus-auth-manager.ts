@@ -3,6 +3,7 @@ import { directusApiManager } from '../directus';
 import { DirectusAuthResult, DirectusUser } from './directus-types';
 import { log } from '../utils/logger';
 import { EventEmitter } from 'events';
+import { shouldRestoreSession } from './directus-session-policy';
 
 /**
  * Информация о токене и пользователе
@@ -84,7 +85,7 @@ export class DirectusAuthManager {
    * Вместо удаления сессии из БД помечаем её флагом needs_reauth
    * @param userId ID пользователя
    */
-  private async softInvalidateSession(userId: string): Promise<void> {
+  private async softInvalidateSession(userId: string, notifyPendingRequests: boolean = true): Promise<void> {
     log(`🔄 Soft-invalidating session for user ${userId} (marking for re-auth)`, this.logPrefix);
     
     // Очищаем локальные кеши
@@ -94,7 +95,9 @@ export class DirectusAuthManager {
     delete this.lastRefreshAttemptTime[userId];
     
     // Уведомляем систему о необходимости повторной авторизации
-    directusApiManager.handleTokenRefreshFailed(userId, new Error('Session requires re-authentication'));
+    if (notifyPendingRequests) {
+      directusApiManager.handleTokenRefreshFailed(userId, new Error('Session requires re-authentication'));
+    }
     
     // НЕ удаляем сессию из БД - просто помечаем что нужна повторная авторизация
     // Это позволит пользователю войти заново без потери данных
@@ -816,7 +819,7 @@ public isTokenValid(token: string): boolean {
       if (session.expiresAt < tooOldThreshold) {
         log(`⚠️ Token for user ${userId} expired ${Math.round((now - session.expiresAt) / 60000)} minutes ago (too old). Soft-invalidating.`, this.logPrefix);
         // SOFT-INVALIDATION: НЕ удаляем из БД, только очищаем кеши
-        await this.softInvalidateSession(userId);
+        await this.softInvalidateSession(userId, false);
         continue;
       }
       
@@ -824,7 +827,7 @@ public isTokenValid(token: string): boolean {
       // Используем soft-invalidation вместо жёсткого удаления
       if (this.refreshAttempts[userId] && this.refreshAttempts[userId] >= this.maxRefreshAttempts) {
         log(`[PROACTIVE-REFRESH] User ${userId} - max refresh attempts exceeded, soft-invalidating`, this.logPrefix);
-        await this.softInvalidateSession(userId);
+        await this.softInvalidateSession(userId, false);
         continue;
       }
       
@@ -1176,6 +1179,7 @@ public isTokenValid(token: string): boolean {
       const sessions = await telegramSessionStorage.getAllSessions();
       
       let loadedCount = 0;
+      let skippedStaleCount = 0;
       for (const session of sessions) {
         // Пропускаем сессии без токена или refresh_token или user_id
         if (!session.user_id || !session.token || !session.refresh_token) {
@@ -1184,6 +1188,13 @@ public isTokenValid(token: string): boolean {
         
         // Парсим дату истечения из JWT
         const expiresAt = this.parseTokenExpiry(session.token);
+
+        // Historical Telegram sessions stay in Directus. Restoring tokens that expired
+        // more than a day ago caused a synchronized refresh storm on every server start.
+        if (!shouldRestoreSession(expiresAt)) {
+          skippedStaleCount++;
+          continue;
+        }
         
         if (!expiresAt || expiresAt <= Date.now()) {
           // Токен уже истёк - попытаемся обновить сразу
@@ -1208,6 +1219,9 @@ public isTokenValid(token: string): boolean {
       }
       
       log(`✅ Loaded ${loadedCount} sessions from database`, this.logPrefix);
+      if (skippedStaleCount > 0) {
+        log(`Skipped ${skippedStaleCount} stale Directus sessions during startup`, this.logPrefix);
+      }
     } catch (error) {
       log(`⚠️ Failed to load sessions from database: ${(error as Error).message}`, this.logPrefix);
     }

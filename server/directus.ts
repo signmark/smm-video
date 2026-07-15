@@ -279,7 +279,8 @@ class DirectusApiManager {
     // Сбрасываем флаг обновления
     this.isRefreshingToken = false;
     
-    log.warn(`Не удалось обновить токен для пользователя ${userId}. Попытка ${this.failedRefreshCount[userId]} из ${this.maxRefreshAttempts}`, 'directus');
+    const reason = error?.response?.data?.errors?.[0]?.message || error?.response?.data?.message || error?.message || String(error);
+    log.warn(`Не удалось обновить токен для пользователя ${userId}. Попытка ${this.failedRefreshCount[userId]} из ${this.maxRefreshAttempts}. Причина: ${reason}`, 'directus');
     
     // Если превышено максимальное количество попыток, очищаем кэш
     if (this.failedRefreshCount[userId] >= this.maxRefreshAttempts) {

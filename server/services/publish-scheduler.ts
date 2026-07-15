@@ -285,6 +285,7 @@ export class PublishScheduler {
 
         let processedCount = 0;
         let publishedCount = 0;
+        const publicationJobs: Array<{ content: any; platforms: string[] }> = [];
 
         // Обрабатываем каждый контент для определения неопубликованных платформ
         for (const content of allContent) {
@@ -544,13 +545,46 @@ export class PublishScheduler {
 
           if (readyPlatforms.length > 0) {
             console.log(`[SCHEDULER] 🚀 PUBLISHING ${content.id} → platforms: ${readyPlatforms.join(', ')}`);
-            await this.publishContentToPlatforms(content, readyPlatforms);
-            publishedCount++;
+            publicationJobs.push({ content, platforms: readyPlatforms });
           }
           // Тихо пропускаем контент без готовых платформ
         }
 
         // Отправляем итоговое уведомление только если что-то опубликовано
+        // Posts sharing the same scheduled time must start in the same scheduler batch.
+        // Limit concurrency so a slow first post cannot delay the rest without flooding APIs.
+        const maxConcurrentPublications = 5;
+        let nextPublicationJob = 0;
+        const runPublicationWorker = async () => {
+          while (nextPublicationJob < publicationJobs.length) {
+            const jobIndex = nextPublicationJob++;
+            const { content, platforms } = publicationJobs[jobIndex];
+            try {
+              await this.publishContentToPlatforms(content, platforms);
+              publishedCount++;
+            } catch (error: any) {
+              log(`Publication batch error for ${content.id}: ${error.message}`, 'scheduler', 'error');
+
+              // Do not leave an unexpectedly failed post blocked until cache timeout.
+              // Persisted postUrl/status still protects a publication that already completed.
+              for (const platform of platforms) {
+                this.releasePlatformCache(content.id, platform);
+                publicationTracker.releasePublication(content.id, platform);
+              }
+              await Promise.allSettled(
+                platforms.map(platform => publicationLockManager.releaseLock(content.id, platform))
+              );
+            }
+          }
+        };
+
+        await Promise.all(
+          Array.from(
+            { length: Math.min(maxConcurrentPublications, publicationJobs.length) },
+            () => runPublicationWorker()
+          )
+        );
+
         if (publishedCount > 0) {
           try {
             const { broadcastNotification } = await import('../index');

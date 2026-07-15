@@ -62,17 +62,9 @@ export class PublicationTracker {
         return false;
       }
       
-      // Если в процессе публикации (статус pending с недавней датой)
-      if (platformData.status === 'pending' && platformData.updatedAt) {
-        const updatedTime = new Date(platformData.updatedAt).getTime();
-        const now = Date.now();
-        
-        if (now - updatedTime < this.lockTimeout) {
-          log(`📊 TRACKING: Контент ${contentId} в процессе публикации в ${platform} (pending ${Math.round((now - updatedTime) / 1000)}s)`, 'publication-tracker');
-          this.markAsProcessed(contentId, platform);
-          return false;
-        }
-      }
+      // `pending` means queued, not currently publishing. Treating a recently scheduled
+      // pending post as active could make the scheduler skip it for the full lock timeout.
+      // Actual in-flight work uses `publishing` and is protected by the scheduler lock.
       
       return true;
       

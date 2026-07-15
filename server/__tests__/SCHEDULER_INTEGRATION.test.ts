@@ -112,9 +112,41 @@ describe('Integration: PublishScheduler Protection & Workflow', () => {
     );
   });
 
+  /** REGRESSION: all posts due at the same time start without waiting for one another. */
+  it('should start posts with the same scheduled time concurrently', async () => {
+    const pastDate = new Date(Date.now() - 10000).toISOString();
+    const mockContent = ['c-same-time-1', 'c-same-time-2'].map(id => ({
+      id,
+      status: 'scheduled',
+      scheduled_at: pastDate,
+      social_platforms: {
+        telegram: { status: 'scheduled', scheduledAt: pastDate, selected: true }
+      }
+    }));
+
+    vi.mocked(directusCrud.list).mockResolvedValueOnce(mockContent);
+
+    let activePublications = 0;
+    let maxActivePublications = 0;
+    // @ts-ignore - private method is intentionally observed in this regression test
+    const publishSpy = vi.spyOn(scheduler, 'publishContentToPlatforms')
+      .mockImplementation(async () => {
+        activePublications++;
+        maxActivePublications = Math.max(maxActivePublications, activePublications);
+        await new Promise(resolve => setTimeout(resolve, 20));
+        activePublications--;
+      });
+
+    await scheduler.checkScheduledContent();
+
+    expect(publishSpy).toHaveBeenCalledTimes(2);
+    expect(maxActivePublications).toBe(2);
+    publishSpy.mockRestore();
+  });
+
   /**
    * EDGE CASE: "Status Desync Protection"
-   * Если одна платформа опубликована, а вторая упала, общий статус контента 
+   * Если одна платформа опубликована, а вторая упала, общий статус контента
    * должен стать 'partially_published', а не 'published'.
    */
   it('should update content status to partially_published if some platforms remain', async () => {

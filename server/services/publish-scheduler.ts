@@ -952,7 +952,12 @@ export class PublishScheduler {
       const { telegramService } = await import('./social-platforms/telegram-service');
       const rawText = content.text_content || content.content || content.title || '';
       const text = typeof rawText === 'string' ? rawText : JSON.stringify(rawText);
-      const result = await telegramService.publishPost(settings, { text, imageUrl: content.image_url, videoUrl: content.video_url });
+      const result = await telegramService.publishPost(settings, {
+        text,
+        imageUrl: content.image_url,
+        additionalImages: content.additional_images ?? content.additionalImages,
+        videoUrl: content.video_url,
+      });
 
       if (result.success) {
         await save('telegram', { status: 'published', postId: String(result.messageId || ''), postUrl: result.postUrl, publishedAt: new Date().toISOString() });

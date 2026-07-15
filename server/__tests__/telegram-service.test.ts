@@ -165,6 +165,38 @@ describe('TelegramService', () => {
       );
       expect(sendPhotoCall![1].photo).toBe('https://example.com/img.png');
     });
+
+    it('публикует основное и дополнительные изображения альбомом', async () => {
+      vi.mocked(axios.get).mockResolvedValue({
+        data: Buffer.from('img'),
+        headers: { 'content-type': 'image/jpeg' }
+      });
+      vi.mocked(axios.post)
+        .mockResolvedValueOnce({ data: { secure_url: 'https://cloudinary.example/main.jpg' } })
+        .mockResolvedValueOnce({ data: { secure_url: 'https://cloudinary.example/additional.jpg' } })
+        .mockResolvedValueOnce({
+          data: { ok: true, result: [{ message_id: 70 }, { message_id: 71 }] }
+        })
+        .mockResolvedValueOnce({ data: { ok: true, result: { message_id: 72 } } });
+
+      const result = await telegramService.publishPost(mockSettings, {
+        text: 'Длинный текст '.repeat(100),
+        imageUrl: 'https://s3.example.ru/main.jpg',
+        additionalImages: JSON.stringify([{ url: 'https://s3.example.ru/additional.jpg' }])
+      });
+
+      expect(result).toMatchObject({ success: true, messageId: 70 });
+
+      const postCalls = vi.mocked(axios.post).mock.calls;
+      const mediaGroupCall = postCalls.find(c => String(c[0]).includes('/sendMediaGroup'));
+      expect(mediaGroupCall).toBeDefined();
+      expect(mediaGroupCall![1].media).toHaveLength(2);
+      expect(mediaGroupCall![1].media[0]).not.toHaveProperty('caption');
+
+      const textCall = postCalls.find(c => String(c[0]).includes('/sendMessage'));
+      expect(textCall![1]).toMatchObject({ reply_to_message_id: 70 });
+      expect(postCalls.some(c => String(c[0]).includes('/sendPhoto'))).toBe(false);
+    });
   });
 
   // ─── publishPost: ошибки API ─────────────────────────────────────────────────

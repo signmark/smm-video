@@ -13,6 +13,13 @@ export interface TelegramSettings {
   chatId: string;
 }
 
+interface TelegramPostContent {
+  text: string;
+  imageUrl?: string;
+  additionalImages?: unknown;
+  videoUrl?: string;
+}
+
 export interface TelegramPublishResult {
   success: boolean;
   messageId?: number;
@@ -22,6 +29,34 @@ export interface TelegramPublishResult {
 
 class TelegramService {
   private readonly apiBase = 'https://api.telegram.org';
+
+  private normalizeAdditionalImages(value: unknown): string[] {
+    if (!value) return [];
+
+    if (Array.isArray(value)) {
+      return value.flatMap(item => this.normalizeAdditionalImages(item));
+    }
+
+    if (typeof value === 'object') {
+      const item = value as Record<string, unknown>;
+      return this.normalizeAdditionalImages(item.url || item.imageUrl || item.image_url);
+    }
+
+    if (typeof value !== 'string') return [];
+
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+
+    if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+      try {
+        return this.normalizeAdditionalImages(JSON.parse(trimmed));
+      } catch {
+        return [trimmed];
+      }
+    }
+
+    return [trimmed];
+  }
 
   /**
    * Зачищает HTML до подмножества, которое поддерживает Telegram (parse_mode=HTML)
@@ -98,7 +133,7 @@ class TelegramService {
 
   async publishPost(
     settings: TelegramSettings,
-    content: { text: string; imageUrl?: string; videoUrl?: string }
+    content: TelegramPostContent
   ): Promise<TelegramPublishResult> {
     const opId = `tg_direct_${Date.now()}`;
     try {
@@ -107,8 +142,12 @@ class TelegramService {
 
       const cleanText = this.sanitizeText(content.text);
       const apiUrl = `${this.apiBase}/bot${token}`;
+      const imageUrls = Array.from(new Set([
+        ...(content.imageUrl ? [content.imageUrl] : []),
+        ...this.normalizeAdditionalImages(content.additionalImages),
+      ]));
 
-      log.info(`[${opId}] [Telegram] Публикуем в ${chatId}, image=${!!content.imageUrl}, video=${!!content.videoUrl}`);
+      log.info(`[${opId}] [Telegram] Публикуем в ${chatId}, images=${imageUrls.length}, video=${!!content.videoUrl}`);
 
       let messageId: number;
       let res: any;
@@ -148,8 +187,61 @@ class TelegramService {
             log.warn(`[${opId}] [Telegram] sendMessage с текстом (после видео) не прошёл: ${textResp.data?.description}`);
           }
         }
-      } else if (content.imageUrl) {
-        const proxiedUrl = await this.proxyImage(content.imageUrl, opId);
+      } else if (imageUrls.length > 1) {
+        const proxiedUrls = await Promise.all(imageUrls.map(url => this.proxyImage(url, opId)));
+        const captionFits = !!cleanText && cleanText.length <= 1024;
+        const chunks: string[][] = [];
+        for (let index = 0; index < proxiedUrls.length;) {
+          const remaining = proxiedUrls.length - index;
+          // Telegram accepts 2–10 items per media group. Avoid a final
+          // one-item group for totals such as 11 or 21 images.
+          const chunkSize = remaining === 11 ? 9 : Math.min(10, remaining);
+          chunks.push(proxiedUrls.slice(index, index + chunkSize));
+          index += chunkSize;
+        }
+
+        for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+          const media = chunks[chunkIndex].map((url, imageIndex) => ({
+            type: 'photo',
+            media: url,
+            ...(chunkIndex === 0 && imageIndex === 0 && captionFits
+              ? { caption: cleanText, parse_mode: 'HTML' }
+              : {}),
+          }));
+          const resp = await axios.post(`${apiUrl}/sendMediaGroup`, {
+            chat_id: chatId,
+            media,
+          });
+          res = resp.data;
+
+          if (!res.ok) {
+            throw new Error(res.description || 'Telegram API вернул ошибку при sendMediaGroup');
+          }
+
+          if (chunkIndex === 0) {
+            messageId = res.result?.[0]?.message_id;
+          }
+        }
+
+        if (cleanText && !captionFits) {
+          const MAX = 4096;
+          const boundary = cleanText.lastIndexOf(' ', MAX - 1);
+          const text = cleanText.length <= MAX
+            ? cleanText
+            : cleanText.slice(0, boundary > 0 ? boundary : MAX - 1) + '…';
+          const textResp = await axios.post(`${apiUrl}/sendMessage`, {
+            chat_id: chatId,
+            text,
+            parse_mode: 'HTML',
+            reply_to_message_id: messageId,
+            disable_web_page_preview: true,
+          });
+          if (!textResp.data?.ok) {
+            log.warn(`[${opId}] [Telegram] sendMessage с текстом после медиагруппы не прошёл: ${textResp.data?.description}`);
+          }
+        }
+      } else if (imageUrls.length === 1) {
+        const proxiedUrl = await this.proxyImage(imageUrls[0], opId);
 
         // Telegram caption у фото жёстко ≤ 1024 символов.
         // Если текст длиннее — отправляем картинку без caption, текст следом отдельным сообщением.

@@ -1100,7 +1100,12 @@ router.post('/publish/now', authMiddleware, async (req, res) => {
               const { telegramService } = await import('../services/social-platforms/telegram-service');
               const rawText = contentItem.text_content || contentItem.content || contentItem.title || '';
               const text = typeof rawText === 'string' ? rawText : JSON.stringify(rawText);
-              const publishResult = await telegramService.publishPost(tgSettings, { text, imageUrl: contentItem.image_url, videoUrl: contentItem.video_url });
+              const publishResult = await telegramService.publishPost(tgSettings, {
+                text,
+                imageUrl: contentItem.image_url,
+                additionalImages: contentItem.additional_images,
+                videoUrl: contentItem.video_url,
+              });
               if (publishResult.success) {
                 await axios.patch(`${directusUrl}/items/campaign_content/${contentId}`, {
                   social_platforms: { ...(contentItem.social_platforms || {}), telegram: { status: 'published', postId: String(publishResult.messageId || ''), postUrl: publishResult.postUrl, publishedAt: new Date().toISOString() } }
@@ -2435,14 +2440,25 @@ router.post('/retry-platform', authMiddleware, async (req, res) => {
 
     if (platform === 'telegram') {
       const tgSettings = campaignSettings?.telegram;
-      if (!tgSettings?.botToken || !tgSettings?.channelId) {
+      const tgToken = tgSettings?.token || tgSettings?.botToken;
+      const tgChatId = tgSettings?.chatId || tgSettings?.channelId;
+      if (!tgToken || !tgChatId) {
         await axios.patch(`${directusUrl}/items/campaign_content/${contentId}`, {
           social_platforms: { ...(contentItem.social_platforms || {}), [platform]: { status: 'failed', error: 'Telegram не настроен для кампании', failedAt: new Date().toISOString() } }
         }, { headers: { Authorization: `Bearer ${adminToken}` } });
         return res.status(400).json({ success: false, error: 'Telegram не настроен для этой кампании' });
       }
       const { telegramService } = await import('../services/social-platforms/telegram-service');
-      const publishResult = await telegramService.publishPost(tgSettings, { text, imageUrl: contentItem.image_url, videoUrl: contentItem.video_url });
+      const publishResult = await telegramService.publishPost({
+        ...tgSettings,
+        token: tgToken,
+        chatId: tgChatId,
+      }, {
+        text,
+        imageUrl: contentItem.image_url,
+        additionalImages: contentItem.additional_images,
+        videoUrl: contentItem.video_url,
+      });
       if (publishResult.success) {
         await axios.patch(`${directusUrl}/items/campaign_content/${contentId}`, {
           social_platforms: { ...(contentItem.social_platforms || {}), [platform]: { status: 'published', postId: String(publishResult.messageId || ''), postUrl: publishResult.postUrl, publishedAt: new Date().toISOString() } }

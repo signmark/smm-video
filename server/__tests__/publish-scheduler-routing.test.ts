@@ -360,6 +360,28 @@ describe('publishToTelegramDirect — типы контента', () => {
     );
   });
 
+  it('пост с additional_images → передаёт все изображения в telegramService', async () => {
+    const additionalImages = [
+      'https://cdn.test/photo-2.jpg',
+      'https://cdn.test/photo-3.jpg',
+    ];
+    const content = makeContent({
+      image_url: 'https://cdn.test/photo-1.jpg',
+      additional_images: additionalImages,
+    });
+
+    const result = await (scheduler as any).publishToTelegramDirect(content);
+
+    expect(result.success).toBe(true);
+    expect(vi.mocked(telegramService.publishPost)).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        imageUrl: 'https://cdn.test/photo-1.jpg',
+        additionalImages,
+      }),
+    );
+  });
+
   it('пост с video_url → передаёт videoUrl в telegramService', async () => {
     const content = makeContent({ video_url: 'https://cdn.test/video.mp4' });
     const result = await (scheduler as any).publishToTelegramDirect(content);

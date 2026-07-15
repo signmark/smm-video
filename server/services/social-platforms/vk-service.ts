@@ -34,6 +34,49 @@ class VkService {
   private readonly apiBase = 'https://api.vk.com/method';
   private readonly apiVersion = '5.199';
 
+  private normalizeImageUrls(value: unknown): string[] {
+    if (!value) return [];
+    if (Array.isArray(value)) return value.flatMap(item => this.normalizeImageUrls(item));
+    if (typeof value === 'object') {
+      const item = value as Record<string, unknown>;
+      return this.normalizeImageUrls(item.url || item.imageUrl || item.image_url);
+    }
+    if (typeof value !== 'string') return [];
+
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    if (trimmed.startsWith('[') || trimmed.startsWith('{')) {
+      try {
+        return this.normalizeImageUrls(JSON.parse(trimmed));
+      } catch {
+        return [];
+      }
+    }
+    return [trimmed];
+  }
+
+  private resolveImageUrl(imageUrl: string): string {
+    if (/^https?:\/\//i.test(imageUrl)) return imageUrl;
+    if (imageUrl.startsWith('//')) return `https:${imageUrl}`;
+
+    const directusUrl = (process.env.DIRECTUS_URL || '').replace(/\/$/, '');
+    if (directusUrl && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(imageUrl)) {
+      return `${directusUrl}/assets/${imageUrl}`;
+    }
+
+    const appUrl = (
+      process.env.APP_URL ||
+      process.env.PUBLIC_URL ||
+      process.env.API_BASE_URL ||
+      process.env.BASE_URL ||
+      ''
+    ).replace(/\/$/, '');
+    if (!appUrl) {
+      throw new Error(`Относительный URL изображения нельзя разрешить без APP_URL/PUBLIC_URL: ${imageUrl}`);
+    }
+    return `${appUrl}/${imageUrl.replace(/^\//, '')}`;
+  }
+
   /**
    * Зачищает HTML в plain-текст для VK (VK поддерживает только обычный текст)
    */
@@ -137,9 +180,10 @@ class VkService {
   /**
    * Загружает изображение на стену VK и возвращает attachment-строку (photo{owner_id}_{id})
    */
-  private async uploadPhoto(imageUrl: string, token: string, groupId: string | undefined, opId: string): Promise<string | null> {
+  private async uploadPhoto(imageUrl: string, token: string, groupId: string | undefined, opId: string): Promise<string> {
     try {
-      log.info(`[${opId}] [VK] Загрузка фото: ${imageUrl.substring(0, 80)}`);
+      const resolvedImageUrl = this.resolveImageUrl(imageUrl);
+      log.info(`[${opId}] [VK] Загрузка фото: ${resolvedImageUrl.substring(0, 80)}`);
 
       const serverParams: Record<string, string> = {
         access_token: token,
@@ -155,11 +199,14 @@ class VkService {
       const serverRes = await axios.post(`${this.apiBase}/photos.getWallUploadServer`, new URLSearchParams(serverParams), {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
       });
+      if (serverRes.data?.error) {
+        throw new Error(`photos.getWallUploadServer: ${serverRes.data.error.error_msg || JSON.stringify(serverRes.data.error)}`);
+      }
       const uploadUrl: string = serverRes.data?.response?.upload_url;
       if (!uploadUrl) throw new Error('Не получен upload_url от VK');
 
       // Скачиваем картинку и заливаем на сервер VK
-      const imgRes = await axios.get(imageUrl, { responseType: 'arraybuffer', timeout: 60000 });
+      const imgRes = await axios.get(resolvedImageUrl, { responseType: 'arraybuffer', timeout: 60000 });
       const imgBuffer = Buffer.from(imgRes.data);
       const contentType = (imgRes.headers['content-type'] as string) || 'image/jpeg';
       const ext = contentType.includes('png') ? 'png' : 'jpg';
@@ -171,6 +218,12 @@ class VkService {
         headers: form.getHeaders(), timeout: 120000
       });
       const uploadData = uploadRes.data;
+      if (uploadData?.error) {
+        throw new Error(`VK upload server: ${uploadData.error}`);
+      }
+      if (!uploadData?.photo || uploadData.server === undefined || !uploadData?.hash) {
+        throw new Error(`VK upload server returned incomplete data: ${JSON.stringify(uploadData)}`);
+      }
       log.info(`[${opId}] [VK] Загружено: server=${uploadData.server}`);
 
       // Сохраняем фото
@@ -188,14 +241,19 @@ class VkService {
       const saveRes = await axios.post(`${this.apiBase}/photos.saveWallPhoto`, new URLSearchParams(saveParams), {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
       });
+      if (saveRes.data?.error) {
+        throw new Error(`photos.saveWallPhoto: ${saveRes.data.error.error_msg || JSON.stringify(saveRes.data.error)}`);
+      }
       const savedPhoto = saveRes.data?.response?.[0];
       if (!savedPhoto) throw new Error('Не удалось сохранить фото в VK');
 
       log.info(`[${opId}] [VK] Фото сохранено: photo${savedPhoto.owner_id}_${savedPhoto.id}`);
       return `photo${savedPhoto.owner_id}_${savedPhoto.id}`;
     } catch (err: any) {
-      log.warn(`[${opId}] [VK] Ошибка загрузки фото: ${err.message} — публикуем без фото`);
-      return null;
+      const responseError = err?.response?.data?.error?.error_msg || err?.response?.data?.error || err?.response?.data;
+      const reason = responseError ? `${err.message}: ${JSON.stringify(responseError)}` : err.message;
+      log.error(`[${opId}] [VK] Ошибка загрузки фото: ${reason}`);
+      throw new Error(`Не удалось загрузить изображение в VK: ${reason}`);
     }
   }
 
@@ -291,7 +349,7 @@ class VkService {
   private async doWallPost(
     token: string,
     groupId: string | undefined,
-    content: { text: string; imageUrl?: string; videoUrl?: string },
+    content: { text: string; imageUrl?: string; additionalImages?: unknown; videoUrl?: string },
     opId: string
   ): Promise<VkPublishResult> {
     const cleanText = this.sanitizeText(content.text);
@@ -313,9 +371,19 @@ class VkService {
     if (content.videoUrl) {
       const attachment = await this.uploadVideo(content.videoUrl, token, groupId, opId);
       if (attachment) postData.attachments = attachment;
-    } else if (content.imageUrl) {
-      const attachment = await this.uploadPhoto(content.imageUrl, token, groupId, opId);
-      if (attachment) postData.attachments = attachment;
+    } else {
+      const imageUrls = Array.from(new Set([
+        ...(content.imageUrl ? [content.imageUrl] : []),
+        ...this.normalizeImageUrls(content.additionalImages)
+      ].filter(Boolean))).slice(0, 10);
+
+      if (imageUrls.length > 0) {
+        const attachments: string[] = [];
+        for (const imageUrl of imageUrls) {
+          attachments.push(await this.uploadPhoto(imageUrl, token, groupId, opId));
+        }
+        postData.attachments = attachments.join(',');
+      }
     }
 
     const bodyParams = new URLSearchParams(postData);
@@ -343,7 +411,7 @@ class VkService {
 
   async publishPost(
     settings: VkSettings,
-    content: { text: string; imageUrl?: string; videoUrl?: string }
+    content: { text: string; imageUrl?: string; additionalImages?: unknown; videoUrl?: string }
   ): Promise<VkPublishResult> {
     const opId = `vk_direct_${Date.now()}`;
     try {

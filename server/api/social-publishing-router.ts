@@ -1151,7 +1151,12 @@ router.post('/publish/now', authMiddleware, async (req, res) => {
               const { vkService } = await import('../services/social-platforms/vk-service');
               const rawText = contentItem.text_content || contentItem.content || contentItem.title || '';
               const text = typeof rawText === 'string' ? rawText : JSON.stringify(rawText);
-              const publishResult = await vkService.publishPost(vkSettings, { text, imageUrl: contentItem.image_url, videoUrl: contentItem.video_url });
+              const publishResult = await vkService.publishPost(vkSettings, {
+                text,
+                imageUrl: contentItem.image_url || contentItem.imageUrl || contentItem.featured_image || undefined,
+                additionalImages: contentItem.additional_images ?? contentItem.additionalImages ?? [],
+                videoUrl: contentItem.video_url || contentItem.videoUrl || undefined
+              });
               if (publishResult.success) {
                 await axios.patch(`${directusUrl}/items/campaign_content/${contentId}`, {
                   social_platforms: { ...(contentItem.social_platforms || {}), vk: { status: 'published', postId: String(publishResult.postId || ''), postUrl: publishResult.postUrl, publishedAt: new Date().toISOString() } }
@@ -2393,7 +2398,12 @@ router.post('/retry-platform', authMiddleware, async (req, res) => {
         }
       }
       const { vkService } = await import('../services/social-platforms/vk-service');
-      const publishResult = await vkService.publishPost(vkSettings, { text, imageUrl: contentItem.image_url, videoUrl: contentItem.video_url });
+      const publishResult = await vkService.publishPost(vkSettings, {
+        text,
+        imageUrl: contentItem.image_url || contentItem.imageUrl || contentItem.featured_image || undefined,
+        additionalImages: contentItem.additional_images ?? contentItem.additionalImages ?? [],
+        videoUrl: contentItem.video_url || contentItem.videoUrl || undefined
+      });
       if (publishResult.success) {
         await axios.patch(`${directusUrl}/items/campaign_content/${contentId}`, {
           social_platforms: { ...(contentItem.social_platforms || {}), [platform]: { status: 'published', postId: String(publishResult.postId || ''), postUrl: publishResult.postUrl, publishedAt: new Date().toISOString() } }

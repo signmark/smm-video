@@ -457,6 +457,24 @@ describe('publishToVkDirect — типы контента', () => {
     );
   });
 
+  it('передаёт дополнительные изображения в vkService', async () => {
+    const content = makeContent({
+      image_url: 'https://cdn.test/main.jpg',
+      additional_images: ['https://cdn.test/second.jpg']
+    });
+
+    const result = await (scheduler as any).publishToVkDirect(content);
+
+    expect(result.success).toBe(true);
+    expect(vi.mocked(vkService.publishPost)).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        imageUrl: 'https://cdn.test/main.jpg',
+        additionalImages: ['https://cdn.test/second.jpg']
+      })
+    );
+  });
+
   it('пост с video_url → передаёт videoUrl в vkService', async () => {
     const content = makeContent({ video_url: 'https://cdn.test/video.mp4' });
     const result = await (scheduler as any).publishToVkDirect(content);

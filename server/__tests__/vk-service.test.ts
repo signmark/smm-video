@@ -155,16 +155,14 @@ describe('VkService', () => {
   describe('publishPost — контент с изображением', () => {
     const setupPhotoUploadMocks = (postId = 100) => {
       vi.mocked(axios.get)
-        .mockResolvedValueOnce({ data: { response: { upload_url: 'https://vk.com/upload' } } })
         .mockResolvedValueOnce({
           data: Buffer.from('img'),
           headers: { 'content-type': 'image/jpeg' }
-        })
-        .mockResolvedValueOnce({
-          data: { response: [{ id: 99, owner_id: -123456 }] }
         });
       vi.mocked(axios.post)
+        .mockResolvedValueOnce({ data: { response: { upload_url: 'https://vk.com/upload' } } })
         .mockResolvedValueOnce({ data: { photo: 'xxx', server: 1, hash: 'yyy' } })
+        .mockResolvedValueOnce({ data: { response: [{ id: 99, owner_id: -123456 }] } })
         .mockResolvedValueOnce({ data: { response: { post_id: postId } } });
     };
 
@@ -180,23 +178,24 @@ describe('VkService', () => {
       expect(result.postId).toBe(200);
 
       const wallPostCall = vi.mocked(axios.post).mock.calls.find(c =>
-        String(c[0]).includes('wall.post') || c[2]?.params?.owner_id
+        String(c[0]).includes('wall.post')
       );
       expect(wallPostCall).toBeDefined();
+      expect((wallPostCall?.[1] as URLSearchParams).get('attachments')).toBe('photo-123456_99');
     });
 
-    it('публикует без фото если загрузка изображения провалилась', async () => {
+    it('не публикует текстовый пост если загрузка обязательного изображения провалилась', async () => {
       vi.mocked(axios.post)
-        .mockResolvedValueOnce({ data: {} })  // photos.getWallUploadServer → no upload_url → fail
-        .mockResolvedValueOnce({ data: { response: { post_id: 300 } } });  // wall.post
+        .mockResolvedValueOnce({ data: {} }); // photos.getWallUploadServer → no upload_url
 
       const result = await vkService.publishPost(mockSettings, {
         text: 'Пост без фото',
         imageUrl: 'https://example.com/broken.jpg'
       });
 
-      expect(result.success).toBe(true);
-      expect(result.postId).toBe(300);
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('изображение');
+      expect(vi.mocked(axios.post).mock.calls.some(call => String(call[0]).includes('wall.post'))).toBe(false);
     });
   });
 

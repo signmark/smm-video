@@ -1063,7 +1063,13 @@ export class PublishScheduler {
         }
       }
 
-      let result = await vkService.publishPost(vkSettings, { text, imageUrl: content.image_url, videoUrl: content.video_url });
+      const vkContent = {
+        text,
+        imageUrl: content.image_url || content.imageUrl || content.featured_image || undefined,
+        additionalImages: content.additional_images ?? content.additionalImages ?? [],
+        videoUrl: content.video_url || content.videoUrl || undefined
+      };
+      let result = await vkService.publishPost(vkSettings, vkContent);
 
       if (!result.success && result.error && this.isAuthError(result.error) && vkSettings.refreshToken && vkClientId) {
         log(`[VK] Auth error после публикации, повторный token refresh для campaign ${campaignId}...`, 'scheduler');
@@ -1072,7 +1078,7 @@ export class PublishScheduler {
           const newToken = await refreshAndSaveVkToken(campaignId, vkSettings);
           if (newToken) {
             log(`[VK] Token refreshed, retrying publish for ${content.id}`, 'scheduler');
-            result = await vkService.publishPost({ ...vkSettings, token: newToken, accessToken: newToken }, { text, imageUrl: content.image_url, videoUrl: content.video_url });
+            result = await vkService.publishPost({ ...vkSettings, token: newToken, accessToken: newToken }, vkContent);
           } else {
             log(`[VK] Token refresh returned null для campaign ${campaignId} — ставим authExpired`, 'scheduler', 'error');
             await markVkAuthExpired(campaignId);

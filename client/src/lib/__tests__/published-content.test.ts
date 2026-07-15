@@ -52,6 +52,33 @@ describe('published content helpers', () => {
     )).toEqual({ telegram: 1, vk: 1 });
   });
 
+  it('limits platform counts to the visible calendar period', () => {
+    const posts = [
+      content({
+        status: 'published',
+        socialPlatforms: {
+          telegram: { status: 'published', publishedAt: '2026-07-15T09:00:00.000Z' },
+        } as any,
+      }),
+      content({
+        id: 'content-2',
+        status: 'published',
+        socialPlatforms: {
+          telegram: { status: 'published', publishedAt: '2026-08-01T09:00:00.000Z' },
+        } as any,
+      }),
+    ];
+
+    expect(countConfirmedPlatformPublications(
+      posts,
+      ['telegram'] as SocialPlatform[],
+      {
+        from: new Date('2026-07-01T00:00:00.000Z'),
+        to: new Date('2026-07-31T23:59:59.999Z'),
+      },
+    )).toEqual({ telegram: 1 });
+  });
+
   it('does not mark both scheduled and actual dates for an already published post', () => {
     const dates = getConfirmedPublicationDates(content({
       status: 'published',

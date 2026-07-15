@@ -622,6 +622,7 @@
       "showOnly": "Showing only posts with \"published\" status and calendar links",
       "postsOn": "Posts on {{date}}:",
       "platformFilter": "Platform Filter",
+      "platformPublicationsForMonth": "Platform publications in {{month}}",
       "contentManagement": "Content Management"
     }
   },

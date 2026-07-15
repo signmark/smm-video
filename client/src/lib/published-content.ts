@@ -80,12 +80,14 @@ export function getConfirmedPublicationDates(content: CampaignContent): Date[] {
 export function countConfirmedPlatformPublications(
   content: CampaignContent[],
   platforms: readonly SocialPlatform[],
+  range?: { from: Date; to: Date },
 ): Partial<Record<SocialPlatform, number>> {
   const counts: Partial<Record<SocialPlatform, number>> = {};
   platforms.forEach((platform) => { counts[platform] = 0; });
 
   content.forEach((item) => {
-    getConfirmedPublicationEvents(item).forEach(({ platform }) => {
+    getConfirmedPublicationEvents(item).forEach(({ platform, date }) => {
+      if (range && (date < range.from || date > range.to)) return;
       if (platform && platforms.includes(platform)) {
         const key = platform;
         counts[key] = (counts[key] || 0) + 1;

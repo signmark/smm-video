@@ -7,7 +7,7 @@ import { PenLine, Send, Loader2, SortDesc, SortAsc, Eye, ExternalLink, RefreshCw
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { format, isSameDay, parseISO, startOfDay } from 'date-fns';
+import { endOfMonth, format, isSameDay, isSameMonth, parseISO, startOfDay, startOfMonth } from 'date-fns';
 import { ru, enUS, es } from 'date-fns/locale';
 import { formatInTimeZone } from 'date-fns-tz';
 import { SiInstagram, SiTelegram, SiVk, SiFacebook, SiYoutube, SiThreads } from "react-icons/si";
@@ -47,6 +47,7 @@ export default function Posts() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [visibleMonth, setVisibleMonth] = useState<Date>(() => startOfMonth(new Date()));
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [retryingKey, setRetryingKey] = useState<string | null>(null);
   const [reusingContentId, setReusingContentId] = useState<string | null>(null);
@@ -205,13 +206,15 @@ export default function Posts() {
       // Берём самую позднюю дату публикации
       const latestDate = new Date(Math.max(...publishDates.map(d => d.getTime())));
       setSelectedDate(startOfDay(latestDate));
+      setVisibleMonth(startOfMonth(latestDate));
     }
   }, [campaignContentResponse]);
 
   const platformCounts = React.useMemo(() => countConfirmedPlatformPublications(
     campaignContent,
     ['instagram', 'telegram', 'vk', 'facebook', 'youtube'] as SocialPlatform[],
-  ), [campaignContent]);
+    { from: startOfMonth(visibleMonth), to: endOfMonth(visibleMonth) },
+  ), [campaignContent, visibleMonth]);
 
   // Получение точек для календаря (публикации на каждый день)
   // Получение контента кампании
@@ -588,14 +591,20 @@ export default function Posts() {
               <div className="space-y-6">
                 <Calendar
                   mode="single"
+                  month={visibleMonth}
+                  onMonthChange={(month) => setVisibleMonth(startOfMonth(month))}
                   selected={selectedDate}
-                  onSelect={(date) => date && setSelectedDate(date)}
+                  onSelect={(date) => {
+                    if (!date) return;
+                    setSelectedDate(date);
+                    setVisibleMonth(startOfMonth(date));
+                  }}
                   className="rounded-md border"
                   components={{
                     DayContent: ({ date }) => (
                       <div className="flex flex-col items-center">
                         <span>{date.getDate()}</span>
-                        {getDayContent(date)}
+                        {isSameMonth(date, visibleMonth) ? getDayContent(date) : null}
                       </div>
                     )
                   }}
@@ -605,7 +614,9 @@ export default function Posts() {
                 <div className="space-y-4">
                   <div>
                     <p className="text-sm text-muted-foreground mb-2">
-                      {t('publishing.published.platformFilter')}
+                      {t('publishing.published.platformPublicationsForMonth', {
+                        month: format(visibleMonth, 'LLLL yyyy', { locale: getDateLocale() }),
+                      })}
                     </p>
                     <div className="space-y-1">
                       {[

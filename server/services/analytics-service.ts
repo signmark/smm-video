@@ -1,6 +1,7 @@
 import { directusApi } from '../directus';
 import { log } from '../utils/logger';
 import axios from 'axios';
+import { aggregatePublishedPlatformAnalytics } from './analytics-aggregation';
 
 export class AnalyticsService {
   /**
@@ -26,64 +27,25 @@ export class AnalyticsService {
         headers: { Authorization: `Bearer ${token}` },
         params: {
           filter: JSON.stringify({
-            campaign_id: { _eq: campaignId },
-            status: { _in: ['published', 'partially_published'] },
-            scheduled_at: { _gte: dateFrom.toISOString() }
+            campaign_id: { _eq: campaignId }
           }),
-          fields: ['id', 'title', 'social_platforms', 'scheduled_at', 'published_at'],
+          fields: ['id', 'title', 'status', 'social_platforms', 'scheduled_at', 'published_at'],
           limit: 1000
         }
       });
 
       const posts = response.data?.data || [];
-      log(`[AnalyticsService] ✅ Найдено опубликованных постов: ${posts.length}`, 'info');
+      log(`[AnalyticsService] ✅ Получено записей контента кампании: ${posts.length}`, 'info');
 
-      let totalPosts = 0;
-      let totalViews = 0;
-      let totalLikes = 0;
-      let totalShares = 0;
-      let totalComments = 0;
-
-      const platformStatsMap = new Map<string, any>();
-
-      posts.forEach((post: any) => {
-        if (!post.social_platforms) return;
-
-        let platforms = post.social_platforms;
-        if (typeof platforms === 'string') {
-          try { platforms = JSON.parse(platforms); } catch { return; }
-        }
-
-        if (platforms && typeof platforms === 'object') {
-          Object.entries(platforms).forEach(([platformKey, platformData]: [string, any]) => {
-            if (platformData && platformData.status === 'published') {
-              totalPosts++;
-
-              const analytics = platformData.analytics || {};
-              const views = Number(analytics.views || 0);
-              const likes = Number(analytics.likes || 0);
-              const shares = Number(analytics.shares || 0);
-              const comments = Number(analytics.comments || 0);
-
-              totalViews += views;
-              totalLikes += likes;
-              totalShares += shares;
-              totalComments += comments;
-
-              const platformName = (platformData.platform || platformKey).toLowerCase();
-              if (!platformStatsMap.has(platformName)) {
-                platformStatsMap.set(platformName, { name: platformName, posts: 0, views: 0, likes: 0, shares: 0, comments: 0 });
-              }
-              const stats = platformStatsMap.get(platformName);
-              stats.posts++;
-              stats.views += views;
-              stats.likes += likes;
-              stats.shares += shares;
-              stats.comments += comments;
-            }
-          });
-        }
-      });
+      const aggregated = aggregatePublishedPlatformAnalytics(posts, dateFrom, now);
+      let {
+        totalPosts,
+        totalViews,
+        totalLikes,
+        totalShares,
+        totalComments,
+        platformStatsMap,
+      } = aggregated;
 
       // Если нет данных о просмотрах в Directus — пробуем скрейпер для каналов кампании
       if (totalViews === 0 && totalPosts > 0) {

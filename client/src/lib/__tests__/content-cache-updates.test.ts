@@ -27,4 +27,13 @@ describe('updateContentCachesAfterMoveToDraft', () => {
     expect(queryClient.getQueryData(['/api/campaign-content', 'campaign-1', 'scheduled']))
       .toEqual([]);
   });
+
+  it('does not create empty entries for caches that have not been loaded', () => {
+    const queryClient = new QueryClient();
+
+    updateContentCachesAfterMoveToDraft(queryClient, 'campaign-1', 'content-1');
+
+    expect(queryClient.getQueryData(['/api/campaign-content', 'campaign-1'])).toBeUndefined();
+    expect(queryClient.getQueryData(['/api/campaign-content', 'campaign-1', 'scheduled'])).toBeUndefined();
+  });
 });

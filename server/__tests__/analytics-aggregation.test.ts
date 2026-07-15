@@ -68,4 +68,16 @@ describe('aggregatePublishedPlatformAnalytics', () => {
     expect(result.totalComments).toBe(1);
     expect(result.totalShares).toBe(3);
   });
+
+  it('does not attribute publications without any timestamp to a selected period', () => {
+    const result = aggregatePublishedPlatformAnalytics([{
+      status: 'published',
+      social_platforms: {
+        telegram: { status: 'published' },
+      },
+    }], from, to);
+
+    expect(result.totalPosts).toBe(0);
+    expect(result.platformStatsMap.size).toBe(0);
+  });
 });

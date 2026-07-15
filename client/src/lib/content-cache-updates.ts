@@ -13,8 +13,8 @@ export function updateContentCachesAfterMoveToDraft(
   const contentQueryKey = ['/api/campaign-content', campaignId] as const;
   const scheduledQueryKey = ['/api/campaign-content', campaignId, 'scheduled'] as const;
 
-  queryClient.setQueryData<ContentCacheItem[]>(contentQueryKey, (current = []) =>
-    current.map((item) => String(item.id) === String(contentId)
+  queryClient.setQueryData<ContentCacheItem[]>(contentQueryKey, (current) =>
+    current?.map((item) => String(item.id) === String(contentId)
       ? {
           ...item,
           status: 'draft',
@@ -26,7 +26,7 @@ export function updateContentCachesAfterMoveToDraft(
       : item)
   );
 
-  queryClient.setQueryData<ContentCacheItem[]>(scheduledQueryKey, (current = []) =>
-    current.filter((item) => String(item.id) !== String(contentId))
+  queryClient.setQueryData<ContentCacheItem[]>(scheduledQueryKey, (current) =>
+    current?.filter((item) => String(item.id) !== String(contentId))
   );
 }

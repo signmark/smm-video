@@ -73,7 +73,7 @@ export function getVisibleCardPlatforms(
 
   return Object.keys(storedPlatforms).reduce<Record<string, PlatformState>>((result, platform) => {
     const storedState = storedPlatforms[platform];
-    if (!storedState || storedState.selected === false || storedState.status === 'cancelled') {
+    if (!storedState || storedState.status === 'cancelled') {
       return result;
     }
 
@@ -84,6 +84,15 @@ export function getVisibleCardPlatforms(
       !!storedState.postUrl ||
       !!storedState.post_url
     );
+    if (hasPublishedHistory) {
+      result[platform] = storedState;
+      return result;
+    }
+
+    if (storedState.selected === false) {
+      return result;
+    }
+
     const hasOwnSchedule = storedState.status === 'scheduled' ||
       !!storedState.scheduledAt ||
       !!storedState.scheduled_at;
@@ -95,7 +104,7 @@ export function getVisibleCardPlatforms(
     const hasPublicationError = storedState.status === 'failed' ||
       storedState.status === 'quota_exceeded';
 
-    if (hasPublishedHistory || isScheduledSelection || hasPublicationError) {
+    if (isScheduledSelection || hasPublicationError) {
       result[platform] = storedState;
     }
 

@@ -4,6 +4,35 @@ import axios from 'axios';
 import { aggregatePublishedPlatformAnalytics } from './analytics-aggregation';
 
 export class AnalyticsService {
+  private static readonly ANALYTICS_PAGE_SIZE = 1000;
+
+  private static async getPublishedContent(campaignId: string, token: string): Promise<any[]> {
+    const posts: any[] = [];
+
+    for (let offset = 0; ; offset += AnalyticsService.ANALYTICS_PAGE_SIZE) {
+      const response = await directusApi.get('/items/campaign_content', {
+        headers: { Authorization: `Bearer ${token}` },
+        params: {
+          filter: JSON.stringify({
+            campaign_id: { _eq: campaignId },
+            status: { _in: ['published', 'partially_published', 'partial'] },
+          }),
+          fields: ['id', 'title', 'status', 'social_platforms', 'scheduled_at', 'published_at'],
+          sort: ['-published_at', '-id'],
+          limit: AnalyticsService.ANALYTICS_PAGE_SIZE,
+          offset,
+        },
+      });
+
+      const page = Array.isArray(response.data?.data) ? response.data.data : [];
+      posts.push(...page);
+
+      if (page.length < AnalyticsService.ANALYTICS_PAGE_SIZE) break;
+    }
+
+    return posts;
+  }
+
   /**
    * Получение агрегированной аналитики для кампании.
    * Читает опубликованные посты из Directus.
@@ -23,18 +52,7 @@ export class AnalyticsService {
     log(`[AnalyticsService] 📊 Запрос аналитики: campaignId=${campaignId}, period=${period}, dateFrom=${dateFrom.toISOString()}`, 'info');
 
     try {
-      const response = await directusApi.get('/items/campaign_content', {
-        headers: { Authorization: `Bearer ${token}` },
-        params: {
-          filter: JSON.stringify({
-            campaign_id: { _eq: campaignId }
-          }),
-          fields: ['id', 'title', 'status', 'social_platforms', 'scheduled_at', 'published_at'],
-          limit: 1000
-        }
-      });
-
-      const posts = response.data?.data || [];
+      const posts = await AnalyticsService.getPublishedContent(campaignId, token);
       log(`[AnalyticsService] ✅ Получено записей контента кампании: ${posts.length}`, 'info');
 
       const aggregated = aggregatePublishedPlatformAnalytics(posts, dateFrom, now);

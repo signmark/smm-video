@@ -70,6 +70,8 @@ export function aggregatePublishedPlatformAnalytics(
     for (const [platformKey, platformData] of Object.entries(platforms) as [string, any][]) {
       if (!platformData || platformData.status !== 'published') continue;
 
+      // Period analytics cannot safely attribute a publication with no timestamp
+      // to any selected range. Counting it would inflate every period total.
       const publishedTime = publicationTime(post, platformData);
       if (publishedTime === null || publishedTime < fromTime || publishedTime > toTime) continue;
 

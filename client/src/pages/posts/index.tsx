@@ -15,6 +15,12 @@ import { Badge } from "@/components/ui/badge";
 import { useAuthStore } from "@/lib/store";
 import { SocialPlatform, PlatformPublishInfo, CampaignContent } from "@/types";
 import { platformNames } from "@/lib/social-platforms";
+import {
+  countConfirmedPlatformPublications,
+  getConfirmedPublicationEvents,
+  getConfirmedPublicationDates,
+  hasConfirmedPublication,
+} from "@/lib/published-content";
 import { useTranslation } from 'react-i18next';
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -110,14 +116,6 @@ export default function Posts() {
       setRetryingKey(null);
     }
   };
-  const [platformCounts, setPlatformCounts] = useState<Record<SocialPlatform, number>>({
-    instagram: 0,
-    telegram: 0,
-    vk: 0,
-    facebook: 0,
-    youtube: 0
-  });
-  
   // Функция для получения правильной локали date-fns
   const getDateLocale = () => {
     switch (i18n.language) {
@@ -197,24 +195,7 @@ export default function Posts() {
     if (!campaignContent.length) return;
 
     // Собираем все даты публикаций
-    const publishDates: Date[] = [];
-    campaignContent.forEach(post => {
-      if (post.status === 'draft') return;
-      if (post.publishedAt) {
-        try { publishDates.push(new Date(post.publishedAt)); } catch {}
-      }
-      if (post.socialPlatforms) {
-        Object.values(post.socialPlatforms).forEach((p: any) => {
-          if (p?.publishedAt) {
-            try { publishDates.push(new Date(p.publishedAt)); } catch {}
-          }
-        });
-      }
-      if (!post.publishedAt && post.scheduledAt) {
-        try { publishDates.push(new Date(post.scheduledAt)); } catch {}
-      }
-      // Посты без дат — не добавляем их в publishDates (они уйдут в отдельную секцию)
-    });
+    const publishDates = campaignContent.flatMap(getConfirmedPublicationDates);
 
     if (!publishDates.length) return;
 
@@ -227,29 +208,10 @@ export default function Posts() {
     }
   }, [campaignContentResponse]);
 
-  // Получение количества опубликованных публикаций для каждой платформы (только со ссылками)
-  useEffect(() => {
-    if (campaignContent && campaignContent.length > 0) {
-      const counts: Record<SocialPlatform, number> = {
-        instagram: 0,
-        telegram: 0,
-        vk: 0,
-        facebook: 0,
-        youtube: 0
-      };
-
-      campaignContent.forEach(content => {
-        if (content.status === 'draft' || !content.socialPlatforms) return;
-        Object.entries(content.socialPlatforms).forEach(([platform, info]) => {
-          if (platform in counts) {
-            counts[platform as SocialPlatform]++;
-          }
-        });
-      });
-
-      setPlatformCounts(counts);
-    }
-  }, [campaignContent]);
+  const platformCounts = React.useMemo(() => countConfirmedPlatformPublications(
+    campaignContent,
+    ['instagram', 'telegram', 'vk', 'facebook', 'youtube'] as SocialPlatform[],
+  ), [campaignContent]);
 
   // Получение точек для календаря (публикации на каждый день)
   // Получение контента кампании
@@ -267,51 +229,8 @@ export default function Posts() {
     
     // Показываем все посты кроме черновиков
     for (const post of allContent) {
-      if (post.status === 'draft') continue;
-
-      // В "Опубликованных" отображаем только посты, у которых хоть одна платформа
-      // реально дошла до отправки: опубликована, упала с ошибкой или имеет дату публикации.
-      // Иначе это просто scheduled-посты на будущее — им тут не место.
-      const hasActivePlatform = post.socialPlatforms && Object.values(post.socialPlatforms).some(
-        (p: any) => p?.status === 'published'
-          || p?.status === 'failed'
-          || p?.publishedAt
-          || p?.postUrl
-          || p?.error
-          || p?.lastError
-      );
-      const isPostPublished = post.status === 'published' || post.status === 'partial' || post.status === 'partially_published';
-      if (!hasActivePlatform && !isPostPublished) continue;
-
-      // Собираем даты из всех платформ
-      const publishedDates: Date[] = [];
-
-      if (post.socialPlatforms && typeof post.socialPlatforms === 'object') {
-        for (const platform in post.socialPlatforms) {
-          const platformData = post.socialPlatforms[platform as SocialPlatform];
-          if (platformData?.publishedAt) {
-            try { publishedDates.push(new Date(platformData.publishedAt)); } catch (e) {}
-          }
-        }
-      }
-
-      // Добавляем основную дату публикации поста
-      if (post.publishedAt) {
-        try { publishedDates.push(new Date(post.publishedAt)); } catch (e) {}
-      }
-
-      // Всегда добавляем scheduledAt — пост должен быть виден в запланированный день
-      // независимо от того, когда фактически пришёл ответ от API платформы (UTC vs local)
-      if (post.scheduledAt) {
-        try { publishedDates.push(new Date(post.scheduledAt)); } catch (e) {}
-      }
-
-      // Fallback: дата создания поста (напр. посты из video-app без scheduled/published дат)
-      if (publishedDates.length === 0 && post.createdAt) {
-        try { publishedDates.push(new Date(post.createdAt)); } catch (e) {}
-      }
-
-      // Если нет ни одной даты — пропускаем: такие посты показываются в отдельной секции
+      if (!hasConfirmedPublication(post)) continue;
+      const publishedDates = getConfirmedPublicationDates(post);
       if (publishedDates.length === 0) continue;
 
       if (publishedDates.some(date => isSameDay(day, date))) {
@@ -375,17 +294,11 @@ export default function Posts() {
   };
 
   const getDayContent = (day: Date) => {
-    // Получаем уникальные посты для этого дня
-    const postsForDay = getUniquePostsForDay(day);
+    const publicationsForDay = campaignContent
+      .flatMap(getConfirmedPublicationEvents)
+      .filter(({ date }) => isSameDay(day, date));
 
-    if (!postsForDay.length) return null;
-
-    // Подсчет разных типов контента на эту дату
-    const contentTypes = postsForDay.reduce((types, post) => {
-      const type = post.contentType || 'text';
-      types[type] = (types[type] || 0) + 1;
-      return types;
-    }, {} as Record<string, number>);
+    if (!publicationsForDay.length) return null;
 
     // Получаем цвета для разных типов контента
     const getColorForType = (type: string): string => {
@@ -398,13 +311,13 @@ export default function Posts() {
       }
     };
 
-    // Отображаем маркеры для каждого поста
+    // Отображаем маркер для каждой подтверждённой публикации в соцсеть.
     return (
       <div className="flex justify-center flex-wrap gap-0.5 mt-1">
-        {postsForDay.map((post, index) => (
+        {publicationsForDay.map((publication) => (
           <div 
-            key={post.id || index} 
-            className={`h-1.5 w-1.5 rounded-full ${getColorForType(post.contentType || 'text')}`}
+            key={publication.key}
+            className={`h-1.5 w-1.5 rounded-full ${getColorForType(publication.contentType || 'text')}`}
           ></div>
         ))}
       </div>
@@ -809,4 +722,3 @@ export default function Posts() {
     </div>
   );
 }
-

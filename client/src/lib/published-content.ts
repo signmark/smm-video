@@ -1,0 +1,97 @@
+import type { CampaignContent, PlatformPublishInfo, SocialPlatform } from '@/types';
+
+const PUBLISHED_CONTENT_STATUSES = new Set([
+  'published',
+  'partial',
+  'partially_published',
+]);
+
+export interface ConfirmedPublicationEvent {
+  key: string;
+  contentId: string;
+  platform: SocialPlatform | null;
+  date: Date;
+  contentType: CampaignContent['contentType'];
+}
+
+function validDate(value: string | Date | null | undefined): Date | null {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isFinite(date.getTime()) ? date : null;
+}
+
+export function isConfirmedPlatformPublication(
+  info: PlatformPublishInfo | Record<string, any> | null | undefined,
+): boolean {
+  return info?.status === 'published';
+}
+
+export function hasConfirmedPublication(content: CampaignContent): boolean {
+  if (PUBLISHED_CONTENT_STATUSES.has(content.status)) return true;
+  return Object.values(content.socialPlatforms || {}).some(isConfirmedPlatformPublication);
+}
+
+export function getConfirmedPublicationEvents(content: CampaignContent): ConfirmedPublicationEvent[] {
+  if (!hasConfirmedPublication(content)) return [];
+
+  const contentDate = validDate(content.publishedAt);
+  const legacyDate = contentDate || validDate(content.scheduledAt) || validDate(content.createdAt);
+  const events: ConfirmedPublicationEvent[] = [];
+
+  Object.entries(content.socialPlatforms || {}).forEach(([platform, info]) => {
+    if (!isConfirmedPlatformPublication(info)) return;
+    const date = validDate(info.publishedAt) || legacyDate;
+    if (!date) return;
+    events.push({
+      key: `${content.id}:${platform}`,
+      contentId: content.id,
+      platform: platform as SocialPlatform,
+      date,
+      contentType: content.contentType,
+    });
+  });
+
+  // Legacy published records may have no per-platform publication state.
+  if (events.length === 0 && legacyDate) {
+    events.push({
+      key: `${content.id}:legacy`,
+      contentId: content.id,
+      platform: null,
+      date: legacyDate,
+      contentType: content.contentType,
+    });
+  }
+
+  return events;
+}
+
+/**
+ * Returns actual publication dates. Content-level dates are retained as a
+ * compatibility fallback, while schedule/creation dates are used only for
+ * legacy published records that have no actual publication timestamp.
+ */
+export function getConfirmedPublicationDates(content: CampaignContent): Date[] {
+  const timestamps = new Set<number>();
+  getConfirmedPublicationEvents(content).forEach(({ date }) => timestamps.add(date.getTime()));
+
+  return Array.from(timestamps, (timestamp) => new Date(timestamp));
+}
+
+export function countConfirmedPlatformPublications(
+  content: CampaignContent[],
+  platforms: readonly SocialPlatform[],
+): Partial<Record<SocialPlatform, number>> {
+  const counts: Partial<Record<SocialPlatform, number>> = {};
+  platforms.forEach((platform) => { counts[platform] = 0; });
+
+  content.forEach((item) => {
+    getConfirmedPublicationEvents(item).forEach(({ platform }) => {
+      if (platform && platforms.includes(platform)) {
+        const key = platform;
+        counts[key] = (counts[key] || 0) + 1;
+      }
+    });
+  });
+
+  return counts;
+}

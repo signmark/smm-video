@@ -622,7 +622,8 @@
       "showOnly": "Показываются только посты со статусом \"опубликовано\" и календарем ссылками",
       "postsOn": "Посты на {{date}}:",
       "platformFilter": "Фильтр по платформам",
-      "platformPublicationsForMonth": "Публикации по платформам за {{month}}",
+      "platformPublications": "Публикации по платформам",
+      "forMonth": "за {{month}}",
       "contentManagement": "Управление контентом"
     }
   },

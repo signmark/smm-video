@@ -622,7 +622,8 @@
       "showOnly": "Mostrando solo posts con estado \"publicado\" y enlaces de calendario",
       "postsOn": "Posts el {{date}}:",
       "platformFilter": "Filtro de Plataformas",
-      "platformPublicationsForMonth": "Publicaciones por plataforma en {{month}}",
+      "platformPublications": "Publicaciones por plataforma",
+      "forMonth": "en {{month}}",
       "contentManagement": "Gestión de Contenido"
     }
   },

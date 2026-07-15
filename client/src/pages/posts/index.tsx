@@ -613,10 +613,15 @@ export default function Posts() {
                 
                 <div className="space-y-4">
                   <div>
-                    <p className="text-sm text-muted-foreground mb-2">
-                      {t('publishing.published.platformPublicationsForMonth', {
-                        month: format(visibleMonth, 'LLLL yyyy', { locale: getDateLocale() }),
-                      })}
+                    <p className="mb-2 max-w-full leading-tight text-muted-foreground">
+                      <span className="block text-sm">
+                        {t('publishing.published.platformPublications')}
+                      </span>
+                      <span className="mt-0.5 block text-xs">
+                        {t('publishing.published.forMonth', {
+                          month: format(visibleMonth, 'LLLL yyyy', { locale: getDateLocale() }),
+                        })}
+                      </span>
                     </p>
                     <div className="space-y-1">
                       {[

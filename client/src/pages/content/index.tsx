@@ -48,6 +48,7 @@ import { ContentPlanGenerator } from "@/components/ContentPlanGenerator";
 import { useCampaignStore } from "@/lib/campaignStore";
 import { publishWithImageGeneration } from "@/utils/publishWithImageGeneration";
 import { getVisibleCardPlatforms } from "@/lib/social-platforms";
+import { updateContentCachesAfterMoveToDraft } from "@/lib/content-cache-updates";
 
 // FORCE REBUILD 2025-11-22 15:15
 import RichTextEditor from "@/components/RichTextEditor";
@@ -593,7 +594,10 @@ export default function ContentPage() {
 
   const getCardPlatforms = (content: any) => getVisibleCardPlatforms(
     content?.socialPlatforms || content?.social_platforms,
-    connectedPlatforms,
+    {
+      status: content?.status,
+      scheduledAt: content?.scheduledAt || content?.scheduled_at,
+    },
   );
 
   // Автовыбор платформ при открытии диалога публикации:
@@ -1135,16 +1139,22 @@ export default function ContentPage() {
         }
       });
     },
-    onSuccess: () => {
+    onSuccess: async (_data, contentId) => {
+      if (selectedCampaignId) {
+        await queryClient.cancelQueries({
+          queryKey: ["/api/campaign-content", selectedCampaignId],
+        });
+        updateContentCachesAfterMoveToDraft(queryClient, selectedCampaignId, contentId);
+      }
+
       toast({
         title: t('content.messages.movedToDrafts'),
         description: t('content.messages.movedToDraftsDesc'),
         variant: "default"
       });
       // Принудительный refetch — invalidateQueries не срабатывает
-      queryClient.refetchQueries({ queryKey: ["/api/campaign-content", selectedCampaignId] });
-      queryClient.refetchQueries({ queryKey: ["/api/campaign-content", selectedCampaignId, "scheduled"] });
-      queryClient.refetchQueries({ queryKey: ["/api/publish/scheduled"] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/campaign-content", selectedCampaignId] });
+      void queryClient.invalidateQueries({ queryKey: ["/api/publish/scheduled"] });
     },
     onError: (error: Error) => {
       toast({

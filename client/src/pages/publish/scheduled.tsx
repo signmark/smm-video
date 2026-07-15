@@ -13,6 +13,7 @@ import { safeSocialPlatforms, platformNames, SocialPlatforms } from '@/lib/socia
 import { Link } from 'wouter';
 import { useWebSocket } from '@/hooks/use-websocket';
 import { keysToCamel } from '@/lib/utils';
+import { updateContentCachesAfterMoveToDraft } from '@/lib/content-cache-updates';
 
 import {
   Card,
@@ -71,16 +72,22 @@ export default function ScheduledPublications() {
         }
       });
     },
-    onSuccess: () => {
+    onSuccess: async (_data, contentId) => {
+      if (selectedCampaign?.id) {
+        await queryClient.cancelQueries({
+          queryKey: ['/api/campaign-content', selectedCampaign.id],
+        });
+        updateContentCachesAfterMoveToDraft(queryClient, selectedCampaign.id, contentId);
+      }
+
       toast({
         title: "Перемещено в черновики",
         description: "Публикация была успешно перемещена в черновики",
         variant: "default"
       });
       if (selectedCampaign?.id) {
-        queryClient.refetchQueries({ queryKey: ['/api/campaign-content', selectedCampaign.id] });
-        queryClient.refetchQueries({ queryKey: ['/api/campaign-content', selectedCampaign.id, 'scheduled'] });
-        queryClient.refetchQueries({ queryKey: ['/api/publish/scheduled'] });
+        void queryClient.invalidateQueries({ queryKey: ['/api/campaign-content', selectedCampaign.id] });
+        void queryClient.invalidateQueries({ queryKey: ['/api/publish/scheduled'] });
       }
     },
     onError: (error: Error) => {

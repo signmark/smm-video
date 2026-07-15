@@ -50,28 +50,33 @@ export const platformColors: Record<SocialPlatform, string> = {
 
 type PlatformState = Record<string, any>;
 
+interface CardPublicationContext {
+  status?: string | null;
+  scheduledAt?: string | Date | null;
+}
+
 /**
  * Returns only platforms that are meaningful on a content card.
  *
- * Draft and scheduled content is limited to accounts that are actually
- * connected to the campaign. Published entries are retained even if the
- * account was disconnected later, so publication history and links are not
- * lost from the UI.
+ * A campaign connection alone is not enough to show an icon. The card only
+ * reflects an actual publication lifecycle: a selected scheduled platform,
+ * a publication attempt, or retained publication history.
  */
 export function getVisibleCardPlatforms(
   socialPlatforms: Record<string, PlatformState> | null | undefined,
-  connectedPlatforms: Record<string, boolean> | null,
+  context: CardPublicationContext = {},
 ): Record<string, PlatformState> {
   const storedPlatforms = socialPlatforms && typeof socialPlatforms === 'object'
     ? socialPlatforms
     : {};
-  const platformOrder = Array.from(new Set([
-    ...safeSocialPlatforms,
-    ...Object.keys(storedPlatforms),
-  ]));
+  const isContentScheduled = context.status === 'scheduled' || !!context.scheduledAt;
 
-  return platformOrder.reduce<Record<string, PlatformState>>((result, platform) => {
+  return Object.keys(storedPlatforms).reduce<Record<string, PlatformState>>((result, platform) => {
     const storedState = storedPlatforms[platform];
+    if (!storedState || storedState.selected === false || storedState.status === 'cancelled') {
+      return result;
+    }
+
     const hasPublishedHistory = !!storedState && (
       storedState.status === 'published' ||
       !!storedState.publishedAt ||
@@ -79,14 +84,19 @@ export function getVisibleCardPlatforms(
       !!storedState.postUrl ||
       !!storedState.post_url
     );
+    const hasOwnSchedule = storedState.status === 'scheduled' ||
+      !!storedState.scheduledAt ||
+      !!storedState.scheduled_at;
+    const isScheduledSelection = isContentScheduled && (
+      storedState.status === 'pending' ||
+      storedState.status === 'publishing' ||
+      hasOwnSchedule
+    );
+    const hasPublicationError = storedState.status === 'failed' ||
+      storedState.status === 'quota_exceeded';
 
-    if (connectedPlatforms?.[platform] || hasPublishedHistory) {
-      result[platform] = storedState || {
-        platform,
-        status: 'connected',
-        publishedAt: null,
-        selected: true,
-      };
+    if (hasPublishedHistory || isScheduledSelection || hasPublicationError) {
+      result[platform] = storedState;
     }
 
     return result;

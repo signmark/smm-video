@@ -2,46 +2,34 @@ import { describe, expect, it } from 'vitest';
 import { getVisibleCardPlatforms } from '../social-platforms';
 
 describe('getVisibleCardPlatforms', () => {
-  it('shows only platforms connected to the campaign', () => {
+  it('shows only the platforms selected for scheduled publication', () => {
     const stored = {
       telegram: { status: 'pending' },
       vk: { status: 'pending' },
-      instagram: { status: 'pending' },
-      facebook: { status: 'pending' },
-      youtube: { status: 'pending' },
-      threads: { status: 'pending' },
     };
 
     const result = getVisibleCardPlatforms(stored, {
-      telegram: true,
-      vk: false,
-      instagram: false,
-      facebook: false,
-      youtube: false,
-      threads: false,
+      status: 'scheduled',
+      scheduledAt: '2026-07-15T13:00:00.000Z',
     });
 
-    expect(Object.keys(result)).toEqual(['telegram']);
+    expect(Object.keys(result)).toEqual(['telegram', 'vk']);
   });
 
-  it('keeps the connected platform visible after scheduling is cancelled', () => {
-    const result = getVisibleCardPlatforms({}, { telegram: true });
-
-    expect(result).toEqual({
-      telegram: {
-        platform: 'telegram',
-        status: 'connected',
-        publishedAt: null,
-        selected: true,
-      },
-    });
-  });
-
-  it('does not flash stale platform icons while campaign settings are loading', () => {
+  it('does not show connected or adapted platforms before scheduling', () => {
     const result = getVisibleCardPlatforms({
       telegram: { status: 'pending' },
       vk: { status: 'pending' },
-    }, null);
+      youtube: { status: 'pending' },
+    }, { status: 'draft', scheduledAt: null });
+
+    expect(result).toEqual({});
+  });
+
+  it('does not show platform icons after scheduling is cancelled', () => {
+    const result = getVisibleCardPlatforms({
+      telegram: { status: 'cancelled' },
+    }, { status: 'draft', scheduledAt: null });
 
     expect(result).toEqual({});
   });
@@ -49,9 +37,17 @@ describe('getVisibleCardPlatforms', () => {
   it('retains publication history for a platform disconnected later', () => {
     const result = getVisibleCardPlatforms({
       vk: { status: 'published', postUrl: 'https://vk.example/post/1' },
-    }, { telegram: true, vk: false });
+    }, { status: 'draft', scheduledAt: null });
 
-    expect(Object.keys(result)).toEqual(['telegram', 'vk']);
+    expect(Object.keys(result)).toEqual(['vk']);
     expect(result.vk.status).toBe('published');
+  });
+
+  it('keeps failed publication attempts visible', () => {
+    const result = getVisibleCardPlatforms({
+      telegram: { status: 'failed', error: 'Telegram error' },
+    }, { status: 'draft', scheduledAt: null });
+
+    expect(Object.keys(result)).toEqual(['telegram']);
   });
 });

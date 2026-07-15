@@ -99,6 +99,40 @@ describe('POST /api/publish/cancel/:contentId', () => {
 
 // ── Tests: /api/retry-failed/:contentId ───────────────────────────────────────
 
+describe('PATCH /api/publish/update-content/:id', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('normalizes draft fields and invalidates the campaign content cache', async () => {
+    const app = makeApp();
+    vi.spyOn(storage, 'getCampaignContentById').mockResolvedValue({
+      id: 'content-1',
+      userId: 'user-1',
+      campaignId: 'campaign-1',
+      status: 'scheduled',
+    } as any);
+    const updateSpy = vi.spyOn(storage, 'updateCampaignContent')
+      .mockResolvedValue({ id: 'content-1', status: 'draft' } as any);
+
+    const res = await request(app)
+      .patch('/api/publish/update-content/content-1')
+      .send({ status: 'draft', scheduled_at: null, social_platforms: {} });
+
+    expect(res.status).toBe(200);
+    expect(updateSpy).toHaveBeenCalledWith(
+      'content-1',
+      expect.objectContaining({
+        status: 'draft',
+        scheduledAt: null,
+        socialPlatforms: {},
+      }),
+      'mock-token',
+    );
+    expect(invalidateContentCache).toHaveBeenCalledWith('user-1', 'campaign-1');
+  });
+});
+
 describe('POST /api/retry-failed/:contentId', () => {
   let app: express.Express;
 

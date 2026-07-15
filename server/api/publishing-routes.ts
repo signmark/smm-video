@@ -1200,7 +1200,16 @@ export function registerPublishingRoutes(app: Express): void {
   app.patch('/api/publish/update-content/:id', authenticateUser, async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
-      const updates = req.body;
+      const requestUpdates = req.body || {};
+      const updates: Record<string, any> = {
+        ...requestUpdates,
+        ...(Object.prototype.hasOwnProperty.call(requestUpdates, 'scheduled_at')
+          ? { scheduledAt: requestUpdates.scheduled_at }
+          : {}),
+        ...(Object.prototype.hasOwnProperty.call(requestUpdates, 'social_platforms')
+          ? { socialPlatforms: requestUpdates.social_platforms }
+          : {}),
+      };
       const token = req.user?.token;
       
       let userId = req.user?.id || '';
@@ -1224,6 +1233,12 @@ export function registerPublishingRoutes(app: Express): void {
       
       // Обновляем контент с передачей токена авторизации
       const updatedContent = await storage.updateCampaignContent(id, updates, token);
+
+      const rawCampaignId = content.campaignId || (content as any).campaign_id;
+      const campaignId = typeof rawCampaignId === 'object' ? rawCampaignId?.id : rawCampaignId;
+      if (userId && campaignId) {
+        invalidateContentCache(userId, campaignId);
+      }
       
       return res.status(200).json({
         success: true,

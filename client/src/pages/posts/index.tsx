@@ -617,7 +617,7 @@ export default function Posts() {
                       <span className="block text-sm">
                         {t('publishing.published.platformPublications')}
                       </span>
-                      <span className="mt-0.5 block text-xs">
+                      <span className="mt-0.5 block text-sm">
                         {t('publishing.published.forMonth', {
                           month: format(visibleMonth, 'LLLL yyyy', { locale: getDateLocale() }),
                         })}

@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "files": [
+    "client/src/main.tsx",
+    "server/index.ts"
+  ],
+  "include": [],
+  "exclude": [
+    "node_modules",
+    "build",
+    "dist",
+    "**/*.test.ts",
+    "**/__tests__/**"
+  ]
+}

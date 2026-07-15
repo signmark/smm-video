@@ -11,6 +11,7 @@ import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { createServer, request as httpRequest } from 'http';
 import { WebSocketServer } from 'ws';
+import { broadcastNotification, setNotificationBroadcaster } from './services/notification-bus';
 import { registerRoutes } from "./routes";
 import { registerFalAiImageRoutes } from "./routes-fal-ai-images";
 import { registerClaudeRoutes } from "./routes-claude";
@@ -150,7 +151,7 @@ server.on('upgrade', (request, socket, head) => {
 });
 
 // Функция для отправки уведомлений всем подключенным клиентам
-export function broadcastNotification(type: string, data: any) {
+setNotificationBroadcaster((type: string, data: unknown) => {
   const message = JSON.stringify({ type, data, timestamp: new Date().toISOString() });
 
   wss.clients.forEach((client) => {
@@ -158,7 +159,9 @@ export function broadcastNotification(type: string, data: any) {
       client.send(message);
     }
   });
-}
+});
+
+export { broadcastNotification };
 
 // Экспортируем WebSocket server для использования в других модулях
 export { wss };

@@ -1,0 +1,20 @@
+{
+  "extends": "./tsconfig.json",
+  "files": [
+    "server/types/global.d.ts",
+    "shared/schema.ts",
+    "server/services/analytics-aggregation.ts",
+    "server/services/directus-auth-manager.ts",
+    "server/services/directus-session-policy.ts",
+    "server/services/publication-tracking.ts",
+    "server/services/social-platforms/vk-service.ts"
+  ],
+  "include": [],
+  "exclude": [
+    "node_modules",
+    "build",
+    "dist",
+    "**/*.test.ts",
+    "**/__tests__/**"
+  ]
+}

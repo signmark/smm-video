@@ -1,7 +1,6 @@
 import axios from 'axios';
 import { log } from '../utils/logger';
 import { storage } from '../storage';
-import { socialPublishingService } from './social/index';
 import { directusCrud } from './directus-crud';
 import { publicationLockManager } from './publication-lock-manager';
 import { publicationTracker } from './publication-tracking';
@@ -587,7 +586,7 @@ export class PublishScheduler {
 
         if (publishedCount > 0) {
           try {
-            const { broadcastNotification } = await import('../index');
+            const { broadcastNotification } = await import('./notification-bus');
             broadcastNotification('scheduler_processing_complete', {
               processedCount,
               publishedCount,
@@ -875,7 +874,7 @@ export class PublishScheduler {
         console.error(`[THREADS-DIRECT] SUCCESS: ${result.postUrl}`);
 
         try {
-          const { broadcastNotification } = await import('../index');
+          const { broadcastNotification } = await import('./notification-bus');
           broadcastNotification('content_published', {
             contentId: content.id,
             platform: 'threads',
@@ -946,7 +945,7 @@ export class PublishScheduler {
         log(`Facebook публикация успешна для ${content.id}: ${result.postUrl}`, 'scheduler');
         console.error(`[FB-DIRECT] SUCCESS: ${result.postUrl}`);
         try {
-          const { broadcastNotification } = await import('../index');
+          const { broadcastNotification } = await import('./notification-bus');
           broadcastNotification('content_published', { contentId: content.id, platform: 'facebook', message: 'Успешно опубликовано в Facebook' });
         } catch {}
         return { platform: 'facebook', success: true };
@@ -996,7 +995,7 @@ export class PublishScheduler {
       if (result.success) {
         await save('telegram', { status: 'published', postId: String(result.messageId || ''), postUrl: result.postUrl, publishedAt: new Date().toISOString() });
         log(`Telegram успешно: ${result.postUrl}`, 'scheduler');
-        try { const { broadcastNotification } = await import('../index'); broadcastNotification('content_published', { contentId: content.id, platform: 'telegram' }); } catch {}
+        try { const { broadcastNotification } = await import('./notification-bus'); broadcastNotification('content_published', { contentId: content.id, platform: 'telegram' }); } catch {}
         return { platform: 'telegram', success: true };
       } else {
         throw new Error(result.error || 'Ошибка Telegram API');
@@ -1101,7 +1100,7 @@ export class PublishScheduler {
       if (result.success) {
         await save('vk', { status: 'published', postId: String(result.postId || ''), postUrl: result.postUrl, publishedAt: new Date().toISOString() });
         log(`VK успешно: ${result.postUrl}`, 'scheduler');
-        try { const { broadcastNotification } = await import('../index'); broadcastNotification('content_published', { contentId: content.id, platform: 'vk' }); } catch {}
+        try { const { broadcastNotification } = await import('./notification-bus'); broadcastNotification('content_published', { contentId: content.id, platform: 'vk' }); } catch {}
         return { platform: 'vk', success: true };
       } else {
         throw new Error(result.error || 'Ошибка VK API');
@@ -1145,7 +1144,7 @@ export class PublishScheduler {
       if (result.success) {
         await save('instagram', { status: 'published', postId: result.postId, postUrl: result.postUrl, publishedAt: new Date().toISOString() });
         log(`Instagram успешно: ${result.postUrl}`, 'scheduler');
-        try { const { broadcastNotification } = await import('../index'); broadcastNotification('content_published', { contentId: content.id, platform: 'instagram' }); } catch {}
+        try { const { broadcastNotification } = await import('./notification-bus'); broadcastNotification('content_published', { contentId: content.id, platform: 'instagram' }); } catch {}
         return { platform: 'instagram', success: true };
       } else {
         throw new Error(result.error || 'Ошибка Instagram API');
@@ -1294,7 +1293,7 @@ export class PublishScheduler {
         await save('tiktok', { status: 'published', publishId: result.publishId, postUrl: result.postUrl || 'https://www.tiktok.com', publishedAt: new Date().toISOString() });
         log(`TikTok публикация успешна для ${content.id}: publishId=${result.publishId}`, 'scheduler');
         try {
-          const { broadcastNotification } = await import('../index');
+          const { broadcastNotification } = await import('./notification-bus');
           broadcastNotification('content_published', { contentId: content.id, platform: 'tiktok', message: 'Успешно опубликовано в TikTok' });
         } catch {}
         return { platform: 'tiktok', success: true };
@@ -1335,7 +1334,7 @@ export class PublishScheduler {
       if (result.success) {
         await save('vk', { status: 'published', postUrl: result.storyUrl, publishedAt: new Date().toISOString() });
         log(`VK Story опубликована успешно: ${result.storyUrl}`, 'scheduler');
-        try { const { broadcastNotification } = await import('../index'); broadcastNotification('content_published', { contentId: content.id, platform: 'vk', type: 'story' }); } catch {}
+        try { const { broadcastNotification } = await import('./notification-bus'); broadcastNotification('content_published', { contentId: content.id, platform: 'vk', type: 'story' }); } catch {}
         return { platform: 'vk', success: true };
       }
       throw new Error(result.error || 'Ошибка VK Stories API');
@@ -1360,7 +1359,7 @@ export class PublishScheduler {
       if (result.success) {
         await save('vk', { status: 'published', postUrl: result.videoUrl, publishedAt: new Date().toISOString() });
         log(`VK Clip опубликован успешно: ${result.videoUrl}`, 'scheduler');
-        try { const { broadcastNotification } = await import('../index'); broadcastNotification('content_published', { contentId: content.id, platform: 'vk', type: 'clip' }); } catch {}
+        try { const { broadcastNotification } = await import('./notification-bus'); broadcastNotification('content_published', { contentId: content.id, platform: 'vk', type: 'clip' }); } catch {}
         return { platform: 'vk', success: true };
       }
       throw new Error(result.error || 'Ошибка VK Clips API');
@@ -1385,7 +1384,7 @@ export class PublishScheduler {
       if (result.success) {
         await save('instagram', { status: 'published', postUrl: result.postUrl, publishedAt: new Date().toISOString() });
         log(`Instagram Reels опубликован успешно: ${result.postUrl}`, 'scheduler');
-        try { const { broadcastNotification } = await import('../index'); broadcastNotification('content_published', { contentId: content.id, platform: 'instagram', type: 'reels' }); } catch {}
+        try { const { broadcastNotification } = await import('./notification-bus'); broadcastNotification('content_published', { contentId: content.id, platform: 'instagram', type: 'reels' }); } catch {}
         return { platform: 'instagram', success: true };
       }
       throw new Error(result.error || 'Ошибка Instagram Reels API');
@@ -1649,7 +1648,7 @@ ${text}
           log(`Ошибка сохранения YouTube результата: ${saveError.message}`, 'scheduler');
         }
         try {
-          const { broadcastNotification } = await import('../index');
+          const { broadcastNotification } = await import('./notification-bus');
           broadcastNotification('content_published', { contentId: content.id, platform: 'youtube', message: 'Успешно опубликовано в YouTube' });
         } catch {}
         return { platform: 'youtube', success: true };
@@ -1794,7 +1793,7 @@ ${text}
     
     // Отправляем уведомление в UI
     try {
-      const { broadcastNotification } = await import('../index');
+      const { broadcastNotification } = await import('./notification-bus');
       const platformNames: Record<string, string> = {
         'instagram': 'Instagram',
         'facebook': 'Facebook', 

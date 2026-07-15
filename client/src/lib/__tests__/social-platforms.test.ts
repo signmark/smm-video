@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getVisibleCardPlatforms } from '../social-platforms';
+import { getPublishedPlatformIds, getVisibleCardPlatforms } from '../social-platforms';
 
 describe('getVisibleCardPlatforms', () => {
   it('shows only the platforms selected for scheduled publication', () => {
@@ -49,5 +49,22 @@ describe('getVisibleCardPlatforms', () => {
     }, { status: 'draft', scheduledAt: null });
 
     expect(Object.keys(result)).toEqual(['telegram']);
+  });
+});
+
+describe('getPublishedPlatformIds', () => {
+  it('returns only platforms with a confirmed published status', () => {
+    expect(getPublishedPlatformIds({
+      telegram: { status: 'published' },
+      vk: { status: 'pending' },
+      youtube: { status: 'failed' },
+    })).toEqual(['telegram']);
+  });
+
+  it('supports social platform data returned as JSON', () => {
+    expect(getPublishedPlatformIds(JSON.stringify({
+      telegram: { status: 'published' },
+      vk: { status: 'published' },
+    }))).toEqual(['telegram', 'vk']);
   });
 });

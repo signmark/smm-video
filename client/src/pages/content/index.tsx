@@ -47,7 +47,7 @@ import { ImageGenerationDialog } from "@/components/ImageGenerationDialog";
 import { ContentPlanGenerator } from "@/components/ContentPlanGenerator";
 import { useCampaignStore } from "@/lib/campaignStore";
 import { publishWithImageGeneration } from "@/utils/publishWithImageGeneration";
-import { getVisibleCardPlatforms } from "@/lib/social-platforms";
+import { getPublishedPlatformIds, getVisibleCardPlatforms, platformNames as socialPlatformNames } from "@/lib/social-platforms";
 import { updateContentCachesAfterMoveToDraft } from "@/lib/content-cache-updates";
 
 // FORCE REBUILD 2025-11-22 15:15
@@ -725,10 +725,18 @@ export default function ContentPage() {
 
       // Если статус изменился с любого на "published", показываем тост
       if (previousStatus && previousStatus !== 'published' && currentStatus === 'published') {
+        const publishedPlatformNames = getPublishedPlatformIds(
+          content.socialPlatforms || content.social_platforms
+        ).map((platform) => socialPlatformNames[platform as keyof typeof socialPlatformNames] || platform);
 
         toast({
           title: t('content.messages.contentPublished'),
-          description: t('content.messages.contentPublishedDesc', { title: content.title }),
+          description: publishedPlatformNames.length > 0
+            ? t('content.messages.contentPublishedDesc', {
+                title: content.title,
+                platforms: publishedPlatformNames.join(', '),
+              })
+            : t('content.messages.contentPublishedDescUnknown', { title: content.title }),
         });
       }
 

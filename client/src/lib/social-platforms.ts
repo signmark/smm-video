@@ -102,3 +102,26 @@ export function getVisibleCardPlatforms(
     return result;
   }, {});
 }
+
+export function getPublishedPlatformIds(
+  socialPlatforms: Record<string, PlatformState> | string | null | undefined,
+): string[] {
+  let platforms: Record<string, PlatformState> = {};
+
+  if (typeof socialPlatforms === 'string') {
+    try {
+      const parsed = JSON.parse(socialPlatforms);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        platforms = parsed;
+      }
+    } catch {
+      return [];
+    }
+  } else if (socialPlatforms && typeof socialPlatforms === 'object' && !Array.isArray(socialPlatforms)) {
+    platforms = socialPlatforms;
+  }
+
+  return Object.entries(platforms)
+    .filter(([, state]) => state?.status === 'published')
+    .map(([platform]) => platform);
+}

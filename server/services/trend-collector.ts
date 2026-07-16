@@ -4,10 +4,14 @@ import { log } from '../utils/logger';
 import { globalApiKeysService } from './global-api-keys';
 import { ApiServiceName } from './api-keys';
 
-// Скрейпер-сервер (Telegram, VK, YouTube, Instagram + аналитика)
-export const SCRAPER_BASE = 'http://217.26.25.95:3030';
-// Фоллбэк api-key для скрейпера
-const SCRAPER_API_KEY_FALLBACK = process.env.SCRAPER_API_KEY || 'c1f2e8ad-61c5-450a-b301-12690e9e1112';
+// Скрейпер-сервер (Telegram, VK, YouTube, Instagram + аналитика).
+// SCRAPER_BASE_URL позволяет переключить интеграцию на HTTPS без изменения кода.
+export const SCRAPER_BASE = (
+  process.env.SCRAPER_BASE_URL
+  || process.env.SCRAPER_ANALYTICS_BASE_URL
+  || 'http://217.26.25.95:3030'
+).replace(/\/$/, '');
+const SCRAPER_API_KEY_FALLBACK = process.env.SCRAPER_API_KEY_FALLBACK || '';
 
 // Алиас для обратной совместимости
 const SCRAPER_OLD_BASE = SCRAPER_BASE;
@@ -98,8 +102,11 @@ export async function getScraperApiKey(): Promise<string> {
       // игнорируем
     }
   }
-  log('[TrendCollector] Используем fallback api-key для скрейпера', 'warn');
-  return SCRAPER_API_KEY_FALLBACK;
+  if (SCRAPER_API_KEY_FALLBACK) {
+    log('[TrendCollector] Используем fallback api-key для скрейпера', 'warn');
+    return SCRAPER_API_KEY_FALLBACK;
+  }
+  throw new Error('API-ключ скрейпера не настроен');
 }
 
 // ─── Вспомогательные функции ─────────────────────────────────────────────────

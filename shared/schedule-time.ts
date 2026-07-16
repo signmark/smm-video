@@ -4,6 +4,10 @@ export interface ScheduledPlatformTime {
   scheduled_at?: string | Date | null;
   publishedAt?: string | Date | null;
   published_at?: string | Date | null;
+  postId?: string | number | null;
+  post_id?: string | number | null;
+  postUrl?: string | null;
+  post_url?: string | null;
 }
 
 const UPCOMING_PLATFORM_STATUSES = new Set(['pending', 'scheduled', 'publishing']);
@@ -12,6 +16,18 @@ function validTimestamp(value: string | Date | null | undefined): number | null 
   if (!value) return null;
   const timestamp = new Date(value).getTime();
   return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function hasValue(value: unknown): boolean {
+  if (typeof value === 'number') return Number.isFinite(value);
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+export function isConfirmedPublishedPlatform(platform: ScheduledPlatformTime | null | undefined): boolean {
+  if (platform?.status !== 'published') return false;
+  return validTimestamp(platform.publishedAt ?? platform.published_at) !== null
+    || hasValue(platform.postId ?? platform.post_id)
+    || hasValue(platform.postUrl ?? platform.post_url);
 }
 
 export function setLocalScheduleTime(
@@ -58,7 +74,7 @@ export function getPublishedPlatformTimeSummary(
   fallback?: { scheduledAt?: string | Date | null; publishedAt?: string | Date | null },
 ): { scheduledAt: string | null; publishedAt: string | null } {
   const publishedPlatforms = Object.values(platforms || {})
-    .filter((platform) => platform?.status === 'published');
+    .filter(isConfirmedPublishedPlatform);
 
   const scheduledTimestamps = publishedPlatforms
     .map((platform) => validTimestamp(platform.scheduledAt ?? platform.scheduled_at))
@@ -111,7 +127,7 @@ export function getContentPublicationStatus(
   const platformStates = Object.values(platforms || {});
   if (platformStates.length === 0) return currentStatus;
 
-  const publishedCount = platformStates.filter((platform) => platform?.status === 'published').length;
+  const publishedCount = platformStates.filter(isConfirmedPublishedPlatform).length;
   if (publishedCount === platformStates.length) return 'published';
   if (publishedCount > 0) return 'partially_published';
 

@@ -4,6 +4,7 @@ import {
   getContentAggregateTimes,
   getContentPublicationStatus,
   getPublishedPlatformTimeSummary,
+  isConfirmedPublishedPlatform,
   setLocalScheduleTime,
 } from '@shared/schedule-time';
 
@@ -121,15 +122,23 @@ describe('schedule time normalization', () => {
 
   it('keeps mixed published and quota platforms partially published', () => {
     expect(getContentPublicationStatus({
-      telegram: { status: 'published' },
+      telegram: { status: 'published', publishedAt: '2026-07-16T12:00:00.000Z' },
       youtube: { status: 'quota_exceeded' },
     }, 'scheduled')).toBe('partially_published');
   });
 
-  it('requires every platform status to be published but does not require a public URL', () => {
+  it('does not require a public URL when publication has another confirmation', () => {
+    expect(getContentPublicationStatus({
+      telegram: { status: 'published', postId: 123 },
+      vk: { status: 'published', publishedAt: '2026-07-16T12:00:00.000Z' },
+    }, 'partially_published')).toBe('published');
+  });
+
+  it('rejects a bare published status without publication evidence', () => {
+    expect(isConfirmedPublishedPlatform({ status: 'published' })).toBe(false);
     expect(getContentPublicationStatus({
       telegram: { status: 'published' },
-      vk: { status: 'published' },
-    }, 'partially_published')).toBe('published');
+      vk: { status: 'published', postUrl: 'https://vk.com/wall-1_2' },
+    }, 'scheduled')).toBe('partially_published');
   });
 });

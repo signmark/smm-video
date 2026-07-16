@@ -103,3 +103,20 @@ export function getContentAggregateTimes(
       : null,
   };
 }
+
+export function getContentPublicationStatus(
+  platforms: Record<string, ScheduledPlatformTime> | null | undefined,
+  currentStatus: string,
+): string {
+  const platformStates = Object.values(platforms || {});
+  if (platformStates.length === 0) return currentStatus;
+
+  const publishedCount = platformStates.filter((platform) => platform?.status === 'published').length;
+  if (publishedCount === platformStates.length) return 'published';
+  if (publishedCount > 0) return 'partially_published';
+
+  // quota_exceeded and other waiting states must stay scheduler-visible.
+  return currentStatus === 'pending' || currentStatus === 'scheduled'
+    ? currentStatus
+    : 'scheduled';
+}

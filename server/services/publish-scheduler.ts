@@ -6,7 +6,7 @@ import { publicationLockManager } from './publication-lock-manager';
 import { publicationTracker } from './publication-tracking';
 import { getN8nUrl } from '../utils/n8n-utils';
 import { aiService } from './ai-service';
-import { getContentAggregateTimes } from '@shared/schedule-time';
+import { getContentAggregateTimes, getContentPublicationStatus } from '@shared/schedule-time';
 import { invalidateContentCache } from '../utils/content-cache';
 import { stripMarkdown, markdownToTelegramHtml } from '../utils/strip-markdown';
 
@@ -1854,25 +1854,7 @@ ${text}
         platforms = JSON.parse(platforms);
       }
 
-      const allPlatforms = Object.keys(platforms);
-      const publishedCount = Object.values(platforms).filter((data: any) => 
-        data.status === 'published' && data.postUrl
-      ).length;
-      
-      // Считаем платформы с quota_exceeded как "завершенные" 
-      const quotaExceededCount = Object.values(platforms).filter((data: any) => 
-        data.status === 'quota_exceeded'
-      ).length;
-      
-      const completedCount = publishedCount + quotaExceededCount;
-
-      // Определяем новый статус
-      let newStatus = freshContent.status;
-      if (completedCount === allPlatforms.length) {
-        newStatus = 'published';
-      } else if (publishedCount > 0) {
-        newStatus = 'partially_published';
-      }
+      const newStatus = getContentPublicationStatus(platforms, freshContent.status);
 
       const summaryTimes = getContentAggregateTimes(platforms, newStatus, {
         scheduledAt: freshContent.scheduled_at,

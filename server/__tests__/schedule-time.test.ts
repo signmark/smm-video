@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   getCanonicalScheduledAt,
   getContentAggregateTimes,
+  getContentPublicationStatus,
   getPublishedPlatformTimeSummary,
   setLocalScheduleTime,
 } from '@shared/schedule-time';
@@ -110,5 +111,25 @@ describe('schedule time normalization', () => {
       scheduledAt: '2026-07-16T09:00:00.000Z',
       publishedAt: '2026-07-17T07:00:03.000Z',
     });
+  });
+
+  it('keeps a quota-only post visible to the scheduler', () => {
+    expect(getContentPublicationStatus({
+      youtube: { status: 'quota_exceeded' },
+    }, 'scheduled')).toBe('scheduled');
+  });
+
+  it('keeps mixed published and quota platforms partially published', () => {
+    expect(getContentPublicationStatus({
+      telegram: { status: 'published' },
+      youtube: { status: 'quota_exceeded' },
+    }, 'scheduled')).toBe('partially_published');
+  });
+
+  it('requires every platform status to be published but does not require a public URL', () => {
+    expect(getContentPublicationStatus({
+      telegram: { status: 'published' },
+      vk: { status: 'published' },
+    }, 'partially_published')).toBe('published');
   });
 });

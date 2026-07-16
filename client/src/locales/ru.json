@@ -624,7 +624,8 @@
       "platformFilter": "Фильтр по платформам",
       "platformPublications": "Публикации по платформам",
       "forMonth": "за {{month}}",
-      "contentManagement": "Управление контентом"
+      "contentManagement": "Управление контентом",
+      "publicationError": "Ошибка публикации"
     }
   },
   "tutorials": {

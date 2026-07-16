@@ -4,6 +4,8 @@ export interface ScheduledPlatformTime {
   scheduled_at?: string | Date | null;
 }
 
+const UPCOMING_PLATFORM_STATUSES = new Set(['pending', 'scheduled', 'publishing']);
+
 function validTimestamp(value: string | Date | null | undefined): number | null {
   if (!value) return null;
   const timestamp = new Date(value).getTime();
@@ -37,7 +39,7 @@ export function getCanonicalScheduledAt(
   fallback?: string | Date | null,
 ): string | null {
   const platformTimestamps = Object.values(platforms || {})
-    .filter((platform) => platform?.status !== 'cancelled')
+    .filter((platform) => !platform?.status || UPCOMING_PLATFORM_STATUSES.has(platform.status))
     .map((platform) => validTimestamp(platform?.scheduledAt ?? platform?.scheduled_at))
     .filter((timestamp): timestamp is number => timestamp !== null);
 

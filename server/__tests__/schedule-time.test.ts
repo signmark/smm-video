@@ -29,6 +29,14 @@ describe('schedule time normalization', () => {
     }, '2026-07-16T13:10:00.000Z')).toBe('2026-07-16T13:10:00.000Z');
   });
 
+  it('ignores historical published and failed platform schedules', () => {
+    expect(getCanonicalScheduledAt({
+      telegram: { status: 'published', scheduledAt: '2026-07-10T08:00:00.000Z' },
+      facebook: { status: 'failed', scheduledAt: '2026-07-11T08:00:00.000Z' },
+      vk: { status: 'pending', scheduledAt: '2026-07-16T13:10:00.000Z' },
+    })).toBe('2026-07-16T13:10:00.000Z');
+  });
+
   it('replaces the calendar date incidental time with the chosen local time', () => {
     const calendarDate = new Date(2026, 6, 16, 12, 0, 0, 0);
     const result = setLocalScheduleTime(calendarDate, { hour: '16', minute: '10' });

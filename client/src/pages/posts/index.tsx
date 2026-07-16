@@ -329,7 +329,7 @@ export default function Posts() {
           <div
             key={`${content.id}:failed`}
             className="h-1.5 w-1.5 rounded-full bg-red-500"
-            title="Ошибка публикации"
+            title={t('publishing.published.publicationError')}
           />
         ))}
       </div>

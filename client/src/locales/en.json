@@ -624,7 +624,8 @@
       "platformFilter": "Platform Filter",
       "platformPublications": "Platform publications",
       "forMonth": "in {{month}}",
-      "contentManagement": "Content Management"
+      "contentManagement": "Content Management",
+      "publicationError": "Publication error"
     }
   },
   "tutorials": {

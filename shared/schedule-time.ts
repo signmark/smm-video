@@ -2,6 +2,8 @@ export interface ScheduledPlatformTime {
   status?: string | null;
   scheduledAt?: string | Date | null;
   scheduled_at?: string | Date | null;
+  publishedAt?: string | Date | null;
+  published_at?: string | Date | null;
 }
 
 const UPCOMING_PLATFORM_STATUSES = new Set(['pending', 'scheduled', 'publishing']);
@@ -49,4 +51,31 @@ export function getCanonicalScheduledAt(
 
   const fallbackTimestamp = validTimestamp(fallback);
   return fallbackTimestamp === null ? null : new Date(fallbackTimestamp).toISOString();
+}
+
+export function getPublishedPlatformTimeSummary(
+  platforms: Record<string, ScheduledPlatformTime> | null | undefined,
+  fallback?: { scheduledAt?: string | Date | null; publishedAt?: string | Date | null },
+): { scheduledAt: string | null; publishedAt: string | null } {
+  const publishedPlatforms = Object.values(platforms || {})
+    .filter((platform) => platform?.status === 'published');
+
+  const scheduledTimestamps = publishedPlatforms
+    .map((platform) => validTimestamp(platform.scheduledAt ?? platform.scheduled_at))
+    .filter((timestamp): timestamp is number => timestamp !== null);
+  const publishedTimestamps = publishedPlatforms
+    .map((platform) => validTimestamp(platform.publishedAt ?? platform.published_at))
+    .filter((timestamp): timestamp is number => timestamp !== null);
+
+  const fallbackScheduled = validTimestamp(fallback?.scheduledAt);
+  const fallbackPublished = validTimestamp(fallback?.publishedAt);
+
+  return {
+    scheduledAt: scheduledTimestamps.length > 0
+      ? new Date(Math.min(...scheduledTimestamps)).toISOString()
+      : fallbackScheduled === null ? null : new Date(fallbackScheduled).toISOString(),
+    publishedAt: publishedTimestamps.length > 0
+      ? new Date(Math.max(...publishedTimestamps)).toISOString()
+      : fallbackPublished === null ? null : new Date(fallbackPublished).toISOString(),
+  };
 }

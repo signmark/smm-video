@@ -24,6 +24,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { getPublishedPlatformTimeSummary } from '@shared/schedule-time';
 
 function markdownToHtml(text: string): string {
   if (!text) return '';
@@ -336,7 +337,13 @@ export default function Posts() {
     );
   };
 
-  const renderPostCard = (content: CampaignContent) => (
+  const renderPostCard = (content: CampaignContent) => {
+    const summaryTimes = getPublishedPlatformTimeSummary(content.socialPlatforms, {
+      scheduledAt: content.scheduledAt,
+      publishedAt: content.publishedAt,
+    });
+
+    return (
     <Dialog key={content.id}>
       <DialogTrigger asChild>
         <Card className="cursor-pointer hover:bg-muted/50 transition-colors border border-border/50">
@@ -514,11 +521,11 @@ export default function Posts() {
             </div>
           </div>
           <div className="text-sm text-muted-foreground border-t pt-4 space-y-2">
-            {content.publishedAt && (
-              <div><strong>Общее время публикации:</strong> {formatPublishedTime(content.publishedAt)}</div>
+            {summaryTimes.publishedAt && (
+              <div><strong>Общее время публикации:</strong> {formatPublishedTime(summaryTimes.publishedAt)}</div>
             )}
-            {content.scheduledAt && (
-              <div><strong>Запланировано на:</strong> {formatScheduledTime(content.scheduledAt)}</div>
+            {summaryTimes.scheduledAt && (
+              <div><strong>Запланировано на:</strong> {formatScheduledTime(summaryTimes.scheduledAt)}</div>
             )}
           </div>
           <div className="border-t pt-4">
@@ -534,7 +541,8 @@ export default function Posts() {
         </div>
       </DialogContent>
     </Dialog>
-  );
+    );
+  };
 
   return (
     <div className="space-y-4">

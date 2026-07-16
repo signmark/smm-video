@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { getCanonicalScheduledAt, setLocalScheduleTime } from '@shared/schedule-time';
+import {
+  getCanonicalScheduledAt,
+  getPublishedPlatformTimeSummary,
+  setLocalScheduleTime,
+} from '@shared/schedule-time';
 
 describe('schedule time normalization', () => {
   it('uses the only selected platform time as the content schedule', () => {
@@ -46,5 +50,26 @@ describe('schedule time normalization', () => {
     expect(result.getDate()).toBe(16);
     expect(result.getHours()).toBe(16);
     expect(result.getMinutes()).toBe(10);
+  });
+
+  it('derives published content times from reliable platform history', () => {
+    expect(getPublishedPlatformTimeSummary({
+      telegram: {
+        status: 'published',
+        scheduledAt: '2026-07-16T12:00:00.000Z',
+        publishedAt: '2026-07-16T12:00:01.000Z',
+      },
+      vk: {
+        status: 'published',
+        scheduledAt: '2026-07-16T12:00:00.000Z',
+        publishedAt: '2026-07-16T12:00:03.000Z',
+      },
+    }, {
+      scheduledAt: '2026-07-16T03:00:00.000Z',
+      publishedAt: '2026-07-16T09:00:00.000Z',
+    })).toEqual({
+      scheduledAt: '2026-07-16T12:00:00.000Z',
+      publishedAt: '2026-07-16T12:00:03.000Z',
+    });
   });
 });

@@ -6,6 +6,7 @@ import { publicationLockManager } from './publication-lock-manager';
 import { publicationTracker } from './publication-tracking';
 import { getN8nUrl } from '../utils/n8n-utils';
 import { aiService } from './ai-service';
+import { getPublishedPlatformTimeSummary } from '@shared/schedule-time';
 import { invalidateContentCache } from '../utils/content-cache';
 import { stripMarkdown, markdownToTelegramHtml } from '../utils/strip-markdown';
 
@@ -1873,15 +1874,18 @@ ${text}
         newStatus = 'partially_published';
       }
 
-      // Обновляем статус если он изменился
-      if (newStatus !== freshContent.status) {
-        const updateData: any = { status: newStatus };
-        if (newStatus === 'published') {
-          updateData.published_at = new Date();
-        }
+      const summaryTimes = getPublishedPlatformTimeSummary(platforms, {
+        scheduledAt: freshContent.scheduled_at,
+        publishedAt: freshContent.published_at,
+      });
+      const updateData: any = {};
+      if (newStatus !== freshContent.status) updateData.status = newStatus;
+      if (summaryTimes.publishedAt) updateData.published_at = summaryTimes.publishedAt;
+      if (summaryTimes.scheduledAt) updateData.scheduled_at = summaryTimes.scheduledAt;
 
+      if (Object.keys(updateData).length > 0) {
         await directusCrud.update('campaign_content', contentId, updateData, { useAdminToken: true });
-        log(`Статус контента ${contentId} обновлен на '${newStatus}'`, 'scheduler');
+        log(`Агрегаты контента ${contentId} синхронизированы со временем платформ`, 'scheduler');
       }
 
     } catch (error: any) {

@@ -16,23 +16,22 @@ export function registerAnalyticsRoutes(app: Express) {
   app.post("/api/analytics/update", authenticateUser, async (req: Request, res: Response) => {
     try {
       const { campaignId, days } = req.body;
-      const token = req.user?.token;
+      if (!campaignId) {
+        return res.status(400).json({ success: false, error: 'campaignId обязателен' });
+      }
 
       log(`[Analytics Route] Запрос на обновление данных для кампании ${campaignId}`, 'info');
 
       log(`[Analytics Route] 🚀 Запрос на обновление аналитики через скрейпер для кампании ${campaignId}`, 'info');
 
-      // Запускаем обновление метрик через скрейпер асинхронно
-      AnalyticsService.refreshCampaignAnalytics(campaignId).then(result => {
-        log(`[Analytics Route] 🔄 refreshCampaignAnalytics: ${result.message}`, 'info');
-      }).catch(err => {
-        log(`[Analytics Route] ⚠️ refreshCampaignAnalytics error: ${err.message}`, 'warn');
-      });
+      const result = await AnalyticsService.refreshCampaignAnalytics(campaignId, Number(days));
+      log(`[Analytics Route] 🔄 refreshCampaignAnalytics: ${result.message}`, 'info');
 
-      res.json({
-        success: true,
-        message: "Запрос на обновление данных принят"
-      });
+      if (!result.success) {
+        return res.status(502).json({ ...result, error: result.message });
+      }
+
+      return res.json(result);
     } catch (error: any) {
       log(`[Analytics Route] Ошибка при обновлении: ${error.message}`, 'error');
       res.status(500).json({ success: false, error: "Ошибка при обновлении данных" });

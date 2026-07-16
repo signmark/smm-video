@@ -215,7 +215,10 @@ export class AnalyticsService {
    * Обновляет кеш аналитики для каналов кампании через скрейпер.
    * Вызывается по /api/analytics/update вместо n8n.
    */
-  static async refreshCampaignAnalytics(campaignId: string): Promise<{ success: boolean; message: string }> {
+  static async refreshCampaignAnalytics(
+    campaignId: string,
+    requestedDays = 7,
+  ): Promise<{ success: boolean; message: string; processed?: number; failed?: number; skipped?: number }> {
     const adminToken = process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN || '';
     if (!adminToken) return { success: false, message: 'Нет токена для Directus' };
 
@@ -280,14 +283,31 @@ export class AnalyticsService {
         }
       }
 
+      let refreshResult = null;
       if (channelObjects.length > 0) {
-        await refreshChannelMetrics({ channels: channelObjects, days: 30 });
+        const days = Math.min(30, Math.max(1, Math.trunc(requestedDays) || 7));
+        refreshResult = await refreshChannelMetrics({ channels: channelObjects, days, force: true });
+        if (!refreshResult || refreshResult.status === 'failed') {
+          return {
+            success: false,
+            message: refreshResult?.errors?.join('; ') || 'Scraper не смог обновить метрики',
+            processed: refreshResult?.processed || 0,
+            failed: refreshResult?.failed || 0,
+            skipped: refreshResult?.skipped || 0,
+          };
+        }
         log(`[AnalyticsService] 🔄 Обновление метрик запрошено для ${channelObjects.length} каналов кампании ${campaignId}`, 'info');
       } else {
         log(`[AnalyticsService] ⏳ Все каналы ещё не спарсены — metrics-refresh не вызывается`, 'info');
       }
 
-      return { success: true, message: `Обновление аналитики запущено для ${channelObjects.length} канала(ов)` };
+      return {
+        success: true,
+        message: `Аналитика обновлена для ${channelObjects.length} канала(ов)`,
+        processed: refreshResult?.processed || 0,
+        failed: refreshResult?.failed || 0,
+        skipped: refreshResult?.skipped || 0,
+      };
     } catch (err: any) {
       log(`[AnalyticsService] ❌ refreshCampaignAnalytics error: ${err.message}`, 'error');
       return { success: false, message: err.message };

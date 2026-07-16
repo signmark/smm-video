@@ -54,7 +54,11 @@ export default function AnalyticsPage() {
   // Мутация для обновления данных аналитики через backend
   const updateAnalyticsMutation = useMutation({
     mutationFn: async () => {
-      const days = selectedPeriod === '30days' ? 30 : 7;
+      const days = selectedPeriod === '30days'
+        ? 30
+        : selectedPeriod === 'thisMonth'
+          ? Math.min(30, new Date().getDate())
+          : 7;
       
       console.log('🔧 Запуск обновления аналитики через backend для кампании:', selectedCampaign);
       
@@ -66,11 +70,15 @@ export default function AnalyticsPage() {
           days: days
         }
       });
+
+      if (!response.success) {
+        throw new Error(response.error || response.message || 'Не удалось обновить аналитику');
+      }
       
       console.log('📊 Backend ответ:', response);
       
       // После сбора данных через N8N, обновляем кэш для загрузки новых данных
-      queryClient.invalidateQueries({ queryKey: ['analytics', selectedCampaign, selectedPeriod] });
+      await queryClient.invalidateQueries({ queryKey: ['analytics', selectedCampaign, selectedPeriod] });
       
       return response;
     },

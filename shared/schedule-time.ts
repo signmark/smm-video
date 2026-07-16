@@ -124,7 +124,8 @@ export function getContentPublicationStatus(
   platforms: Record<string, ScheduledPlatformTime> | null | undefined,
   currentStatus: string,
 ): string {
-  const platformStates = Object.values(platforms || {});
+  const platformStates = Object.values(platforms || {})
+    .filter((platform) => platform?.status !== 'cancelled');
   if (platformStates.length === 0) return currentStatus;
 
   const publishedCount = platformStates.filter(isConfirmedPublishedPlatform).length;

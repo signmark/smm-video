@@ -1,4 +1,5 @@
 import type { CampaignContent, PlatformPublishInfo, SocialPlatform } from '@/types';
+import { isConfirmedPublishedPlatform } from '@shared/schedule-time';
 
 const PUBLISHED_CONTENT_STATUSES = new Set([
   'published',
@@ -23,7 +24,7 @@ function validDate(value: string | Date | null | undefined): Date | null {
 export function isConfirmedPlatformPublication(
   info: PlatformPublishInfo | Record<string, any> | null | undefined,
 ): boolean {
-  return info?.status === 'published';
+  return isConfirmedPublishedPlatform(info);
 }
 
 export function hasConfirmedPublication(content: CampaignContent): boolean {

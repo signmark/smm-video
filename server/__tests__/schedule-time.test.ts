@@ -141,4 +141,11 @@ describe('schedule time normalization', () => {
       vk: { status: 'published', postUrl: 'https://vk.com/wall-1_2' },
     }, 'scheduled')).toBe('partially_published');
   });
+
+  it('does not keep published content partial because another platform was cancelled', () => {
+    expect(getContentPublicationStatus({
+      telegram: { status: 'published', postId: 123 },
+      vk: { status: 'cancelled' },
+    }, 'partially_published')).toBe('published');
+  });
 });

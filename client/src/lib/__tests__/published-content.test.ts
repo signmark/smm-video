@@ -125,6 +125,16 @@ describe('published content helpers', () => {
     }))).toBe(false);
   });
 
+  it('does not treat a bare published platform status as a confirmed event', () => {
+    const item = content({
+      status: 'scheduled',
+      socialPlatforms: { telegram: { status: 'published' } } as any,
+    });
+
+    expect(hasConfirmedPublication(item)).toBe(false);
+    expect(getConfirmedPublicationEvents(item)).toEqual([]);
+  });
+
   it('keeps a fully failed post reachable on its scheduled day for retry', () => {
     const failed = content({
       status: 'scheduled',

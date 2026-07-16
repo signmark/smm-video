@@ -43,4 +43,28 @@ describe('generated social content cleanup', () => {
     expect(rules).toContain('только готовый текст публикации');
     expect(rules).toContain('без эмодзи и хэштегов');
   });
+
+  it('preserves dash lists and converts markdown list markers to visible bullets', () => {
+    const raw = '- Первый пункт\n* Второй пункт\n+ Третий пункт';
+
+    expect(cleanGeneratedSocialContent(raw, 'telegram')).toBe(
+      '- Первый пункт\n• Второй пункт\n• Третий пункт',
+    );
+  });
+
+  it('preserves brand symbols while removing VK emoji', () => {
+    expect(cleanGeneratedSocialContent('Бренд™ © 2026 ® 🔥', 'vk')).toBe('Бренд™ © 2026 ®');
+  });
+
+  it('removes common model commentary at the end of a post', () => {
+    const raw = 'Готовый текст поста.\n\nЕсли хотите, могу адаптировать его под другой формат.';
+
+    expect(cleanGeneratedSocialContent(raw, 'telegram')).toBe('Готовый текст поста.');
+  });
+
+  it('does not pair unbalanced markdown markers across paragraphs', () => {
+    const raw = '**Первый абзац\n\nВторой абзац**';
+
+    expect(cleanGeneratedSocialContent(raw, 'telegram')).toBe(raw);
+  });
 });

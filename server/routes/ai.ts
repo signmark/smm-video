@@ -90,6 +90,13 @@ export function registerAiRoutes(app: Express) {
 
       log(`[API] Запрос на генерацию контента: service=${service}, model=${model}, useCampaignData=${useCampaignData}`, 'info');
 
+      // The shared endpoint also supports non-post generation. Apply the social
+      // output contract only when the caller explicitly identifies a platform.
+      const isSocialContentRequest = typeof platform === 'string' && platform.trim().length > 0;
+      const effectiveSystemPrompt = isSocialContentRequest
+        ? `${systemPrompt || 'Ты — опытный автор контента для социальных сетей.'}${getGeneratedSocialContentRules(platform)}`
+        : systemPrompt;
+
       const result = await aiService.generateContent({
         prompt,
         keywords,
@@ -99,7 +106,7 @@ export function registerAiRoutes(app: Express) {
         model,
         temperature,
         maxTokens: max_tokens,
-        systemPrompt: `${systemPrompt || 'Ты — опытный автор контента для социальных сетей.'}${getGeneratedSocialContentRules(platform)}`,
+        systemPrompt: effectiveSystemPrompt,
         userId,
         token,
         campaignId,
@@ -107,7 +114,7 @@ export function registerAiRoutes(app: Express) {
         matchStyle
       });
 
-      if (result?.content) {
+      if (result?.content && isSocialContentRequest) {
         result.content = cleanGeneratedSocialContent(result.content, platform);
       }
 

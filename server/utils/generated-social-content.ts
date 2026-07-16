@@ -51,16 +51,35 @@ export function cleanGeneratedSocialContent(text: string, platform?: string): st
     .replace(/^\s*(?:заголовок|headline)\s*:\s*/gim, '')
     .replace(/^\s*[*_#~-]+\s*$/gm, '')
     .replace(/^#{1,6}\s+/gm, '')
-    .replace(/^\s*[-*+]\s+/gm, '')
-    .replace(/\*\*(.*?)\*\*/gs, '$1')
-    .replace(/__(.*?)__/gs, '$1')
-    .replace(/~~(.*?)~~/gs, '$1')
+    .replace(/^\s*[*+]\s+/gm, '• ')
+    .replace(/\*\*([^*\n]+)\*\*/g, '$1')
+    .replace(/__([^_\n]+)__/g, '$1')
+    .replace(/~~([^~\n]+)~~/g, '$1')
     .replace(/`([^`]+)`/g, '$1');
 
+  const trailingLines = cleaned.split('\n');
+  while (trailingLines.length > 0) {
+    const lastLine = trailingLines[trailingLines.length - 1].trim();
+    const isMetaOutro =
+      /^(?:надеюсь|буду рад)[,!\s]/i.test(lastLine) ||
+      /^(?:если\s+хотите[,]?\s+)?(?:я\s+)?могу\s+(?:адаптировать|доработать|переписать)/i.test(lastLine) ||
+      /^(?:дайте\s+знать|готов\s+(?:адаптировать|доработать|переписать))/i.test(lastLine);
+
+    if (!lastLine || isMetaOutro) {
+      trailingLines.pop();
+      continue;
+    }
+    break;
+  }
+  cleaned = trailingLines.join('\n');
+
   if (isVkPlatform(platform)) {
+    const protectedSymbols = new Set(['©', '®', '™']);
     cleaned = cleaned
       .replace(/(^|\s)#[\p{L}\p{N}_-]+/gu, '$1')
-      .replace(/[\p{Extended_Pictographic}\uFE0F\u200D]/gu, '');
+      .replace(/[\p{Extended_Pictographic}\uFE0F\u200D]/gu, (symbol) => (
+        protectedSymbols.has(symbol) ? symbol : ''
+      ));
   }
 
   return cleaned

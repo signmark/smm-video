@@ -1,4 +1,5 @@
 import type { SocialPlatform, PlatformPublishInfo } from "@/types";
+import { isConfirmedPublishedPlatform } from "@shared/schedule-time";
 
 // Массив доступных социальных платформ для безопасного использования в коде
 export const safeSocialPlatforms: SocialPlatform[] = [
@@ -131,6 +132,6 @@ export function getPublishedPlatformIds(
   }
 
   return Object.entries(platforms)
-    .filter(([, state]) => state?.status === 'published')
+    .filter(([, state]) => isConfirmedPublishedPlatform(state))
     .map(([platform]) => platform);
 }

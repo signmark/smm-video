@@ -67,7 +67,8 @@ describe('getVisibleCardPlatforms', () => {
 describe('getPublishedPlatformIds', () => {
   it('returns only platforms with a confirmed published status', () => {
     expect(getPublishedPlatformIds({
-      telegram: { status: 'published' },
+      telegram: { status: 'published', postId: '123' },
+      facebook: { status: 'published' },
       vk: { status: 'pending' },
       youtube: { status: 'failed' },
     })).toEqual(['telegram']);
@@ -75,8 +76,9 @@ describe('getPublishedPlatformIds', () => {
 
   it('supports social platform data returned as JSON', () => {
     expect(getPublishedPlatformIds(JSON.stringify({
-      telegram: { status: 'published' },
-      vk: { status: 'published' },
+      telegram: { status: 'published', publishedAt: '2026-07-16T12:00:00.000Z' },
+      vk: { status: 'published', postUrl: 'https://vk.com/wall-1_2' },
+      youtube: { status: 'published' },
     }))).toEqual(['telegram', 'vk']);
   });
 });

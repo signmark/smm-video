@@ -31,6 +31,34 @@ export function hasConfirmedPublication(content: CampaignContent): boolean {
   return Object.values(content.socialPlatforms || {}).some(isConfirmedPlatformPublication);
 }
 
+export function hasFailedPublicationAttempt(content: CampaignContent): boolean {
+  return Object.values(content.socialPlatforms || {}).some((info) => (
+    info?.status === 'failed' || Boolean(info?.error || info?.lastError)
+  ));
+}
+
+/**
+ * Fully failed posts have no publication timestamp, but must remain reachable
+ * from their intended day so the user can inspect the error and retry.
+ */
+export function getFailedPublicationAttemptDate(content: CampaignContent): Date | null {
+  if (hasConfirmedPublication(content) || !hasFailedPublicationAttempt(content)) return null;
+
+  const platforms = Object.values(content.socialPlatforms || {});
+  return validDate(content.scheduledAt)
+    || platforms.map((info) => validDate(info?.scheduledAt)).find(Boolean)
+    || platforms.map((info) => validDate(info?.failedAt)).find(Boolean)
+    || validDate(content.createdAt);
+}
+
+export function getPublicationCardDates(content: CampaignContent): Date[] {
+  const publishedDates = getConfirmedPublicationDates(content);
+  if (publishedDates.length > 0) return publishedDates;
+
+  const failedDate = getFailedPublicationAttemptDate(content);
+  return failedDate ? [failedDate] : [];
+}
+
 export function getConfirmedPublicationEvents(content: CampaignContent): ConfirmedPublicationEvent[] {
   if (!hasConfirmedPublication(content)) return [];
 

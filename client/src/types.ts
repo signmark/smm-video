@@ -73,6 +73,8 @@ export interface PlatformPublishInfo {
   postId?: string | null;
   postUrl?: string | null;
   error?: string | null;
+  lastError?: string | null;
+  failedAt?: string | null;
 }
 
 // Типы контента

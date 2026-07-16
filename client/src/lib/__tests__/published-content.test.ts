@@ -4,7 +4,10 @@ import {
   countConfirmedPlatformPublications,
   getConfirmedPublicationEvents,
   getConfirmedPublicationDates,
+  getFailedPublicationAttemptDate,
+  getPublicationCardDates,
   hasConfirmedPublication,
+  hasFailedPublicationAttempt,
 } from '../published-content';
 
 function content(overrides: Partial<CampaignContent>): CampaignContent {
@@ -120,5 +123,42 @@ describe('published content helpers', () => {
       status: 'scheduled',
       socialPlatforms: { telegram: { status: 'failed' } } as any,
     }))).toBe(false);
+  });
+
+  it('keeps a fully failed post reachable on its scheduled day for retry', () => {
+    const failed = content({
+      status: 'scheduled',
+      scheduledAt: '2026-07-16T09:00:00.000Z',
+      socialPlatforms: {
+        telegram: {
+          status: 'failed',
+          error: 'Telegram API error',
+          failedAt: '2026-07-16T09:01:00.000Z',
+        },
+      } as any,
+    });
+
+    expect(hasFailedPublicationAttempt(failed)).toBe(true);
+    expect(getFailedPublicationAttemptDate(failed)?.toISOString()).toBe('2026-07-16T09:00:00.000Z');
+    expect(getPublicationCardDates(failed).map((date) => date.toISOString())).toEqual([
+      '2026-07-16T09:00:00.000Z',
+    ]);
+    expect(getConfirmedPublicationEvents(failed)).toEqual([]);
+  });
+
+  it('shows a partially published post only on its actual publication date', () => {
+    const partial = content({
+      status: 'partial',
+      scheduledAt: '2026-07-14T09:00:00.000Z',
+      socialPlatforms: {
+        telegram: { status: 'failed', error: 'Timeout' },
+        vk: { status: 'published', publishedAt: '2026-07-15T09:00:00.000Z' },
+      } as any,
+    });
+
+    expect(getFailedPublicationAttemptDate(partial)).toBeNull();
+    expect(getPublicationCardDates(partial).map((date) => date.toISOString())).toEqual([
+      '2026-07-15T09:00:00.000Z',
+    ]);
   });
 });

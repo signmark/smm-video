@@ -18,8 +18,8 @@ import { platformNames } from "@/lib/social-platforms";
 import {
   countConfirmedPlatformPublications,
   getConfirmedPublicationEvents,
-  getConfirmedPublicationDates,
-  hasConfirmedPublication,
+  getFailedPublicationAttemptDate,
+  getPublicationCardDates,
 } from "@/lib/published-content";
 import { useTranslation } from 'react-i18next';
 import { apiRequest } from "@/lib/queryClient";
@@ -196,7 +196,7 @@ export default function Posts() {
     if (!campaignContent.length) return;
 
     // Собираем все даты публикаций
-    const publishDates = campaignContent.flatMap(getConfirmedPublicationDates);
+    const publishDates = campaignContent.flatMap(getPublicationCardDates);
 
     if (!publishDates.length) return;
 
@@ -216,6 +216,42 @@ export default function Posts() {
     { from: startOfMonth(visibleMonth), to: endOfMonth(visibleMonth) },
   ), [campaignContent, visibleMonth]);
 
+  const dayKey = (date: Date) => format(date, 'yyyy-MM-dd');
+
+  const publicationEventsByDay = React.useMemo(() => {
+    const eventsByDay = new Map<string, ReturnType<typeof getConfirmedPublicationEvents>>();
+    campaignContent.flatMap(getConfirmedPublicationEvents).forEach((event) => {
+      const key = dayKey(event.date);
+      eventsByDay.set(key, [...(eventsByDay.get(key) || []), event]);
+    });
+    return eventsByDay;
+  }, [campaignContent]);
+
+  const publicationCardsByDay = React.useMemo(() => {
+    const cardsByDay = new Map<string, CampaignContent[]>();
+    campaignContent.forEach((content) => {
+      getPublicationCardDates(content).forEach((date) => {
+        const key = dayKey(date);
+        const cards = cardsByDay.get(key) || [];
+        if (!cards.some((card) => card.id === content.id)) {
+          cardsByDay.set(key, [...cards, content]);
+        }
+      });
+    });
+    return cardsByDay;
+  }, [campaignContent]);
+
+  const failedAttemptsByDay = React.useMemo(() => {
+    const attemptsByDay = new Map<string, CampaignContent[]>();
+    campaignContent.forEach((content) => {
+      const date = getFailedPublicationAttemptDate(content);
+      if (!date) return;
+      const key = dayKey(date);
+      attemptsByDay.set(key, [...(attemptsByDay.get(key) || []), content]);
+    });
+    return attemptsByDay;
+  }, [campaignContent]);
+
   // Получение точек для календаря (публикации на каждый день)
   // Получение контента кампании
   const getContent = () => {
@@ -227,19 +263,7 @@ export default function Posts() {
     // Создаем карту идентификаторов постов, чтобы избежать дублирования
     const uniquePosts = new Map<string, CampaignContent>();
     
-    // Получаем весь контент
-    const allContent = getContent();
-    
-    // Показываем все посты кроме черновиков
-    for (const post of allContent) {
-      if (!hasConfirmedPublication(post)) continue;
-      const publishedDates = getConfirmedPublicationDates(post);
-      if (publishedDates.length === 0) continue;
-
-      if (publishedDates.some(date => isSameDay(day, date))) {
-        uniquePosts.set(post.id, post);
-      }
-    }
+    (publicationCardsByDay.get(dayKey(day)) || []).forEach((post) => uniquePosts.set(post.id, post));
     
     // Возвращаем массив уникальных опубликованных постов с сортировкой по времени публикации
     const postsArray = Array.from(uniquePosts.values());
@@ -247,29 +271,7 @@ export default function Posts() {
     return postsArray.sort((a, b) => {
       // Получаем дату публикации для каждого поста
       const getPublicationDate = (post: CampaignContent): Date => {
-        // Сначала проверяем общую дату публикации поста
-        if (post.publishedAt) {
-          try {
-            return new Date(post.publishedAt);
-          } catch (e) {}
-        }
-        
-        // Если нет общей даты, берем самую раннюю дату публикации из платформ
-        const platformDates: Date[] = [];
-        if (post.socialPlatforms) {
-          Object.values(post.socialPlatforms).forEach(platformInfo => {
-            if (platformInfo?.publishedAt && platformInfo.status === 'published') {
-              try {
-                platformDates.push(new Date(platformInfo.publishedAt));
-              } catch (e) {}
-            }
-          });
-        }
-        
-        // Возвращаем самую раннюю дату или текущую дату как fallback
-        return platformDates.length > 0 
-          ? new Date(Math.min(...platformDates.map(d => d.getTime()))) 
-          : new Date();
+        return getPublicationCardDates(post)[0] || new Date(0);
       };
       
       const dateA = getPublicationDate(a);
@@ -297,11 +299,11 @@ export default function Posts() {
   };
 
   const getDayContent = (day: Date) => {
-    const publicationsForDay = campaignContent
-      .flatMap(getConfirmedPublicationEvents)
-      .filter(({ date }) => isSameDay(day, date));
+    const key = dayKey(day);
+    const publicationsForDay = publicationEventsByDay.get(key) || [];
+    const failedAttemptsForDay = failedAttemptsByDay.get(key) || [];
 
-    if (!publicationsForDay.length) return null;
+    if (!publicationsForDay.length && !failedAttemptsForDay.length) return null;
 
     // Получаем цвета для разных типов контента
     const getColorForType = (type: string): string => {
@@ -322,6 +324,13 @@ export default function Posts() {
             key={publication.key}
             className={`h-1.5 w-1.5 rounded-full ${getColorForType(publication.contentType || 'text')}`}
           ></div>
+        ))}
+        {failedAttemptsForDay.map((content) => (
+          <div
+            key={`${content.id}:failed`}
+            className="h-1.5 w-1.5 rounded-full bg-red-500"
+            title="Ошибка публикации"
+          />
         ))}
       </div>
     );

@@ -34,6 +34,66 @@ function publicationTime(post: any, platformData: any): number | null {
   return Number.isFinite(timestamp) ? timestamp : null;
 }
 
+function postIdCandidates(value: unknown): string[] {
+  if (value === null || value === undefined) return [];
+  const raw = String(value).trim().toLowerCase();
+  if (!raw) return [];
+
+  const candidates = new Set([raw]);
+  const withoutQuery = raw.split(/[?#]/, 1)[0].replace(/\/$/, '');
+  const lastPathPart = withoutQuery.split('/').filter(Boolean).pop();
+  if (lastPathPart) candidates.add(lastPathPart);
+
+  const wallId = raw.match(/wall(-?\d+_\d+)/)?.[1];
+  if (wallId) candidates.add(wallId);
+
+  for (const candidate of Array.from(candidates)) {
+    if (/^-?\d+_\d+$/.test(candidate)) {
+      candidates.add(candidate.split('_').pop()!);
+    }
+  }
+
+  return Array.from(candidates);
+}
+
+export function getPublishedPlatformPostIds(
+  posts: any[],
+  platform: string,
+  dateFrom: Date,
+  dateTo: Date,
+): Set<string> {
+  const ids = new Set<string>();
+  const fromTime = dateFrom.getTime();
+  const toTime = dateTo.getTime();
+
+  for (const post of posts) {
+    let platforms = post?.social_platforms ?? post?.socialPlatforms;
+    if (typeof platforms === 'string') {
+      try { platforms = JSON.parse(platforms); } catch { continue; }
+    }
+    if (!platforms || typeof platforms !== 'object' || Array.isArray(platforms)) continue;
+
+    const platformEntry = Object.entries(platforms).find(([key, data]: [string, any]) => (
+      String(data?.platform || key).toLowerCase() === platform.toLowerCase()
+    ));
+    const platformData = platformEntry?.[1] as any;
+    if (!platformData || platformData.status !== 'published') continue;
+
+    const publishedTime = publicationTime(post, platformData);
+    if (publishedTime === null || publishedTime < fromTime || publishedTime > toTime) continue;
+
+    for (const value of [platformData.postId, platformData.post_id, platformData.postUrl, platformData.post_url]) {
+      postIdCandidates(value).forEach((candidate) => ids.add(candidate));
+    }
+  }
+
+  return ids;
+}
+
+export function matchesPublishedPlatformPostId(expectedIds: Set<string>, value: unknown): boolean {
+  return postIdCandidates(value).some((candidate) => expectedIds.has(candidate));
+}
+
 /**
  * Counts one post per confirmed platform publication in the selected period.
  * Content-level status and scheduled_at are deliberately not used as filters:

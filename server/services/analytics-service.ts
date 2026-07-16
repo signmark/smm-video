@@ -1,7 +1,11 @@
 import { directusApi } from '../directus';
 import { log } from '../utils/logger';
 import axios from 'axios';
-import { aggregatePublishedPlatformAnalytics } from './analytics-aggregation';
+import {
+  aggregatePublishedPlatformAnalytics,
+  getPublishedPlatformPostIds,
+  matchesPublishedPlatformPostId,
+} from './analytics-aggregation';
 
 export class AnalyticsService {
   private static readonly ANALYTICS_PAGE_SIZE = 1000;
@@ -36,7 +40,7 @@ export class AnalyticsService {
   /**
    * Получение агрегированной аналитики для кампании.
    * Читает опубликованные посты из Directus.
-   * Если views = 0, дополняет данными из скрейпера для каналов кампании.
+   * Дополняет метрики данными скрейпера, сопоставляя конкретные публикации по postId.
    */
   static async getCampaignAnalytics(campaignId: string, period: string, token: string) {
     let dateFrom: Date;
@@ -65,14 +69,18 @@ export class AnalyticsService {
         platformStatsMap,
       } = aggregated;
 
-      // Если нет данных о просмотрах в Directus — пробуем скрейпер для каналов кампании
-      if (totalViews === 0 && totalPosts > 0) {
+      // Обновляем метрики поддерживаемых платформ только для публикаций кампании,
+      // которые скрейпер смог однозначно сопоставить по postId.
+      if (totalPosts > 0) {
         try {
           await AnalyticsService.supplementFromScraper(
-            campaignId, dateFrom, now,
-            platformStatsMap,
-            (v, l, c, s) => { totalViews += v; totalLikes += l; totalComments += c; totalShares += s; }
+            campaignId, posts, dateFrom, now, platformStatsMap,
           );
+          const platformStats = Array.from(platformStatsMap.values());
+          totalViews = platformStats.reduce((sum, stats) => sum + stats.views, 0);
+          totalLikes = platformStats.reduce((sum, stats) => sum + stats.likes, 0);
+          totalComments = platformStats.reduce((sum, stats) => sum + stats.comments, 0);
+          totalShares = platformStats.reduce((sum, stats) => sum + stats.shares, 0);
         } catch (scraperErr: any) {
           log(`[AnalyticsService] Scraper supplement failed (non-critical): ${scraperErr.message}`, 'warn');
         }
@@ -102,15 +110,15 @@ export class AnalyticsService {
 
   /**
    * Дополняет статистику из скрейпер-аналитики для собственных каналов кампании.
-   * Ищет каналы кампании (TG chatId, VK groupId) в мониторинге скрейпера
-   * и берёт агрегированные просмотры/лайки за период.
+   * Ищет каналы кампании (TG chatId, VK groupId), затем суммирует метрики только
+   * тех публикаций, чьи platform_post_id совпадают с сохранёнными postId кампании.
    */
   private static async supplementFromScraper(
     campaignId: string,
+    campaignPosts: any[],
     fromDate: Date,
     toDate: Date,
     platformStatsMap: Map<string, any>,
-    addTotals: (views: number, likes: number, comments: number, shares: number) => void
   ): Promise<void> {
     const adminToken = process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN || '';
     if (!adminToken) return;
@@ -141,7 +149,7 @@ export class AnalyticsService {
 
     if (channelsToLookup.length === 0) return;
 
-    const { getMonitoredChannels, getChannelAnalytics } = await import('./scraper-analytics');
+    const { getMonitoredChannels, getChannelPosts } = await import('./scraper-analytics');
     const monitored = await getMonitoredChannels({ page_size: 100 });
     if (!monitored.items.length) return;
 
@@ -154,13 +162,46 @@ export class AnalyticsService {
       );
       if (!found) continue;
 
-      const analytics = await getChannelAnalytics(found.id, { from_date: fromStr, to_date: toStr });
-      if (!analytics) continue;
+      const campaignPostIds = getPublishedPlatformPostIds(
+        campaignPosts, ch.platform, fromDate, toDate,
+      );
+      if (campaignPostIds.size === 0) continue;
 
-      addTotals(analytics.total_views, analytics.total_likes, analytics.total_comments, analytics.total_shares);
+      const matchedPostKeys = new Set<string>();
+      const matchedMetrics = { views: 0, likes: 0, comments: 0, shares: 0 };
+
+      for (let page = 1; ; page++) {
+        const response = await getChannelPosts(found.id, {
+          page,
+          page_size: 100,
+          from_date: fromStr,
+          to_date: toStr,
+        });
+        if (!response) break;
+
+        for (const scraperPost of response.items || []) {
+          if (!matchesPublishedPlatformPostId(campaignPostIds, scraperPost.platform_post_id)) continue;
+          const uniqueKey = scraperPost.id || scraperPost.platform_post_id;
+          if (matchedPostKeys.has(uniqueKey)) continue;
+          matchedPostKeys.add(uniqueKey);
+          matchedMetrics.views += Number(scraperPost.views) || 0;
+          matchedMetrics.likes += Number(scraperPost.likes) || 0;
+          matchedMetrics.comments += Number(scraperPost.comments) || 0;
+          matchedMetrics.shares += Number(scraperPost.shares) || 0;
+        }
+
+        if (!response.has_next_page || !response.items?.length) break;
+      }
+
+      const analytics = {
+        total_views: matchedMetrics.views,
+        total_likes: matchedMetrics.likes,
+        total_comments: matchedMetrics.comments,
+        total_shares: matchedMetrics.shares,
+      };
       log(`[AnalyticsService] 📡 Скрейпер ${ch.platform}: ${analytics.total_views} просмотров за период`, 'info');
 
-      if (platformStatsMap.has(ch.platform)) {
+      if (matchedPostKeys.size > 0 && platformStatsMap.has(ch.platform)) {
         const stats = platformStatsMap.get(ch.platform);
         stats.views = analytics.total_views;
         stats.likes = analytics.total_likes;

@@ -36,6 +36,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import PlatformSelector from './PlatformSelector';
+import { getCanonicalScheduledAt, setLocalScheduleTime } from '@shared/schedule-time';
 
 // Создаем схему валидации
 const scheduledPublicationSchema = z.object({
@@ -167,11 +168,8 @@ export default function EditScheduledPublication({
           const existingData = content.socialPlatforms?.[platform] || {};
           
           // Создаем дату публикации для этой платформы
-          const platformDate = new Date(scheduledAt);
           const time = platformTimes?.[platform] || { hour: '12', minute: '00' };
-          
-          // Устанавливаем часы и минуты в локальном времени
-          platformDate.setHours(parseInt(time.hour, 10), parseInt(time.minute, 10), 0, 0);
+          const platformDate = setLocalScheduleTime(scheduledAt, time);
           
           // Создаем строку даты, используя UTC-совместимый формат для сервера
           const localISOString = platformDate.toISOString();
@@ -185,6 +183,7 @@ export default function EditScheduledPublication({
             // Не меняем статус published на scheduled!
             status: preservedStatus,
             scheduledAt: localISOString,
+            scheduled_at: localISOString,
             // Сохраняем publishedAt если контент уже опубликован
             publishedAt: existingData.publishedAt || null
           };
@@ -228,11 +227,16 @@ export default function EditScheduledPublication({
       }
       
       // Отправляем данные на сервер через новый endpoint direct-schedule
+      const canonicalScheduledAt = getCanonicalScheduledAt(socialPlatforms, scheduledAt);
+      if (!canonicalScheduledAt) {
+        throw new Error('Не удалось определить время публикации');
+      }
+
       await apiRequest(`/api/direct-schedule/${content.id}`, {
         method: 'POST',
         headers,
         data: {
-          scheduledAt: scheduledAt.toISOString(),
+          scheduledAt: canonicalScheduledAt,
           socialPlatforms
         }
       });

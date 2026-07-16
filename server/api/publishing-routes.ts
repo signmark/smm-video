@@ -6,6 +6,7 @@ import { authenticateUser } from '../middleware/user-auth';
 
 // Не используем старый сервис, заменив его на новый модульный
 import { getPublishScheduler } from '../services/publish-scheduler';
+import { getCanonicalScheduledAt } from '@shared/schedule-time';
 // Определяем тип SocialPlatform локально
 type SocialPlatform = 'instagram' | 'facebook' | 'telegram' | 'vk' | 'youtube';
 import { log } from '../utils/logger';
@@ -1497,6 +1498,13 @@ export function registerPublishingRoutes(app: Express): void {
               log(`Установлено время для платформы ${platform}: ${scheduledAtDate.toISOString()}`, 'api');
             }
           });
+
+          // Never persist the calendar widget's incidental time as the content
+          // schedule. The content-level value follows the earliest platform.
+          const canonicalScheduledAt = getCanonicalScheduledAt(
+            mergedSocialPlatforms,
+            scheduledAtDate,
+          ) || scheduledAtDate.toISOString();
           
           // Добавляем подробное логирование для отладки
           log(`Платформы из запроса: ${JSON.stringify(socialPlatforms)}`, 'api');
@@ -1504,7 +1512,7 @@ export function registerPublishingRoutes(app: Express): void {
           
           const updateData = {
             status: 'scheduled',
-            scheduled_at: scheduledAt, // Основное время публикации (используется только как ориентир)
+            scheduled_at: canonicalScheduledAt,
             social_platforms: mergedSocialPlatforms // Обновленные данные о платформах
           };
           
@@ -1524,7 +1532,7 @@ export function registerPublishingRoutes(app: Express): void {
           try {
             await storage.updateCampaignContent(contentId, {
               status: 'scheduled',
-              scheduledAt: new Date(scheduledAt),
+              scheduledAt: new Date(canonicalScheduledAt),
               socialPlatforms: mergedSocialPlatforms // Используем объединенные платформы для согласованности с API
             }, token);
             

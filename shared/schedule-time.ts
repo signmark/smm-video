@@ -79,3 +79,27 @@ export function getPublishedPlatformTimeSummary(
       : fallbackPublished === null ? null : new Date(fallbackPublished).toISOString(),
   };
 }
+
+export function getContentAggregateTimes(
+  platforms: Record<string, ScheduledPlatformTime> | null | undefined,
+  contentStatus: string | null | undefined,
+  fallback?: { scheduledAt?: string | Date | null; publishedAt?: string | Date | null },
+): { scheduledAt: string | null; publishedAt: string | null } {
+  const historical = getPublishedPlatformTimeSummary(platforms);
+  const upcomingScheduledAt = getCanonicalScheduledAt(platforms);
+  const fallbackScheduled = validTimestamp(fallback?.scheduledAt);
+  const fallbackPublished = validTimestamp(fallback?.publishedAt);
+  const isFullyPublished = contentStatus === 'published';
+
+  return {
+    scheduledAt: isFullyPublished
+      ? historical.scheduledAt || (fallbackScheduled === null ? null : new Date(fallbackScheduled).toISOString())
+      : upcomingScheduledAt
+        || historical.scheduledAt
+        || (fallbackScheduled === null ? null : new Date(fallbackScheduled).toISOString()),
+    // Keep the content-level contract: non-null means the whole content item is published.
+    publishedAt: isFullyPublished
+      ? historical.publishedAt || (fallbackPublished === null ? null : new Date(fallbackPublished).toISOString())
+      : null,
+  };
+}

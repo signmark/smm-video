@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   getCanonicalScheduledAt,
+  getContentAggregateTimes,
   getPublishedPlatformTimeSummary,
   setLocalScheduleTime,
 } from '@shared/schedule-time';
@@ -70,6 +71,44 @@ describe('schedule time normalization', () => {
     })).toEqual({
       scheduledAt: '2026-07-16T12:00:00.000Z',
       publishedAt: '2026-07-16T12:00:03.000Z',
+    });
+  });
+
+  it('keeps partial content scheduled at the next pending platform', () => {
+    expect(getContentAggregateTimes({
+      telegram: {
+        status: 'published',
+        scheduledAt: '2026-07-16T09:00:00.000Z',
+        publishedAt: '2026-07-16T09:00:01.000Z',
+      },
+      vk: {
+        status: 'pending',
+        scheduledAt: '2026-07-17T07:00:00.000Z',
+      },
+    }, 'partially_published', {
+      scheduledAt: '2026-07-16T09:00:00.000Z',
+      publishedAt: '2026-07-16T09:00:01.000Z',
+    })).toEqual({
+      scheduledAt: '2026-07-17T07:00:00.000Z',
+      publishedAt: null,
+    });
+  });
+
+  it('sets content publishedAt only after every platform is complete', () => {
+    expect(getContentAggregateTimes({
+      telegram: {
+        status: 'published',
+        scheduledAt: '2026-07-16T09:00:00.000Z',
+        publishedAt: '2026-07-16T09:00:01.000Z',
+      },
+      vk: {
+        status: 'published',
+        scheduledAt: '2026-07-17T07:00:00.000Z',
+        publishedAt: '2026-07-17T07:00:03.000Z',
+      },
+    }, 'published')).toEqual({
+      scheduledAt: '2026-07-16T09:00:00.000Z',
+      publishedAt: '2026-07-17T07:00:03.000Z',
     });
   });
 });

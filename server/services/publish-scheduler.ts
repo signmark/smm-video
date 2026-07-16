@@ -6,7 +6,7 @@ import { publicationLockManager } from './publication-lock-manager';
 import { publicationTracker } from './publication-tracking';
 import { getN8nUrl } from '../utils/n8n-utils';
 import { aiService } from './ai-service';
-import { getPublishedPlatformTimeSummary } from '@shared/schedule-time';
+import { getContentAggregateTimes } from '@shared/schedule-time';
 import { invalidateContentCache } from '../utils/content-cache';
 import { stripMarkdown, markdownToTelegramHtml } from '../utils/strip-markdown';
 
@@ -1874,14 +1874,27 @@ ${text}
         newStatus = 'partially_published';
       }
 
-      const summaryTimes = getPublishedPlatformTimeSummary(platforms, {
+      const summaryTimes = getContentAggregateTimes(platforms, newStatus, {
         scheduledAt: freshContent.scheduled_at,
         publishedAt: freshContent.published_at,
       });
       const updateData: any = {};
       if (newStatus !== freshContent.status) updateData.status = newStatus;
-      if (summaryTimes.publishedAt) updateData.published_at = summaryTimes.publishedAt;
-      if (summaryTimes.scheduledAt) updateData.scheduled_at = summaryTimes.scheduledAt;
+
+      const sameInstant = (left: unknown, right: unknown) => {
+        if (!left && !right) return true;
+        if (!left || !right) return false;
+        const leftTime = new Date(left as any).getTime();
+        const rightTime = new Date(right as any).getTime();
+        return Number.isFinite(leftTime) && Number.isFinite(rightTime) && leftTime === rightTime;
+      };
+
+      if (!sameInstant(summaryTimes.publishedAt, freshContent.published_at)) {
+        updateData.published_at = summaryTimes.publishedAt;
+      }
+      if (!sameInstant(summaryTimes.scheduledAt, freshContent.scheduled_at)) {
+        updateData.scheduled_at = summaryTimes.scheduledAt;
+      }
 
       if (Object.keys(updateData).length > 0) {
         await directusCrud.update('campaign_content', contentId, updateData, { useAdminToken: true });

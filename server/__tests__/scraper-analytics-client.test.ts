@@ -61,6 +61,10 @@ describe('scraper analytics client', () => {
         },
       }),
     );
+    expect(log.warn).toHaveBeenCalledWith(
+      'scraper request={"method":"POST","url":"http://analytics.test/api/v1/monitoring/scheduler/metrics-refresh","headers":{"Content-Type":"application/json","Authorization":"Bearer [REDACTED]"},"query":{"channel_ids":"channel-uuid","days":30,"force":true},"body":{}}',
+      'analytics',
+    );
   });
 
   it('surfaces authorization failures without exposing the key', async () => {
@@ -94,6 +98,10 @@ describe('scraper analytics client', () => {
 
     await expect(getMonitoredChannels({ page_size: 100 }, true))
       .rejects.toThrow('Analytics API отклонил ключ доступа (HTTP 401): Invalid API key');
+    expect(log.warn).toHaveBeenCalledWith(
+      'scraper request={"method":"GET","url":"http://analytics.test/api/v1/monitoring/channels","headers":{"Authorization":"Bearer [REDACTED]"},"query":{"page_size":100}}',
+      'analytics',
+    );
   });
 
   it('retries channels separately when the batch refresh returns HTTP 500', async () => {

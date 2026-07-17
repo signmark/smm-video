@@ -30,6 +30,25 @@ function getAnalyticsErrorMessage(method: string, path: string, err: any): strin
   return `Analytics API недоступен для ${method} ${path}: ${err.code || err.message || 'network error'}`;
 }
 
+function logAnalyticsRequest(
+  method: 'GET' | 'POST' | 'DELETE',
+  path: string,
+  params?: Record<string, any>,
+  body?: Record<string, any>,
+): void {
+  const request = {
+    method,
+    url: `${ANALYTICS_BASE}${path}`,
+    headers: {
+      ...(method === 'POST' ? { 'Content-Type': 'application/json' } : {}),
+      Authorization: 'Bearer [REDACTED]',
+    },
+    query: params || {},
+    ...(method === 'POST' ? { body: body || {} } : {}),
+  };
+  log.warn(`scraper request=${JSON.stringify(request)}`, 'analytics');
+}
+
 // ─── Типы ─────────────────────────────────────────────────────────────────────
 
 export interface ChannelResponse {
@@ -271,6 +290,7 @@ async function analyticsGet<T = any>(
   const apiKey = await getAnalyticsApiKey();
   try {
     const url = `${ANALYTICS_BASE}${path}`;
+    logAnalyticsRequest('GET', path, params);
     const response = await axios.get(url, {
       headers: { Authorization: `Bearer ${apiKey}` },
       params,
@@ -294,6 +314,7 @@ async function analyticsPost<T = any>(
   const apiKey = await getAnalyticsApiKey();
   try {
     const url = `${ANALYTICS_BASE}${path}`;
+    logAnalyticsRequest('POST', path, params, body);
     log(`[ScraperAnalytics] → POST ${url} body=${JSON.stringify(body)}`, 'info');
     const response = await axios.post(url, body, {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
@@ -314,6 +335,7 @@ async function analyticsDelete(path: string): Promise<boolean> {
   const apiKey = await getAnalyticsApiKey();
   try {
     const url = `${ANALYTICS_BASE}${path}`;
+    logAnalyticsRequest('DELETE', path);
     await axios.delete(url, {
       headers: { Authorization: `Bearer ${apiKey}` },
       timeout: 20000

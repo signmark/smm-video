@@ -229,6 +229,32 @@ export interface MetricsRefreshResponse {
   errors: string[];
 }
 
+function logMetricsRefreshFailure(
+  channelIds: string,
+  days: number,
+  force: boolean,
+  error: Error,
+): void {
+  const request = {
+    method: 'POST',
+    url: `${ANALYTICS_BASE}/api/v1/monitoring/scheduler/metrics-refresh`,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: 'Bearer [REDACTED]',
+    },
+    query: {
+      channel_ids: channelIds,
+      days,
+      force,
+    },
+    body: {},
+  };
+  log.warn(
+    `metrics-refresh failed request=${JSON.stringify(request)} error=${error.message}`,
+    'analytics',
+  );
+}
+
 // ─── Вспомогательные функции запроса ──────────────────────────────────────────
 
 async function analyticsGet<T = any>(
@@ -421,16 +447,74 @@ export async function refreshChannelMetrics(params: {
   days?: number;
   force?: boolean;
 }): Promise<MetricsRefreshResponse | null> {
-  const channelIds = params.channels.map(c => c.id).join(',');
   const days = params.days ?? 7;
   const force = params.force ?? true;
+  const refresh = (channelIds: string) => analyticsPost<MetricsRefreshResponse>(
+      '/api/v1/monitoring/scheduler/metrics-refresh',
+      {},
+      { channel_ids: channelIds, days, force },
+      true,
+    );
+  const channelIds = params.channels.map(c => c.id).join(',');
+
   log(`[ScraperAnalytics] metrics-refresh query: channel_ids=${channelIds}&days=${days}&force=${force}`, 'info');
-  return analyticsPost<MetricsRefreshResponse>(
-    '/api/v1/monitoring/scheduler/metrics-refresh',
-    {},
-    { channel_ids: channelIds, days, force },
-    true,
-  );
+
+  try {
+    return await refresh(channelIds);
+  } catch (batchError: any) {
+    logMetricsRefreshFailure(channelIds, days, force, batchError);
+    if (params.channels.length <= 1) {
+      const channel = params.channels[0];
+      throw new Error(
+        `Не удалось обновить ${channel.platform}:${channel.platform_channel_id}: ${batchError.message}`,
+      );
+    }
+    if (!String(batchError.message).includes('HTTP 500')) throw batchError;
+
+    // Scraper может вернуть непрозрачный HTTP 500 для всего пакета. Повтор по одному
+    // сохраняет метрики исправных каналов и показывает, какой именно канал падает.
+    log.warn(
+      `Пакетное обновление ${params.channels.length} каналов не удалось; повторяем каналы по одному`,
+      'analytics',
+    );
+
+    const aggregate: MetricsRefreshResponse = {
+      status: 'completed',
+      processed: 0,
+      failed: 0,
+      skipped: 0,
+      duration_seconds: 0,
+      errors: [],
+    };
+    let successfulChannels = 0;
+
+    for (const channel of params.channels) {
+      try {
+        const result = await refresh(channel.id);
+        if (!result) throw new Error('Analytics API вернул пустой ответ');
+        aggregate.processed += result.processed || 0;
+        aggregate.failed += result.failed || 0;
+        aggregate.skipped += result.skipped || 0;
+        aggregate.duration_seconds += result.duration_seconds || 0;
+        successfulChannels += 1;
+        aggregate.errors.push(...(result.errors || []).map(
+          error => `${channel.platform}:${channel.platform_channel_id}: ${error}`,
+        ));
+      } catch (channelError: any) {
+        logMetricsRefreshFailure(channel.id, days, force, channelError);
+        aggregate.failed += 1;
+        aggregate.errors.push(
+          `${channel.platform}:${channel.platform_channel_id}: ${channelError.message}`,
+        );
+      }
+    }
+
+    if (aggregate.failed > 0) {
+      aggregate.status = successfulChannels > 0 ? 'partial' : 'failed';
+    }
+
+    return aggregate;
+  }
 }
 
 // ─── Авторегистрация каналов из кампании ─────────────────────────────────────

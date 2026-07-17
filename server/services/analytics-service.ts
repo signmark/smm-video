@@ -296,6 +296,15 @@ export class AnalyticsService {
             skipped: refreshResult?.skipped || 0,
           };
         }
+        if (refreshResult.failed > 0 || refreshResult.status === 'partial') {
+          return {
+            success: true,
+            message: `Аналитика обновлена частично. Ошибки: ${refreshResult.errors.join('; ')}`,
+            processed: refreshResult.processed || 0,
+            failed: refreshResult.failed || 0,
+            skipped: refreshResult.skipped || 0,
+          };
+        }
         log(`[AnalyticsService] 🔄 Обновление метрик запрошено для ${channelObjects.length} каналов кампании ${campaignId}`, 'info');
       } else {
         log(`[AnalyticsService] ⏳ Каналы зарегистрированы, но первичный сбор данных ещё не завершён`, 'info');

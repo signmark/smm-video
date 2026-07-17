@@ -95,4 +95,80 @@ describe('scraper analytics client', () => {
     await expect(getMonitoredChannels({ page_size: 100 }, true))
       .rejects.toThrow('Analytics API отклонил ключ доступа (HTTP 401): Invalid API key');
   });
+
+  it('retries channels separately when the batch refresh returns HTTP 500', async () => {
+    vi.mocked(axios.post)
+      .mockRejectedValueOnce({
+        message: 'Request failed with status code 500',
+        response: { status: 500, data: { detail: 'Internal Server Error' } },
+      })
+      .mockResolvedValueOnce({
+        status: 200,
+        data: {
+          status: 'completed',
+          processed: 3,
+          failed: 0,
+          skipped: 0,
+          duration_seconds: 1,
+          errors: [],
+        },
+      })
+      .mockRejectedValueOnce({
+        message: 'Request failed with status code 500',
+        response: { status: 500, data: { detail: 'Internal Server Error' } },
+      });
+
+    const result = await refreshChannelMetrics({
+      channels: [
+        { id: 'telegram-uuid', platform: 'telegram', platform_channel_id: '@channel' },
+        { id: 'vk-uuid', platform: 'vk', platform_channel_id: '123' },
+      ],
+      days: 7,
+    });
+
+    expect(axios.post).toHaveBeenCalledTimes(3);
+    expect(vi.mocked(axios.post).mock.calls[1][2]).toEqual(expect.objectContaining({
+      params: expect.objectContaining({ channel_ids: 'telegram-uuid' }),
+    }));
+    expect(vi.mocked(axios.post).mock.calls[2][2]).toEqual(expect.objectContaining({
+      params: expect.objectContaining({ channel_ids: 'vk-uuid' }),
+    }));
+    expect(result).toEqual(expect.objectContaining({
+      status: 'partial',
+      processed: 3,
+      failed: 1,
+      errors: [
+        expect.stringContaining('vk:123'),
+      ],
+    }));
+    expect(log.warn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        '"query":{"channel_ids":"telegram-uuid,vk-uuid","days":7,"force":true}',
+      ),
+      'analytics',
+    );
+    expect(log.warn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        '"query":{"channel_ids":"vk-uuid","days":7,"force":true}',
+      ),
+      'analytics',
+    );
+    expect(JSON.stringify(vi.mocked(log.warn).mock.calls)).toContain('Bearer [REDACTED]');
+    expect(JSON.stringify(vi.mocked(log.warn).mock.calls)).not.toContain('test-key');
+  });
+
+  it('identifies the channel when a single-channel refresh fails', async () => {
+    vi.mocked(axios.post).mockRejectedValue({
+      message: 'Request failed with status code 500',
+      response: { status: 500, data: { detail: 'Internal Server Error' } },
+    });
+
+    await expect(refreshChannelMetrics({
+      channels: [
+        { id: 'telegram-uuid', platform: 'telegram', platform_channel_id: '@channel' },
+      ],
+    })).rejects.toThrow(
+      'Не удалось обновить telegram:@channel: Analytics API вернул HTTP 500',
+    );
+  });
 });

@@ -62,7 +62,7 @@ describe('scraper analytics client', () => {
       expect.objectContaining({
         headers: expect.objectContaining({ Authorization: 'Bearer test-key' }),
         params: {
-          channel_ids: ['channel-uuid'],
+          channel_ids: 'channel-uuid',
           days: 30,
           force: true,
         },
@@ -70,7 +70,7 @@ describe('scraper analytics client', () => {
       }),
     );
     expect(log.warn).toHaveBeenCalledWith(
-      'scraper request={"method":"POST","url":"http://analytics.test/api/v1/monitoring/scheduler/metrics-refresh","headers":{"Content-Type":"application/json","Authorization":"Bearer [REDACTED]"},"query":{"channel_ids":["channel-uuid"],"days":30,"force":true},"body":{}}',
+      'scraper request={"method":"POST","url":"http://analytics.test/api/v1/monitoring/scheduler/metrics-refresh","headers":{"Content-Type":"application/json","Authorization":"Bearer [REDACTED]"},"query":{"channel_ids":"channel-uuid","days":30,"force":true},"body":{}}',
       'analytics',
     );
   });
@@ -237,123 +237,7 @@ describe('scraper analytics client', () => {
       .rejects.toThrow('Telegram channel is not public');
   });
 
-  it('retries channels separately when the batch refresh returns HTTP 500', async () => {
-    vi.mocked(axios.post)
-      .mockRejectedValueOnce({
-        message: 'Request failed with status code 500',
-        response: { status: 500, data: { detail: 'Internal Server Error' } },
-      })
-      .mockResolvedValueOnce({
-        status: 200,
-        data: {
-          status: 'completed',
-          processed: 3,
-          failed: 0,
-          skipped: 0,
-          duration_seconds: 1,
-          errors: [],
-        },
-      })
-      .mockRejectedValueOnce({
-        message: 'Request failed with status code 500',
-        response: { status: 500, data: { detail: 'Internal Server Error' } },
-      });
-
-    const result = await refreshChannelMetrics({
-      channels: [
-        { id: 'telegram-uuid', platform: 'telegram', platform_channel_id: '@channel' },
-        { id: 'vk-uuid', platform: 'vk', platform_channel_id: '123' },
-      ],
-      days: 7,
-    });
-
-    expect(axios.post).toHaveBeenCalledTimes(3);
-    expect(vi.mocked(axios.post).mock.calls[1][2]).toEqual(expect.objectContaining({
-      params: expect.objectContaining({ channel_ids: ['telegram-uuid'] }),
-    }));
-    expect(vi.mocked(axios.post).mock.calls[2][2]).toEqual(expect.objectContaining({
-      params: expect.objectContaining({ channel_ids: ['vk-uuid'] }),
-    }));
-    expect(result).toEqual(expect.objectContaining({
-      status: 'partial',
-      processed: 3,
-      failed: 1,
-      errors: [
-        expect.stringContaining('vk:123'),
-      ],
-    }));
-    expect(log.warn).toHaveBeenCalledWith(
-      expect.stringContaining(
-        '"query":{"channel_ids":["telegram-uuid","vk-uuid"],"days":7,"force":true}',
-      ),
-      'analytics',
-    );
-    expect(log.warn).toHaveBeenCalledWith(
-      expect.stringContaining(
-        'scraper_channels=[{"scraper_channel_id":"telegram-uuid","platform":"telegram","platform_channel_id":"@channel"},{"scraper_channel_id":"vk-uuid","platform":"vk","platform_channel_id":"123"}]',
-      ),
-      'analytics',
-    );
-    expect(log.warn).toHaveBeenCalledWith(
-      expect.stringContaining(
-        '"query":{"channel_ids":["vk-uuid"],"days":7,"force":true}',
-      ),
-      'analytics',
-    );
-    expect(JSON.stringify(vi.mocked(log.warn).mock.calls)).toContain('Bearer [REDACTED]');
-    expect(JSON.stringify(vi.mocked(log.warn).mock.calls)).not.toContain('test-key');
-  });
-
-  it('retries channels separately when the batch connection is aborted', async () => {
-    vi.mocked(axios.post)
-      .mockRejectedValueOnce({
-        code: 'ECONNABORTED',
-        message: 'timeout of 60000ms exceeded',
-      })
-      .mockResolvedValueOnce({
-        data: {
-          status: 'completed',
-          processed: 1,
-          failed: 0,
-          skipped: 0,
-          duration_seconds: 1,
-          errors: [],
-        },
-      })
-      .mockResolvedValueOnce({
-        data: {
-          status: 'completed',
-          processed: 2,
-          failed: 0,
-          skipped: 0,
-          duration_seconds: 1,
-          errors: [],
-        },
-      });
-
-    const result = await refreshChannelMetrics({
-      channels: [
-        { id: 'telegram-uuid', platform: 'telegram', platform_channel_id: '@channel' },
-        { id: 'vk-uuid', platform: 'vk', platform_channel_id: '123' },
-      ],
-      days: 7,
-    });
-
-    expect(axios.post).toHaveBeenCalledTimes(3);
-    expect(result).toEqual(expect.objectContaining({
-      status: 'completed',
-      processed: 3,
-      failed: 0,
-    }));
-    expect(log.warn).toHaveBeenCalledWith(
-      expect.stringContaining(
-        'ECONNABORTED: timeout of 60000ms exceeded elapsed_ms=',
-      ),
-      'analytics',
-    );
-  });
-
-  it('identifies the channel when a single-channel refresh fails', async () => {
+  it('propagates batch errors directly without retry', async () => {
     vi.mocked(axios.post).mockRejectedValue({
       message: 'Request failed with status code 500',
       response: { status: 500, data: { detail: 'Internal Server Error' } },
@@ -362,9 +246,18 @@ describe('scraper analytics client', () => {
     await expect(refreshChannelMetrics({
       channels: [
         { id: 'telegram-uuid', platform: 'telegram', platform_channel_id: '@channel' },
+        { id: 'vk-uuid', platform: 'vk', platform_channel_id: '123' },
       ],
-    })).rejects.toThrow(
-      'Не удалось обновить telegram:@channel: Analytics API вернул HTTP 500',
+      days: 7,
+    })).rejects.toThrow('Analytics API вернул HTTP 500 для POST /api/v1/monitoring/scheduler/metrics-refresh: Internal Server Error');
+
+    expect(axios.post).toHaveBeenCalledTimes(1);
+    expect(log.warn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        '"query":{"channel_ids":"telegram-uuid,vk-uuid","days":7,"force":true}',
+      ),
+      'analytics',
     );
+    expect(JSON.stringify(vi.mocked(log.warn).mock.calls)).not.toContain('test-key');
   });
 });

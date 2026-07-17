@@ -88,10 +88,10 @@ export default function AnalyticsPage() {
         description: "Аналитика успешно обновлена из последних данных",
       });
     },
-    onError: (error) => {
+    onError: (error: Error) => {
       toast({
         title: "❌ Ошибка обновления", 
-        description: "Не удалось обновить данные. Попробуйте позже.",
+        description: error.message || "Не удалось обновить данные. Попробуйте позже.",
         variant: "destructive"
       });
     }

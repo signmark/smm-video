@@ -11,6 +11,25 @@ async function getAnalyticsApiKey(): Promise<string> {
   return getScraperApiKey();
 }
 
+function getAnalyticsErrorMessage(method: string, path: string, err: any): string {
+  const status = err.response?.status;
+  const responseData = err.response?.data;
+  const detail = typeof responseData === 'string'
+    ? responseData
+    : responseData?.detail || responseData?.error || responseData?.message;
+  const suffix = detail ? `: ${String(detail).slice(0, 500)}` : '';
+
+  if (status === 401 || status === 403) {
+    return `Analytics API отклонил ключ доступа (HTTP ${status})${suffix}`;
+  }
+
+  if (status) {
+    return `Analytics API вернул HTTP ${status} для ${method} ${path}${suffix}`;
+  }
+
+  return `Analytics API недоступен для ${method} ${path}: ${err.code || err.message || 'network error'}`;
+}
+
 // ─── Типы ─────────────────────────────────────────────────────────────────────
 
 export interface ChannelResponse {
@@ -223,13 +242,17 @@ async function analyticsGet<T = any>(path: string, params?: Record<string, any>)
     });
     return response.data as T;
   } catch (err: any) {
-    log(`[ScraperAnalytics] GET ${path} error: ${err.response?.status} ${err.message}`, 'error');
-    if (err.response?.data?.detail) log(`[ScraperAnalytics] detail: ${err.response.data.detail}`, 'error');
+    log.warn(getAnalyticsErrorMessage('GET', path, err), 'analytics');
     return null;
   }
 }
 
-async function analyticsPost<T = any>(path: string, body: Record<string, any> = {}, params?: Record<string, any>): Promise<T | null> {
+async function analyticsPost<T = any>(
+  path: string,
+  body: Record<string, any> = {},
+  params?: Record<string, any>,
+  throwOnError = false,
+): Promise<T | null> {
   const apiKey = await getAnalyticsApiKey();
   try {
     const url = `${ANALYTICS_BASE}${path}`;
@@ -242,8 +265,9 @@ async function analyticsPost<T = any>(path: string, body: Record<string, any> = 
     log(`[ScraperAnalytics] ← POST ${path} status=${response.status} response=${JSON.stringify(response.data)}`, 'info');
     return response.data as T;
   } catch (err: any) {
-    log(`[ScraperAnalytics] POST ${path} error: ${err.response?.status} ${err.message}`, 'error');
-    if (err.response?.data) log(`[ScraperAnalytics] response body: ${JSON.stringify(err.response.data)}`, 'error');
+    const message = getAnalyticsErrorMessage('POST', path, err);
+    log.warn(message, 'analytics');
+    if (throwOnError) throw new Error(message);
     return null;
   }
 }
@@ -258,7 +282,7 @@ async function analyticsDelete(path: string): Promise<boolean> {
     });
     return true;
   } catch (err: any) {
-    log(`[ScraperAnalytics] DELETE ${path} error: ${err.response?.status} ${err.message}`, 'error');
+    log.warn(getAnalyticsErrorMessage('DELETE', path, err), 'analytics');
     return false;
   }
 }
@@ -395,7 +419,8 @@ export async function refreshChannelMetrics(params: {
   return analyticsPost<MetricsRefreshResponse>(
     '/api/v1/monitoring/scheduler/metrics-refresh',
     {},
-    { channel_ids: channelIds, days, force }
+    { channel_ids: channelIds, days, force },
+    true,
   );
 }
 

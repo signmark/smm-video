@@ -56,7 +56,15 @@ async function throwIfResNotOk(res: Response) {
       }
     }
     
-    const error = new Error(`${res.status}: ${text}`);
+    let message = text;
+    try {
+      const errorData = JSON.parse(text);
+      message = errorData.error || errorData.message || errorData.detail || text;
+    } catch {
+      // Ответ не JSON — показываем исходный текст сервера.
+    }
+
+    const error = new Error(message);
     (error as any).status = res.status;
     (error as any).response = { status: res.status, statusText: res.statusText };
     (error as any).config = { url: res.url };

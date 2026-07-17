@@ -200,4 +200,53 @@ describe('AnalyticsService.refreshCampaignAnalytics', () => {
       processed: 0,
     }));
   });
+
+  it('refreshes metrics immediately when force-parse completes instantly', async () => {
+    vi.mocked(axios.get).mockResolvedValue({
+      data: {
+        data: {
+          social_media_settings: {
+            telegram: { chatId: '@public_channel' },
+          },
+        },
+      },
+    } as any);
+    vi.mocked(ensureChannelsRegistered).mockResolvedValue(new Map());
+    vi.mocked(getAllMonitoredChannels).mockResolvedValue({
+      items: [{
+        id: 'tg-monitor',
+        platform: 'telegram',
+        platform_channel_id: '@public_channel',
+        last_parsed_at: null,
+      }],
+    } as any);
+    vi.mocked(getChannelParseStatus).mockResolvedValue({
+      channel_id: 'tg-monitor',
+      status: 'idle',
+      last_parsed_at: null,
+    } as any);
+    vi.mocked(forceParseChannel).mockResolvedValue({
+      message: 'Parse completed',
+      task_id: 'task-1',
+      status: 'completed',
+    });
+    vi.mocked(refreshChannelMetrics).mockResolvedValue({
+      status: 'completed',
+      processed: 1,
+      failed: 0,
+      skipped: 0,
+      duration_seconds: 1,
+      errors: [],
+    });
+
+    const result = await AnalyticsService.refreshCampaignAnalytics('campaign-1', 7);
+
+    expect(forceParseChannel).toHaveBeenCalledWith('tg-monitor', true);
+    expect(refreshChannelMetrics).toHaveBeenCalled();
+    expect(result).toEqual(expect.objectContaining({
+      success: true,
+      message: expect.stringContaining('Аналитика обновлена'),
+      processed: 1,
+    }));
+  });
 });

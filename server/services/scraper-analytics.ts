@@ -114,7 +114,7 @@ export function getScraperCampaignChannels(
   }
 
   const vkGroupId = String(socialSettings?.vk?.groupId ?? '').trim();
-  if (vkGroupId) {
+  if (vkGroupId && /^\d+$/.test(vkGroupId)) {
     channels.push({
       platform: 'vk',
       id: vkGroupId,

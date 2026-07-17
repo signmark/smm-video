@@ -207,6 +207,13 @@ describe('scraper analytics client', () => {
     expect(getScraperCampaignChannels({
       telegram: { chatId: '-1001234567890' },
     })).toEqual([]);
+
+    expect(getScraperCampaignChannels({
+      telegram: { chatId: '@public_channel' },
+      vk: { groupId: 'invalid-group-id' },
+    })).toEqual([
+      { platform: 'telegram', id: '@public_channel', name: undefined },
+    ]);
   });
 
   it('rejects a failed force-parse response with its real message', async () => {

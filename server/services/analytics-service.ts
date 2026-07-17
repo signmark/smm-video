@@ -299,7 +299,16 @@ export class AnalyticsService {
                   || `Скрапер не смог запустить сбор данных для ${found.platform}:${found.platform_channel_id}`,
               );
             }
-            log(`[AnalyticsService] ✅ force-parse triggered for ${found.platform}:${found.platform_channel_id}`, 'info');
+            if (forceResult.status === 'completed') {
+              log(`[AnalyticsService] ✅ force-parse already completed for ${found.platform}:${found.platform_channel_id}`, 'info');
+              channelObjects.push({
+                id: found.id,
+                platform: found.platform,
+                platform_channel_id: found.platform_channel_id,
+              });
+            } else {
+              log(`[AnalyticsService] ✅ force-parse triggered for ${found.platform}:${found.platform_channel_id}`, 'info');
+            }
             continue;
           }
           channelObjects.push({

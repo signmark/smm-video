@@ -303,6 +303,7 @@
     "updateData": "Actualizar datos",
     "dataUpdated": "Datos actualizados",
     "partiallyUpdated": "Datos actualizados parcialmente",
+    "refreshStarted": "Actualización iniciada",
     "rebuilding": "Reconstruyendo...",
     "rebuildData": "Reconstruir datos",
     "errorLoading": "Error al cargar datos de analíticas. Por favor, actualice la página.",

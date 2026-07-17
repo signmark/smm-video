@@ -303,6 +303,7 @@
     "updateData": "Update data",
     "dataUpdated": "Data updated",
     "partiallyUpdated": "Data partially updated",
+    "refreshStarted": "Refresh started",
     "rebuilding": "Rebuilding...",
     "rebuildData": "Rebuild data",
     "errorLoading": "Error loading analytics data. Please try refreshing the page.",

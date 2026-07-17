@@ -83,9 +83,13 @@ export default function AnalyticsPage() {
       return response;
     },
     onSuccess: (response) => {
+      const isPartial = Number(response.failed || 0) > 0;
       toast({
-        title: "✅ Данные обновлены",
+        title: isPartial
+          ? t('analytics.partiallyUpdated')
+          : t('analytics.dataUpdated'),
         description: response.message || "Аналитика успешно обновлена из последних данных",
+        variant: isPartial ? 'destructive' : 'default',
       });
     },
     onError: (error: Error) => {

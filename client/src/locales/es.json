@@ -301,6 +301,8 @@
     "30days": "30 días",
     "updating": "Actualizando...",
     "updateData": "Actualizar datos",
+    "dataUpdated": "Datos actualizados",
+    "partiallyUpdated": "Datos actualizados parcialmente",
     "rebuilding": "Reconstruyendo...",
     "rebuildData": "Reconstruir datos",
     "errorLoading": "Error al cargar datos de analíticas. Por favor, actualice la página.",

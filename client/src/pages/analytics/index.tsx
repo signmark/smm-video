@@ -70,26 +70,18 @@ export default function AnalyticsPage() {
           days: days
         }
       });
-
-      if (!response.success) {
-        throw new Error(response.error || response.message || 'Не удалось обновить аналитику');
-      }
       
       console.log('📊 Backend ответ:', response);
       
-      // После сбора данных через N8N, обновляем кэш для загрузки новых данных
-      await queryClient.invalidateQueries({ queryKey: ['analytics', selectedCampaign, selectedPeriod] });
+      // Fire-and-forget: обновляем кэш, не ждём скрейпер
+      queryClient.invalidateQueries({ queryKey: ['analytics', selectedCampaign, selectedPeriod] });
       
       return response;
     },
-    onSuccess: (response) => {
-      const isPartial = Number(response.failed || 0) > 0;
+    onSuccess: () => {
       toast({
-        title: isPartial
-          ? t('analytics.partiallyUpdated')
-          : t('analytics.dataUpdated'),
-        description: response.message || "Аналитика успешно обновлена из последних данных",
-        variant: isPartial ? 'destructive' : 'default',
+        title: t('analytics.dataUpdated'),
+        description: "Аналитика обновлена из последних данных",
       });
     },
     onError: (error: Error) => {

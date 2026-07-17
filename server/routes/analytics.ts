@@ -24,14 +24,14 @@ export function registerAnalyticsRoutes(app: Express) {
 
       log(`[Analytics Route] 🚀 Запрос на обновление аналитики через скрейпер для кампании ${campaignId}`, 'info');
 
-      const result = await AnalyticsService.refreshCampaignAnalytics(campaignId, Number(days));
-      log(`[Analytics Route] 🔄 refreshCampaignAnalytics: ${result.message}`, 'info');
+      // Fire-and-forget: не ждём ответ скрейпера, иначе кнопка зависает на minutes
+      AnalyticsService.refreshCampaignAnalytics(campaignId, Number(days)).then(result => {
+        log(`[Analytics Route] 🔄 refreshCampaignAnalytics: ${result.message}`, 'info');
+      }).catch(err => {
+        log(`[Analytics Route] ⚠️ refreshCampaignAnalytics error: ${err.message}`, 'warn');
+      });
 
-      if (!result.success) {
-        return res.status(502).json({ ...result, error: result.message });
-      }
-
-      return res.json(result);
+      return res.json({ success: true, message: "Запрос на обновление данных принят" });
     } catch (error: any) {
       log(`[Analytics Route] Ошибка при обновлении: ${error.message}`, 'error');
       res.status(500).json({ success: false, error: "Ошибка при обновлении данных" });

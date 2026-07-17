@@ -25,6 +25,8 @@ import {
   ensureChannelsRegistered,
   getAllMonitoredChannels,
   getMonitoredChannels,
+  getScraperCampaignChannels,
+  forceParseChannel,
   refreshChannelMetrics,
 } from '../services/scraper-analytics';
 
@@ -60,14 +62,15 @@ describe('scraper analytics client', () => {
       expect.objectContaining({
         headers: expect.objectContaining({ Authorization: 'Bearer test-key' }),
         params: {
-          channel_ids: 'channel-uuid',
+          channel_ids: ['channel-uuid'],
           days: 30,
           force: true,
         },
+        paramsSerializer: { indexes: null },
       }),
     );
     expect(log.warn).toHaveBeenCalledWith(
-      'scraper request={"method":"POST","url":"http://analytics.test/api/v1/monitoring/scheduler/metrics-refresh","headers":{"Content-Type":"application/json","Authorization":"Bearer [REDACTED]"},"query":{"channel_ids":"channel-uuid","days":30,"force":true},"body":{}}',
+      'scraper request={"method":"POST","url":"http://analytics.test/api/v1/monitoring/scheduler/metrics-refresh","headers":{"Content-Type":"application/json","Authorization":"Bearer [REDACTED]"},"query":{"channel_ids":["channel-uuid"],"days":30,"force":true},"body":{}}',
       'analytics',
     );
   });
@@ -186,6 +189,39 @@ describe('scraper analytics client', () => {
     );
   });
 
+  it('uses only a public Telegram username for scraper analytics', () => {
+    expect(getScraperCampaignChannels({
+      telegram: { chatId: '@public_channel' },
+      vk: { groupId: '228626989' },
+    })).toEqual([
+      { platform: 'telegram', id: '@public_channel', name: undefined },
+      { platform: 'vk', id: '228626989', name: undefined },
+    ]);
+
+    expect(getScraperCampaignChannels({
+      telegram: { chatId: '-1001234567890', username: 'public_channel' },
+    })).toEqual([
+      { platform: 'telegram', id: '@public_channel', name: undefined },
+    ]);
+
+    expect(getScraperCampaignChannels({
+      telegram: { chatId: '-1001234567890' },
+    })).toEqual([]);
+  });
+
+  it('rejects a failed force-parse response with its real message', async () => {
+    vi.mocked(axios.post).mockResolvedValue({
+      data: {
+        message: 'Telegram channel is not public',
+        task_id: 'task-1',
+        status: 'failed',
+      },
+    });
+
+    await expect(forceParseChannel('channel-uuid', true))
+      .rejects.toThrow('Telegram channel is not public');
+  });
+
   it('retries channels separately when the batch refresh returns HTTP 500', async () => {
     vi.mocked(axios.post)
       .mockRejectedValueOnce({
@@ -218,10 +254,10 @@ describe('scraper analytics client', () => {
 
     expect(axios.post).toHaveBeenCalledTimes(3);
     expect(vi.mocked(axios.post).mock.calls[1][2]).toEqual(expect.objectContaining({
-      params: expect.objectContaining({ channel_ids: 'telegram-uuid' }),
+      params: expect.objectContaining({ channel_ids: ['telegram-uuid'] }),
     }));
     expect(vi.mocked(axios.post).mock.calls[2][2]).toEqual(expect.objectContaining({
-      params: expect.objectContaining({ channel_ids: 'vk-uuid' }),
+      params: expect.objectContaining({ channel_ids: ['vk-uuid'] }),
     }));
     expect(result).toEqual(expect.objectContaining({
       status: 'partial',
@@ -233,7 +269,7 @@ describe('scraper analytics client', () => {
     }));
     expect(log.warn).toHaveBeenCalledWith(
       expect.stringContaining(
-        '"query":{"channel_ids":"telegram-uuid,vk-uuid","days":7,"force":true}',
+        '"query":{"channel_ids":["telegram-uuid","vk-uuid"],"days":7,"force":true}',
       ),
       'analytics',
     );
@@ -245,7 +281,7 @@ describe('scraper analytics client', () => {
     );
     expect(log.warn).toHaveBeenCalledWith(
       expect.stringContaining(
-        '"query":{"channel_ids":"vk-uuid","days":7,"force":true}',
+        '"query":{"channel_ids":["vk-uuid"],"days":7,"force":true}',
       ),
       'analytics',
     );

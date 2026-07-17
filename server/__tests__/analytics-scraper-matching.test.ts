@@ -15,6 +15,16 @@ vi.mock('axios', () => ({
 vi.mock('../services/scraper-analytics', () => ({
   getAllMonitoredChannels: vi.fn(),
   getChannelPosts: vi.fn(),
+  getScraperCampaignChannels: vi.fn((settings: any) => {
+    const channels = [];
+    if (settings?.telegram?.chatId?.startsWith('@') || settings?.telegram?.chatId === 'tg-channel') {
+      channels.push({ platform: 'telegram', id: settings.telegram.chatId });
+    }
+    if (settings?.vk?.groupId) {
+      channels.push({ platform: 'vk', id: settings.vk.groupId });
+    }
+    return channels;
+  }),
 }));
 
 import axios from 'axios';

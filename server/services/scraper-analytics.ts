@@ -78,6 +78,50 @@ export interface ParseStatus {
   next_parse_at: string | null;
 }
 
+export interface ScraperCampaignChannel {
+  platform: 'telegram' | 'vk';
+  id: string;
+  name?: string;
+}
+
+function normalizeTelegramPublicUsername(value: unknown): string | null {
+  const raw = String(value ?? '').trim();
+  if (!raw) return null;
+  const username = raw.replace(/^@+/, '');
+  return /^[A-Za-z0-9_]{5,32}$/.test(username) ? `@${username}` : null;
+}
+
+export function getScraperCampaignChannels(
+  socialSettings: any,
+  campaignName?: string,
+): ScraperCampaignChannel[] {
+  const channels: ScraperCampaignChannel[] = [];
+  const telegram = socialSettings?.telegram;
+  const telegramChatId = String(telegram?.chatId ?? '').trim();
+  const telegramPublicId = telegramChatId.startsWith('@')
+    ? normalizeTelegramPublicUsername(telegramChatId)
+    : normalizeTelegramPublicUsername(telegram?.username);
+
+  if (telegramPublicId) {
+    channels.push({
+      platform: 'telegram',
+      id: telegramPublicId,
+      name: campaignName,
+    });
+  }
+
+  const vkGroupId = String(socialSettings?.vk?.groupId ?? '').trim();
+  if (vkGroupId) {
+    channels.push({
+      platform: 'vk',
+      id: vkGroupId,
+      name: campaignName,
+    });
+  }
+
+  return channels;
+}
+
 export interface AnalyticsOverview {
   channel_id: string;
   total_posts: number;
@@ -319,6 +363,7 @@ async function analyticsPost<T = any>(
     const response = await axios.post(url, body, {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
       params,
+      paramsSerializer: { indexes: null },
       timeout: 60000
     });
     log(`[ScraperAnalytics] ← POST ${path} status=${response.status} response=${JSON.stringify(response.data)}`, 'info');
@@ -406,12 +451,29 @@ export async function forceParseChannel(
   channelId: string,
   throwOnError = false,
 ): Promise<{ message: string; task_id: string; status: string } | null> {
-  return analyticsPost(
+  const result = await analyticsPost<{ message: string; task_id: string; status: string }>(
     `/api/v1/monitoring/channels/${channelId}/force-parse`,
     {},
     undefined,
     throwOnError,
   );
+  if (!result) return null;
+
+  if (result.status === 'failed') {
+    const message = result.message || `force-parse завершился ошибкой для канала ${channelId}`;
+    log.warn(message, 'analytics');
+    if (throwOnError) throw new Error(message);
+    return null;
+  }
+
+  if (result.status !== 'started' && result.status !== 'completed') {
+    const message = `Analytics API вернул неизвестный статус force-parse: ${String(result.status)}`;
+    log.warn(message, 'analytics');
+    if (throwOnError) throw new Error(message);
+    return null;
+  }
+
+  return result;
 }
 
 // ─── Посты каналов ────────────────────────────────────────────────────────────
@@ -511,15 +573,17 @@ export async function refreshChannelMetrics(params: {
 }): Promise<MetricsRefreshResponse | null> {
   const days = params.days ?? 7;
   const force = params.force ?? true;
-  const refresh = (channelIds: string) => analyticsPost<MetricsRefreshResponse>(
+  // Live OpenAPI declares channel_ids as a query array. Axios indexes:null
+  // serializes it as channel_ids=uuid1&channel_ids=uuid2 for FastAPI.
+  const refresh = (channelIds: string[]) => analyticsPost<MetricsRefreshResponse>(
       '/api/v1/monitoring/scheduler/metrics-refresh',
       {},
       { channel_ids: channelIds, days, force },
       true,
     );
-  const channelIds = params.channels.map(c => c.id).join(',');
+  const channelIds = params.channels.map(c => c.id);
 
-  log(`[ScraperAnalytics] metrics-refresh query: channel_ids=${channelIds}&days=${days}&force=${force}`, 'info');
+  log(`[ScraperAnalytics] metrics-refresh query: channel_ids=${channelIds.join(',')}&days=${days}&force=${force}`, 'info');
 
   try {
     return await refresh(channelIds);
@@ -552,7 +616,7 @@ export async function refreshChannelMetrics(params: {
 
     for (const channel of params.channels) {
       try {
-        const result = await refresh(channel.id);
+        const result = await refresh([channel.id]);
         if (!result) throw new Error('Analytics API вернул пустой ответ');
         aggregate.processed += result.processed || 0;
         aggregate.failed += result.failed || 0;

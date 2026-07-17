@@ -2178,7 +2178,10 @@ ${trendSummaries.length > 0 ? `ВЫВОДЫ ПО ТРЕНДАМ:\n${trendSummari
   app.get('/api/scraper/monitoring/channels', authenticateUser, async (req: Request, res: Response) => {
     try {
       const { platform, is_active, page, page_size, campaignId } = req.query as Record<string, string>;
-      const { getMonitoredChannels } = await import('../services/scraper-analytics');
+      const {
+        getMonitoredChannels,
+        getScraperCampaignChannels,
+      } = await import('../services/scraper-analytics');
       const result = await getMonitoredChannels({
         platform: platform || undefined,
         is_active: is_active !== undefined ? is_active === 'true' : undefined,
@@ -2189,13 +2192,10 @@ ${trendSummaries.length > 0 ? `ВЫВОДЫ ПО ТРЕНДАМ:\n${trendSummari
       // Если campaignId передан — фильтруем только собственные каналы кампании
       if (campaignId) {
         const campaign = await directusCrud.getById('user_campaigns', campaignId, { useAdminToken: true }) as any;
-        const ownIds = new Set<string>();
-        if (campaign?.social_media_settings?.telegram?.chatId) {
-          ownIds.add(String(campaign.social_media_settings.telegram.chatId));
-        }
-        if (campaign?.social_media_settings?.vk?.groupId) {
-          ownIds.add(String(campaign.social_media_settings.vk.groupId));
-        }
+        const ownIds = new Set(
+          getScraperCampaignChannels(campaign?.social_media_settings)
+            .map(channel => channel.id),
+        );
         const filtered = result.items.filter(ch => ownIds.has(ch.platform_channel_id));
         return res.json({ success: true, data: filtered, total: filtered.length, page: 1, page_size: filtered.length });
       }
@@ -2477,23 +2477,9 @@ ${trendSummaries.length > 0 ? `ВЫВОДЫ ПО ТРЕНДАМ:\n${trendSummari
         return res.status(404).json({ success: false, error: 'Кампания не найдена' });
       }
 
-      const channels: Array<{ platform: string; id: string; name?: string }> = [];
       const sms = campaign.social_media_settings || {};
-
-      if (sms.telegram?.chatId) {
-        channels.push({
-          platform: 'telegram',
-          id: String(sms.telegram.chatId),
-          name: sms.telegram.username ? `@${sms.telegram.username}` : campaign.name
-        });
-      }
-      if (sms.vk?.groupId) {
-        channels.push({
-          platform: 'vk',
-          id: String(sms.vk.groupId),
-          name: campaign.name
-        });
-      }
+      const { getScraperCampaignChannels } = await import('../services/scraper-analytics');
+      const channels = getScraperCampaignChannels(sms, campaign.name);
 
       if (channels.length === 0) {
         return res.json({ success: true, registered: 0, message: 'Telegram и VK не настроены в кампании' });

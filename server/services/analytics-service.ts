@@ -139,17 +139,16 @@ export class AnalyticsService {
     }
 
     // Каналы которые нужно искать в скрейпере
-    const channelsToLookup: Array<{ platform: string; platformId: string }> = [];
-    if (socialSettings.telegram?.chatId) {
-      channelsToLookup.push({ platform: 'telegram', platformId: String(socialSettings.telegram.chatId) });
-    }
-    if (socialSettings.vk?.groupId) {
-      channelsToLookup.push({ platform: 'vk', platformId: String(socialSettings.vk.groupId) });
-    }
+    const {
+      getAllMonitoredChannels,
+      getChannelPosts,
+      getScraperCampaignChannels,
+    } = await import('./scraper-analytics');
+    const channelsToLookup = getScraperCampaignChannels(socialSettings)
+      .map(channel => ({ platform: channel.platform, platformId: channel.id }));
 
     if (channelsToLookup.length === 0) return;
 
-    const { getAllMonitoredChannels, getChannelPosts } = await import('./scraper-analytics');
     const monitored = await getAllMonitoredChannels();
     if (!monitored.items.length) return;
 
@@ -237,30 +236,39 @@ export class AnalyticsService {
         try { socialSettings = JSON.parse(socialSettings); } catch {}
       }
 
-      const channelsToLookup: Array<{ platform: string; platformId: string }> = [];
-      if (socialSettings.telegram?.chatId) {
-        channelsToLookup.push({ platform: 'telegram', platformId: String(socialSettings.telegram.chatId) });
-      }
-      if (socialSettings.vk?.groupId) {
-        channelsToLookup.push({ platform: 'vk', platformId: String(socialSettings.vk.groupId) });
-      }
-
-      if (channelsToLookup.length === 0) {
-        return { success: true, message: 'Каналы кампании не зарегистрированы в скрейпере' };
-      }
-
       const {
         getAllMonitoredChannels,
         getChannelParseStatus,
+        getScraperCampaignChannels,
         refreshChannelMetrics,
         ensureChannelsRegistered,
         forceParseChannel,
       } = await import('./scraper-analytics');
 
+      const channelsToLookup = getScraperCampaignChannels(socialSettings, campaign.name)
+        .map(channel => ({
+          platform: channel.platform,
+          platformId: channel.id,
+          name: channel.name,
+        }));
+      const telegramAnalyticsUnavailable = Boolean(socialSettings.telegram?.chatId)
+        && !channelsToLookup.some(channel => channel.platform === 'telegram');
+      const telegramWarning = telegramAnalyticsUnavailable
+        ? ' Telegram пропущен: для аналитики нужен публичный @username канала.'
+        : '';
+
+      if (channelsToLookup.length === 0) {
+        return {
+          success: false,
+          message: 'Для аналитики Telegram нужен публичный @username канала; VK должен иметь groupId',
+        };
+      }
+
       // Регистрируем если не зарегистрированы
       await ensureChannelsRegistered(channelsToLookup.map(ch => ({
         platform: ch.platform,
-        id: ch.platformId
+        id: ch.platformId,
+        name: ch.name,
       })));
 
       const monitored = await getAllMonitoredChannels(undefined, true);
@@ -274,9 +282,23 @@ export class AnalyticsService {
           const parseStatus = await getChannelParseStatus(found.id, true);
           if (parseStatus?.status === 'parsing') continue;
 
-          if (!found.last_parsed_at) {
+          if (parseStatus?.status === 'error' || !found.last_parsed_at) {
             log(`[AnalyticsService] ⏳ Канал ${found.platform}:${found.platform_channel_id} ещё не спарсен — вызываем force-parse`, 'info');
-            await forceParseChannel(found.id, true);
+            let forceResult;
+            try {
+              forceResult = await forceParseChannel(found.id, true);
+            } catch (forceError: any) {
+              const lastError = parseStatus?.last_error
+                ? `Последняя ошибка парсинга: ${parseStatus.last_error}. `
+                : '';
+              throw new Error(`${lastError}${forceError.message}`);
+            }
+            if (!forceResult) {
+              throw new Error(
+                parseStatus?.last_error
+                  || `Скрапер не смог запустить сбор данных для ${found.platform}:${found.platform_channel_id}`,
+              );
+            }
             log(`[AnalyticsService] ✅ force-parse triggered for ${found.platform}:${found.platform_channel_id}`, 'info');
             continue;
           }
@@ -304,7 +326,7 @@ export class AnalyticsService {
         if (refreshResult.failed > 0 || refreshResult.status === 'partial') {
           return {
             success: true,
-            message: `Аналитика обновлена частично. Ошибки: ${refreshResult.errors.join('; ')}`,
+            message: `Аналитика обновлена частично. Ошибки: ${refreshResult.errors.join('; ')}${telegramWarning}`,
             processed: refreshResult.processed || 0,
             failed: refreshResult.failed || 0,
             skipped: refreshResult.skipped || 0,
@@ -315,7 +337,7 @@ export class AnalyticsService {
         log(`[AnalyticsService] ⏳ Каналы зарегистрированы, но первичный сбор данных ещё не завершён`, 'info');
         return {
           success: true,
-          message: 'Сбор данных по каналам уже выполняется — обновите аналитику чуть позже',
+          message: `Сбор данных по каналам уже выполняется — обновите аналитику чуть позже.${telegramWarning}`,
           processed: 0,
           failed: 0,
           skipped: 0,
@@ -324,7 +346,7 @@ export class AnalyticsService {
 
       return {
         success: true,
-        message: `Аналитика обновлена для ${channelObjects.length} канала(ов)`,
+        message: `Аналитика обновлена для ${channelObjects.length} канала(ов).${telegramWarning}`,
         processed: refreshResult?.processed || 0,
         failed: refreshResult?.failed || 0,
         skipped: refreshResult?.skipped || 0,

@@ -14,10 +14,10 @@ vi.mock('axios', () => ({
 
 vi.mock('../services/scraper-analytics', () => ({
   getAllMonitoredChannels: vi.fn(),
-  getChannelPosts: vi.fn(),
+  getChannelAnalytics: vi.fn(),
   getScraperCampaignChannels: vi.fn((settings: any) => {
     const channels = [];
-    if (settings?.telegram?.chatId?.startsWith('@') || settings?.telegram?.chatId === 'tg-channel') {
+    if (settings?.telegram?.chatId?.startsWith('@')) {
       channels.push({ platform: 'telegram', id: settings.telegram.chatId });
     }
     if (settings?.vk?.groupId) {
@@ -30,9 +30,9 @@ vi.mock('../services/scraper-analytics', () => ({
 import axios from 'axios';
 import { directusApi } from '../directus';
 import { AnalyticsService } from '../services/analytics-service';
-import { getAllMonitoredChannels, getChannelPosts } from '../services/scraper-analytics';
+import { getAllMonitoredChannels, getChannelAnalytics } from '../services/scraper-analytics';
 
-describe('AnalyticsService scraper matching', () => {
+describe('AnalyticsService scraper supplementation', () => {
   const previousAdminToken = process.env.DIRECTUS_ADMIN_TOKEN;
 
   beforeEach(() => {
@@ -48,7 +48,7 @@ describe('AnalyticsService scraper matching', () => {
     else process.env.DIRECTUS_ADMIN_TOKEN = previousAdminToken;
   });
 
-  it('ignores unrelated channel posts and supplements both VK and Telegram', async () => {
+  it('uses current channel aggregates without double-counting stored metrics', async () => {
     vi.mocked(directusApi.get).mockResolvedValue({
       data: {
         data: [{
@@ -56,8 +56,18 @@ describe('AnalyticsService scraper matching', () => {
           status: 'published',
           published_at: '2026-07-15T12:00:00.000Z',
           social_platforms: {
-            vk: { status: 'published', postId: '-1_10', publishedAt: '2026-07-15T12:00:00.000Z' },
-            telegram: { status: 'published', postId: '20', publishedAt: '2026-07-15T12:00:00.000Z' },
+            vk: {
+              status: 'published',
+              postId: '-228626989_10',
+              publishedAt: '2026-07-15T12:00:00.000Z',
+              analytics: { views: 5, likes: 1, comments: 0, shares: 0 },
+            },
+            telegram: {
+              status: 'published',
+              postId: '20',
+              publishedAt: '2026-07-15T12:00:00.000Z',
+              analytics: { views: 7, likes: 1, comments: 0, shares: 0 },
+            },
           },
         }],
       },
@@ -67,8 +77,8 @@ describe('AnalyticsService scraper matching', () => {
       data: {
         data: {
           social_media_settings: {
-            vk: { groupId: 'vk-channel' },
-            telegram: { chatId: 'tg-channel' },
+            vk: { groupId: '-228626989' },
+            telegram: { chatId: '@tg_channel' },
           },
         },
       },
@@ -76,24 +86,16 @@ describe('AnalyticsService scraper matching', () => {
 
     vi.mocked(getAllMonitoredChannels).mockResolvedValue({
       items: [
-        { id: 'vk-monitor', platform: 'vk', platform_channel_id: 'vk-channel' },
-        { id: 'tg-monitor', platform: 'telegram', platform_channel_id: 'tg-channel' },
+        { id: 'vk-monitor', platform: 'vk', platform_channel_id: '-228626989' },
+        { id: 'tg-monitor', platform: 'telegram', platform_channel_id: '@tg_channel' },
       ],
     } as any);
 
-    vi.mocked(getChannelPosts).mockImplementation(async (channelId) => ({
-      items: channelId === 'vk-monitor'
-        ? [
-            { id: 'old-vk', platform_post_id: '-1_9', views: 100, likes: 0, comments: 0, shares: 0 },
-            { id: 'campaign-vk', platform_post_id: '-1_10', views: 10, likes: 1, comments: 0, shares: 0 },
-          ]
-        : [
-            { id: 'campaign-tg', platform_post_id: '20', views: 20, likes: 2, comments: 1, shares: 0 },
-          ],
-      total: channelId === 'vk-monitor' ? 2 : 1,
-      page: 1,
-      page_size: 100,
-      has_next_page: false,
+    vi.mocked(getChannelAnalytics).mockImplementation(async (channelId) => ({
+      total_views: channelId === 'vk-monitor' ? 10 : 20,
+      total_likes: channelId === 'vk-monitor' ? 1 : 2,
+      total_comments: channelId === 'vk-monitor' ? 0 : 1,
+      total_shares: 0,
     } as any));
 
     const result = await AnalyticsService.getCampaignAnalytics('campaign-1', 'thisMonth', 'user-token');

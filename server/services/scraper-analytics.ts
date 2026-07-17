@@ -295,38 +295,6 @@ export interface MetricsRefreshResponse {
   errors: string[];
 }
 
-function logMetricsRefreshFailure(
-  channels: Array<{ id: string; platform: string; platform_channel_id: string }>,
-  days: number,
-  force: boolean,
-  error: Error,
-): void {
-  const channelIds = channels.map(channel => channel.id);
-  const request = {
-    method: 'POST',
-    url: `${ANALYTICS_BASE}/api/v1/monitoring/scheduler/metrics-refresh`,
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: 'Bearer [REDACTED]',
-    },
-    query: {
-      channel_ids: channelIds,
-      days,
-      force,
-    },
-    body: {},
-  };
-  const scraperChannels = channels.map(channel => ({
-    scraper_channel_id: channel.id,
-    platform: channel.platform,
-    platform_channel_id: channel.platform_channel_id,
-  }));
-  log.warn(
-    `metrics-refresh failed request=${JSON.stringify(request)} scraper_channels=${JSON.stringify(scraperChannels)} error=${error.message}`,
-    'analytics',
-  );
-}
-
 // ─── Вспомогательные функции запроса ──────────────────────────────────────────
 
 async function analyticsGet<T = any>(
@@ -579,10 +547,11 @@ export async function refreshChannelMetrics(params: {
   days?: number;
   force?: boolean;
 }): Promise<MetricsRefreshResponse | null> {
-  const channelIds = params.channels.map(c => c.id).join(',');
   const days = params.days ?? 7;
   const force = params.force ?? true;
-  log(`[ScraperAnalytics] metrics-refresh query: channel_ids=${channelIds}&days=${days}&force=${force}`, 'info');
+  const channelIds = params.channels.map(c => c.id);
+
+  log(`[ScraperAnalytics] metrics-refresh query: channel_ids=${channelIds.join(',')}&days=${days}&force=${force}`, 'info');
   return analyticsPost<MetricsRefreshResponse>(
     '/api/v1/monitoring/scheduler/metrics-refresh',
     {},

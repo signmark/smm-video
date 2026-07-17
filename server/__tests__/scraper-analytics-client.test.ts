@@ -62,7 +62,7 @@ describe('scraper analytics client', () => {
       expect.objectContaining({
         headers: expect.objectContaining({ Authorization: 'Bearer test-key' }),
         params: {
-          channel_ids: 'channel-uuid',
+          channel_ids: ['channel-uuid'],
           days: 30,
           force: true,
         },
@@ -70,7 +70,7 @@ describe('scraper analytics client', () => {
       }),
     );
     expect(log.warn).toHaveBeenCalledWith(
-      'scraper request={"method":"POST","url":"http://analytics.test/api/v1/monitoring/scheduler/metrics-refresh","headers":{"Content-Type":"application/json","Authorization":"Bearer [REDACTED]"},"query":{"channel_ids":"channel-uuid","days":30,"force":true},"body":{}}',
+      'scraper request={"method":"POST","url":"http://analytics.test/api/v1/monitoring/scheduler/metrics-refresh","headers":{"Content-Type":"application/json","Authorization":"Bearer [REDACTED]"},"query":{"channel_ids":["channel-uuid"],"days":30,"force":true},"body":{}}',
       'analytics',
     );
   });
@@ -254,7 +254,7 @@ describe('scraper analytics client', () => {
     expect(axios.post).toHaveBeenCalledTimes(1);
     expect(log.warn).toHaveBeenCalledWith(
       expect.stringContaining(
-        '"query":{"channel_ids":"telegram-uuid,vk-uuid","days":7,"force":true}',
+        '"query":{"channel_ids":["telegram-uuid","vk-uuid"],"days":7,"force":true}',
       ),
       'analytics',
     );

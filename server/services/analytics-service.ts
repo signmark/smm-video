@@ -38,7 +38,8 @@ export class AnalyticsService {
   /**
    * Получение агрегированной аналитики для кампании.
    * Читает опубликованные посты из Directus.
-   * Дополняет метрики данными скрейпера, сопоставляя конкретные публикации по postId.
+   * Дополняет метрики агрегатами собственных каналов кампании.
+   * Это временный режим до надёжного сопоставления публикаций по postId в скрейпере.
    */
   static async getCampaignAnalytics(campaignId: string, period: string, token: string) {
     let dateFrom: Date;
@@ -72,8 +73,12 @@ export class AnalyticsService {
         try {
           await AnalyticsService.supplementFromScraper(
             campaignId, dateFrom, now, platformStatsMap,
-            (v, l, c, s) => { totalViews += v; totalLikes += l; totalComments += c; totalShares += s; }
           );
+          const platformStats = Array.from(platformStatsMap.values());
+          totalViews = platformStats.reduce((sum, stats) => sum + stats.views, 0);
+          totalLikes = platformStats.reduce((sum, stats) => sum + stats.likes, 0);
+          totalComments = platformStats.reduce((sum, stats) => sum + stats.comments, 0);
+          totalShares = platformStats.reduce((sum, stats) => sum + stats.shares, 0);
         } catch (scraperErr: any) {
           log(`[AnalyticsService] Scraper supplement failed (non-critical): ${scraperErr.message}`, 'warn');
         }
@@ -103,15 +108,14 @@ export class AnalyticsService {
 
   /**
    * Дополняет статистику из скрейпер-аналитики для собственных каналов кампании.
-   * Ищет каналы кампании (TG chatId, VK groupId), затем суммирует метрики только
-   * тех публикаций, чьи platform_post_id совпадают с сохранёнными postId кампании.
+   * Ищет публичные каналы кампании и использует доступные агрегаты скрейпера
+   * за выбранный период.
    */
   private static async supplementFromScraper(
     campaignId: string,
     fromDate: Date,
     toDate: Date,
     platformStatsMap: Map<string, any>,
-    addTotals: (views: number, likes: number, comments: number, shares: number) => void
   ): Promise<void> {
     const adminToken = process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN || '';
     if (!adminToken) return;
@@ -133,21 +137,17 @@ export class AnalyticsService {
 
     // Каналы которые нужно искать в скрейпере
     const {
-      getMonitoredChannels,
+      getAllMonitoredChannels,
       getChannelAnalytics,
+      getScraperCampaignChannels,
     } = await import('./scraper-analytics');
 
-    const channelsToLookup: Array<{ platform: string; platformId: string }> = [];
-    if (socialSettings.telegram?.chatId) {
-      channelsToLookup.push({ platform: 'telegram', platformId: String(socialSettings.telegram.chatId) });
-    }
-    if (socialSettings.vk?.groupId) {
-      channelsToLookup.push({ platform: 'vk', platformId: String(socialSettings.vk.groupId) });
-    }
+    const channelsToLookup = getScraperCampaignChannels(socialSettings)
+      .map(channel => ({ platform: channel.platform, platformId: channel.id }));
 
     if (channelsToLookup.length === 0) return;
 
-    const monitored = await getMonitoredChannels({ page_size: 100 });
+    const monitored = await getAllMonitoredChannels();
     if (!monitored.items.length) return;
 
     const fromStr = fromDate.toISOString().split('T')[0];
@@ -162,7 +162,6 @@ export class AnalyticsService {
       const analytics = await getChannelAnalytics(found.id, { from_date: fromStr, to_date: toStr });
       if (!analytics) continue;
 
-      addTotals(analytics.total_views, analytics.total_likes, analytics.total_comments, analytics.total_shares);
       log(`[AnalyticsService] 📡 Скрейпер ${ch.platform}: ${analytics.total_views} просмотров за период`, 'info');
 
       if (platformStatsMap.has(ch.platform)) {

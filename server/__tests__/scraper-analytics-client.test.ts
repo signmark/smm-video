@@ -149,6 +149,12 @@ describe('scraper analytics client', () => {
     );
     expect(log.warn).toHaveBeenCalledWith(
       expect.stringContaining(
+        'scraper_channels=[{"scraper_channel_id":"telegram-uuid","platform":"telegram","platform_channel_id":"@channel"},{"scraper_channel_id":"vk-uuid","platform":"vk","platform_channel_id":"123"}]',
+      ),
+      'analytics',
+    );
+    expect(log.warn).toHaveBeenCalledWith(
+      expect.stringContaining(
         '"query":{"channel_ids":"vk-uuid","days":7,"force":true}',
       ),
       'analytics',

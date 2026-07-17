@@ -230,11 +230,12 @@ export interface MetricsRefreshResponse {
 }
 
 function logMetricsRefreshFailure(
-  channelIds: string,
+  channels: Array<{ id: string; platform: string; platform_channel_id: string }>,
   days: number,
   force: boolean,
   error: Error,
 ): void {
+  const channelIds = channels.map(channel => channel.id).join(',');
   const request = {
     method: 'POST',
     url: `${ANALYTICS_BASE}/api/v1/monitoring/scheduler/metrics-refresh`,
@@ -249,8 +250,13 @@ function logMetricsRefreshFailure(
     },
     body: {},
   };
+  const scraperChannels = channels.map(channel => ({
+    scraper_channel_id: channel.id,
+    platform: channel.platform,
+    platform_channel_id: channel.platform_channel_id,
+  }));
   log.warn(
-    `metrics-refresh failed request=${JSON.stringify(request)} error=${error.message}`,
+    `metrics-refresh failed request=${JSON.stringify(request)} scraper_channels=${JSON.stringify(scraperChannels)} error=${error.message}`,
     'analytics',
   );
 }
@@ -462,7 +468,7 @@ export async function refreshChannelMetrics(params: {
   try {
     return await refresh(channelIds);
   } catch (batchError: any) {
-    logMetricsRefreshFailure(channelIds, days, force, batchError);
+    logMetricsRefreshFailure(params.channels, days, force, batchError);
     if (params.channels.length <= 1) {
       const channel = params.channels[0];
       throw new Error(
@@ -501,7 +507,7 @@ export async function refreshChannelMetrics(params: {
           error => `${channel.platform}:${channel.platform_channel_id}: ${error}`,
         ));
       } catch (channelError: any) {
-        logMetricsRefreshFailure(channel.id, days, force, channelError);
+        logMetricsRefreshFailure([channel], days, force, channelError);
         aggregate.failed += 1;
         aggregate.errors.push(
           `${channel.platform}:${channel.platform_channel_id}: ${channelError.message}`,

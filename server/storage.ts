@@ -866,6 +866,7 @@ export class DatabaseStorage implements IStorage {
         videoUrl: item.video_url,
         prompt: item.prompt || "",
         scheduledAt: item.scheduled_at ? new Date(item.scheduled_at) : null,
+        publishedAt: item.published_at ? new Date(item.published_at) : null,
         createdAt: new Date(item.created_at),
         socialPlatforms: item.social_platforms,
         publishedPlatforms: item.published_platforms || []
@@ -998,6 +999,7 @@ export class DatabaseStorage implements IStorage {
         videoUrl: item.video_url,
         prompt: item.prompt || "",
         scheduledAt: item.scheduled_at ? new Date(item.scheduled_at) : null,
+        publishedAt: item.published_at ? new Date(item.published_at) : null,
         createdAt: new Date(item.created_at),
         socialPlatforms: item.social_platforms,
         publishedPlatforms: item.published_platforms || [],
@@ -1065,6 +1067,7 @@ export class DatabaseStorage implements IStorage {
         videoUrl: item.video_url,
         prompt: item.prompt || "",  // Добавляем поле промта при возвращении результата
         scheduledAt: item.scheduled_at ? new Date(item.scheduled_at) : null,
+        publishedAt: item.published_at ? new Date(item.published_at) : null,
         createdAt: new Date(item.created_at),
         socialPlatforms: item.social_platforms,
         keywords: item.keywords || [], // Добавляем ключевые слова при возвращении результата
@@ -1122,6 +1125,7 @@ export class DatabaseStorage implements IStorage {
         directusUpdates.prompt = updates.prompt;
       }
       if (updates.scheduledAt !== undefined) directusUpdates.scheduled_at = toIsoOrNull(updates.scheduledAt);
+      if (updates.publishedAt !== undefined) directusUpdates.published_at = toIsoOrNull(updates.publishedAt);
       
       // КРИТИЧЕСКИ ВАЖНО: при обновлении socialPlatforms сохраняем существующие статусы опубликованных платформ
       if (updates.socialPlatforms !== undefined) {
@@ -1212,6 +1216,7 @@ export class DatabaseStorage implements IStorage {
         videoUrl: item.video_url,
         prompt: item.prompt || "",
         scheduledAt: item.scheduled_at ? new Date(item.scheduled_at) : null,
+        publishedAt: item.published_at ? new Date(item.published_at) : null,
         createdAt: new Date(item.created_at),
         socialPlatforms: item.social_platforms,
         keywords: item.keywords || [], // Добавляем возврат ключевых слов
@@ -1324,6 +1329,7 @@ export class DatabaseStorage implements IStorage {
         prompt: item.prompt || "",
         videoUrl: item.video_url,
         scheduledAt: item.scheduled_at ? new Date(item.scheduled_at) : null,
+        publishedAt: item.published_at ? new Date(item.published_at) : null,
         createdAt: new Date(item.created_at),
         socialPlatforms: item.social_platforms,
         keywords: item.keywords || [], // Добавляем ключевые слова
@@ -1404,6 +1410,7 @@ export class DatabaseStorage implements IStorage {
         prompt: item.prompt || "",
         videoUrl: item.video_url,
         scheduledAt: item.scheduled_at ? new Date(item.scheduled_at) : null,
+        publishedAt: item.published_at ? new Date(item.published_at) : null,
         createdAt: new Date(item.created_at),
         socialPlatforms: item.social_platforms,
         keywords: item.keywords || [],

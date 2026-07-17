@@ -89,4 +89,46 @@ describe('DatabaseStorage', () => {
             expect(campaigns[0].id).toBe(10);
         });
     });
+
+    describe('updateCampaignContent', () => {
+        it('persists and returns the aggregate publication timestamp', async () => {
+            const publishedAt = new Date('2026-07-17T10:15:00.000Z');
+            (directusApi.patch as any).mockResolvedValue({
+                status: 200,
+                data: {
+                    data: {
+                        id: 'content-1',
+                        user_id: 'user-123',
+                        campaign_id: 'campaign-1',
+                        status: 'published',
+                        content_type: 'text',
+                        content: 'Post',
+                        created_at: '2026-07-17T09:00:00.000Z',
+                        published_at: publishedAt.toISOString(),
+                        social_platforms: {
+                            telegram: {
+                                status: 'published',
+                                publishedAt: publishedAt.toISOString(),
+                            },
+                        },
+                    },
+                },
+            });
+
+            const result = await storage.updateCampaignContent('content-1', {
+                status: 'published',
+                publishedAt,
+            }, 'test-auth-token');
+
+            expect(directusApi.patch).toHaveBeenCalledWith(
+                '/items/campaign_content/content-1',
+                expect.objectContaining({
+                    status: 'published',
+                    published_at: publishedAt.toISOString(),
+                }),
+                expect.any(Object),
+            );
+            expect(result.publishedAt).toEqual(publishedAt);
+        });
+    });
 });

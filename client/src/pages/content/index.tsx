@@ -48,6 +48,7 @@ import { ContentPlanGenerator } from "@/components/ContentPlanGenerator";
 import { useCampaignStore } from "@/lib/campaignStore";
 import { publishWithImageGeneration } from "@/utils/publishWithImageGeneration";
 import { getPublishedPlatformIds, getVisibleCardPlatforms, platformNames as socialPlatformNames } from "@/lib/social-platforms";
+import { getPublishedDisplayDate } from "@/lib/published-content";
 import { updateContentCachesAfterMoveToDraft } from "@/lib/content-cache-updates";
 
 // FORCE REBUILD 2025-11-22 15:15
@@ -1976,7 +1977,9 @@ export default function ContentPage() {
                       </AccordionTrigger>
                       <AccordionContent>
                         <div className="grid grid-cols-1 sm:grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 mt-2">
-                          {contents.map((content) => (
+                          {contents.map((content) => {
+                            const cardPublishedAt = getPublishedDisplayDate(content);
+                            return (
                             <Card
                               key={content.id}
                               className={`overflow-hidden border cursor-pointer hover:border-primary/50 hover:shadow-sm transition-all h-fit ${bulkSelectedIds.has(content.id) ? 'border-primary ring-1 ring-primary/30 bg-primary/5' : 'border-muted'}`}
@@ -2262,9 +2265,9 @@ export default function ContentPage() {
                                     <ScheduledPostInfo
                                       socialPlatforms={getCardPlatforms(content) as Record<string, any>}
                                       scheduledAt={content.scheduledAt || null}
-                                      publishedAt={content.publishedAt || null}
+                                      publishedAt={cardPublishedAt}
                                       compact={true}
-                                      showStatus={!!content.scheduledAt || !!content.publishedAt}
+                                      showStatus={!!content.scheduledAt || !!cardPublishedAt}
                                     />
                                   )}
 
@@ -2279,9 +2282,9 @@ export default function ContentPage() {
                                       className="text-xs"
                                     />
                                   )}
-                                  {content.publishedAt && (
+                                  {cardPublishedAt && (
                                     <CreationTimeDisplay
-                                      createdAt={content.publishedAt}
+                                      createdAt={cardPublishedAt}
                                       label={t('content.labels.published')}
                                       showIcon={false}
                                       iconType="check"
@@ -2290,7 +2293,7 @@ export default function ContentPage() {
                                       isPublishedTime={true}
                                     />
                                   )}
-                                  {content.scheduledAt && !content.publishedAt && (
+                                  {content.scheduledAt && !cardPublishedAt && (
                                     <CreationTimeDisplay
                                       createdAt={content.scheduledAt}
                                       label="План:"
@@ -2302,7 +2305,8 @@ export default function ContentPage() {
                                 </div>
                               </div>
                             </Card>
-                          ))}
+                            );
+                          })}
                         </div>
                       </AccordionContent>
                     </AccordionItem>

@@ -5,6 +5,7 @@ import {
   getConfirmedPublicationEvents,
   getConfirmedPublicationDates,
   getFailedPublicationAttemptDate,
+  getPublishedDisplayDate,
   getPublicationCardDates,
   hasConfirmedPublication,
   hasFailedPublicationAttempt,
@@ -170,5 +171,38 @@ describe('published content helpers', () => {
     expect(getPublicationCardDates(partial).map((date) => date.toISOString())).toEqual([
       '2026-07-15T09:00:00.000Z',
     ]);
+  });
+
+  it('uses a confirmed platform timestamp when the aggregate timestamp is missing', () => {
+    const published = content({
+      status: 'published',
+      scheduledAt: '2026-07-17T08:00:00.000Z',
+      publishedAt: null,
+      socialPlatforms: {
+        telegram: {
+          status: 'published',
+          postId: '42',
+          publishedAt: '2026-07-17T09:30:00.000Z',
+        },
+      } as any,
+    });
+
+    expect(getPublishedDisplayDate(published)?.toISOString()).toBe('2026-07-17T09:30:00.000Z');
+  });
+
+  it('prefers the aggregate publication timestamp when both timestamps exist', () => {
+    const published = content({
+      status: 'published',
+      publishedAt: '2026-07-17T10:00:00.000Z',
+      socialPlatforms: {
+        telegram: {
+          status: 'published',
+          postId: '42',
+          publishedAt: '2026-07-17T09:30:00.000Z',
+        },
+      } as any,
+    });
+
+    expect(getPublishedDisplayDate(published)?.toISOString()).toBe('2026-07-17T10:00:00.000Z');
   });
 });

@@ -106,6 +106,24 @@ export function getConfirmedPublicationDates(content: CampaignContent): Date[] {
   return Array.from(timestamps, (timestamp) => new Date(timestamp));
 }
 
+/**
+ * Returns the timestamp displayed as the actual publication time on a card.
+ * Per-platform timestamps provide a compatibility fallback for records whose
+ * aggregate published_at value was not populated by an older publishing path.
+ */
+export function getPublishedDisplayDate(content: CampaignContent): Date | null {
+  const aggregateDate = validDate(content.publishedAt);
+  if (aggregateDate) return aggregateDate;
+
+  const platformDates = Object.values(content.socialPlatforms || {})
+    .filter(isConfirmedPlatformPublication)
+    .map((info) => validDate(info?.publishedAt || (info as any)?.published_at))
+    .filter((date): date is Date => Boolean(date));
+
+  if (platformDates.length === 0) return null;
+  return platformDates.reduce((latest, date) => date > latest ? date : latest);
+}
+
 export function countConfirmedPlatformPublications(
   content: CampaignContent[],
   platforms: readonly SocialPlatform[],

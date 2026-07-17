@@ -15,6 +15,8 @@ import { SocialPlatform } from '@shared/schema';
 import { vkStoriesService } from '../services/social-platforms/vk-stories-service';
 import { normalizePlatforms, createPendingStatuses, extractPlatformNames } from '../utils/platforms-helper';
 import { getTempVideo, deleteTempVideo } from '../utils/temp-video-store';
+import { invalidateContentCache } from '../utils/content-cache';
+import { getContentAggregateTimes, getContentPublicationStatus } from '@shared/schedule-time';
 
 const router = express.Router();
 
@@ -1300,63 +1302,65 @@ router.post('/publish/now', authMiddleware, async (req, res) => {
         try {
           const successfulPlatforms = publishResults.filter(r => r.success).map(r => r.platform);
           const failedPlatformsArr = publishResults.filter(r => !r.success).map(r => r.platform);
+          let freshContent: Record<string, any> = {};
+          let finalContentStatus = failedPlatformsArr.length === 0
+            ? 'published'
+            : 'partially_published';
+          let aggregatePublishedAt: string | null = null;
 
-          if (failedPlatformsArr.length === 0) {
-            log(`[Social Publishing] Все платформы приняли запрос (${successfulPlatforms.join(', ')}), обновляем статус на published`);
-
-            const updatedPlatforms: Record<string, any> = {};
-            successfulPlatforms.forEach(p => {
-              updatedPlatforms[p] = { status: 'publishing', publishingAt: new Date().toISOString() };
-            });
-
-            await storage.updateCampaignContent(
-              contentId,
-              { 
-                status: 'published', 
-                publishedAt: new Date(),
-                socialPlatforms: updatedPlatforms
+          // Platform handlers have already persisted their own fresh state. Do
+          // not write social_platforms again here: rebuilding it from the result
+          // list used to downgrade "published" to "publishing" and erase fields
+          // written by an earlier platform.
+          try {
+            const freshResp = await axios.get(
+              `${process.env.DIRECTUS_URL}/items/campaign_content/${contentId}`,
+              { headers: { Authorization: `Bearer ${adminToken}` } },
+            );
+            freshContent = freshResp.data?.data || {};
+            const freshPlatforms = freshContent.social_platforms || {};
+            finalContentStatus = getContentPublicationStatus(
+              freshPlatforms,
+              freshContent.status || finalContentStatus,
+            );
+            aggregatePublishedAt = getContentAggregateTimes(
+              freshPlatforms,
+              finalContentStatus,
+              {
+                scheduledAt: freshContent.scheduled_at,
+                publishedAt: freshContent.published_at,
               },
-              adminToken
-            );
-
-            log(`[Social Publishing] Статус контента ${contentId} обновлен на "published"`);
-          } else {
-            log(`[Social Publishing] Часть платформ не приняла запрос: ${failedPlatformsArr.join(', ')}, обновляем на partial`);
-
-            // Читаем актуальные данные из Directus — per-platform catch уже мог записать retry-статус
-            let freshPlatforms: Record<string, any> = {};
-            try {
-              const freshResp = await axios.get(`${process.env.DIRECTUS_URL}/items/campaign_content/${contentId}`, {
-                headers: { Authorization: `Bearer ${adminToken}` }
-              });
-              freshPlatforms = freshResp.data?.data?.social_platforms || {};
-            } catch {}
-
-            const updatedPlatforms: Record<string, any> = { ...freshPlatforms };
-            successfulPlatforms.forEach(p => {
-              updatedPlatforms[p] = { ...freshPlatforms[p], status: 'publishing', publishingAt: new Date().toISOString() };
-            });
-            // Не перезаписываем failed-платформы — их статус уже выставлен (retry или окончательный failed)
-            // только добавляем в updatedPlatforms если не трогали выше
-
-            // Определяем финальный content-статус: partial только если хоть одна платформа
-            // реально опубликована (status==='published'), иначе scheduled.
-            // successfulPlatforms — платформы в 'publishing', не в 'published' — не считаем.
-            const allPlatformsForCheck = { ...freshPlatforms, ...updatedPlatforms };
-            const hasAnyPublished = Object.values(allPlatformsForCheck).some(
-              (p: any) => p?.status === 'published'
-            );
-            const finalContentStatus = hasAnyPublished ? 'partial' : 'scheduled';
-
-            await storage.updateCampaignContent(
-              contentId,
-              { 
-                status: finalContentStatus,
-                socialPlatforms: updatedPlatforms
-              },
-              adminToken
-            );
+            ).publishedAt;
+          } catch (freshStateError: any) {
+            // A transient read failure must not leave successfully published
+            // content in its pre-publication status.
+            log(`[Social Publishing] Не удалось перечитать статус ${contentId}: ${freshStateError.message}`);
           }
+
+          const publishedAt = finalContentStatus === 'published'
+            ? aggregatePublishedAt || new Date()
+            : null;
+
+          await storage.updateCampaignContent(
+            contentId,
+            {
+              status: finalContentStatus,
+              publishedAt,
+            },
+            adminToken,
+          );
+
+          const requestUserId = (req as any).user?.id || freshContent.user_id;
+          const campaignId = typeof freshContent.campaign_id === 'object'
+            ? freshContent.campaign_id?.id
+            : freshContent.campaign_id;
+          if (requestUserId) invalidateContentCache(String(requestUserId), campaignId ? String(campaignId) : undefined);
+
+          log(
+            `[Social Publishing] Контент ${contentId}: status=${finalContentStatus}, ` +
+            `publishedAt=${publishedAt instanceof Date ? publishedAt.toISOString() : publishedAt}, ` +
+            `успешные платформы=${successfulPlatforms.join(', ')}`,
+          );
         } catch (statusError: any) {
           log(`[Social Publishing] Ошибка при обновлении статуса контента: ${statusError.message}`);
         }

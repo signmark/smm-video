@@ -89,7 +89,7 @@ describe('scraper analytics client', () => {
     })).rejects.toThrow('Analytics API отклонил ключ доступа (HTTP 401): Invalid API key');
 
     expect(log.warn).toHaveBeenCalledWith(
-      'Analytics API отклонил ключ доступа (HTTP 401): Invalid API key',
+      expect.stringContaining('Analytics API отклонил ключ доступа (HTTP 401): Invalid API key'),
       'analytics',
     );
     expect(JSON.stringify(vi.mocked(log.warn).mock.calls)).not.toContain('test-key');
@@ -287,6 +287,55 @@ describe('scraper analytics client', () => {
     );
     expect(JSON.stringify(vi.mocked(log.warn).mock.calls)).toContain('Bearer [REDACTED]');
     expect(JSON.stringify(vi.mocked(log.warn).mock.calls)).not.toContain('test-key');
+  });
+
+  it('retries channels separately when the batch connection is aborted', async () => {
+    vi.mocked(axios.post)
+      .mockRejectedValueOnce({
+        code: 'ECONNABORTED',
+        message: 'timeout of 60000ms exceeded',
+      })
+      .mockResolvedValueOnce({
+        data: {
+          status: 'completed',
+          processed: 1,
+          failed: 0,
+          skipped: 0,
+          duration_seconds: 1,
+          errors: [],
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          status: 'completed',
+          processed: 2,
+          failed: 0,
+          skipped: 0,
+          duration_seconds: 1,
+          errors: [],
+        },
+      });
+
+    const result = await refreshChannelMetrics({
+      channels: [
+        { id: 'telegram-uuid', platform: 'telegram', platform_channel_id: '@channel' },
+        { id: 'vk-uuid', platform: 'vk', platform_channel_id: '123' },
+      ],
+      days: 7,
+    });
+
+    expect(axios.post).toHaveBeenCalledTimes(3);
+    expect(result).toEqual(expect.objectContaining({
+      status: 'completed',
+      processed: 3,
+      failed: 0,
+    }));
+    expect(log.warn).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'ECONNABORTED: timeout of 60000ms exceeded elapsed_ms=',
+      ),
+      'analytics',
+    );
   });
 
   it('identifies the channel when a single-channel refresh fails', async () => {

@@ -27,7 +27,10 @@ function getAnalyticsErrorMessage(method: string, path: string, err: any): strin
     return `Analytics API вернул HTTP ${status} для ${method} ${path}${suffix}`;
   }
 
-  return `Analytics API недоступен для ${method} ${path}: ${err.code || err.message || 'network error'}`;
+  const networkDetails = [err.code, err.message]
+    .filter(Boolean)
+    .join(': ') || 'network error';
+  return `Analytics API недоступен для ${method} ${path}: ${networkDetails}`;
 }
 
 function logAnalyticsRequest(
@@ -298,7 +301,7 @@ function logMetricsRefreshFailure(
   force: boolean,
   error: Error,
 ): void {
-  const channelIds = channels.map(channel => channel.id).join(',');
+  const channelIds = channels.map(channel => channel.id);
   const request = {
     method: 'POST',
     url: `${ANALYTICS_BASE}/api/v1/monitoring/scheduler/metrics-refresh`,
@@ -356,6 +359,7 @@ async function analyticsPost<T = any>(
   throwOnError = false,
 ): Promise<T | null> {
   const apiKey = await getAnalyticsApiKey();
+  const startedAt = Date.now();
   try {
     const url = `${ANALYTICS_BASE}${path}`;
     logAnalyticsRequest('POST', path, params, body);
@@ -370,7 +374,10 @@ async function analyticsPost<T = any>(
     return response.data as T;
   } catch (err: any) {
     const message = getAnalyticsErrorMessage('POST', path, err);
-    log.warn(message, 'analytics');
+    log.warn(
+      `${message} elapsed_ms=${Date.now() - startedAt} timeout_ms=60000`,
+      'analytics',
+    );
     if (throwOnError) throw new Error(message);
     return null;
   }
@@ -595,7 +602,9 @@ export async function refreshChannelMetrics(params: {
         `Не удалось обновить ${channel.platform}:${channel.platform_channel_id}: ${batchError.message}`,
       );
     }
-    if (!String(batchError.message).includes('HTTP 500')) throw batchError;
+    const isRetryableBatchFailure = /HTTP 500|ECONNABORTED|ECONNRESET|timeout|aborted/i
+      .test(String(batchError.message));
+    if (!isRetryableBatchFailure) throw batchError;
 
     // Scraper может вернуть непрозрачный HTTP 500 для всего пакета. Повтор по одному
     // сохраняет метрики исправных каналов и показывает, какой именно канал падает.

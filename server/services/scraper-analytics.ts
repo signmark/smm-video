@@ -357,6 +357,7 @@ async function analyticsPost<T = any>(
   body: Record<string, any> = {},
   params?: Record<string, any>,
   throwOnError = false,
+  timeoutMs = 60000,
 ): Promise<T | null> {
   const apiKey = await getAnalyticsApiKey();
   const startedAt = Date.now();
@@ -368,14 +369,14 @@ async function analyticsPost<T = any>(
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
       params,
       paramsSerializer: { indexes: null },
-      timeout: 60000
+      timeout: timeoutMs,
     });
     log(`[ScraperAnalytics] ← POST ${path} status=${response.status} response=${JSON.stringify(response.data)}`, 'info');
     return response.data as T;
   } catch (err: any) {
     const message = getAnalyticsErrorMessage('POST', path, err);
     log.warn(
-      `${message} elapsed_ms=${Date.now() - startedAt} timeout_ms=60000`,
+      `${message} elapsed_ms=${Date.now() - startedAt} timeout_ms=${timeoutMs}`,
       'analytics',
     );
     if (throwOnError) throw new Error(message);
@@ -587,6 +588,7 @@ export async function refreshChannelMetrics(params: {
       {},
       { channel_ids: channelIds, days, force },
       true,
+      120000,
     );
   const channelIds = params.channels.map(c => c.id);
 

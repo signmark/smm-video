@@ -13,14 +13,14 @@ vi.mock('axios', () => ({
 }));
 
 vi.mock('../services/scraper-analytics', () => ({
-  getMonitoredChannels: vi.fn(),
+  getAllMonitoredChannels: vi.fn(),
   getChannelPosts: vi.fn(),
 }));
 
 import axios from 'axios';
 import { directusApi } from '../directus';
 import { AnalyticsService } from '../services/analytics-service';
-import { getChannelPosts, getMonitoredChannels } from '../services/scraper-analytics';
+import { getAllMonitoredChannels, getChannelPosts } from '../services/scraper-analytics';
 
 describe('AnalyticsService scraper matching', () => {
   const previousAdminToken = process.env.DIRECTUS_ADMIN_TOKEN;
@@ -64,7 +64,7 @@ describe('AnalyticsService scraper matching', () => {
       },
     } as any);
 
-    vi.mocked(getMonitoredChannels).mockResolvedValue({
+    vi.mocked(getAllMonitoredChannels).mockResolvedValue({
       items: [
         { id: 'vk-monitor', platform: 'vk', platform_channel_id: 'vk-channel' },
         { id: 'tg-monitor', platform: 'telegram', platform_channel_id: 'tg-channel' },

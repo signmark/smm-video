@@ -358,6 +358,28 @@ export async function getMonitoredChannels(
   return data;
 }
 
+export async function getAllMonitoredChannels(
+  params?: { platform?: string; is_active?: boolean },
+  throwOnError = false,
+): Promise<ChannelListResponse> {
+  const items: ChannelResponse[] = [];
+  let page = 1;
+  let total = 0;
+
+  do {
+    const response = await getMonitoredChannels(
+      { ...params, page, page_size: 100 },
+      throwOnError,
+    );
+    items.push(...response.items);
+    total = response.total;
+    if (response.items.length === 0) break;
+    page += 1;
+  } while (items.length < total);
+
+  return { items, total, page: 1, page_size: items.length };
+}
+
 export async function createMonitoringChannel(payload: {
   platform: string;
   platform_channel_id: string;
@@ -372,12 +394,24 @@ export async function deleteMonitoringChannel(channelId: string): Promise<boolea
   return analyticsDelete(`/api/v1/monitoring/channels/${channelId}`);
 }
 
-export async function getChannelParseStatus(channelId: string): Promise<ParseStatus | null> {
-  return analyticsGet<ParseStatus>(`/api/v1/monitoring/channels/${channelId}/parse-status`);
+export async function getChannelParseStatus(channelId: string, throwOnError = false): Promise<ParseStatus | null> {
+  return analyticsGet<ParseStatus>(
+    `/api/v1/monitoring/channels/${channelId}/parse-status`,
+    undefined,
+    throwOnError,
+  );
 }
 
-export async function forceParseChannel(channelId: string): Promise<{ message: string; task_id: string; status: string } | null> {
-  return analyticsPost(`/api/v1/monitoring/channels/${channelId}/force-parse`);
+export async function forceParseChannel(
+  channelId: string,
+  throwOnError = false,
+): Promise<{ message: string; task_id: string; status: string } | null> {
+  return analyticsPost(
+    `/api/v1/monitoring/channels/${channelId}/force-parse`,
+    {},
+    undefined,
+    throwOnError,
+  );
 }
 
 // ─── Посты каналов ────────────────────────────────────────────────────────────
@@ -552,7 +586,7 @@ export async function ensureChannelsRegistered(
 ): Promise<Map<string, string>> {
   const idMap = new Map<string, string>();
 
-  const existing = await getMonitoredChannels({ page_size: 100 }, true);
+  const existing = await getAllMonitoredChannels(undefined, true);
   const existingMap = new Map(existing.items.map(c => [`${c.platform}:${c.platform_channel_id}`, c.id]));
 
   for (const ch of channels) {
@@ -570,12 +604,6 @@ export async function ensureChannelsRegistered(
       if (created?.id) {
         idMap.set(key, created.id);
         log(`[ScraperAnalytics] Registered channel ${ch.platform}:${ch.id} → ${created.id}`, 'info');
-        try {
-          await forceParseChannel(created.id);
-          log(`[ScraperAnalytics] force-parse triggered for channel ${created.id}`, 'info');
-        } catch (parseErr: any) {
-          log(`[ScraperAnalytics] force-parse failed for ${created.id}: ${parseErr.message}`, 'warn');
-        }
       }
     } catch (err: any) {
       log.warn(`Не удалось зарегистрировать канал ${key}: ${err.message}`, 'analytics');

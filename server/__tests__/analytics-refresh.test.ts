@@ -14,7 +14,8 @@ vi.mock('../utils/logger', () => ({
 
 vi.mock('../services/scraper-analytics', () => ({
   ensureChannelsRegistered: vi.fn(),
-  getMonitoredChannels: vi.fn(),
+  getAllMonitoredChannels: vi.fn(),
+  getChannelParseStatus: vi.fn(),
   refreshChannelMetrics: vi.fn(),
   forceParseChannel: vi.fn(),
 }));
@@ -23,8 +24,10 @@ import axios from 'axios';
 import { AnalyticsService } from '../services/analytics-service';
 import {
   ensureChannelsRegistered,
-  getMonitoredChannels,
+  getAllMonitoredChannels,
+  getChannelParseStatus,
   refreshChannelMetrics,
+  forceParseChannel,
 } from '../services/scraper-analytics';
 
 describe('AnalyticsService.refreshCampaignAnalytics', () => {
@@ -52,7 +55,7 @@ describe('AnalyticsService.refreshCampaignAnalytics', () => {
       },
     } as any);
     vi.mocked(ensureChannelsRegistered).mockResolvedValue(new Map());
-    vi.mocked(getMonitoredChannels).mockResolvedValue({
+    vi.mocked(getAllMonitoredChannels).mockResolvedValue({
       items: [
         { id: 'tg-monitor', platform: 'telegram', platform_channel_id: '@public_channel', last_parsed_at: '2026-07-16T10:00:00Z' },
         { id: 'vk-monitor', platform: 'vk', platform_channel_id: '228626989', last_parsed_at: '2026-07-16T10:00:00Z' },
@@ -82,7 +85,7 @@ describe('AnalyticsService.refreshCampaignAnalytics', () => {
       processed: 2,
       failed: 0,
     }));
-    expect(getMonitoredChannels).toHaveBeenCalledWith({ page_size: 100 }, true);
+    expect(getAllMonitoredChannels).toHaveBeenCalledWith(undefined, true);
   });
 
   it('does not report a successful refresh when scraper channel lookup fails', async () => {
@@ -96,7 +99,7 @@ describe('AnalyticsService.refreshCampaignAnalytics', () => {
       },
     } as any);
     vi.mocked(ensureChannelsRegistered).mockResolvedValue(new Map());
-    vi.mocked(getMonitoredChannels).mockRejectedValue(
+    vi.mocked(getAllMonitoredChannels).mockRejectedValue(
       new Error('Analytics API отклонил ключ доступа (HTTP 401)'),
     );
 
@@ -120,7 +123,7 @@ describe('AnalyticsService.refreshCampaignAnalytics', () => {
       },
     } as any);
     vi.mocked(ensureChannelsRegistered).mockResolvedValue(new Map());
-    vi.mocked(getMonitoredChannels).mockResolvedValue({
+    vi.mocked(getAllMonitoredChannels).mockResolvedValue({
       items: [
         {
           id: 'tg-monitor',
@@ -130,14 +133,61 @@ describe('AnalyticsService.refreshCampaignAnalytics', () => {
         },
       ],
     } as any);
+    vi.mocked(getChannelParseStatus).mockResolvedValue({
+      channel_id: 'tg-monitor',
+      status: 'parsing',
+      progress: 10,
+      message: 'Initial parsing is already running',
+    } as any);
 
     const result = await AnalyticsService.refreshCampaignAnalytics('campaign-1', 7);
 
     expect(result).toEqual(expect.objectContaining({
       success: true,
       processed: 0,
-      message: expect.stringContaining('Первичный сбор данных запущен'),
+      message: expect.stringContaining('Сбор данных по каналам уже выполняется'),
     }));
     expect(refreshChannelMetrics).not.toHaveBeenCalled();
+    expect(forceParseChannel).not.toHaveBeenCalled();
+  });
+
+  it('starts force parse only when an unparsed channel is idle', async () => {
+    vi.mocked(axios.get).mockResolvedValue({
+      data: {
+        data: {
+          social_media_settings: {
+            telegram: { chatId: '@public_channel' },
+          },
+        },
+      },
+    } as any);
+    vi.mocked(ensureChannelsRegistered).mockResolvedValue(new Map());
+    vi.mocked(getAllMonitoredChannels).mockResolvedValue({
+      items: [{
+        id: 'tg-monitor',
+        platform: 'telegram',
+        platform_channel_id: '@public_channel',
+        last_parsed_at: null,
+      }],
+    } as any);
+    vi.mocked(getChannelParseStatus).mockResolvedValue({
+      channel_id: 'tg-monitor',
+      status: 'idle',
+      last_parsed_at: null,
+    } as any);
+    vi.mocked(forceParseChannel).mockResolvedValue({
+      message: 'Parse started',
+      task_id: 'task-1',
+      status: 'started',
+    });
+
+    const result = await AnalyticsService.refreshCampaignAnalytics('campaign-1', 7);
+
+    expect(forceParseChannel).toHaveBeenCalledWith('tg-monitor', true);
+    expect(refreshChannelMetrics).not.toHaveBeenCalled();
+    expect(result).toEqual(expect.objectContaining({
+      success: true,
+      processed: 0,
+    }));
   });
 });

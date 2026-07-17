@@ -21,7 +21,12 @@ vi.mock('../utils/logger', () => ({
 
 import axios from 'axios';
 import { log } from '../utils/logger';
-import { getMonitoredChannels, refreshChannelMetrics } from '../services/scraper-analytics';
+import {
+  ensureChannelsRegistered,
+  getAllMonitoredChannels,
+  getMonitoredChannels,
+  refreshChannelMetrics,
+} from '../services/scraper-analytics';
 
 describe('scraper analytics client', () => {
   beforeEach(() => {
@@ -101,6 +106,83 @@ describe('scraper analytics client', () => {
     expect(log.warn).toHaveBeenCalledWith(
       'scraper request={"method":"GET","url":"http://analytics.test/api/v1/monitoring/channels","headers":{"Authorization":"Bearer [REDACTED]"},"query":{"page_size":100}}',
       'analytics',
+    );
+  });
+
+  it('loads every page of monitored channels', async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) => ({
+      id: `channel-${index + 1}`,
+      platform: 'telegram',
+      platform_channel_id: `@channel_${index + 1}`,
+    }));
+    vi.mocked(axios.get)
+      .mockResolvedValueOnce({
+        data: {
+          items: firstPage,
+          total: 101,
+          page: 1,
+          page_size: 100,
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          items: [{
+            id: 'channel-101',
+            platform: 'vk',
+            platform_channel_id: '101',
+          }],
+          total: 101,
+          page: 2,
+          page_size: 100,
+        },
+      });
+
+    const result = await getAllMonitoredChannels(undefined, true);
+
+    expect(result.items).toHaveLength(101);
+    expect(axios.get).toHaveBeenNthCalledWith(
+      1,
+      'http://analytics.test/api/v1/monitoring/channels',
+      expect.objectContaining({ params: { page: 1, page_size: 100 } }),
+    );
+    expect(axios.get).toHaveBeenNthCalledWith(
+      2,
+      'http://analytics.test/api/v1/monitoring/channels',
+      expect.objectContaining({ params: { page: 2, page_size: 100 } }),
+    );
+  });
+
+  it('does not start a duplicate force parse after channel registration', async () => {
+    vi.mocked(axios.get).mockResolvedValue({
+      data: {
+        items: [],
+        total: 0,
+        page: 1,
+        page_size: 100,
+      },
+    });
+    vi.mocked(axios.post).mockResolvedValue({
+      data: {
+        id: 'new-channel-id',
+        platform: 'telegram',
+        platform_channel_id: '@new_channel',
+      },
+    });
+
+    const result = await ensureChannelsRegistered([
+      { platform: 'telegram', id: '@new_channel' },
+    ]);
+
+    expect(result.get('telegram:@new_channel')).toBe('new-channel-id');
+    expect(axios.post).toHaveBeenCalledTimes(1);
+    expect(axios.post).toHaveBeenCalledWith(
+      'http://analytics.test/api/v1/monitoring/channels',
+      {
+        platform: 'telegram',
+        platform_channel_id: '@new_channel',
+        name: undefined,
+      },
+      expect.any(Object),
     );
   });
 

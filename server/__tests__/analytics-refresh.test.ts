@@ -82,5 +82,62 @@ describe('AnalyticsService.refreshCampaignAnalytics', () => {
       processed: 2,
       failed: 0,
     }));
+    expect(getMonitoredChannels).toHaveBeenCalledWith({ page_size: 100 }, true);
+  });
+
+  it('does not report a successful refresh when scraper channel lookup fails', async () => {
+    vi.mocked(axios.get).mockResolvedValue({
+      data: {
+        data: {
+          social_media_settings: {
+            telegram: { chatId: '@public_channel' },
+          },
+        },
+      },
+    } as any);
+    vi.mocked(ensureChannelsRegistered).mockResolvedValue(new Map());
+    vi.mocked(getMonitoredChannels).mockRejectedValue(
+      new Error('Analytics API отклонил ключ доступа (HTTP 401)'),
+    );
+
+    const result = await AnalyticsService.refreshCampaignAnalytics('campaign-1', 7);
+
+    expect(result).toEqual({
+      success: false,
+      message: 'Analytics API отклонил ключ доступа (HTTP 401)',
+    });
+    expect(refreshChannelMetrics).not.toHaveBeenCalled();
+  });
+
+  it('reports initial parsing instead of claiming that zero channels were updated', async () => {
+    vi.mocked(axios.get).mockResolvedValue({
+      data: {
+        data: {
+          social_media_settings: {
+            telegram: { chatId: '@public_channel' },
+          },
+        },
+      },
+    } as any);
+    vi.mocked(ensureChannelsRegistered).mockResolvedValue(new Map());
+    vi.mocked(getMonitoredChannels).mockResolvedValue({
+      items: [
+        {
+          id: 'tg-monitor',
+          platform: 'telegram',
+          platform_channel_id: '@public_channel',
+          last_parsed_at: null,
+        },
+      ],
+    } as any);
+
+    const result = await AnalyticsService.refreshCampaignAnalytics('campaign-1', 7);
+
+    expect(result).toEqual(expect.objectContaining({
+      success: true,
+      processed: 0,
+      message: expect.stringContaining('Первичный сбор данных запущен'),
+    }));
+    expect(refreshChannelMetrics).not.toHaveBeenCalled();
   });
 });

@@ -231,7 +231,11 @@ export interface MetricsRefreshResponse {
 
 // ─── Вспомогательные функции запроса ──────────────────────────────────────────
 
-async function analyticsGet<T = any>(path: string, params?: Record<string, any>): Promise<T | null> {
+async function analyticsGet<T = any>(
+  path: string,
+  params?: Record<string, any>,
+  throwOnError = false,
+): Promise<T | null> {
   const apiKey = await getAnalyticsApiKey();
   try {
     const url = `${ANALYTICS_BASE}${path}`;
@@ -242,7 +246,9 @@ async function analyticsGet<T = any>(path: string, params?: Record<string, any>)
     });
     return response.data as T;
   } catch (err: any) {
-    log.warn(getAnalyticsErrorMessage('GET', path, err), 'analytics');
+    const message = getAnalyticsErrorMessage('GET', path, err);
+    log.warn(message, 'analytics');
+    if (throwOnError) throw new Error(message);
     return null;
   }
 }
@@ -289,8 +295,11 @@ async function analyticsDelete(path: string): Promise<boolean> {
 
 // ─── Мониторинг каналов ───────────────────────────────────────────────────────
 
-export async function getMonitoredChannels(params?: { platform?: string; is_active?: boolean; page?: number; page_size?: number }): Promise<ChannelListResponse> {
-  const data = await analyticsGet<ChannelListResponse>('/api/v1/monitoring/channels', params);
+export async function getMonitoredChannels(
+  params?: { platform?: string; is_active?: boolean; page?: number; page_size?: number },
+  throwOnError = false,
+): Promise<ChannelListResponse> {
+  const data = await analyticsGet<ChannelListResponse>('/api/v1/monitoring/channels', params, throwOnError);
   if (!data) return { items: [], total: 0, page: 1, page_size: 20 };
   return data;
 }
@@ -301,8 +310,8 @@ export async function createMonitoringChannel(payload: {
   name?: string;
   metadata?: Record<string, any>;
   id?: string;
-}): Promise<ChannelResponse | null> {
-  return analyticsPost<ChannelResponse>('/api/v1/monitoring/channels', payload);
+}, throwOnError = false): Promise<ChannelResponse | null> {
+  return analyticsPost<ChannelResponse>('/api/v1/monitoring/channels', payload, undefined, throwOnError);
 }
 
 export async function deleteMonitoringChannel(channelId: string): Promise<boolean> {
@@ -431,7 +440,7 @@ export async function ensureChannelsRegistered(
 ): Promise<Map<string, string>> {
   const idMap = new Map<string, string>();
 
-  const existing = await getMonitoredChannels({ page_size: 100 });
+  const existing = await getMonitoredChannels({ page_size: 100 }, true);
   const existingMap = new Map(existing.items.map(c => [`${c.platform}:${c.platform_channel_id}`, c.id]));
 
   for (const ch of channels) {
@@ -445,7 +454,7 @@ export async function ensureChannelsRegistered(
         platform: ch.platform,
         platform_channel_id: ch.id,
         name: ch.name
-      });
+      }, true);
       if (created?.id) {
         idMap.set(key, created.id);
         log(`[ScraperAnalytics] Registered channel ${ch.platform}:${ch.id} → ${created.id}`, 'info');
@@ -457,7 +466,8 @@ export async function ensureChannelsRegistered(
         }
       }
     } catch (err: any) {
-      log(`[ScraperAnalytics] Failed to register channel ${key}: ${err.message}`, 'warn');
+      log.warn(`Не удалось зарегистрировать канал ${key}: ${err.message}`, 'analytics');
+      throw err;
     }
   }
 

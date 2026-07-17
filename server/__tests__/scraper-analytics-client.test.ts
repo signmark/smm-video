@@ -21,7 +21,7 @@ vi.mock('../utils/logger', () => ({
 
 import axios from 'axios';
 import { log } from '../utils/logger';
-import { refreshChannelMetrics } from '../services/scraper-analytics';
+import { getMonitoredChannels, refreshChannelMetrics } from '../services/scraper-analytics';
 
 describe('scraper analytics client', () => {
   beforeEach(() => {
@@ -81,5 +81,18 @@ describe('scraper analytics client', () => {
       'analytics',
     );
     expect(JSON.stringify(vi.mocked(log.warn).mock.calls)).not.toContain('test-key');
+  });
+
+  it('can make channel lookup failures strict instead of returning a false empty list', async () => {
+    vi.mocked(axios.get).mockRejectedValue({
+      message: 'Request failed with status code 401',
+      response: {
+        status: 401,
+        data: { detail: 'Invalid API key' },
+      },
+    });
+
+    await expect(getMonitoredChannels({ page_size: 100 }, true))
+      .rejects.toThrow('Analytics API отклонил ключ доступа (HTTP 401): Invalid API key');
   });
 });

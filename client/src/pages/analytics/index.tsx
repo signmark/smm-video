@@ -82,10 +82,10 @@ export default function AnalyticsPage() {
       
       return response;
     },
-    onSuccess: () => {
+    onSuccess: (response) => {
       toast({
         title: "✅ Данные обновлены",
-        description: "Аналитика успешно обновлена из последних данных",
+        description: response.message || "Аналитика успешно обновлена из последних данных",
       });
     },
     onError: (error: Error) => {

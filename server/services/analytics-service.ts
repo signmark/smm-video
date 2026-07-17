@@ -257,7 +257,7 @@ export class AnalyticsService {
         id: ch.platformId
       })));
 
-      const monitored = await getMonitoredChannels({ page_size: 100 });
+      const monitored = await getMonitoredChannels({ page_size: 100 }, true);
       const channelObjects: Array<{ id: string; platform: string; platform_channel_id: string }> = [];
 
       for (const ch of channelsToLookup) {
@@ -298,7 +298,14 @@ export class AnalyticsService {
         }
         log(`[AnalyticsService] 🔄 Обновление метрик запрошено для ${channelObjects.length} каналов кампании ${campaignId}`, 'info');
       } else {
-        log(`[AnalyticsService] ⏳ Все каналы ещё не спарсены — metrics-refresh не вызывается`, 'info');
+        log(`[AnalyticsService] ⏳ Каналы зарегистрированы, но первичный сбор данных ещё не завершён`, 'info');
+        return {
+          success: true,
+          message: 'Каналы добавлены в аналитику. Первичный сбор данных запущен — обновите данные чуть позже',
+          processed: 0,
+          failed: 0,
+          skipped: 0,
+        };
       }
 
       return {

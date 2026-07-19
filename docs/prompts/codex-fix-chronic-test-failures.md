@@ -1,4 +1,4 @@
-# Task D: fix remaining 7 chronic test failures (after Task C)
+# Task D: fix remaining 10 chronic test failures in 7 files (after Task C)
 
 ## Context
 
@@ -160,7 +160,7 @@ npx vitest run 2>&1 | tee vitest-before.txt | Out-Null
 ```
 
 Expected baseline after Task C: **7 failed files / 10 failed tests**
-in the 6 files listed above. If you see more failures, Task C
+in the 7 files listed above. If you see more failures, Task C
 didn't fully land — stop and report.
 
 After your changes, run again and report:

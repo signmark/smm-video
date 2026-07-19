@@ -96,8 +96,10 @@ Before starting work:
 npx vitest run 2>&1 | tee vitest-before.txt | Out-Null
 ```
 
-Expected baseline: 9 failed files / 17 failed tests, with 7 of those
-17 in the two files you own. Capture and report.
+Expected baseline: **9 failed files / 17 failed tests**, with 7 of
+those 17 in the two files you own. After your changes: **7 failed
+files / 10 failed tests** (the 2 files you fix become green; the
+remaining 7 files / 10 tests belong to Task D).
 
 After your changes, run again and report:
 - Full suite: `Test Files X passed | Y failed (total)` / `Tests N
@@ -105,8 +107,8 @@ After your changes, run again and report:
 - For each of your 2 files individually: how many tests went from
   fail → pass.
 - Any incidental changes to other files (should be zero).
-- Remaining baseline failures (should be 17 - 7 = 10 after this task,
-  all of which belong to Task D).
+- Remaining baseline failures: **10 tests in 7 files**, all of which
+  belong to Task D.
 
 If you can't get the runtime below 1 second per mocked test, you're
 probably still hitting the network somewhere — re-check mocks.
@@ -119,11 +121,12 @@ probably still hitting the network somewhere — re-check mocks.
    server/__tests__/api_routes_new.test.ts` — all green.
 2. No test in those 2 files takes more than 2 seconds (proves no real
    network).
-3. Full `npx vitest run` shows 10 failed files (was 9, but if you fixed
-   the 2 files cleanly, the count of "files with failures" goes from 9
-   to 7 — note: the number of files with failures can change as
-   files go from "all tests pass" to "all tests pass" or vice versa).
-4. The 7 individual test failures in these 2 files are gone.
+3. Full `npx vitest run` shows **10 failed tests across 7 failed files**
+   (was 17 failed tests across 9 failed files). The number of *files*
+   with failures goes from 9 to 7 (your 2 files become green; the other
+   7 stay red until Task D).
+4. The 7 individual test failures in these 2 files are gone (2 from
+   `autonomous-ai-tools.test.ts` + 5 from `api_routes_new.test.ts`).
 5. No new `it.skip` introduced. No production code changed.
 6. `git diff --check` clean.
 7. Other 7 baseline failures (in `environment-detector.test.ts`,

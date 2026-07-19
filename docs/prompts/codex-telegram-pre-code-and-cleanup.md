@@ -77,7 +77,9 @@ function restorePreservedTags(output: string, restore: Array<{ token: string; bo
     // Token is a placeholder: <pre>TOKEN</pre> or <code>TOKEN</code>
     // The original tag name is unknown post-pipeline — re-derive from prefix
     const tag = token.startsWith(PRE_PLACEHOLDER_PREFIX) ? 'pre' : 'code';
-    result = result.replace(token, `${tag}>${safe}</${tag}>`);
+    // NB: this is the RESTORE, not the lift — the source contains only the
+    // token (lifted out earlier), so we must put back the full <tag>...</tag>.
+    result = result.replace(token, `<${tag}>${safe}</${tag}>`);
   }
   return result;
 }

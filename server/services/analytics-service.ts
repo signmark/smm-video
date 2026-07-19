@@ -162,6 +162,19 @@ export class AnalyticsService {
       const analytics = await getChannelAnalytics(found.id, { from_date: fromStr, to_date: toStr });
       if (!analytics) continue;
 
+      // Скрейпер знает канал, но данных за период у него нет (например, первичный
+      // сбор ещё идёт) — его нулевые агрегаты не должны затирать сохранённые метрики.
+      const hasScraperData = [
+        analytics.total_views,
+        analytics.total_likes,
+        analytics.total_comments,
+        analytics.total_shares,
+      ].some(value => Number(value) > 0);
+      if (!hasScraperData) {
+        log(`[AnalyticsService] 📡 Скрейпер ${ch.platform}: данных за период нет — оставляем сохранённые метрики`, 'info');
+        continue;
+      }
+
       log(`[AnalyticsService] 📡 Скрейпер ${ch.platform}: ${analytics.total_views} просмотров за период`, 'info');
 
       if (platformStatsMap.has(ch.platform)) {

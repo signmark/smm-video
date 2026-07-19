@@ -109,4 +109,56 @@ describe('AnalyticsService scraper supplementation', () => {
       expect.objectContaining({ name: 'telegram', posts: 1, views: 20 }),
     ]));
   });
+
+  it('keeps stored metrics when the scraper has no data for the period', async () => {
+    // Регрессия: нулевые агрегаты скрейпера (канал найден, но первичный сбор
+    // ещё не завершён) затирали реальные метрики, сохранённые в Directus.
+    vi.mocked(directusApi.get).mockResolvedValue({
+      data: {
+        data: [{
+          id: 'content-1',
+          status: 'published',
+          published_at: '2026-07-15T12:00:00.000Z',
+          social_platforms: {
+            vk: {
+              status: 'published',
+              postId: '-228626989_10',
+              publishedAt: '2026-07-15T12:00:00.000Z',
+              analytics: { views: 5, likes: 1, comments: 0, shares: 0 },
+            },
+          },
+        }],
+      },
+    } as any);
+
+    vi.mocked(axios.get).mockResolvedValue({
+      data: {
+        data: {
+          social_media_settings: {
+            vk: { groupId: '-228626989' },
+          },
+        },
+      },
+    } as any);
+
+    vi.mocked(getAllMonitoredChannels).mockResolvedValue({
+      items: [
+        { id: 'vk-monitor', platform: 'vk', platform_channel_id: '-228626989' },
+      ],
+    } as any);
+
+    vi.mocked(getChannelAnalytics).mockResolvedValue({
+      total_views: 0,
+      total_likes: 0,
+      total_comments: 0,
+      total_shares: 0,
+    } as any);
+
+    const result = await AnalyticsService.getCampaignAnalytics('campaign-1', 'thisMonth', 'user-token');
+
+    expect(result.platforms).toEqual(expect.arrayContaining([
+      expect.objectContaining({ name: 'vk', posts: 1, views: 5, likes: 1 }),
+    ]));
+    expect(result.totalViews).toBe(5);
+  });
 });

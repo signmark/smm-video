@@ -16,7 +16,7 @@ import { vkStoriesService } from '../services/social-platforms/vk-stories-servic
 import { normalizePlatforms, createPendingStatuses, extractPlatformNames } from '../utils/platforms-helper';
 import { getTempVideo, deleteTempVideo } from '../utils/temp-video-store';
 import { invalidateContentCache } from '../utils/content-cache';
-import { getContentAggregateTimes, getContentPublicationStatus } from '@shared/schedule-time';
+import { resolvePublishFinalization } from '@shared/schedule-time';
 
 const router = express.Router();
 
@@ -1306,7 +1306,10 @@ router.post('/publish/now', authMiddleware, async (req, res) => {
           let finalContentStatus = failedPlatformsArr.length === 0
             ? 'published'
             : 'partially_published';
-          let aggregatePublishedAt: string | null = null;
+          // Фолбэк на случай, если перечитать состояние не удастся: успешно
+          // опубликованный контент не должен остаться без published_at,
+          // а частично опубликованный — получить ложный.
+          let publishedAt: Date | null = finalContentStatus === 'published' ? new Date() : null;
 
           // Platform handlers have already persisted their own fresh state. Do
           // not write social_platforms again here: rebuilding it from the result
@@ -1318,28 +1321,21 @@ router.post('/publish/now', authMiddleware, async (req, res) => {
               { headers: { Authorization: `Bearer ${adminToken}` } },
             );
             freshContent = freshResp.data?.data || {};
-            const freshPlatforms = freshContent.social_platforms || {};
-            finalContentStatus = getContentPublicationStatus(
-              freshPlatforms,
+            const resolution = resolvePublishFinalization(
+              freshContent.social_platforms || {},
               freshContent.status || finalContentStatus,
-            );
-            aggregatePublishedAt = getContentAggregateTimes(
-              freshPlatforms,
-              finalContentStatus,
               {
                 scheduledAt: freshContent.scheduled_at,
                 publishedAt: freshContent.published_at,
               },
-            ).publishedAt;
+            );
+            finalContentStatus = resolution.status;
+            publishedAt = resolution.publishedAt;
           } catch (freshStateError: any) {
             // A transient read failure must not leave successfully published
             // content in its pre-publication status.
             log(`[Social Publishing] Не удалось перечитать статус ${contentId}: ${freshStateError.message}`);
           }
-
-          const publishedAt = finalContentStatus === 'published'
-            ? aggregatePublishedAt || new Date()
-            : null;
 
           await storage.updateCampaignContent(
             contentId,

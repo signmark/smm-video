@@ -137,3 +137,27 @@ export function getContentPublicationStatus(
     ? currentStatus
     : 'scheduled';
 }
+
+/**
+ * Решение финализации publish-now: итоговый статус контента и агрегированный
+ * published_at. publishedAt заполняется только когда весь контент опубликован
+ * (контракт getContentAggregateTimes: non-null означает полную публикацию) —
+ * иначе карточка частично опубликованного/упавшего поста ложно показывала бы
+ * «Опубликовано: <текущее время>».
+ * `now` инжектируется для тестируемости.
+ */
+export function resolvePublishFinalization(
+  platforms: Record<string, ScheduledPlatformTime> | null | undefined,
+  currentStatus: string,
+  fallback?: { scheduledAt?: string | Date | null; publishedAt?: string | Date | null },
+  now: Date = new Date(),
+): { status: string; publishedAt: Date | null } {
+  const status = getContentPublicationStatus(platforms, currentStatus);
+  const aggregatePublishedAt = getContentAggregateTimes(platforms, status, fallback).publishedAt;
+  return {
+    status,
+    publishedAt: status === 'published'
+      ? new Date(aggregatePublishedAt ?? now.getTime())
+      : null,
+  };
+}

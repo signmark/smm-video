@@ -5,6 +5,7 @@ import {
   getContentPublicationStatus,
   getPublishedPlatformTimeSummary,
   isConfirmedPublishedPlatform,
+  resolvePublishFinalization,
   setLocalScheduleTime,
 } from '@shared/schedule-time';
 
@@ -147,5 +148,65 @@ describe('schedule time normalization', () => {
       telegram: { status: 'published', postId: 123 },
       vk: { status: 'cancelled' },
     }, 'partially_published')).toBe('published');
+  });
+});
+
+describe('resolvePublishFinalization', () => {
+  const NOW = new Date('2026-07-19T12:00:00.000Z');
+
+  it('fully published content gets the latest confirmed platform time', () => {
+    const result = resolvePublishFinalization({
+      telegram: { status: 'published', publishedAt: '2026-07-19T11:30:00.000Z', postId: '42' },
+      vk: { status: 'published', publishedAt: '2026-07-19T11:45:00.000Z', postId: '-1_7' },
+    }, 'scheduled', undefined, NOW);
+
+    expect(result.status).toBe('published');
+    expect(result.publishedAt?.toISOString()).toBe('2026-07-19T11:45:00.000Z');
+  });
+
+  it('falls back to now when a fully published item has no timestamps at all', () => {
+    const result = resolvePublishFinalization({
+      telegram: { status: 'published', postId: '42' },
+    }, 'scheduled', undefined, NOW);
+
+    expect(result.status).toBe('published');
+    expect(result.publishedAt?.toISOString()).toBe(NOW.toISOString());
+  });
+
+  it('keeps an existing aggregate published_at when nothing fresher exists', () => {
+    const result = resolvePublishFinalization({
+      telegram: { status: 'published', postId: '42' },
+    }, 'scheduled', { publishedAt: '2026-07-18T09:00:00.000Z' }, NOW);
+
+    expect(result.status).toBe('published');
+    expect(result.publishedAt?.toISOString()).toBe('2026-07-18T09:00:00.000Z');
+  });
+
+  it('регрессия: частичная публикация НЕ получает published_at', () => {
+    // Раньше || new Date() писал текущее время в published_at, и карточка
+    // частично опубликованного поста ложно показывала «Опубликовано».
+    const result = resolvePublishFinalization({
+      telegram: { status: 'published', publishedAt: '2026-07-19T11:30:00.000Z', postId: '42' },
+      vk: { status: 'failed', error: 'Bad Request' },
+    }, 'scheduled', undefined, NOW);
+
+    expect(result.status).toBe('partially_published');
+    expect(result.publishedAt).toBeNull();
+  });
+
+  it('publish-now без подтверждённых платформ остаётся scheduled и без published_at', () => {
+    const result = resolvePublishFinalization({
+      telegram: { status: 'publishing' },
+      vk: { status: 'failed' },
+    }, 'scheduled', undefined, NOW);
+
+    expect(result.status).toBe('scheduled');
+    expect(result.publishedAt).toBeNull();
+  });
+
+  it('платформы без состояния сохраняют текущий статус контента', () => {
+    const result = resolvePublishFinalization(undefined, 'draft', undefined, NOW);
+    expect(result.status).toBe('draft');
+    expect(result.publishedAt).toBeNull();
   });
 });

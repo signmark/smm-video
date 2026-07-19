@@ -6,7 +6,7 @@
 import axios from 'axios';
 import FormData from 'form-data';
 import log from '../../utils/logger';
-import { markdownToTelegramHtml } from '../../utils/strip-markdown';
+import { toTelegramHtml } from '../../utils/telegram-html';
 
 export interface TelegramSettings {
   token: string;
@@ -59,27 +59,12 @@ class TelegramService {
   }
 
   /**
-   * Зачищает HTML до подмножества, которое поддерживает Telegram (parse_mode=HTML)
+   * Зачищает HTML до подмножества, которое поддерживает Telegram (parse_mode=HTML).
+   * Неподдерживаемые теги переформатируются в визуально похожий вид
+   * (абзацы → переносы строк, списки → «• »/«1. », заголовки → <b>).
    */
   private sanitizeText(raw: string): string {
-    // Конвертируем Markdown в HTML ПЕРВЫМ делом (до обработки HTML-тегов)
-    const withHtml = markdownToTelegramHtml(raw);
-    return withHtml
-      .replace(/<\/p>/gi, '\n\n')
-      .replace(/<\/div>/gi, '\n\n')
-      .replace(/<\/h[1-6]>/gi, '\n\n')
-      .replace(/<\/ul>/gi, '\n')
-      .replace(/<\/ol>/gi, '\n')
-      .replace(/<li[^>]*>/gi, '\n• ')
-      .replace(/<\/li>/gi, '')
-      .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<strong[^>]*>(.*?)<\/strong>/gis, '<b>$1</b>')
-      .replace(/<em[^>]*>(.*?)<\/em>/gis, '<i>$1</i>')
-      .replace(/<a[^>]+href="([^"]+)"[^>]*>(.*?)<\/a>/gis, '<a href="$1">$2</a>')
-      .replace(/<(?!\/?(b|i|u|s|code|pre|a)\b)[^>]+>/gi, '')
-      .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ').replace(/&mdash;/g, '—').replace(/&ndash;/g, '–')
-      .replace(/\n{3,}/g, '\n\n')
-      .trim();
+    return toTelegramHtml(raw);
   }
 
   /**

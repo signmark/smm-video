@@ -82,6 +82,26 @@ describe('TelegramService', () => {
       expect(sentText).not.toContain('<strong>');
     });
 
+    it('регрессия: экранированный HTML не воскрешает <p> («Unsupported start tag "p" at byte offset 0»)', async () => {
+      vi.mocked(axios.post).mockResolvedValueOnce({
+        data: { ok: true, result: { message_id: 13 } }
+      });
+
+      const result = await telegramService.publishPost(mockSettings, {
+        text: '&lt;p&gt;&lt;strong&gt;Акция!&lt;/strong&gt;&lt;/p&gt;&lt;p&gt;Скидки &lt; 50%&lt;/p&gt;&lt;ul&gt;&lt;li&gt;раз&lt;/li&gt;&lt;li&gt;два&lt;/li&gt;&lt;/ul&gt;'
+      });
+
+      expect(result.success).toBe(true);
+      const sentText: string = vi.mocked(axios.post).mock.calls[0][1].text;
+      expect(sentText).toContain('<b>Акция!</b>');
+      expect(sentText).toContain('• раз');
+      expect(sentText).toContain('• два');
+      expect(sentText).toContain('&lt; 50%');
+      // Ни одного неподдерживаемого тега в отправляемом тексте
+      expect(sentText).not.toMatch(/<\/?(?:p|div|ul|ol|li|strong|em|span|h[1-6])\b/);
+      expect(sentText.startsWith('<p>')).toBe(false);
+    });
+
     it('декодирует HTML-сущности (&nbsp;, &mdash;, &ndash;)', async () => {
       vi.mocked(axios.post).mockResolvedValueOnce({
         data: { ok: true, result: { message_id: 11 } }

@@ -1,0 +1,72 @@
+﻿ ✓ server/__tests__/partner-postback.test.ts (12 tests) 295ms
+ ✓ server/__tests__/scraper-analytics-resolve.test.ts (5 tests) 140ms
+ ✓ server/__tests__/facebook-service.test.ts (6 tests) 67ms
+ ✓ server/__tests__/ai-service.test.ts (8 tests) 247ms
+ ✓ server/__tests__/feature-flags-route.test.ts (3 tests) 107ms
+ ✓ server/__tests__/clear-cache-route.test.ts (4 tests) 94ms
+ ✓ server/__tests__/deepseek.test.ts (27 tests) 73ms
+ ✓ server/__tests__/threads-service.test.ts (19 tests) 65ms
+ ✓ server/__tests__/n8n-utils.test.ts (7 tests) 50ms
+ ✓ server/__tests__/storage.test.ts (6 tests) 55ms
+ ✓ server/__tests__/text.test.ts (13 tests) 40ms
+ ✓ server/__tests__/CONTENT_GENERATION_AND_PUBLISHING.test.ts (60 tests) 725ms
+ ✓ server/__tests__/media-helpers.test.ts (10 tests) 61ms
+ ✓ server/__tests__/analytics-refresh.test.ts (6 tests) 38ms
+ ✓ server/__tests__/qwen.test.ts (8 tests) 64ms
+ ✓ server/__tests__/scraper-analytics-client.test.ts (8 tests) 45ms
+ ✓ server/__tests__/ai-helpers.test.ts (7 tests) 80ms
+ ✓ server/__tests__/analytics-scraper-matching.test.ts (4 tests) 38ms
+ ✓ server/__tests__/tiktok-service.test.ts (6 tests) 42ms
+ ✓ server/__tests__/telegram-service.test.ts (13 tests) 65ms
+ ✓ server/__tests__/SCHEDULER_INTEGRATION.test.ts (4 tests) 385ms
+ ✓ server/__tests__/support.test.ts (2 tests) 42ms
+ ✓ server/__tests__/token-handler.test.ts (11 tests) 42ms
+ ✓ server/__tests__/vk-stories-service.test.ts (4 tests) 73ms
+ ✓ server/__tests__/base-social-service.test.ts (4 tests) 51ms
+ ✓ server/__tests__/vk-service.test.ts (13 tests) 62ms
+ ✓ server/__tests__/publication-tracking.test.ts (2 tests) 44ms
+ ✓ server/__tests__/telegram-html.test.ts (21 tests) 74ms
+ ✓ server/__tests__/analytics-service.test.ts (2 tests) 34ms
+ ✓ server/__tests__/generated-social-content.test.ts (8 tests) 32ms
+ ✓ server/__tests__/instagram-reels-service.test.ts (4 tests) 39ms
+ ✓ server/__tests__/telegram-legacy-format.test.ts (2 tests) 38ms
+ ✓ server/__tests__/url-utils.test.ts (8 tests) 24ms
+ ✓ server/__tests__/analytics-aggregation.test.ts (8 tests) 30ms
+ ✓ server/__tests__/directus-session-restore.test.ts (3 tests) 20ms
+ ✓ server/__tests__/social-helpers.test.ts (8 tests) 28ms
+ ✓ server/__tests__/system-utils.test.ts (15 tests) 44ms
+ ✓ server/__tests__/schedule-time.test.ts (20 tests) 34ms
+ ✓ server/__tests__/ai-assistant-routing.test.ts (17 tests) 105ms
+ ✓ server/__tests__/status-validator.test.ts (9 tests) 36ms
+ ✓ server/__tests__/vk-clips-service.test.ts (2 tests) 27ms
+ ✓ server/__tests__/instagram-video-proxy-helper.test.ts (7 tests) 37ms
+ ✓ server/__tests__/autonomous.test.ts (11 tests) 48ms
+ ✓ server/__tests__/notification-bus.test.ts (1 test) 23ms
+ ✓ server/__tests__/directus.test.ts (1 test) 17ms
+ ✓ server/__tests__/platforms-helper.test.ts (22 tests) 30ms
+ ✓ server/__tests__/FULL_CYCLE_INTEGRATION.test.ts (1 test) 16ms
+ ✓ server/__tests__/youtube-oauth-flow.test.ts (14 tests) 28ms
+ ✓ server/__tests__/instagram-video-validator.test.ts (11 tests) 33ms
+ ✓ server/__tests__/retry-and-clone.test.ts (12 tests) 506ms
+ ✓ server/__tests__/facebook-token-validation.test.ts (11 tests) 27ms
+ ✓ server/__tests__/auth_flow.test.ts (8 tests) 177ms
+ FAIL  server/__tests__/ai-assistant-service.test.ts > AIAssistantService > processCommand > should show campaign optio
+ FAIL  server/__tests__/ai-assistant-service.test.ts > AIAssistantService > processCommand > should extract campaign na
+ FAIL  server/__tests__/api_routes_new.test.ts > API Routes New Tests > GET /api/keywords > should return 200 and an ar
+ FAIL  server/__tests__/api_routes_new.test.ts > API Routes New Tests > GET /api/keywords > should return empty array w
+ FAIL  server/__tests__/api_routes_new.test.ts > API Routes New Tests > POST /api/generate > should return correct JSON
+ FAIL  server/__tests__/api_routes_new.test.ts > API Routes New Tests > POST /api/generate > should return 500 when AI 
+ FAIL  server/__tests__/api_routes_new.test.ts > API Routes New Tests > GET /api/ai/validate-keys > should return valid
+ FAIL  server/__tests__/autonomous-ai-tools.test.ts > AutonomousAI Tool Implementations > generateImage > should genera
+ FAIL  server/__tests__/autonomous-ai-tools.test.ts > AutonomousAI Tool Implementations > rewriteContent > should rewri
+ FAIL  server/__tests__/environment-detector.test.ts > server/utils/environment-detector > detectEnvironment > должен о
+ FAIL  server/__tests__/health.test.ts > Health Route > должен возвращать 200 и status ok когда все сервисы healthy
+     45|     expect(response.body.duration_ms).toBeGreaterThanOrEqual(0);
+ FAIL  server/__tests__/health.test.ts > Health Route > должен помечать n8n как unreachable когда get возвращает null
+ FAIL  server/__tests__/logger.test.ts > logger > helper methods > debug should log message
+ FAIL  server/__tests__/publish-scheduler-routing.test.ts > PublishScheduler — роутинг по платформам > неизвестная плат
+ FAIL  server/__tests__/telegram-collect-comments.test.ts > Telegram collect comments > POST /api/trends/collect-commen
+ FAIL  server/__tests__/youtube-service.test.ts > YouTubeService > publishContent > should successfully send payload to
+ FAIL  server/__tests__/youtube-service.test.ts > YouTubeService > publishContent > should set isShort to true if conte
+ Test Files  9 failed | 59 passed (68)
+   Duration  35.51s (transform 48.10s, setup 36.13s, import 79.63s, tests 42.24s, environment 23ms)

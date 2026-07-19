@@ -13,8 +13,8 @@ vi.mock('axios', () => ({
 }));
 
 vi.mock('../services/scraper-analytics', () => ({
-  getAllMonitoredChannels: vi.fn(),
   getChannelAnalytics: vi.fn(),
+  resolveAnalyticsChannel: vi.fn(),
   getScraperCampaignChannels: vi.fn((settings: any) => {
     const channels = [];
     if (settings?.telegram?.chatId?.startsWith('@')) {
@@ -30,7 +30,10 @@ vi.mock('../services/scraper-analytics', () => ({
 import axios from 'axios';
 import { directusApi } from '../directus';
 import { AnalyticsService } from '../services/analytics-service';
-import { getAllMonitoredChannels, getChannelAnalytics } from '../services/scraper-analytics';
+import {
+  getChannelAnalytics,
+  resolveAnalyticsChannel,
+} from '../services/scraper-analytics';
 
 describe('AnalyticsService scraper supplementation', () => {
   const previousAdminToken = process.env.DIRECTUS_ADMIN_TOKEN;
@@ -40,6 +43,9 @@ describe('AnalyticsService scraper supplementation', () => {
     vi.setSystemTime(new Date('2026-07-16T12:00:00.000Z'));
     vi.clearAllMocks();
     process.env.DIRECTUS_ADMIN_TOKEN = 'admin-token';
+    vi.mocked(resolveAnalyticsChannel).mockImplementation(async (platform) => (
+      platform === 'vk' ? 'vk-monitor' : 'tg-monitor'
+    ));
   });
 
   afterEach(() => {
@@ -82,13 +88,6 @@ describe('AnalyticsService scraper supplementation', () => {
           },
         },
       },
-    } as any);
-
-    vi.mocked(getAllMonitoredChannels).mockResolvedValue({
-      items: [
-        { id: 'vk-monitor', platform: 'vk', platform_channel_id: '-228626989' },
-        { id: 'tg-monitor', platform: 'telegram', platform_channel_id: '@tg_channel' },
-      ],
     } as any);
 
     vi.mocked(getChannelAnalytics).mockImplementation(async (channelId) => ({
@@ -141,12 +140,6 @@ describe('AnalyticsService scraper supplementation', () => {
       },
     } as any);
 
-    vi.mocked(getAllMonitoredChannels).mockResolvedValue({
-      items: [
-        { id: 'vk-monitor', platform: 'vk', platform_channel_id: '-228626989' },
-      ],
-    } as any);
-
     vi.mocked(getChannelAnalytics).mockResolvedValue({
       total_views: 0,
       total_likes: 0,
@@ -160,5 +153,112 @@ describe('AnalyticsService scraper supplementation', () => {
       expect.objectContaining({ name: 'vk', posts: 1, views: 5, likes: 1 }),
     ]));
     expect(result.totalViews).toBe(5);
+  });
+
+  it('uses the cached analyticsChannelId for scraper analytics', async () => {
+    vi.mocked(directusApi.get).mockResolvedValue({
+      data: {
+        data: [{
+          id: 'content-1',
+          status: 'published',
+          published_at: '2026-07-15T12:00:00.000Z',
+          social_platforms: {
+            telegram: {
+              status: 'published',
+              postId: '20',
+              publishedAt: '2026-07-15T12:00:00.000Z',
+              analytics: { views: 1, likes: 0, comments: 0, shares: 0 },
+            },
+          },
+        }],
+      },
+    } as any);
+    vi.mocked(axios.get).mockResolvedValue({
+      data: {
+        data: {
+          name: 'Campaign',
+          social_media_settings: {
+            telegram: {
+              chatId: '-1001234567890',
+              analyticsChannelId: 'cached-uuid',
+            },
+          },
+        },
+      },
+    } as any);
+    vi.mocked(resolveAnalyticsChannel).mockResolvedValue('cached-uuid');
+    vi.mocked(getChannelAnalytics).mockResolvedValue({
+      total_views: 25,
+      total_likes: 2,
+      total_comments: 1,
+      total_shares: 0,
+    } as any);
+
+    await AnalyticsService.getCampaignAnalytics('campaign-1', 'thisMonth', 'user-token');
+
+    expect(resolveAnalyticsChannel).toHaveBeenCalledWith(
+      'telegram',
+      '-1001234567890',
+      'cached-uuid',
+      'campaign-1',
+      'admin-token',
+      'Campaign',
+    );
+    expect(getChannelAnalytics).toHaveBeenCalledWith(
+      'cached-uuid',
+      expect.any(Object),
+    );
+  });
+
+  it('invokes auto-resolution when the channel UUID is not cached', async () => {
+    vi.mocked(directusApi.get).mockResolvedValue({
+      data: {
+        data: [{
+          id: 'content-1',
+          status: 'published',
+          published_at: '2026-07-15T12:00:00.000Z',
+          social_platforms: {
+            telegram: {
+              status: 'published',
+              postId: '20',
+              publishedAt: '2026-07-15T12:00:00.000Z',
+              analytics: { views: 1, likes: 0, comments: 0, shares: 0 },
+            },
+          },
+        }],
+      },
+    } as any);
+    vi.mocked(axios.get).mockResolvedValue({
+      data: {
+        data: {
+          name: 'Campaign',
+          social_media_settings: {
+            telegram: { chatId: '@tg_channel' },
+          },
+        },
+      },
+    } as any);
+    vi.mocked(resolveAnalyticsChannel).mockResolvedValue('registered-uuid');
+    vi.mocked(getChannelAnalytics).mockResolvedValue({
+      total_views: 10,
+      total_likes: 1,
+      total_comments: 0,
+      total_shares: 0,
+    } as any);
+
+    await AnalyticsService.getCampaignAnalytics('campaign-1', 'thisMonth', 'user-token');
+
+    expect(resolveAnalyticsChannel).toHaveBeenCalledWith(
+      'telegram',
+      '@tg_channel',
+      undefined,
+      'campaign-1',
+      'admin-token',
+      'Campaign',
+    );
+    expect(getChannelAnalytics).toHaveBeenCalledWith(
+      'registered-uuid',
+      expect.any(Object),
+    );
   });
 });

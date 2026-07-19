@@ -11,7 +11,9 @@ import axios from 'axios';
 
 export function registerAnalyticsRoutes(app: Express) {
   /**
-   * Принудительное обновление данных аналитики
+   * Admin-only: принудительный refresh метрик через scraper.
+   * UI больше не вызывает — данные подтягиваются на входе на страницу Аналитики.
+   * Endpoint оставлен для ops (расследование инцидентов, тесты).
    */
   app.post("/api/analytics/update", authenticateUser, async (req: Request, res: Response) => {
     try {

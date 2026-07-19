@@ -5,6 +5,44 @@ import {
   aggregatePublishedPlatformAnalytics,
 } from './analytics-aggregation';
 
+type AnalyticsPlatform = 'telegram' | 'vk';
+
+function getResolvableCampaignChannels(
+  socialSettings: Record<string, any>,
+  campaignName: string | undefined,
+  getFallbackChannels: (
+    settings: Record<string, any>,
+    name?: string,
+  ) => Array<{ platform: AnalyticsPlatform; id: string; name?: string }>,
+): Array<{ platform: AnalyticsPlatform; platformId: string; name?: string }> {
+  const channels = getFallbackChannels(socialSettings, campaignName)
+    .map(channel => ({
+      platform: channel.platform,
+      platformId: channel.id,
+      name: channel.name,
+    }));
+
+  for (const platform of ['telegram', 'vk'] as const) {
+    const platformSettings = socialSettings?.[platform] || {};
+    if (
+      platformSettings.analyticsChannelId
+      && !channels.some(channel => channel.platform === platform)
+    ) {
+      channels.push({
+        platform,
+        platformId: String(
+          platform === 'telegram'
+            ? platformSettings.chatId || platformSettings.username || ''
+            : platformSettings.groupId || '',
+        ),
+        name: campaignName,
+      });
+    }
+  }
+
+  return channels;
+}
+
 export class AnalyticsService {
   private static readonly ANALYTICS_PAGE_SIZE = 1000;
 
@@ -137,29 +175,38 @@ export class AnalyticsService {
 
     // Каналы которые нужно искать в скрейпере
     const {
-      getAllMonitoredChannels,
       getChannelAnalytics,
       getScraperCampaignChannels,
+      resolveAnalyticsChannel,
     } = await import('./scraper-analytics');
 
-    const channelsToLookup = getScraperCampaignChannels(socialSettings)
-      .map(channel => ({ platform: channel.platform, platformId: channel.id }));
+    const channelsToLookup = getResolvableCampaignChannels(
+      socialSettings,
+      campaign.name,
+      getScraperCampaignChannels,
+    );
 
     if (channelsToLookup.length === 0) return;
-
-    const monitored = await getAllMonitoredChannels();
-    if (!monitored.items.length) return;
 
     const fromStr = fromDate.toISOString().split('T')[0];
     const toStr = toDate.toISOString().split('T')[0];
 
     for (const ch of channelsToLookup) {
-      const found = monitored.items.find(m =>
-        m.platform === ch.platform && m.platform_channel_id === ch.platformId
+      const platformSettings = socialSettings?.[ch.platform] || {};
+      const scraperChannelId = await resolveAnalyticsChannel(
+        ch.platform,
+        ch.platformId,
+        platformSettings.analyticsChannelId,
+        campaignId,
+        adminToken,
+        campaign.name,
       );
-      if (!found) continue;
+      if (!scraperChannelId) continue;
 
-      const analytics = await getChannelAnalytics(found.id, { from_date: fromStr, to_date: toStr });
+      const analytics = await getChannelAnalytics(
+        scraperChannelId,
+        { from_date: fromStr, to_date: toStr },
+      );
       if (!analytics) continue;
 
       // Скрейпер знает канал, но данных за период у него нет (например, первичный
@@ -214,20 +261,18 @@ export class AnalyticsService {
       }
 
       const {
-        getAllMonitoredChannels,
         getChannelParseStatus,
         getScraperCampaignChannels,
         refreshChannelMetrics,
-        ensureChannelsRegistered,
         forceParseChannel,
+        resolveAnalyticsChannel,
       } = await import('./scraper-analytics');
 
-      const channelsToLookup = getScraperCampaignChannels(socialSettings, campaign.name)
-        .map(channel => ({
-          platform: channel.platform,
-          platformId: channel.id,
-          name: channel.name,
-        }));
+      const channelsToLookup = getResolvableCampaignChannels(
+        socialSettings,
+        campaign.name,
+        getScraperCampaignChannels,
+      );
       const telegramAnalyticsUnavailable = Boolean(socialSettings.telegram?.chatId)
         && !channelsToLookup.some(channel => channel.platform === 'telegram');
       const telegramWarning = telegramAnalyticsUnavailable
@@ -241,59 +286,59 @@ export class AnalyticsService {
         };
       }
 
-      // Регистрируем если не зарегистрированы
-      await ensureChannelsRegistered(channelsToLookup.map(ch => ({
-        platform: ch.platform,
-        id: ch.platformId,
-        name: ch.name,
-      })));
-
-      const monitored = await getAllMonitoredChannels(undefined, true);
       const channelObjects: Array<{ id: string; platform: string; platform_channel_id: string }> = [];
+      let resolvedChannelCount = 0;
 
       for (const ch of channelsToLookup) {
-        const found = monitored.items.find(m =>
-          m.platform === ch.platform && m.platform_channel_id === ch.platformId
+        const platformSettings = socialSettings?.[ch.platform] || {};
+        const scraperChannelId = await resolveAnalyticsChannel(
+          ch.platform,
+          ch.platformId,
+          platformSettings.analyticsChannelId,
+          campaignId,
+          adminToken,
+          campaign.name,
         );
-        if (found) {
-          const parseStatus = await getChannelParseStatus(found.id, true);
-          if (parseStatus?.status === 'parsing') continue;
+        if (!scraperChannelId) continue;
+        resolvedChannelCount += 1;
 
-          if (parseStatus?.status === 'error' || !found.last_parsed_at) {
-            log(`[AnalyticsService] ⏳ Канал ${found.platform}:${found.platform_channel_id} ещё не спарсен — вызываем force-parse`, 'info');
-            let forceResult;
-            try {
-              forceResult = await forceParseChannel(found.id, true);
-            } catch (forceError: any) {
-              const lastError = parseStatus?.last_error
-                ? `Последняя ошибка парсинга: ${parseStatus.last_error}. `
-                : '';
-              throw new Error(`${lastError}${forceError.message}`);
-            }
-            if (!forceResult) {
-              throw new Error(
-                parseStatus?.last_error
-                  || `Скрапер не смог запустить сбор данных для ${found.platform}:${found.platform_channel_id}`,
-              );
-            }
-            if (forceResult.status === 'completed') {
-              log(`[AnalyticsService] ✅ force-parse already completed for ${found.platform}:${found.platform_channel_id}`, 'info');
-              channelObjects.push({
-                id: found.id,
-                platform: found.platform,
-                platform_channel_id: found.platform_channel_id,
-              });
-            } else {
-              log(`[AnalyticsService] ✅ force-parse triggered for ${found.platform}:${found.platform_channel_id}`, 'info');
-            }
-            continue;
+        const parseStatus = await getChannelParseStatus(scraperChannelId, true);
+        if (parseStatus?.status === 'parsing') continue;
+
+        if (parseStatus?.status === 'error' || !parseStatus?.last_parsed_at) {
+          log(`[AnalyticsService] ⏳ Канал ${ch.platform}:${ch.platformId} ещё не спарсен — вызываем force-parse`, 'info');
+          let forceResult;
+          try {
+            forceResult = await forceParseChannel(scraperChannelId, true);
+          } catch (forceError: any) {
+            const lastError = parseStatus?.last_error
+              ? `Последняя ошибка парсинга: ${parseStatus.last_error}. `
+              : '';
+            throw new Error(`${lastError}${forceError.message}`);
           }
-          channelObjects.push({
-            id: found.id,
-            platform: found.platform,
-            platform_channel_id: found.platform_channel_id
-          });
+          if (!forceResult) {
+            throw new Error(
+              parseStatus?.last_error
+                || `Скрапер не смог запустить сбор данных для ${ch.platform}:${ch.platformId}`,
+            );
+          }
+          if (forceResult.status === 'completed') {
+            log(`[AnalyticsService] ✅ force-parse already completed for ${ch.platform}:${ch.platformId}`, 'info');
+            channelObjects.push({
+              id: scraperChannelId,
+              platform: ch.platform,
+              platform_channel_id: ch.platformId,
+            });
+          } else {
+            log(`[AnalyticsService] ✅ force-parse triggered for ${ch.platform}:${ch.platformId}`, 'info');
+          }
+          continue;
         }
+        channelObjects.push({
+          id: scraperChannelId,
+          platform: ch.platform,
+          platform_channel_id: ch.platformId,
+        });
       }
 
       let refreshResult = null;
@@ -320,6 +365,15 @@ export class AnalyticsService {
         }
         log(`[AnalyticsService] 🔄 Обновление метрик запрошено для ${channelObjects.length} каналов кампании ${campaignId}`, 'info');
       } else {
+        if (resolvedChannelCount === 0) {
+          return {
+            success: false,
+            message: `Не удалось найти или зарегистрировать каналы кампании в scraper.${telegramWarning}`,
+            processed: 0,
+            failed: channelsToLookup.length,
+            skipped: 0,
+          };
+        }
         log(`[AnalyticsService] ⏳ Каналы зарегистрированы, но первичный сбор данных ещё не завершён`, 'info');
         return {
           success: true,

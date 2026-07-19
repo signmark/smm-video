@@ -13,8 +13,6 @@ vi.mock('../utils/logger', () => ({
 }));
 
 vi.mock('../services/scraper-analytics', () => ({
-  ensureChannelsRegistered: vi.fn(),
-  getAllMonitoredChannels: vi.fn(),
   getChannelParseStatus: vi.fn(),
   getScraperCampaignChannels: vi.fn((settings: any) => {
     const channels = [];
@@ -28,16 +26,16 @@ vi.mock('../services/scraper-analytics', () => ({
   }),
   refreshChannelMetrics: vi.fn(),
   forceParseChannel: vi.fn(),
+  resolveAnalyticsChannel: vi.fn(),
 }));
 
 import axios from 'axios';
 import { AnalyticsService } from '../services/analytics-service';
 import {
-  ensureChannelsRegistered,
-  getAllMonitoredChannels,
   getChannelParseStatus,
   refreshChannelMetrics,
   forceParseChannel,
+  resolveAnalyticsChannel,
 } from '../services/scraper-analytics';
 
 describe('AnalyticsService.refreshCampaignAnalytics', () => {
@@ -46,6 +44,9 @@ describe('AnalyticsService.refreshCampaignAnalytics', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.DIRECTUS_ADMIN_TOKEN = 'admin-token';
+    vi.mocked(resolveAnalyticsChannel).mockImplementation(async (platform) => (
+      platform === 'telegram' ? 'tg-monitor' : 'vk-monitor'
+    ));
   });
 
   afterEach(() => {
@@ -64,13 +65,14 @@ describe('AnalyticsService.refreshCampaignAnalytics', () => {
         },
       },
     } as any);
-    vi.mocked(ensureChannelsRegistered).mockResolvedValue(new Map());
-    vi.mocked(getAllMonitoredChannels).mockResolvedValue({
-      items: [
-        { id: 'tg-monitor', platform: 'telegram', platform_channel_id: '@public_channel', last_parsed_at: '2026-07-16T10:00:00Z' },
-        { id: 'vk-monitor', platform: 'vk', platform_channel_id: '228626989', last_parsed_at: '2026-07-16T10:00:00Z' },
-      ],
-    } as any);
+    vi.mocked(getChannelParseStatus).mockImplementation(async (channelId) => ({
+      channel_id: channelId,
+      status: 'idle',
+      last_parsed_at: '2026-07-16T10:00:00Z',
+      posts_count: 1,
+      last_error: null,
+      next_parse_at: null,
+    }));
     vi.mocked(refreshChannelMetrics).mockResolvedValue({
       status: 'completed',
       processed: 2,
@@ -84,8 +86,8 @@ describe('AnalyticsService.refreshCampaignAnalytics', () => {
 
     expect(refreshChannelMetrics).toHaveBeenCalledWith({
       channels: expect.arrayContaining([
-        expect.objectContaining({ platform: 'telegram' }),
-        expect.objectContaining({ platform: 'vk' }),
+        expect.objectContaining({ id: 'tg-monitor', platform: 'telegram' }),
+        expect.objectContaining({ id: 'vk-monitor', platform: 'vk' }),
       ]),
       days: 16,
       force: true,
@@ -95,7 +97,49 @@ describe('AnalyticsService.refreshCampaignAnalytics', () => {
       processed: 2,
       failed: 0,
     }));
-    expect(getAllMonitoredChannels).toHaveBeenCalledWith(undefined, true);
+    expect(resolveAnalyticsChannel).toHaveBeenCalledTimes(2);
+  });
+
+  it('uses a cached channel UUID without legacy registration lookup', async () => {
+    vi.mocked(axios.get).mockResolvedValue({
+      data: {
+        data: {
+          name: 'Campaign',
+          social_media_settings: {
+            telegram: {
+              chatId: '-1001234567890',
+              analyticsChannelId: 'cached-uuid',
+            },
+          },
+        },
+      },
+    } as any);
+    vi.mocked(resolveAnalyticsChannel).mockResolvedValue('cached-uuid');
+    vi.mocked(getChannelParseStatus).mockResolvedValue({
+      channel_id: 'cached-uuid',
+      status: 'idle',
+      last_parsed_at: '2026-07-16T10:00:00Z',
+    } as any);
+    vi.mocked(refreshChannelMetrics).mockResolvedValue({
+      status: 'completed',
+      processed: 1,
+      failed: 0,
+      skipped: 0,
+      duration_seconds: 1,
+      errors: [],
+    });
+
+    await AnalyticsService.refreshCampaignAnalytics('campaign-1', 7);
+
+    expect(resolveAnalyticsChannel).toHaveBeenCalledWith(
+      'telegram',
+      '-1001234567890',
+      'cached-uuid',
+      'campaign-1',
+      'admin-token',
+      'Campaign',
+    );
+    expect(getChannelParseStatus).toHaveBeenCalledWith('cached-uuid', true);
   });
 
   it('does not report a successful refresh when scraper channel lookup fails', async () => {
@@ -108,16 +152,16 @@ describe('AnalyticsService.refreshCampaignAnalytics', () => {
         },
       },
     } as any);
-    vi.mocked(ensureChannelsRegistered).mockResolvedValue(new Map());
-    vi.mocked(getAllMonitoredChannels).mockRejectedValue(
-      new Error('Analytics API отклонил ключ доступа (HTTP 401)'),
-    );
+    vi.mocked(resolveAnalyticsChannel).mockResolvedValue(null);
 
     const result = await AnalyticsService.refreshCampaignAnalytics('campaign-1', 7);
 
     expect(result).toEqual({
       success: false,
-      message: 'Analytics API отклонил ключ доступа (HTTP 401)',
+      message: 'Не удалось найти или зарегистрировать каналы кампании в scraper.',
+      processed: 0,
+      failed: 1,
+      skipped: 0,
     });
     expect(refreshChannelMetrics).not.toHaveBeenCalled();
   });
@@ -131,17 +175,6 @@ describe('AnalyticsService.refreshCampaignAnalytics', () => {
           },
         },
       },
-    } as any);
-    vi.mocked(ensureChannelsRegistered).mockResolvedValue(new Map());
-    vi.mocked(getAllMonitoredChannels).mockResolvedValue({
-      items: [
-        {
-          id: 'tg-monitor',
-          platform: 'telegram',
-          platform_channel_id: '@public_channel',
-          last_parsed_at: null,
-        },
-      ],
     } as any);
     vi.mocked(getChannelParseStatus).mockResolvedValue({
       channel_id: 'tg-monitor',
@@ -170,15 +203,6 @@ describe('AnalyticsService.refreshCampaignAnalytics', () => {
           },
         },
       },
-    } as any);
-    vi.mocked(ensureChannelsRegistered).mockResolvedValue(new Map());
-    vi.mocked(getAllMonitoredChannels).mockResolvedValue({
-      items: [{
-        id: 'tg-monitor',
-        platform: 'telegram',
-        platform_channel_id: '@public_channel',
-        last_parsed_at: null,
-      }],
     } as any);
     vi.mocked(getChannelParseStatus).mockResolvedValue({
       channel_id: 'tg-monitor',
@@ -210,15 +234,6 @@ describe('AnalyticsService.refreshCampaignAnalytics', () => {
           },
         },
       },
-    } as any);
-    vi.mocked(ensureChannelsRegistered).mockResolvedValue(new Map());
-    vi.mocked(getAllMonitoredChannels).mockResolvedValue({
-      items: [{
-        id: 'tg-monitor',
-        platform: 'telegram',
-        platform_channel_id: '@public_channel',
-        last_parsed_at: null,
-      }],
     } as any);
     vi.mocked(getChannelParseStatus).mockResolvedValue({
       channel_id: 'tg-monitor',

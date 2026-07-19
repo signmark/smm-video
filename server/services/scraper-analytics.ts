@@ -411,6 +411,155 @@ export async function createMonitoringChannel(payload: {
   return analyticsPost<ChannelResponse>('/api/v1/monitoring/channels', payload, undefined, throwOnError);
 }
 
+/**
+ * Persist scraper UUID back into the campaign settings so subsequent analytics
+ * reads can address the scraper channel directly.
+ */
+export async function persistAnalyticsChannelId(
+  campaignId: string,
+  platform: 'telegram' | 'vk',
+  channelId: string,
+  adminToken: string,
+): Promise<void> {
+  if (!campaignId || !channelId) return;
+
+  const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
+  try {
+    const currentResponse = await axios.get(
+      `${directusUrl}/items/user_campaigns/${campaignId}`,
+      {
+        headers: { Authorization: `Bearer ${adminToken}` },
+        timeout: 10000,
+      },
+    );
+
+    const rawSettings = currentResponse.data?.data?.social_media_settings || {};
+    let socialSettings: Record<string, any>;
+    if (typeof rawSettings === 'string') {
+      try {
+        socialSettings = JSON.parse(rawSettings);
+      } catch (error: any) {
+        log.warn(
+          `[ScraperAnalytics] Cannot persist analyticsChannelId: invalid social_media_settings JSON (${error.message})`,
+          'analytics',
+        );
+        return;
+      }
+    } else {
+      socialSettings = { ...rawSettings };
+    }
+
+    const platformSettings = { ...(socialSettings[platform] || {}) };
+    if (platformSettings.analyticsChannelId === channelId) return;
+
+    platformSettings.analyticsChannelId = channelId;
+    socialSettings[platform] = platformSettings;
+
+    await axios.patch(
+      `${directusUrl}/items/user_campaigns/${campaignId}`,
+      { social_media_settings: socialSettings },
+      {
+        headers: { Authorization: `Bearer ${adminToken}` },
+        timeout: 10000,
+      },
+    );
+    log(
+      `[ScraperAnalytics] 💾 Saved ${platform} analyticsChannelId=${channelId} for campaign ${campaignId}`,
+      'info',
+    );
+  } catch (error: any) {
+    log.warn(
+      `[ScraperAnalytics] persistAnalyticsChannelId failed: ${error.message}`,
+      'analytics',
+    );
+  }
+}
+
+const analyticsChannelPersistenceQueues = new Map<string, Promise<void>>();
+
+function scheduleAnalyticsChannelIdPersistence(
+  campaignId: string,
+  platform: 'telegram' | 'vk',
+  channelId: string,
+  adminToken: string,
+): void {
+  const previous = analyticsChannelPersistenceQueues.get(campaignId) || Promise.resolve();
+  const current = previous
+    .catch(() => undefined)
+    .then(() => persistAnalyticsChannelId(campaignId, platform, channelId, adminToken))
+    .finally(() => {
+      if (analyticsChannelPersistenceQueues.get(campaignId) === current) {
+        analyticsChannelPersistenceQueues.delete(campaignId);
+      }
+    });
+  analyticsChannelPersistenceQueues.set(campaignId, current);
+}
+
+/**
+ * Resolve a campaign channel to a scraper UUID using cached settings first,
+ * then lookup, then registration. Lookup/registration results are persisted
+ * asynchronously and never delay the analytics response.
+ */
+export async function resolveAnalyticsChannel(
+  platform: 'telegram' | 'vk',
+  platformChannelId: string,
+  cachedId: string | null | undefined,
+  campaignId: string,
+  adminToken: string,
+  campaignName?: string,
+): Promise<string | null> {
+  if (cachedId) return cachedId;
+
+  try {
+    const monitored = await getAllMonitoredChannels({ platform }, true);
+    const found = monitored.items.find(
+      channel => channel.platform_channel_id === platformChannelId,
+    );
+    if (found?.id) {
+      scheduleAnalyticsChannelIdPersistence(
+        campaignId,
+        platform,
+        found.id,
+        adminToken,
+      );
+      return found.id;
+    }
+  } catch (error: any) {
+    log.warn(
+      `[ScraperAnalytics] resolveAnalyticsChannel lookup failed: ${error.message}`,
+      'analytics',
+    );
+  }
+
+  try {
+    const created = await createMonitoringChannel({
+      platform,
+      platform_channel_id: platformChannelId,
+      name: campaignName,
+    }, true);
+    if (created?.id) {
+      log(
+        `[ScraperAnalytics] Registered ${platform}:${platformChannelId} → ${created.id}`,
+        'info',
+      );
+      scheduleAnalyticsChannelIdPersistence(
+        campaignId,
+        platform,
+        created.id,
+        adminToken,
+      );
+      return created.id;
+    }
+  } catch (error: any) {
+    log.warn(
+      `[ScraperAnalytics] resolveAnalyticsChannel register failed: ${error.message}`,
+      'analytics',
+    );
+  }
+
+  return null;
+}
+
 export async function deleteMonitoringChannel(channelId: string): Promise<boolean> {
   return analyticsDelete(`/api/v1/monitoring/channels/${channelId}`);
 }

@@ -93,11 +93,13 @@ export interface SocialMediaSettings {
   telegram?: {
     token?: string | null;
     chatId?: string | null;
+    analyticsChannelId?: string | null;
     [key: string]: any;
   };
   vk?: {
     token?: string | null;
     groupId?: string | null;
+    analyticsChannelId?: string | null;
     [key: string]: any;
   };
   instagram?: {

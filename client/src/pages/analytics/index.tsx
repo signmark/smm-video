@@ -8,13 +8,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Eye, Heart, Share2, MessageCircle, BarChart3, RefreshCw, Database, TrendingUp, TrendingDown, Target, Award } from 'lucide-react';
+import { Eye, Heart, Share2, MessageCircle, BarChart3, TrendingUp, TrendingDown, Target, Award } from 'lucide-react';
 import { apiRequest } from '@/lib/queryClient';
 import { useCampaignStore } from '@/lib/campaignStore';
-import { Button } from '@/components/ui/button';
-import { useToast } from '@/hooks/use-toast';
-import { useMutation } from '@tanstack/react-query';
-import { queryClient } from '@/lib/queryClient';
 import { ExportReportDialog } from '@/components/export-report-dialog';
 
 
@@ -41,7 +37,6 @@ export default function AnalyticsPage() {
 
   const [selectedCampaign, setSelectedCampaign] = useState<string>(selectedCampaignId || '');
   const [selectedPeriod, setSelectedPeriod] = useState<string>('7days');
-  const { toast } = useToast();
 
   // Обновляем выбранную кампанию при изменении активной кампании
   useEffect(() => {
@@ -51,77 +46,12 @@ export default function AnalyticsPage() {
     }
   }, [selectedCampaignId]);
 
-  // Мутация для обновления данных аналитики через backend
-  const updateAnalyticsMutation = useMutation({
-    mutationFn: async () => {
-      const days = selectedPeriod === '30days'
-        ? 30
-        : selectedPeriod === 'thisMonth'
-          ? Math.min(30, new Date().getDate())
-          : 7;
-      
-      console.log('🔧 Запуск обновления аналитики через backend для кампании:', selectedCampaign);
-      
-      // Вызываем backend endpoint который вызовет N8N webhook
-      const response = await apiRequest('/api/analytics/update', {
-        method: 'POST',
-        data: {
-          campaignId: selectedCampaign,
-          days: days
-        }
-      });
-      
-      console.log('📊 Backend ответ:', response);
-      
-      // Fire-and-forget: обновляем кэш, не ждём скрейпер
-      queryClient.invalidateQueries({ queryKey: ['analytics', selectedCampaign, selectedPeriod] });
-      
-      return response;
-    },
-    onSuccess: (response) => {
-      toast({
-        title: t('analytics.refreshStarted'),
-        description: response.message,
-      });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "❌ Ошибка обновления", 
-        description: error.message || "Не удалось обновить данные. Попробуйте позже.",
-        variant: "destructive"
-      });
-    }
-  });
-
-  // Функция для пересборки данных из Directus
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  
-  const handleRefreshData = async () => {
-    if (isRefreshing) return;
-    
-    setIsRefreshing(true);
-    console.log('🔄 Пересобираем данные из Directus...');
-    
-    try {
-      await refetch();
-      toast({
-        title: "🔄 Данные обновлены",
-        description: "Аналитика успешно пересобрана из базы данных",
-      });
-    } catch (error) {
-      toast({
-        title: "❌ Ошибка обновления", 
-        description: "Не удалось пересобрать данные. Попробуйте позже.",
-        variant: "destructive"
-      });
-    } finally {
-      setIsRefreshing(false);
-    }
-  };
-
-  const { data: analyticsData, isLoading, error, refetch } = useQuery<AnalyticsData>({
+  const { data: analyticsData, isLoading, error } = useQuery<AnalyticsData>({
     queryKey: ['analytics', selectedCampaign, selectedPeriod],
     enabled: !!selectedCampaign,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
+    staleTime: 0,
     queryFn: async () => {
       console.log('🎯 Загружаем аналитику для кампании:', selectedCampaign, 'период:', selectedPeriod);
       
@@ -337,32 +267,10 @@ export default function AnalyticsPage() {
                 </SelectContent>
               </Select>
               
-              <Button 
-                onClick={() => updateAnalyticsMutation.mutate()}
-                disabled={updateAnalyticsMutation.isPending || !selectedCampaign}
-                variant="outline"
-                size="default"
-                className="flex items-center gap-2"
-              >
-                <RefreshCw className={`h-4 w-4 ${updateAnalyticsMutation.isPending ? 'animate-spin' : ''}`} />
-                {updateAnalyticsMutation.isPending ? t('analytics.updating') : t('analytics.updateData')}
-              </Button>
-              
               <ExportReportDialog 
                 campaignId={selectedCampaign}
                 disabled={!selectedCampaign || isLoading}
               />
-              
-              <Button 
-                onClick={handleRefreshData}
-                disabled={isRefreshing || !selectedCampaign}
-                variant="outline"
-                size="default"
-                className="flex items-center gap-2"
-              >
-                <Database className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-                {isRefreshing ? t('analytics.rebuilding') : t('analytics.rebuildData')}
-              </Button>
             </div>
           </div>
 

@@ -126,4 +126,56 @@ describe('toTelegramHtml', () => {
     expect(toTelegramHtml(null as any)).toBe('');
     expect(toTelegramHtml(undefined as any)).toBe('');
   });
+
+  describe('pre/code — литеральный текст, а не разметка', () => {
+    it('экранированный HTML внутри <pre> сохраняется дословно', () => {
+      // Регрессия (Task 1 из review-follow-ups): конвейер съедал <div> внутри pre
+      const output = toTelegramHtml('<pre>&lt;div&gt;hi&lt;/div&gt;</pre>');
+      expect(output).toBe('<pre>&lt;div&gt;hi&lt;/div&gt;</pre>');
+    });
+
+    it('<code> сохраняет операторы сравнения экранированными', () => {
+      expect(toTelegramHtml('<code>if (a &lt; b) { x(); }</code>'))
+        .toBe('<code>if (a &lt; b) { x(); }</code>');
+    });
+
+    it('настоящие теги внутри <pre> превращаются в литеральный текст', () => {
+      expect(toTelegramHtml('<pre><b>not bold</b></pre>'))
+        .toBe('<pre>&lt;b&gt;not bold&lt;/b&gt;</pre>');
+    });
+
+    it('переносы строк внутри <pre> не схлопываются', () => {
+      expect(toTelegramHtml('<pre>line1\n\n\nline2</pre>'))
+        .toBe('<pre>line1\n\n\nline2</pre>');
+    });
+
+    it('markdown внутри <code> не конвертируется', () => {
+      expect(toTelegramHtml('<code>**не жирный**</code>'))
+        .toBe('<code>**не жирный**</code>');
+    });
+
+    it('незакрытый <pre> закрывается, содержимое экранируется', () => {
+      expect(toTelegramHtml('текст <pre>a < b')).toBe('текст <pre>a &lt; b</pre>');
+    });
+
+    it('код-блоки соседствуют с обычной разметкой', () => {
+      expect(toTelegramHtml('<p>абзац</p><pre>код &lt;tag&gt;</pre><p><b>ещё</b></p>'))
+        .toBe('абзац\n\n<pre>код &lt;tag&gt;</pre><b>ещё</b>');
+    });
+  });
+
+  describe('числовые сущности', () => {
+    it('hex-сущности декодируются', () => {
+      expect(toTelegramHtml('it&#x27;s &#x2014; fine')).toBe("it's — fine");
+    });
+
+    it('десятичные сущности декодируются', () => {
+      expect(toTelegramHtml('&#1047;&#1076;&#1088;&#1072;&#1074;&#1089;&#1090;&#1074;&#1091;&#1081;'))
+        .toBe('Здравствуй');
+    });
+
+    it('невалидные code point (суррогаты) не декодируются', () => {
+      expect(toTelegramHtml('&#xD800;')).toBe('&amp;#xD800;');
+    });
+  });
 });

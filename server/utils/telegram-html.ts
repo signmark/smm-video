@@ -46,7 +46,13 @@ function decodeHtmlEntities(input: string): string {
       .replace(/&raquo;/gi, '»')
       .replace(/&#(\d+);/g, (_, code) => {
         const cp = Number(code);
-        return Number.isSafeInteger(cp) && cp > 0 && cp <= 0x10ffff
+        return Number.isSafeInteger(cp) && cp > 0 && cp <= 0x10ffff && !(cp >= 0xd800 && cp <= 0xdfff)
+          ? String.fromCodePoint(cp)
+          : _;
+      })
+      .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => {
+        const cp = parseInt(hex, 16);
+        return Number.isSafeInteger(cp) && cp > 0 && cp <= 0x10ffff && !(cp >= 0xd800 && cp <= 0xdfff)
           ? String.fromCodePoint(cp)
           : _;
       })
@@ -56,6 +62,43 @@ function decodeHtmlEntities(input: string): string {
     text = decoded;
   }
   return text;
+}
+
+/**
+ * Содержимое <pre>/<code> — это литеральный текст, а не разметка: конвейер
+ * не должен ни декодировать/конвертировать его, ни съедать в нём теги.
+ * Блоки вырезаются в плейсхолдеры ПОСЛЕ decodeHtmlEntities (единая нормализация
+ * сущностей) и возвращаются в конце конвейера с однократным экранированием & < >.
+ */
+interface CodeBlockStash {
+  kind: 'pre' | 'code';
+  content: string;
+}
+
+function extractCodeBlocks(text: string): { text: string; blocks: CodeBlockStash[] } {
+  const blocks: CodeBlockStash[] = [];
+  const stash = (kind: 'pre' | 'code') => (_m: string, content: string) => {
+    const index = blocks.push({ kind, content }) - 1;
+    return `\x00CB${index}\x00`;
+  };
+  // $ (без флага m) — конец строки: ловит и незакрытые блоки
+  const extracted = text
+    .replace(/<pre[^>]*>([\s\S]*?)(?:<\/pre>|$)/gi, stash('pre'))
+    .replace(/<code[^>]*>([\s\S]*?)(?:<\/code>|$)/gi, stash('code'));
+  return { text: extracted, blocks };
+}
+
+function restoreCodeBlocks(text: string, blocks: CodeBlockStash[]): string {
+  return text.replace(/\x00CB(\d+)\x00/g, (match, indexRaw: string) => {
+    const block = blocks[Number(indexRaw)];
+    if (!block) return match;
+    const escaped = block.content
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .trim();
+    return `<${block.kind}>${escaped}</${block.kind}>`;
+  });
 }
 
 function convertOrderedLists(text: string): string {
@@ -208,6 +251,9 @@ export function toTelegramHtml(raw: string): string {
   if (!raw || typeof raw !== 'string') return '';
 
   let text = decodeHtmlEntities(raw);
+  // pre/code — литеральный текст: изолируем от markdown- и HTML-конвертаций
+  const stash = extractCodeBlocks(text);
+  text = stash.text;
   text = markdownToTelegramHtml(text);
   text = convertMarkup(text);
   text = convertOrderedLists(text);
@@ -223,6 +269,8 @@ export function toTelegramHtml(raw: string): string {
   text = escapeTextOutsideTags(text);
   text = escapeHrefQuotes(text);
   text = cleanupWhitespace(text);
+  // Возвращаем код-блоки последними: escape/cleanup их содержимое уже не тронут
+  text = restoreCodeBlocks(text, stash.blocks);
   return text;
 }
 

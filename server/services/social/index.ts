@@ -123,7 +123,7 @@ export class SocialPublishingService {
         const isShorts = ['clip', 'short', 'shorts', 'short_video', 'reel'].includes(ct);
         let result: { success: boolean; videoId?: string; videoUrl?: string; error?: string };
         if (isShorts) {
-          const { youtubeShortsService } = await import('./social-platforms/youtube-shorts-service');
+          const { youtubeShortsService } = await import('../social-platforms/youtube-shorts-service');
           result = await youtubeShortsService.publishShort(content.id, authToken);
         } else {
           result = await youtubeVideoService.publishVideo(content.id, authToken);

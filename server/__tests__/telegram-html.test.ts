@@ -187,6 +187,11 @@ describe('toTelegramHtml', () => {
         .toBe('<pre>&lt;div&gt;hi&lt;/div&gt;</pre>');
     });
 
+    it('Task 8 follow-up: тройные backticks без переноса остаются inline code', () => {
+      expect(toTelegramHtml('text ```js``` tail'))
+        .toBe('text <code>js</code> tail');
+    });
+
     it('код-блоки соседствуют с обычной разметкой', () => {
       expect(toTelegramHtml('<p>абзац</p><pre>код &lt;tag&gt;</pre><p><b>ещё</b></p>'))
         .toBe('абзац\n\n<pre>код &lt;tag&gt;</pre><b>ещё</b>');

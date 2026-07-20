@@ -273,12 +273,13 @@ export function toTelegramHtml(raw: string): string {
   if (!raw || typeof raw !== 'string') return '';
 
   let text = decodeHtmlEntities(raw);
-  // Markdown-фенсы → <pre> ДО изоляции: их содержимое — литеральный код,
-  // и должно быть защищено от конвертаций наравне с HTML-блоками.
-  text = text.replace(/```([\w+#-]*)[ \t]*\r?\n?([\s\S]*?)```/g, (_m, lang: string, body: string) =>
+  // Многострочные Markdown-фенсы → <pre> ДО изоляции: перевод строки
+  // обязателен, иначе ```code``` — это inline code span, а не имя языка.
+  text = text.replace(/```([\w+#-]*)[ \t]*\r?\n([\s\S]*?)```/g, (_m, lang: string, body: string) =>
     lang
       ? `<pre><code class="language-${lang}">${body}</code></pre>`
       : `<pre>${body}</pre>`);
+  text = text.replace(/```([^\r\n]*?)```/g, '<code>$1</code>');
   // pre/code — литеральный текст: изолируем от markdown- и HTML-конвертаций
   const stash = extractCodeBlocks(text);
   text = stash.text;

@@ -31,9 +31,10 @@
 | `mavis-commit-instructions-2026-07-20.md` | Инструкция Claude'а для Mavis: коммитить строго явными списками, `git add -A` запрещён. Закоммичена в `65d051a`. | — |
 | `codex-task6-review-2026-07-20.md` | Кросс-модельный ревью Codex'а по Task 6 (`2f8d581`) — принято, без блокирующих замечаний. Закоммичено Mavis как fallback в `a13e945`. | — |
 | `codex-task8-task9-review-2026-07-20.md` | Кросс-модельный ревью Codex'а по Tasks 8 (`af92e05`) и 9 (`506b6a9`). Task 8 blocking follow-up закрыт в `0b78575`, Task 9 принят. Закоммичено Mavis как fallback в `a13e945`. | — |
-| `kimi-push-manifest-2026-07-20.md` | Манифест пуша от Kimi: 27 коммитов в `origin/main..main`, чек-лист перед `git push`, разбивка по задачам с верификациями. Закоммичен Kimi в `4d37575`. | — |
-| `kimi-codex-final-review-2026-07-20.md` | Kimi'ий handoff-файл к Codex'у: перенаправление финального ревью с Claude на Codex (`fc37b59`), контекст цикла, список что отвечать. Закоммичено в `0ece830`. | — |
-| `codex-final-review-2026-07-20.md` | **Codex'овский финальный вердикт: GREEN на `fc37b59`, можно пушить.** Verified vitest 69/69/715/715, tsc critical, scoped ESLint, full production-diff + Task D second-eyes. 3 неблокирующих process notes зафиксированы. Закоммичено в `0ece830`. | — |
+| `kimi-push-manifest-2026-07-20.md` | Манифест пуша от Kimi (**v2**): 30 коммитов в `origin/main..main` на момент вердикта Codex (HEAD `fc37b59`); 33 с учётом последующих doc-коммитов. Чек-лист, разбивка по задачам с верификациями, Task D authorship исправлен. Закоммичен Kimi: `4d37575` (v1) + `69c8086` (v2, manifest + handoff mark). | — |
+| `kimi-codex-final-review-2026-07-20.md` | Kimi'ий handoff-файл к Codex'у: перенаправление финального ревью с Claude на Codex, контекст цикла. Codex дал GREEN, в `69c8086` Kimi отметил «✅ ИСПОЛНЕНО»; файл оставлен для истории. Секции «Объём ревью» / «На что смотреть» в нём **неканоничны** для пуша — см. `codex-follow-up-final-handoff-2026-07-20.md`. | — |
+| `codex-final-review-2026-07-20.md` | **Codex'овский финальный вердикт: GREEN**, можно пушить. Verified vitest 69/69/715/715, tsc critical, scoped ESLint, full production-diff + Task D second-eyes. 3 неблокирующих process notes зафиксированы. Закоммичено в `0ece830`. Актуальный HEAD на сегодня — `891bf82` (35 коммитов в `origin/main..main`, актуальный счёт: `git rev-list --count origin/main..main`). | — |
+| `codex-follow-up-final-handoff-2026-07-20.md` | Codex'овский follow-up к финальному ревью: **не блокирует** push и не меняет GREEN. Фиксирует, что секции «Объём ревью» / «На что смотреть» в `kimi-codex-final-review-2026-07-20.md` содержат несуществующие хеши и файлы — канонический manifest для пуша см. выше. Закоммичено Mavis как fallback в `b619384` (content by Codex). | — |
 
 ## Роли
 

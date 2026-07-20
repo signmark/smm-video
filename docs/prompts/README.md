@@ -19,9 +19,9 @@
 | `review-follow-ups-2026-07-20.md` | Ревью `d680977` + `97947ae` от Claude. Новые задачи 6/7/8. | — |
 | `kimi-zoo-review-2026-07-19.md` | Обзор состояния хозяйства от Kimi. Не ревью коммитов, а срез системы и процесса целиком. Полезен как сторонний взгляд. | — |
 | `baseline-vitest-2026-07-19.txt` | Снимок `npx vitest run` от 2026-07-19: 9 файлов с 17 упавшими тестами. Используется как baseline в промптах A–D. | — |
-| `codex-telegram-pre-code-and-cleanup.md` | **Task A.** Чинение `<pre>`/`<code>` + hex-сущности в `toTelegramHtml`. **Уже выполнен Kimi** в `d680977` — не запускать заново; промпт остаётся как референс. | done |
-| `codex-status-unification.md` | **Task B.** Унификация `partial` / `partially_published` в scheduler-write и storage-read. **Codex** сейчас, ∥ C. | ∥ C |
-| `codex-mock-network-in-tests.md` | **Task C.** Замокать сеть в `autonomous-ai-tools.test.ts` и `api_routes_new.test.ts` (7 из 17 baseline падений). **MiniMax/Mavis** (калибровка) сейчас, ∥ B. | ∥ B, строго до D |
+| `codex-telegram-pre-code-and-cleanup.md` | **Task A + cleanup-хвост.** Чинение `<pre>`/`<code>` + hex-сущности + мелкие cleanup'ы в `telegram-service.ts`. **Выполнен Kimi**: Task A в `d680977`, cleanup в `9e230e3` (закоммичено Mavis). Промпт остаётся как референс. | done |
+| `codex-status-unification.md` | **Task B.** Унификация `partial` / `partially_published` в scheduler-write и storage-read. **Выполнен Codex**, закоммичено Mavis в `13b99fc`. Промпт остаётся как референс. | done |
+| `codex-mock-network-in-tests.md` | **Task C.** Замокать сеть в `autonomous-ai-tools.test.ts` и `api_routes_new.test.ts` (7 из 17 baseline падений). **Выполнен Mavis** (калибровка, чистая сдача) в `aea9b04`. | done |
 | `codex-fix-chronic-test-failures.md` | **Task D.** Оставшиеся 10 baseline падений в 7 файлах. Цель: `npx vitest run` = exit 0. Запрет на ковровый `it.skip`. Решается после C. | строго после C |
 | `codex-remove-aggressive-tag-fixer.md` | Уже выполнен (коммит `299becb`, запушен). Оставлен как референс. | done |
 | `codex-analytics-channel-id-and-remove-button.md` | **Реализован и закоммичен** как `97947ae`. Промпт остаётся как референс. | done |
@@ -31,14 +31,18 @@
 Канонический источник: [`claude-roles-and-assignments-2026-07-20.md`](claude-roles-and-assignments-2026-07-20.md).
 Здесь — только короткая выжимка для быстрого взгляда.
 
-На 2026-07-20 владелец распределил так:
+На 2026-07-20 (ревизия 2) владелец распределил так:
 - **Codex** — основной исполнитель по детальным ТЗ; вычитка чужих ТЗ
   (поймал 3 ошибки в промптах — поймает и дальше).
-- **Mavis (MiniMax)** — оркестратор. **Сейчас на калибровке** —
-  Task C (мок сети в 2 тест-файлах). Чистая сдача → основной ростер.
+- **Mavis (MiniMax)** — оркестратор / PM. Сдал Task C (мок сети в
+  2 тест-файлах) на калибровке чисто, переведён в основной ростер.
+  Сейчас коммитит WIP других исполнителей и следит за тем, чтобы
+  «закрыто» = «закоммичено».
 - **Claude** — ревью коммитов → follow-ups с приёмкой; консультации
   по архитектуре. ТЗ — высокий уровень с обязательной вычиткой.
-- **Kimi** — системные срезы + исполнение в «своём» коде.
+- **Kimi** — фоновый контур: системные срезы, тонкие задачи без
+  срочности, ревью фичевых диффов до пуша. Медленный, но тщательный
+  и без брака — на быстрый контур не ставим.
 - **Mimo** — деплой на следующий день после пуша.
 - **Владелец** — финальные решения, push, прод-проверка вручную.
 

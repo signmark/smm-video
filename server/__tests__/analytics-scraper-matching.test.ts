@@ -13,6 +13,7 @@ vi.mock('axios', () => ({
 }));
 
 vi.mock('../services/scraper-analytics', () => ({
+  getAllChannelPosts: vi.fn(),
   getChannelAnalytics: vi.fn(),
   reresolveAnalyticsChannel: vi.fn(),
   resolveAnalyticsChannel: vi.fn(),
@@ -32,6 +33,7 @@ import axios from 'axios';
 import { directusApi } from '../directus';
 import { AnalyticsService } from '../services/analytics-service';
 import {
+  getAllChannelPosts,
   getChannelAnalytics,
   reresolveAnalyticsChannel,
   resolveAnalyticsChannel,
@@ -48,6 +50,7 @@ describe('AnalyticsService scraper supplementation', () => {
     vi.mocked(resolveAnalyticsChannel).mockImplementation(async (platform) => (
       platform === 'vk' ? 'vk-monitor' : 'tg-monitor'
     ));
+    vi.mocked(getAllChannelPosts).mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -109,6 +112,78 @@ describe('AnalyticsService scraper supplementation', () => {
       expect.objectContaining({ name: 'vk', posts: 1, views: 10 }),
       expect.objectContaining({ name: 'telegram', posts: 1, views: 20 }),
     ]));
+  });
+
+  it('deduplicates channel snapshots by post id and keeps the latest capture', async () => {
+    vi.mocked(directusApi.get).mockResolvedValue({ data: { data: [] } } as any);
+    vi.mocked(axios.get).mockResolvedValue({
+      data: {
+        data: {
+          social_media_settings: {
+            telegram: { chatId: '@tg_channel' },
+          },
+        },
+      },
+    } as any);
+    vi.mocked(getChannelAnalytics).mockResolvedValue({
+      total_posts: 4,
+      total_views: 105,
+      total_likes: 4,
+      total_comments: 0,
+      total_shares: 0,
+    } as any);
+    vi.mocked(getAllChannelPosts).mockResolvedValue([
+      {
+        platform_post_id: 'post-1',
+        captured_at: '2026-07-15T10:00:00.000Z',
+        views: 10,
+        likes: 1,
+        comments: 0,
+        shares: 0,
+      },
+      {
+        platform_post_id: 'post-1',
+        captured_at: '2026-07-16T10:00:00.000Z',
+        views: 15,
+        likes: 2,
+        comments: 0,
+        shares: 0,
+      },
+      {
+        platform_post_id: 'post-2',
+        captured_at: '2026-07-15T11:00:00.000Z',
+        views: 20,
+        likes: 1,
+        comments: 0,
+        shares: 0,
+      },
+      {
+        platform_post_id: 'post-2',
+        captured_at: '2026-07-14T11:00:00.000Z',
+        views: 60,
+        likes: 0,
+        comments: 0,
+        shares: 0,
+      },
+    ] as any);
+
+    const result = await AnalyticsService.getCampaignAnalytics(
+      'campaign-1',
+      'thisMonth',
+      'user-token',
+    );
+
+    expect(result.totalPosts).toBe(2);
+    expect(result.totalViews).toBe(35);
+    expect(result.totalLikes).toBe(3);
+    expect(result.platforms).toEqual([
+      expect.objectContaining({
+        name: 'telegram',
+        posts: 2,
+        views: 35,
+        likes: 3,
+      }),
+    ]);
   });
 
   it('keeps stored metrics when the scraper has no data for the period', async () => {

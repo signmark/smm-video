@@ -2,7 +2,7 @@
 
 Дата подтверждения: 2026-07-20  
 Автор диагностики / первый верификатор: Codex  
-Статус: **CONFIRMED, нужен отдельный fix в scraper API**  
+Статус: **SMM MITIGATION READY, upstream fix в scraper API всё ещё нужен**
 Исполнитель: не назначен  
 Вторые глаза для будущего фикса: не назначены
 
@@ -122,6 +122,48 @@ platform stats и пересчитывать общий `totalPosts`.
 
 Этот SMM follow-up делать отдельным коммитом после стабилизации контракта
 scraper response.
+
+## Реализованный SMM-side mitigation
+
+Дата: 2026-07-20
+Исполнитель / первый верификатор: Codex
+Статус: **READY FOR SECOND PAIR OF EYES**
+
+По прямому поручению владельца SMM больше не доверяет завышенным totals из
+`/analytics`, когда доступен документированный `/posts`:
+
+1. загружает все страницы `/api/v1/channels/{channel_id}/posts` по 100 записей;
+2. выбирает последний `captured_at` на каждый `platform_post_id`;
+3. считает `posts`, views, likes, comments и shares из одного и того же
+   channel-level набора;
+4. показывает channel-level данные даже у кампании без собственных публикаций;
+5. продолжает запрашивать `/analytics`, поэтому его `data`, `trend_data` и
+   `dynamics` остаются доступны для следующих UI-итераций;
+6. если `/posts` недоступен или первичный сбор ещё пуст, сохраняет прежний
+   fallback и не обнуляет метрики из Directus.
+
+Изменённые файлы:
+
+- `server/services/analytics-service.ts`;
+- `server/services/scraper-analytics.ts`;
+- `server/__tests__/analytics-scraper-matching.test.ts`;
+- `server/__tests__/scraper-analytics-client.test.ts`;
+- этот handoff.
+
+Проверки:
+
+- точечные Vitest: 15/15;
+- полный Vitest: 69 файлов, 717/717;
+- `npm run check`: pass;
+- ESLint по четырём изменённым TS-файлам: 0 errors (остались существующие
+  `no-explicit-any` warnings);
+- общий `npm run lint`: не является зелёным baseline — 449 ошибок и 4551
+  предупреждение в репозитории, включая parsing errors в `_archive`.
+
+Ограничение mitigation: он исправляет цифры в SMM, но не контракт самого
+scraper. Upstream по-прежнему должен перестать возвращать исторические snapshots
+как отдельные posts в обычных `/posts` и `/analytics`; история должна оставаться
+в `/posts/dynamics`.
 
 ## Приёмка
 

@@ -23,6 +23,7 @@ import axios from 'axios';
 import { log } from '../utils/logger';
 import {
   ensureChannelsRegistered,
+  getAllChannelPosts,
   getAllMonitoredChannels,
   getMonitoredChannels,
   getScraperCampaignChannels,
@@ -152,6 +153,62 @@ describe('scraper analytics client', () => {
       2,
       'http://analytics.test/api/v1/monitoring/channels',
       expect.objectContaining({ params: { page: 2, page_size: 100 } }),
+    );
+  });
+
+  it('loads every page of channel posts for defensive aggregation', async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) => ({
+      platform_post_id: `post-${index + 1}`,
+    }));
+    vi.mocked(axios.get)
+      .mockResolvedValueOnce({
+        data: {
+          items: firstPage,
+          total: 101,
+          page: 1,
+          page_size: 100,
+          has_next_page: true,
+        },
+      })
+      .mockResolvedValueOnce({
+        data: {
+          items: [{ platform_post_id: 'post-101' }],
+          total: 101,
+          page: 2,
+          page_size: 100,
+          has_next_page: false,
+        },
+      });
+
+    const result = await getAllChannelPosts('channel-uuid', {
+      from_date: '2026-07-01',
+      to_date: '2026-07-20',
+    });
+
+    expect(result).toHaveLength(101);
+    expect(axios.get).toHaveBeenNthCalledWith(
+      1,
+      'http://analytics.test/api/v1/channels/channel-uuid/posts',
+      expect.objectContaining({
+        params: {
+          from_date: '2026-07-01',
+          to_date: '2026-07-20',
+          page: 1,
+          page_size: 100,
+        },
+      }),
+    );
+    expect(axios.get).toHaveBeenNthCalledWith(
+      2,
+      'http://analytics.test/api/v1/channels/channel-uuid/posts',
+      expect.objectContaining({
+        params: {
+          from_date: '2026-07-01',
+          to_date: '2026-07-20',
+          page: 2,
+          page_size: 100,
+        },
+      }),
     );
   });
 

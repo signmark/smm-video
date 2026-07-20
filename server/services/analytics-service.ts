@@ -4,8 +4,39 @@ import axios from 'axios';
 import {
   aggregatePublishedPlatformAnalytics,
 } from './analytics-aggregation';
+import type { ChannelPost } from './scraper-analytics';
 
 type AnalyticsPlatform = 'telegram' | 'vk';
+
+function metric(value: unknown): number {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function aggregateLatestChannelPosts(posts: ChannelPost[]) {
+  const latestByPostId = new Map<string, ChannelPost>();
+
+  for (const post of posts) {
+    const postId = String(post?.platform_post_id ?? '').trim();
+    if (!postId) continue;
+
+    const current = latestByPostId.get(postId);
+    const capturedAt = Date.parse(post?.captured_at || '') || 0;
+    const currentCapturedAt = Date.parse(current?.captured_at || '') || 0;
+    if (!current || capturedAt > currentCapturedAt) {
+      latestByPostId.set(postId, post);
+    }
+  }
+
+  const latestPosts = Array.from(latestByPostId.values());
+  return {
+    posts: latestPosts.length,
+    views: latestPosts.reduce((sum, post) => sum + metric(post.views), 0),
+    likes: latestPosts.reduce((sum, post) => sum + metric(post.likes), 0),
+    comments: latestPosts.reduce((sum, post) => sum + metric(post.comments), 0),
+    shares: latestPosts.reduce((sum, post) => sum + metric(post.shares), 0),
+  };
+}
 
 function getResolvableCampaignChannels(
   socialSettings: Record<string, any>,
@@ -107,19 +138,18 @@ export class AnalyticsService {
       } = aggregated;
 
       // Дополняем метрики из скрейпера (агрегированные по каналу)
-      if (totalPosts > 0) {
-        try {
-          await AnalyticsService.supplementFromScraper(
-            campaignId, dateFrom, now, platformStatsMap,
-          );
-          const platformStats = Array.from(platformStatsMap.values());
-          totalViews = platformStats.reduce((sum, stats) => sum + stats.views, 0);
-          totalLikes = platformStats.reduce((sum, stats) => sum + stats.likes, 0);
-          totalComments = platformStats.reduce((sum, stats) => sum + stats.comments, 0);
-          totalShares = platformStats.reduce((sum, stats) => sum + stats.shares, 0);
-        } catch (scraperErr: any) {
-          log(`[AnalyticsService] Scraper supplement failed (non-critical): ${scraperErr.message}`, 'warn');
-        }
+      try {
+        await AnalyticsService.supplementFromScraper(
+          campaignId, dateFrom, now, platformStatsMap,
+        );
+        const platformStats = Array.from(platformStatsMap.values());
+        totalPosts = platformStats.reduce((sum, stats) => sum + stats.posts, 0);
+        totalViews = platformStats.reduce((sum, stats) => sum + stats.views, 0);
+        totalLikes = platformStats.reduce((sum, stats) => sum + stats.likes, 0);
+        totalComments = platformStats.reduce((sum, stats) => sum + stats.comments, 0);
+        totalShares = platformStats.reduce((sum, stats) => sum + stats.shares, 0);
+      } catch (scraperErr: any) {
+        log(`[AnalyticsService] Scraper supplement failed (non-critical): ${scraperErr.message}`, 'warn');
       }
 
       const result = {
@@ -175,6 +205,7 @@ export class AnalyticsService {
 
     // Каналы которые нужно искать в скрейпере
     const {
+      getAllChannelPosts,
       getChannelAnalytics,
       getScraperCampaignChannels,
       resolveAnalyticsChannel,
@@ -204,15 +235,16 @@ export class AnalyticsService {
       );
       if (!scraperChannelId) continue;
 
-      let analytics = await getChannelAnalytics(
-        scraperChannelId,
-        { from_date: fromStr, to_date: toStr },
-      );
+      const query = { from_date: fromStr, to_date: toStr };
+      let [analytics, channelPosts] = await Promise.all([
+        getChannelAnalytics(scraperChannelId, query),
+        getAllChannelPosts(scraperChannelId, query),
+      ]);
 
       // Кешированный analyticsChannelId мог протухнуть (канал удалили или
       // пересоздали в скрейпере): один re-resolve и одна повторная попытка,
       // иначе аналитика кампании молча умирает до ручной правки настроек.
-      if (!analytics && platformSettings.analyticsChannelId === scraperChannelId) {
+      if (!analytics && !channelPosts && platformSettings.analyticsChannelId === scraperChannelId) {
         const freshChannelId = await reresolveAnalyticsChannel(
           ch.platform,
           ch.platformId,
@@ -223,36 +255,56 @@ export class AnalyticsService {
         );
         if (freshChannelId) {
           scraperChannelId = freshChannelId;
-          analytics = await getChannelAnalytics(
-            scraperChannelId,
-            { from_date: fromStr, to_date: toStr },
-          );
+          [analytics, channelPosts] = await Promise.all([
+            getChannelAnalytics(scraperChannelId, query),
+            getAllChannelPosts(scraperChannelId, query),
+          ]);
         }
       }
-      if (!analytics) continue;
+      const currentMetrics = channelPosts
+        ? aggregateLatestChannelPosts(channelPosts)
+        : analytics && {
+            posts: analytics.total_posts == null
+              ? metric(platformStatsMap.get(ch.platform)?.posts)
+              : metric(analytics.total_posts),
+            views: metric(analytics.total_views),
+            likes: metric(analytics.total_likes),
+            comments: metric(analytics.total_comments),
+            shares: metric(analytics.total_shares),
+          };
+      if (!currentMetrics) continue;
 
       // Скрейпер знает канал, но данных за период у него нет (например, первичный
       // сбор ещё идёт) — его нулевые агрегаты не должны затирать сохранённые метрики.
-      const hasScraperData = [
-        analytics.total_views,
-        analytics.total_likes,
-        analytics.total_comments,
-        analytics.total_shares,
-      ].some(value => Number(value) > 0);
+      const hasScraperData = channelPosts
+        ? currentMetrics.posts > 0
+        : [
+            currentMetrics.views,
+            currentMetrics.likes,
+            currentMetrics.comments,
+            currentMetrics.shares,
+          ].some(value => value > 0);
       if (!hasScraperData) {
         log(`[AnalyticsService] 📡 Скрейпер ${ch.platform}: данных за период нет — оставляем сохранённые метрики`, 'info');
         continue;
       }
 
-      log(`[AnalyticsService] 📡 Скрейпер ${ch.platform}: ${analytics.total_views} просмотров за период`, 'info');
+      log(`[AnalyticsService] 📡 Скрейпер ${ch.platform}: ${currentMetrics.views} просмотров за период`, 'info');
 
-      if (platformStatsMap.has(ch.platform)) {
-        const stats = platformStatsMap.get(ch.platform);
-        stats.views = analytics.total_views;
-        stats.likes = analytics.total_likes;
-        stats.comments = analytics.total_comments;
-        stats.shares = analytics.total_shares;
-      }
+      const stats = platformStatsMap.get(ch.platform) || {
+        name: ch.platform,
+        posts: 0,
+        views: 0,
+        likes: 0,
+        comments: 0,
+        shares: 0,
+      };
+      stats.posts = currentMetrics.posts;
+      stats.views = currentMetrics.views;
+      stats.likes = currentMetrics.likes;
+      stats.comments = currentMetrics.comments;
+      stats.shares = currentMetrics.shares;
+      platformStatsMap.set(ch.platform, stats);
     }
   }
 

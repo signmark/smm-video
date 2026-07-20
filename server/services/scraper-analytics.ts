@@ -653,6 +653,33 @@ export async function getChannelPosts(
   return analyticsGet<ChannelPostsResponse>(`/api/v1/channels/${channelId}/posts`, params);
 }
 
+export async function getAllChannelPosts(
+  channelId: string,
+  params?: { from_date?: string; to_date?: string },
+): Promise<ChannelPost[] | null> {
+  const items: ChannelPost[] = [];
+  let page = 1;
+
+  while (true) {
+    const response = await getChannelPosts(channelId, {
+      ...params,
+      page,
+      page_size: 100,
+    });
+    if (!response) return null;
+
+    items.push(...response.items);
+    if (
+      !response.has_next_page
+      || response.items.length === 0
+      || items.length >= response.total
+    ) {
+      return items;
+    }
+    page += 1;
+  }
+}
+
 // ─── Аналитика каналов ────────────────────────────────────────────────────────
 
 export async function getChannelAnalytics(

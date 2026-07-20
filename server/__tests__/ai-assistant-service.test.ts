@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AIAssistantService } from '../services/ai-assistant/index';
 import { handleAutonomousAIWithAPI } from '../services/ai-assistant/autonomous';
 import { aiRoutingAnalyzeCommand } from '../services/ai-assistant/command-routing';
+import { handleCreateCampaign } from '../services/ai-assistant/command-handlers';
 
 // Mock storage and other dependencies
 vi.mock('../services/ai-conversation-storage', () => ({
@@ -22,6 +23,7 @@ vi.mock('../services/ai-assistant/command-routing', () => ({
 }));
 
 vi.mock('../services/ai-assistant/command-handlers', () => ({
+  handleCreateCampaign: vi.fn(),
   handleHelp: vi.fn().mockResolvedValue({ response: 'help', success: true }),
   handleUnknownCommand: vi.fn().mockResolvedValue({ response: 'unknown', success: false }),
   handleFillQuestionnaire: vi.fn()
@@ -32,6 +34,10 @@ describe('AIAssistantService', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(handleCreateCampaign).mockResolvedValue({
+      response: 'campaign created',
+      success: true
+    });
     service = new AIAssistantService();
   });
 
@@ -46,24 +52,38 @@ describe('AIAssistantService', () => {
       expect(result.response).toContain('Добро пожаловать');
     });
 
-    it('should show campaign options for message with URL and create intent', async () => {
+    it('should route a create intent with URL to the campaign handler', async () => {
       const result = await service.processCommand({
         message: 'создай новую кампанию для сайта https://magnus.dev',
         userId: 'u1'
       });
 
-      expect(result.interactive?.type).toBe('campaign-options');
-      expect(result.interactive?.campaignOptions?.websiteUrl).toBe('https://magnus.dev');
-      expect(result.interactive?.campaignOptions?.name).toBe('Кампания для magnus.dev');
+      expect(handleCreateCampaign).toHaveBeenCalledWith(
+        expect.objectContaining({
+          message: 'создай новую кампанию для сайта https://magnus.dev',
+          userId: 'u1'
+        }),
+        {
+          name: 'Кампания для magnus.dev',
+          url: 'https://magnus.dev'
+        }
+      );
+      expect(result).toEqual({ response: 'campaign created', success: true });
     });
 
-    it('should extract campaign name if provided in quotes', async () => {
-      const result = await service.processCommand({
+    it('should pass a quoted campaign name to the campaign handler', async () => {
+      await service.processCommand({
         message: 'создай кампанию "Мой крутой проект" для сайта https://cool.com',
         userId: 'u1'
       });
 
-      expect(result.interactive?.campaignOptions?.name).toBe('Мой крутой проект');
+      expect(handleCreateCampaign).toHaveBeenCalledWith(
+        expect.any(Object),
+        {
+          name: 'Мой крутой проект',
+          url: 'https://cool.com'
+        }
+      );
     });
 
     it('should load and save history if userId is provided', async () => {

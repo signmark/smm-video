@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import axios from 'axios';
 import { YouTubeService } from '../services/social-platforms/youtube-service';
 
@@ -34,8 +34,12 @@ describe('YouTubeService', () => {
     process.env.N8N_URL = 'https://n8n.test';
   });
 
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   describe('publishContent', () => {
-    it('should successfully send payload to n8n webhook', async () => {
+    it('should delegate regular video publishing without calling removed n8n webhook', async () => {
       const mockContent = {
         id: 'c-1',
         title: '<b>Cool</b> Video',
@@ -48,39 +52,29 @@ describe('YouTubeService', () => {
       const result = await service.publishContent(mockContent, {}, 'user-1');
 
       expect(result.success).toBe(true);
-      expect(axios.post).toHaveBeenCalledWith(
-        expect.stringContaining('/webhook/publish-youtube'),
-        expect.objectContaining({
-          contentId: 'c-1',
-          title: 'Cool Video',
-          description: 'Sub here',
-          isShort: false
-        }),
-        expect.any(Object)
-      );
+      expect(result.postUrl).toBeUndefined();
+      expect(axios.post).not.toHaveBeenCalled();
     });
 
-    it('should set isShort to true if content type is clip', async () => {
+    it('should delegate clip publishing without calling removed n8n webhook', async () => {
       const mockContent = {
         id: 'c-1',
         content_type: 'clip',
         title: 'Short'
       };
 
-      await service.publishContent(mockContent, {}, 'user-1');
+      const result = await service.publishContent(mockContent, {}, 'user-1');
 
-      expect(axios.post).toHaveBeenCalledWith(
-        expect.any(String),
-        expect.objectContaining({ isShort: true }),
-        expect.any(Object)
-      );
+      expect(result.success).toBe(true);
+      expect(axios.post).not.toHaveBeenCalled();
     });
 
-    it('should handle request errors gracefully', async () => {
-      vi.mocked(axios.post).mockRejectedValueOnce(new Error('Network error'));
+    it('should not require n8n configuration for scheduler delegation', async () => {
+      vi.stubEnv('N8N_URL', '');
 
       const result = await service.publishContent({ id: '1' }, {}, 'u-1');
       expect(result.success).toBe(true);
+      expect(axios.post).not.toHaveBeenCalled();
     });
   });
 });

@@ -41,7 +41,7 @@ describe('Health Route', () => {
     expect(response.body.timestamp).toBeDefined();
     expect(response.body.services.directus).toEqual({ status: 'healthy' });
     expect(response.body.services.s3).toEqual({ status: 'healthy' });
-    expect(response.body.services.n8n).toEqual({ status: 'healthy' });
+    expect(response.body.services.n8n).toEqual({ status: 'removed' });
     expect(response.body.duration_ms).toBeGreaterThanOrEqual(0);
   });
 
@@ -78,14 +78,14 @@ describe('Health Route', () => {
     expect(response.body.services.s3).toEqual({ status: 'unreachable' });
   });
 
-  it('должен помечать n8n как unreachable когда get возвращает null', async () => {
+  it('не должен проверять удалённый n8n-сервис', async () => {
     vi.mocked(directusCrud.list).mockResolvedValue([]);
     vi.mocked(axios.head).mockResolvedValue({ status: 200 });
-    vi.mocked(axios.get).mockImplementation(() => Promise.resolve(null as any));
 
     const response = await request(app).get('/api/health');
 
-    expect(response.body.services.n8n).toEqual({ status: 'unreachable' });
+    expect(response.body.services.n8n).toEqual({ status: 'removed' });
+    expect(axios.get).not.toHaveBeenCalled();
   });
 
   it('должен вызывать directusCrud.list с useAdminToken', async () => {

@@ -85,7 +85,7 @@ describe('logger', () => {
 
         it('debug should log message', () => {
             debug('debug message', 'source');
-            expect(consoleSpy.debug).toHaveBeenCalledWith(expect.stringContaining('[source] debug message'));
+            expect(consoleSpy.log).toHaveBeenCalledWith(expect.stringContaining('[source] debug message'));
         });
     });
 

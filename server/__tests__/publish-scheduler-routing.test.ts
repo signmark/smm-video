@@ -307,7 +307,7 @@ describe('PublishScheduler — роутинг по платформам', () => 
     });
   }
 
-  it('неизвестная платформа → publishThroughN8nWebhook (N8N fallback)', async () => {
+  it('неизвестная платформа → failed без устаревшего N8N fallback', async () => {
     const content = makeContent({ content_type: 'post' });
     const spy = vi
       .spyOn(scheduler as any, 'publishThroughN8nWebhook')
@@ -315,9 +315,19 @@ describe('PublishScheduler — роутинг по платформам', () => 
 
     await runPlatform(scheduler, content, ['snapchat']);
 
-    expect(spy).toHaveBeenCalledWith(
-      expect.objectContaining({ id: content.id }),
-      'snapchat',
+    expect(spy).not.toHaveBeenCalled();
+    expect(vi.mocked(directusCrud.update)).toHaveBeenCalledWith(
+      'campaign_content',
+      content.id,
+      expect.objectContaining({
+        social_platforms: expect.objectContaining({
+          snapchat: expect.objectContaining({
+            status: 'failed',
+            error: 'Платформа snapchat не поддерживает автоматическую публикацию',
+          }),
+        }),
+      }),
+      { useAdminToken: true },
     );
   });
 });

@@ -18,12 +18,12 @@ describe('server/utils/environment-detector', () => {
   });
 
   describe('detectEnvironment', () => {
-    it('должен определять development при ENV=development', () => {
+    it('должен определять development при ENV=development без неявного включения debug-флагов', () => {
       process.env.ENV = 'development';
       const config = detectEnvironment();
       expect(config.environment).toBe('development');
-      expect(config.debugScheduler).toBe(true);
-      expect(config.verboseLogs).toBe(true);
+      expect(config.debugScheduler).toBe(false);
+      expect(config.verboseLogs).toBe(false);
     });
 
     it('должен определять production при ENV=production', () => {

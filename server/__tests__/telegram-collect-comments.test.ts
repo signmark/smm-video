@@ -146,7 +146,9 @@ describe('Telegram collect comments', () => {
 
   describe('POST /api/trends/collect-comments-callback', () => {
     it('сохраняет комментарии в post_comment с маппингом from_id→author', async () => {
-      vi.mocked(directusCrud.list).mockResolvedValueOnce([{ id: 'trend-1', comments: 0 }]);
+      vi.mocked(directusCrud.list)
+        .mockResolvedValueOnce([{ id: 'trend-1', comments: 0 }])
+        .mockResolvedValueOnce([{ id: 'comment-1' }, { id: 'comment-2' }]);
       vi.mocked(directusCrud.create).mockResolvedValue({ id: 'new-1' });
       vi.mocked(directusCrud.update).mockResolvedValue({});
 
@@ -170,8 +172,8 @@ describe('Telegram collect comments', () => {
           trent_post_id: 'trend-1',
           text: 'Ты в будущем?',
           author: '2043062548',
-          date: '2026-02-19T10:25:18+00:00',
-          comment_id: 172534,
+          date: '2026-02-19T10:25:18.000Z',
+          comment_id: '172534',
           platform: 'telegram'
         }),
         expect.any(Object)

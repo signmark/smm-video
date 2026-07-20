@@ -23,27 +23,33 @@
 | `codex-telegram-pre-code-and-cleanup.md` | **Task A + cleanup-хвост.** Чинение `<pre>`/`<code>` + hex-сущности + мелкие cleanup'ы в `telegram-service.ts`. **Выполнен Kimi**: Task A в `d680977`, cleanup в `9e230e3` (закоммичено Mavis). Промпт остаётся как референс. | done |
 | `codex-status-unification.md` | **Task B.** Унификация `partial` / `partially_published` в scheduler-write и storage-read. **Выполнен Codex**, закоммичено Mavis в `13b99fc`. Промпт остаётся как референс. | done |
 | `codex-mock-network-in-tests.md` | **Task C.** Замокать сеть в `autonomous-ai-tools.test.ts` и `api_routes_new.test.ts` (7 из 17 baseline падений). **Выполнен Mavis** (калибровка, чистая сдача) в `aea9b04`. | done |
-| `codex-fix-chronic-test-failures.md` | **Task D.** Оставшиеся 10 baseline падений в 7 файлах. Цель: `npx vitest run` = exit 0. Запрет на ковровый `it.skip`. Решается после C. | строго после C |
+| `codex-fix-chronic-test-failures.md` | **Task D.** Оставшиеся 10 baseline падений в 7 файлах. Цель: `npx vitest run` = exit 0. **Выполнен Codex**, закоммичено Mavis в `82a1251`. Промпт остаётся как референс. | done |
 | `codex-remove-aggressive-tag-fixer.md` | Уже выполнен (коммит `299becb`, запушен). Оставлен как референс. | done |
 | `codex-analytics-channel-id-and-remove-button.md` | **Реализован и закоммичен** как `97947ae`. Промпт остаётся как референс. | done |
+| `kimi-convergence-table.md` | **Kimi background**: таблица «кто кого вызывает» для конвергенции `services/social/` → `services/social-platforms/`. **Выполнен Kimi**: таблица в `docs/platform-convergence-table.md` (`8167b72`). Промпт остаётся как референс. | done |
+| `baseline-vitest-2026-07-20.txt` | Снимок `npx vitest run` от 2026-07-20: 7 failed / 10 tests (после Task C). Использовался как опорная точка для Task D. | — |
+| `mavis-commit-instructions-2026-07-20.md` | Инструкция Claude'а для Mavis: коммитить строго явными списками, `git add -A` запрещён. Закоммичена в `65d051a`. | — |
+| `codex-task6-review-2026-07-20.md` | Кросс-модельный ревью Codex'а по Task 6 (`2f8d581`) — принято, без блокирующих замечаний. | — |
 
 ## Роли
 
 Канонический источник: [`claude-roles-and-assignments-2026-07-20.md`](claude-roles-and-assignments-2026-07-20.md).
 Здесь — только короткая выжимка для быстрого взгляда.
 
-На 2026-07-20 (ревизия 2) владелец распределил так:
+На 2026-07-20 (ревизия 6, см. `claude-roles-and-assignments-2026-07-20.md`) владелец распределил так:
 - **Codex** — основной исполнитель по детальным ТЗ; вычитка чужих ТЗ
-  (поймал 3 ошибки в промптах — поймает и дальше).
-- **Mavis (MiniMax)** — оркестратор / PM. Сдал Task C (мок сети в
-  2 тест-файлах) на калибровке чисто, переведён в основной ростер.
-  Сейчас коммитит WIP других исполнителей и следит за тем, чтобы
-  «закрыто» = «закоммичено».
+  (поймал 3 ошибки в промптах — поймает и дальше). Кросс-модельный
+  ревью Task 6 (`2f8d581`) — без блокирующих замечаний.
+- **Mavis (MiniMax)** — оркестратор / PM. Сдал Task C чисто на
+  калибровке, переведён в основной ростер (per roles rev6). Сейчас
+  коммитит WIP других исполнителей, держит «закрыто = закоммичено»,
+  синхронизирует README.
 - **Claude** — ревью коммитов → follow-ups с приёмкой; консультации
   по архитектуре. ТЗ — высокий уровень с обязательной вычиткой.
 - **Kimi** — фоновый контур: системные срезы, тонкие задачи без
   срочности, ревью фичевых диффов до пуша. Медленный, но тщательный
-  и без брака — на быстрый контур не ставим.
+  и без брака. Выполнил Task 6 (`2f8d581`), Task 8 (`af92e05`),
+  таблицу конвергенции (`8167b72`).
 - **Mimo** — деплой на следующий день после пуша.
 - **Владелец** — финальные решения, push, прод-проверка вручную.
 
@@ -90,20 +96,22 @@
 
 ## Что в очереди, но не оформлено в промпт
 
-- **Task 6 (medium)** — протухший `analyticsChannelId` не инвалидируется.
-  При 404 по кешированному UUID нужен один retry: lookup → register.
-  Промпт ещё не написан (см. `review-follow-ups-2026-07-20.md`).
-  Исполнитель: Kimi или Codex, **не Mavis** до перевода в основной ростер.
-- **Task 7 (low-medium)** — lost-update в `persistAnalyticsChannelId`
-  (GET→PATCH fire-and-forget, ставка — токены). **Не раздавать
-  до решения владельца** о выносе поля из JSON.
-- **Task 8 (small)** — `<pre><code>…</code></pre>` рендерит внутренний
-  тег литералом. Промпт в `review-follow-ups-2026-07-20.md`. Кандидат:
-  Mavis вторым заходом (если C чисто), иначе Kimi.
-- **Конвергенция `services/social/` → `services/social-platforms/`.**
-  Дублируются telegram/instagram/vk/facebook/base-service. Каждый
-  зверь чинит ту копию, которую нашёл первой. Kimi готовит таблицу
-  «кто кого вызывает» перед удалением старой иерархии.
+- **Task 7 (low-medium, ЗАМОРОЖЕНО)** — lost-update в
+  `persistAnalyticsChannelId` (GET→PATCH fire-and-forget, ставка —
+  токены). **Не раздавать** до решения владельца о выносе поля
+  из JSON. См. `review-follow-ups-2026-07-20.md`.
+- **Task 10 (новое, из конвергенции, на подтверждение владельцем)**
+  — dead code кандидаты: `social/telegram-proxy-service.ts`
+  (613 строк, не вызывается никем), `social-platforms/base-service.ts`
+  (27 строк). После подтверждения — отдельный промпт на удаление.
+- **Конвергенция `services/social/` → `services/platforms/`.**
+  Кими сделал таблицу `docs/platform-convergence-table.md` (`8167b72`).
+  Реальное сведение иерархий — после утверждения плана миграции.
+- **Concurrency-фикс (отложен из Task 6 review, не блокер)** —
+  при двух одновременных запросах со stale UUID возможна гонка
+  lookup/register; нужна проверка контракта
+  `POST /api/v1/monitoring/channels` (идемпотентность).
+  Не делать внутри Task 6, не смешивать с замороженным Task 7.
 - **Даты/статусы в аналитических доках** `docs/` (или увести в
   `_archive`). Замечание Kimi.
 - **Платформы без `analyticsChannelId`** — после деплоя аналитики
@@ -111,3 +119,18 @@
   обогатился UUID (lazy save-back при первом открытии Аналитики
   сделает это автоматически; нужна только проверка, что ничего не
   застряло).
+
+## История (закрыто, закоммичено)
+
+| Задача | Коммит | Исполнитель | Приёмка |
+|---|---|---|---|
+| Task A — `<pre>`/`<code>`/hex | `d680977` | Kimi | Claude |
+| Cleanup Task A | `9e230e3` | Kimi | Claude |
+| Task B — статусная унификация | `13b99fc` | Codex | Claude |
+| Task C — мок сети в тестах | `aea9b04` | Mavis (калибровка) | Claude |
+| Task 6 — re-resolve stale UUID | `2f8d581` | Kimi | Codex |
+| Task 8 — `<pre><code>` нативный | `af92e05` | Kimi | Claude |
+| Task 9 — broken import hotfix | `506b6a9` | Codex | Kimi (через конвергенцию) + Claude (пробой) |
+| Task D — хронические тесты | `82a1251` | Codex | Mavis + пользователь (701/701) |
+| Таблица конвергенции | `8167b72` | Kimi | Claude |
+| Docs sync / roles rev6 | `65d051a` | Claude | — |

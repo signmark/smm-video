@@ -226,19 +226,23 @@ function balanceTags(text: string): string {
 
 function cleanupWhitespace(text: string): string {
   return text
+    // Невидимые символы (zero-width, BOM) — мусор из редакторов
+    .replace(/[\u200B\u200C\u200D\uFEFF]/g, '')
     .replace(/[ \t]+\n/g, '\n')
     .replace(/\n[ \t]+/g, '\n')
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 }
 
-/** Убирает опустевшие парные теги (<b></b>), которые могли остаться после конвертации. */
+/** Убирает опустевшие парные теги (<b></b>, <a href="…"></a>), оставшиеся после конвертации. */
 function dropEmptyTags(text: string): string {
   let previous: string;
   let current = text;
   do {
     previous = current;
-    current = current.replace(/<(b|i|u|s|code|pre|blockquote|tg-spoiler)>\s*<\/\1>/gi, '');
+    current = current
+      .replace(/<(b|i|u|s|code|pre|blockquote|tg-spoiler)>\s*<\/\1>/gi, '')
+      .replace(/<a href="[^"]*">\s*<\/a>/gi, '');
   } while (current !== previous);
   return current;
 }

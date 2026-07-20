@@ -162,11 +162,33 @@ describe('toTelegramHtml', () => {
       expect(toTelegramHtml('<p>абзац</p><pre>код &lt;tag&gt;</pre><p><b>ещё</b></p>'))
         .toBe('абзац\n\n<pre>код &lt;tag&gt;</pre><b>ещё</b>');
     });
+
+    it('содержимое <pre> не экранируется дважды', () => {
+      const output = toTelegramHtml('<pre>5 &lt; 10</pre>');
+      expect(output).toBe('<pre>5 &lt; 10</pre>');
+      expect(output).not.toContain('&amp;lt;');
+    });
+  });
+
+  describe('очистка мусора', () => {
+    it('zero-width символы и BOM удаляются', () => {
+      expect(toTelegramHtml('текст​с‌невидимыми‍символами﻿'))
+        .toBe('текстсневидимымисимволами');
+    });
+
+    it('пустые ссылки вычищаются', () => {
+      expect(toTelegramHtml('<a href="https://x.com"></a>видимый текст'))
+        .toBe('видимый текст');
+    });
   });
 
   describe('числовые сущности', () => {
     it('hex-сущности декодируются', () => {
       expect(toTelegramHtml('it&#x27;s &#x2014; fine')).toBe("it's — fine");
+    });
+
+    it('двойное экранирование hex (&amp;#x27;) декодируется за два прохода', () => {
+      expect(toTelegramHtml('it&amp;#x27;s')).toBe("it's");
     });
 
     it('десятичные сущности декодируются', () => {

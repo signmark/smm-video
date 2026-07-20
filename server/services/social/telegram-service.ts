@@ -20,7 +20,11 @@ export class TelegramService extends BaseSocialService {
       return toTelegramHtml(content);
     } catch (error) {
       log(`[Telegram] safeFormatForTelegram fallback to plain text: ${error}`, 'social-publishing');
-      return (content || '').replace(/<[^>]*>/g, '');
+      return (content || '')
+        .replace(/<[^>]*>/g, '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
     }
   }
   
@@ -57,16 +61,6 @@ export class TelegramService extends BaseSocialService {
       // балансировка) — в shared-утилите toTelegramHtml.
       let formattedText = this.safeFormatForTelegram(content);
 
-      // Убираем лишние переносы строк (более 2 подряд)
-      formattedText = formattedText.replace(/\n{3,}/g, '\n\n');
-      
-      // Удаление невидимых символов (сохраняем для совместимости)
-      formattedText = formattedText
-        .replace(/\u200B/g, '') // Zero-width space
-        .replace(/\u200C/g, '') // Zero-width non-joiner
-        .replace(/\u200D/g, '') // Zero-width joiner
-        .replace(/\uFEFF/g, ''); // Zero-width no-break space
-      
       // Проверка на длинные слова
       const longWordsFound = formattedText.match(/[^\s]{100,}/g);
       if (longWordsFound && longWordsFound.length > 0) {
@@ -270,15 +264,6 @@ export class TelegramService extends BaseSocialService {
     try {
       // Применяем HTML-форматирование для Telegram
       let formattedText = this.formatTextForTelegram(content);
-      
-      // Подсчитываем открывающие/закрывающие теги для диагностики
-      const openingTags = (formattedText.match(/<[a-z][^>]*>/gi) || []).length;
-      const closingTags = (formattedText.match(/<\/[a-z][^>]*>/gi) || []).length;
-      log(`Теги в тексте после обработки: открывающих ${openingTags}, закрывающих ${closingTags}`, 'social-publishing');
-      
-      if (openingTags !== closingTags) {
-        log(`Внимание: количество открывающих (${openingTags}) и закрывающих (${closingTags}) HTML-тегов не совпадает. Это может вызвать ошибку при отправке в Telegram.`, 'social-publishing');
-      }
       
       // Проверка длины и обрезка
       if (formattedText.length > maxLength) {

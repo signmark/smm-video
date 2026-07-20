@@ -730,9 +730,9 @@ export class PublishScheduler {
       const hasAnyPublished = Object.values(allPlatforms).some((p: any) => p.status === 'published');
       const allDone = !hasAnyPending;
       const finalContentStatus = hasAnyPublished && allDone
-        ? 'partial'                        // часть опубликована, ретраев нет
+        ? 'partially_published'            // часть опубликована, ретраев нет
         : hasAnyPublished && hasAnyPending
-          ? 'partial'                      // часть опубликована, часть ещё в очереди — шедулер подберёт partial
+          ? 'partially_published'          // часть опубликована, часть ещё в очереди — шедулер подберёт частичную публикацию
           : hasAnyPending
             ? 'scheduled'                  // ничего не опубликовано, всё ещё ждёт
             : contentStatus;               // всё failed — оставляем текущий

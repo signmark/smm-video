@@ -1282,7 +1282,7 @@ export class DatabaseStorage implements IStorage {
       
       const filter: any = {
         status: {
-          _in: ['scheduled', 'partial']
+          _in: ['scheduled', 'partial', 'partially_published']
         },
         scheduled_at: {
           _nnull: true

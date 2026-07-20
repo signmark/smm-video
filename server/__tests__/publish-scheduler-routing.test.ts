@@ -897,6 +897,45 @@ describe('publishToYouTubeDirect', () => {
   });
 });
 
+describe('scheduleRetryOrFail — canonical partial status', () => {
+  it('writes partially_published when one platform is published and another fails', async () => {
+    const scheduler = makeScheduler();
+    const content = makeContent();
+    const currentPlatforms = {
+      telegram: {
+        status: 'published',
+        postId: 'telegram-post-1',
+      },
+      vk: {
+        status: 'pending',
+        retryCount: 3,
+      },
+    };
+
+    vi.mocked(directusCrud.list).mockResolvedValue([{
+      id: content.id,
+      social_platforms: currentPlatforms,
+    }]);
+    vi.mocked(directusCrud.update).mockResolvedValue({});
+
+    await (scheduler as any).scheduleRetryOrFail(
+      content,
+      'vk',
+      'publication failed',
+      currentPlatforms,
+    );
+
+    expect(vi.mocked(directusCrud.update)).toHaveBeenCalledWith(
+      'campaign_content',
+      content.id,
+      expect.objectContaining({
+        status: 'partially_published',
+      }),
+      { useAdminToken: true },
+    );
+  });
+});
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // 10. Вспомогательные — getContentType
 // ═══════════════════════════════════════════════════════════════════════════════

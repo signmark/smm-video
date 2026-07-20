@@ -90,6 +90,42 @@ describe('DatabaseStorage', () => {
         });
     });
 
+    describe('getScheduledContent', () => {
+        it('requests canonical and legacy partial statuses', async () => {
+            (directusApi.get as any).mockResolvedValue({
+                data: {
+                    data: [{
+                        id: 'content-1',
+                        user_id: 'user-123',
+                        campaign_id: 'campaign-1',
+                        status: 'partially_published',
+                        content_type: 'text',
+                        content: 'Post',
+                        scheduled_at: '2026-07-20T10:00:00.000Z',
+                        created_at: '2026-07-20T09:00:00.000Z',
+                    }],
+                },
+            });
+
+            const result = await storage.getScheduledContent('user-123');
+
+            expect(directusApi.get).toHaveBeenCalledWith(
+                '/items/campaign_content',
+                expect.objectContaining({
+                    params: expect.objectContaining({
+                        filter: expect.objectContaining({
+                            status: {
+                                _in: ['scheduled', 'partial', 'partially_published'],
+                            },
+                        }),
+                    }),
+                }),
+            );
+            expect(result).toHaveLength(1);
+            expect(result[0].status).toBe('partially_published');
+        });
+    });
+
     describe('updateCampaignContent', () => {
         it('persists and returns the aggregate publication timestamp', async () => {
             const publishedAt = new Date('2026-07-17T10:15:00.000Z');

@@ -22,17 +22,23 @@
       {"row": 54, "intended": "BUG-029", "set_status_to": "Next", "color": "R142-G124-B195", "note": "REVERT: restored BUG-029 status to Next per owner policy 18:09"},
       {"row": 56, "intended": "BUG-031", "set_status_to": "Тестировщик", "color": "R0-G255-B0", "note": "applied to correct row (R56=BUG-031), eb4d77e fix in git"},
       {"row": 36, "intended": "[no-id]-claude-3.5-markdown-fence", "note": "no action needed — actual row 37 already had Тестировщик + green bg"}
+    ],
+    "18:57_bug027": [
+      {"row": 52, "intended": "BUG-027", "set_status_to": null, "color_A": "R255-G255-B255 (white)", "color_BGL": "R0-G255-B0 (green)", "note": "Codex reconciliation found real fixes 5748268 + 85bc523; Mavis 18:17 search was incomplete. H already 'Тестировщик', just normalized colors per anti_forensic rules."}
     ]
   },
   "verified_state": {
+    "H37": "Тестировщик ([no-id] claude 3.5 ###, was already correct)",
+    "H52": "Тестировщик (BUG-027, applied 18:57 after Codex reconciliation)",
     "H54": "Next (BUG-029, restored)",
     "H55": "Тестировщик (BUG-030, correct)",
     "H56": "Тестировщик (BUG-031, applied)",
-    "H37": "Тестировщик ([no-id] claude 3.5 ###, was already correct)",
     "R29_A": "default (unchanged baseline — not BUG-029 despite the row number)",
     "R29_BGL": "R142-G124-B195 (purple, was already this way; my 18:51 paint was a no-op)",
     "R36_A": "R255-G255-B255 (white, AI trace removed)",
     "R36_BGL": "R0-G255-B0 (green)",
+    "R52_A": "R255-G255-B255 (white, AI trace removed 18:57)",
+    "R52_BGL": "R0-G255-B0 (green, applied 18:57 after Codex reconciliation)",
     "R54_A": "R255-G255-B255 (white, AI trace removed)",
     "R54_BGL": "R142-G124-B195 (purple, Next color, restored)",
     "R55_A": "R255-G255-B255 (white, AI trace removed)",
@@ -120,13 +126,13 @@
       "reporter": "Дарья",
       "priority": "Средний",
       "sheet_status": "Тестировщик",
-      "fix_commits": ["a2d3d65"],
-      "fix_summary": "a2d3d65 убирает [Ваше Имя]-style placeholders, но НЕ адресует verbose intro и одиночные * ✅ 📌 # символы. 88cc1a2 чистит только ### (тройные).",
-      "mavis_status": "partial_fix_in_git_new_task_needed",
+      "fix_commits": ["a2d3d65", "5748268", "85bc523"],
+      "fix_summary": "5748268 sanitize generated social content + 85bc523 preserve formatting. server/routes/ai.ts applies getGeneratedSocialContentRules(platform) to system prompt and cleanGeneratedSocialContent(result.content, platform) to output. server/__tests__/generated-social-content.test.ts has regression 'cleans the exact DeepSeek VK artifact pattern reported by testers' (8/8 passing). a2d3d65 is precursor (placeholders).",
+      "mavis_status": "fix_in_git_awaiting_retest",
       "dev_comment_k": "(шаблон)",
       "dev_comment_sheet": "Dmitry: 'Там и нет функционала с генерацией картинки, там можно только сгенерировать Промт для создания картинки' + Михайил: 'понял'",
       "sheet_actions_pending": [],
-      "notes": "Требуется новый Codex-таск: (1) prompt-engineering fix для DeepSeek (запретить verbose intro), (2) расширить markdown cleanup чтобы вычищал одиночные * ✅ 📌 # с осторожностью для hashtag-легитимных случаев."
+      "notes": "Mavis's earlier 18:17 analysis was incomplete — only found a2d3d65. Codex reconciliation (2026-07-20 ~18:57) found the actual fixes 5748268 + 85bc523 with explicit regression test. No new Codex task needed. Sheet updated 18:57: A white + B:L green (R52). Tester should reproduce via social-content generation UI with DeepSeek + VK; if artifact reappears, capture route+payload (would indicate path bypassing server/routes/ai.ts)."
     },
     "BUG-028": {
       "sheet_row": 53,

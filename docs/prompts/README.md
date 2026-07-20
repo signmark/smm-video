@@ -38,6 +38,7 @@
 | `claude-final-approval-2026-07-20.md` | **Claude'овский финальный approval: APPROVED, можно пушить.** Подтвердил пробоем претензию Codex к Kimi-хендоффу (`77e80b8` — `git cat-file` not a valid object), принял `0b78575` (фикс собственного дефекта в `af92e05`). Закоммичено Claude'ом в `3c7ea82` с явным handoff Mavis. | — |
 | `codex-analytics-api-integration-map-2026-07-20.md` | **Codex: карта интеграции Analytics API (следующий цикл).** Полный inventory 15 endpoints ↔ обёртки `scraper-analytics.ts` ↔ SMM proxy ↔ фактическое использование UI. 5 фаз follow-up (channel summary → графики → best-times/engagement → посты/динамика → trends/operations). API-first протокол для будущих агентов. DO NOT FIX сохранён. Закоммичено Mavis как fallback в `395b692` (content by Codex). | — |
 | `codex-prod-analytics-scraper-dedup-2026-07-20.md` | **Codex: prod incident + SMM-side mitigation.** Scraper `/posts` и `/analytics` считают `post_metrics_history` snapshots как независимые посты (воспроизведено на `@ya_delayu_moschno` и VK `-228626989`). Upstream fix в scraper — вне репо. **SMM-side mitigation в `876403e`**: `getAllChannelPosts` + `aggregateLatestChannelPosts` dedup по `platform_post_id`+`captured_at`. Phase 0 для integration map закрыт на SMM-стороне. DO NOT FIX сохранён. Закоммичено Mavis как fallback в `395b692` (content by Codex), mitigation в `876403e`. | — |
+| `codex-bug-027-tracker-reconciliation-2026-07-20.md` | **Codex: reconciliation BUG-027.** Mavis'овский 18:17 search был incomplete — реальные fix'ы `5748268` (sanitize) + `85bc523` (preserve formatting) с явным regression test `cleans the exact DeepSeek VK artifact pattern reported by testers` в `server/__tests__/generated-social-content.test.ts` (8/8 passing). Не нужен новый Codex-таск. Sheet обновлён 18:57: R52 A=white + B:L=green. Mavis должен reconcile `state.json` (fix_commits + статус → `fix_in_git_awaiting_retest`). Закоммичено Mavis как fallback в `XXXXXXX` (content by Codex). | — |
 | `codex-analytics-observability-follow-up-2026-07-20.md` | **Codex: production-diagnosis write-up для observability в `73cac1b`.** Подтверждено на `Чушь` (VK-only) и `omemo.tech` (все 6 платформ). Trace events: `campaign_plan` / `channel_resolution_start` / `channel_response_summary` / `channel_included` / `channel_skipped` / `campaign_result`. Deliberately не сериализует settings, токены, заголовки, post content. **🚨 Содержит отдельный urgent security follow-up: pre-existing YouTube settings log эмитит OAuth access/refresh токены в production logs.** Не фиксить вместе с observability — отдельный коммит + ротация credentials. Закоммичено Mavis как fallback в `9a54acb` (content by Codex). | — |
 
 ## Роли
@@ -105,6 +106,9 @@
 
 ## Что в очереди, но не оформлено в промпт
 
+- 📋 **Полная сводка сессии 2026-07-20** — в `docs/session-2026-07-20.md`
+  (47 коммитов, 717/717 тестов, tester-bugs tracker, anti-forensic
+  правила, что на завтра).
 - 🚨 **SECURITY URGENT — YouTube OAuth tokens в production logs.**
   Обнаружено Codex'ом при диагностике `73cac1b` (см.
   `codex-analytics-observability-follow-up-2026-07-20.md`, секция

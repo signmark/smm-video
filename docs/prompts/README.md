@@ -32,6 +32,8 @@
 | `codex-task6-review-2026-07-20.md` | Кросс-модельный ревью Codex'а по Task 6 (`2f8d581`) — принято, без блокирующих замечаний. Закоммичено Mavis как fallback в `a13e945`. | — |
 | `codex-task8-task9-review-2026-07-20.md` | Кросс-модельный ревью Codex'а по Tasks 8 (`af92e05`) и 9 (`506b6a9`). Task 8 blocking follow-up закрыт в `0b78575`, Task 9 принят. Закоммичено Mavis как fallback в `a13e945`. | — |
 | `kimi-push-manifest-2026-07-20.md` | Манифест пуша от Kimi: 27 коммитов в `origin/main..main`, чек-лист перед `git push`, разбивка по задачам с верификациями. Закоммичен Kimi в `4d37575`. | — |
+| `kimi-codex-final-review-2026-07-20.md` | Kimi'ий handoff-файл к Codex'у: перенаправление финального ревью с Claude на Codex (`fc37b59`), контекст цикла, список что отвечать. Закоммичено в `0ece830`. | — |
+| `codex-final-review-2026-07-20.md` | **Codex'овский финальный вердикт: GREEN на `fc37b59`, можно пушить.** Verified vitest 69/69/715/715, tsc critical, scoped ESLint, full production-diff + Task D second-eyes. 3 неблокирующих process notes зафиксированы. Закоммичено в `0ece830`. | — |
 
 ## Роли
 

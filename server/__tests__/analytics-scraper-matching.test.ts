@@ -32,6 +32,7 @@ vi.mock('../services/scraper-analytics', () => ({
 import axios from 'axios';
 import { directusApi } from '../directus';
 import { AnalyticsService } from '../services/analytics-service';
+import { log } from '../utils/logger';
 import {
   getAllChannelPosts,
   getChannelAnalytics,
@@ -400,5 +401,98 @@ describe('AnalyticsService scraper supplementation', () => {
     expect(getChannelAnalytics).toHaveBeenCalledWith('stale-uuid', expect.any(Object));
     expect(getChannelAnalytics).toHaveBeenCalledWith('fresh-uuid', expect.any(Object));
     expect(result.totalViews).toBe(42);
+  });
+
+  it('logs safe campaign decisions and scraper response summaries', async () => {
+    vi.mocked(directusApi.get).mockResolvedValue({ data: { data: [] } } as any);
+    vi.mocked(axios.get).mockResolvedValue({
+      data: {
+        data: {
+          name: 'Campaign',
+          social_media_settings: {
+            telegram: { chatId: '@tg_channel' },
+            vk: { groupId: '-228626989' },
+            instagram: { accessToken: 'instagram-secret' },
+            facebook: { accessToken: 'facebook-secret' },
+            threads: { accessToken: 'threads-secret' },
+            youtube: { refreshToken: 'youtube-secret' },
+          },
+        },
+      },
+    } as any);
+    vi.mocked(getChannelAnalytics).mockImplementation(async (channelId) => (
+      channelId === 'vk-monitor'
+        ? {
+            total_posts: 2,
+            total_views: 12,
+            total_likes: 1,
+            total_comments: 0,
+            total_shares: 0,
+          } as any
+        : null
+    ));
+
+    await AnalyticsService.getCampaignAnalytics('campaign-1', 'thisMonth', 'user-token');
+
+    const logged = vi.mocked(log).mock.calls
+      .map(([message]) => String(message))
+      .filter(message => message.startsWith('analytics trace='))
+      .map(message => JSON.parse(message.slice('analytics trace='.length)));
+
+    expect(logged).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        event: 'campaign_plan',
+        campaignId: 'campaign-1',
+        settingsPresentPlatforms: [
+          'telegram',
+          'vk',
+          'instagram',
+          'facebook',
+          'threads',
+          'youtube',
+        ],
+        skippedPlatforms: [
+          { platform: 'instagram', reason: 'unsupported_by_analytics_scraper' },
+          { platform: 'facebook', reason: 'unsupported_by_analytics_scraper' },
+          { platform: 'threads', reason: 'unsupported_by_analytics_scraper' },
+          { platform: 'youtube', reason: 'unsupported_by_analytics_scraper' },
+        ],
+      }),
+      expect.objectContaining({
+        event: 'channel_response_summary',
+        platform: 'telegram',
+        analyticsReceived: false,
+        postsReceived: false,
+        source: null,
+      }),
+      expect.objectContaining({
+        event: 'channel_skipped',
+        platform: 'telegram',
+        reason: 'no_scraper_response',
+      }),
+      expect.objectContaining({
+        event: 'channel_response_summary',
+        platform: 'vk',
+        analyticsReceived: true,
+        source: 'analytics_fallback',
+        metrics: {
+          posts: 2,
+          views: 12,
+          likes: 1,
+          comments: 0,
+          shares: 0,
+        },
+      }),
+      expect.objectContaining({
+        event: 'channel_included',
+        platform: 'vk',
+      }),
+    ]));
+
+    const serializedLogs = JSON.stringify(vi.mocked(log).mock.calls);
+    expect(serializedLogs).not.toContain('instagram-secret');
+    expect(serializedLogs).not.toContain('facebook-secret');
+    expect(serializedLogs).not.toContain('threads-secret');
+    expect(serializedLogs).not.toContain('youtube-secret');
   });
 });

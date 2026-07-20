@@ -8,9 +8,37 @@ import type { ChannelPost } from './scraper-analytics';
 
 type AnalyticsPlatform = 'telegram' | 'vk';
 
+const KNOWN_SOCIAL_PLATFORMS = [
+  'telegram',
+  'vk',
+  'instagram',
+  'facebook',
+  'threads',
+  'youtube',
+] as const;
+
 function metric(value: unknown): number {
   const parsed = Number(value ?? 0);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function hasPlatformSettings(value: unknown): boolean {
+  return Boolean(
+    value
+    && typeof value === 'object'
+    && !Array.isArray(value)
+    && Object.keys(value).length > 0,
+  );
+}
+
+function logAnalyticsTrace(event: string, payload: Record<string, unknown>): void {
+  // Analytics diagnostics must remain visible in production. Keep payloads to
+  // identifiers, decisions, and aggregate counters; never include settings or posts.
+  log(
+    `analytics trace=${JSON.stringify({ event, ...payload })}`,
+    'analytics',
+    'warn',
+  );
 }
 
 function aggregateLatestChannelPosts(posts: ChannelPost[]) {
@@ -162,6 +190,16 @@ export class AnalyticsService {
         platforms: Array.from(platformStatsMap.values())
       };
 
+      logAnalyticsTrace('campaign_result', {
+        campaignId,
+        period,
+        totalPosts,
+        totalViews,
+        totalLikes,
+        totalComments,
+        totalShares,
+        platforms: result.platforms.map(platform => platform.name),
+      });
       log(`[AnalyticsService] 📈 Итоговая статистика: ${totalPosts} постов, ${totalViews} просмотров`, 'info');
       return result;
 
@@ -186,7 +224,13 @@ export class AnalyticsService {
     platformStatsMap: Map<string, any>,
   ): Promise<void> {
     const adminToken = process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN || '';
-    if (!adminToken) return;
+    if (!adminToken) {
+      logAnalyticsTrace('campaign_skipped', {
+        campaignId,
+        reason: 'missing_directus_admin_token',
+      });
+      return;
+    }
 
     const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
 
@@ -196,11 +240,25 @@ export class AnalyticsService {
       timeout: 10000
     });
     const campaign = campaignResp.data?.data;
-    if (!campaign) return;
+    if (!campaign) {
+      logAnalyticsTrace('campaign_skipped', {
+        campaignId,
+        reason: 'campaign_not_found',
+      });
+      return;
+    }
 
     let socialSettings = campaign.social_media_settings || {};
     if (typeof socialSettings === 'string') {
-      try { socialSettings = JSON.parse(socialSettings); } catch { return; }
+      try {
+        socialSettings = JSON.parse(socialSettings);
+      } catch {
+        logAnalyticsTrace('campaign_skipped', {
+          campaignId,
+          reason: 'invalid_social_media_settings_json',
+        });
+        return;
+      }
     }
 
     // Каналы которые нужно искать в скрейпере
@@ -218,6 +276,41 @@ export class AnalyticsService {
       getScraperCampaignChannels,
     );
 
+    const settingsPresentPlatforms = KNOWN_SOCIAL_PLATFORMS.filter(platform => (
+      hasPlatformSettings(socialSettings?.[platform])
+    ));
+    const candidatePlatforms = new Set(channelsToLookup.map(channel => channel.platform));
+    const skippedPlatforms: Array<{ platform: string; reason: string }> = [];
+    for (const platform of settingsPresentPlatforms) {
+      if (platform !== 'telegram' && platform !== 'vk') {
+        skippedPlatforms.push({
+          platform,
+          reason: 'unsupported_by_analytics_scraper',
+        });
+        continue;
+      }
+      if (!candidatePlatforms.has(platform)) {
+        skippedPlatforms.push({
+          platform,
+          reason: platform === 'telegram'
+            ? 'missing_public_username'
+            : 'invalid_group_id',
+        });
+      }
+    }
+
+    logAnalyticsTrace('campaign_plan', {
+      campaignId,
+      settingsPresentPlatforms,
+      candidates: channelsToLookup.map(channel => ({
+        platform: channel.platform,
+        hasCachedAnalyticsChannelId: Boolean(
+          socialSettings?.[channel.platform]?.analyticsChannelId,
+        ),
+      })),
+      skippedPlatforms,
+    });
+
     if (channelsToLookup.length === 0) return;
 
     const fromStr = fromDate.toISOString().split('T')[0];
@@ -225,6 +318,11 @@ export class AnalyticsService {
 
     for (const ch of channelsToLookup) {
       const platformSettings = socialSettings?.[ch.platform] || {};
+      logAnalyticsTrace('channel_resolution_start', {
+        campaignId,
+        platform: ch.platform,
+        hasCachedAnalyticsChannelId: Boolean(platformSettings.analyticsChannelId),
+      });
       let scraperChannelId = await resolveAnalyticsChannel(
         ch.platform,
         ch.platformId,
@@ -233,7 +331,14 @@ export class AnalyticsService {
         adminToken,
         campaign.name,
       );
-      if (!scraperChannelId) continue;
+      if (!scraperChannelId) {
+        logAnalyticsTrace('channel_skipped', {
+          campaignId,
+          platform: ch.platform,
+          reason: 'channel_resolution_failed',
+        });
+        continue;
+      }
 
       const query = { from_date: fromStr, to_date: toStr };
       let [analytics, channelPosts] = await Promise.all([
@@ -272,7 +377,35 @@ export class AnalyticsService {
             comments: metric(analytics.total_comments),
             shares: metric(analytics.total_shares),
           };
-      if (!currentMetrics) continue;
+      const responseSummary = {
+        campaignId,
+        platform: ch.platform,
+        scraperChannelId,
+        period: { from: fromStr, to: toStr },
+        analyticsReceived: Boolean(analytics),
+        postsReceived: Boolean(channelPosts),
+        postRows: channelPosts?.length ?? null,
+        uniquePosts: channelPosts
+          ? aggregateLatestChannelPosts(channelPosts).posts
+          : null,
+        source: channelPosts
+          ? 'posts_dedup'
+          : analytics
+            ? 'analytics_fallback'
+            : null,
+        metrics: currentMetrics || null,
+      };
+      logAnalyticsTrace('channel_response_summary', responseSummary);
+
+      if (!currentMetrics) {
+        logAnalyticsTrace('channel_skipped', {
+          campaignId,
+          platform: ch.platform,
+          scraperChannelId,
+          reason: 'no_scraper_response',
+        });
+        continue;
+      }
 
       // Скрейпер знает канал, но данных за период у него нет (например, первичный
       // сбор ещё идёт) — его нулевые агрегаты не должны затирать сохранённые метрики.
@@ -285,10 +418,23 @@ export class AnalyticsService {
             currentMetrics.shares,
           ].some(value => value > 0);
       if (!hasScraperData) {
+        logAnalyticsTrace('channel_skipped', {
+          campaignId,
+          platform: ch.platform,
+          scraperChannelId,
+          reason: 'empty_period_data',
+          keptStoredMetrics: platformStatsMap.has(ch.platform),
+        });
         log(`[AnalyticsService] 📡 Скрейпер ${ch.platform}: данных за период нет — оставляем сохранённые метрики`, 'info');
         continue;
       }
 
+      logAnalyticsTrace('channel_included', {
+        campaignId,
+        platform: ch.platform,
+        scraperChannelId,
+        metrics: currentMetrics,
+      });
       log(`[AnalyticsService] 📡 Скрейпер ${ch.platform}: ${currentMetrics.views} просмотров за период`, 'info');
 
       const stats = platformStatsMap.get(ch.platform) || {

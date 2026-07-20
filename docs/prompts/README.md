@@ -107,15 +107,13 @@
 - **Конвергенция `services/social/` → `services/platforms/`.**
   Кими сделал таблицу `docs/platform-convergence-table.md` (`8167b72`).
   Реальное сведение иерархий — после утверждения плана миграции.
-- **Task 8 follow-up (BLOCKING, **не пушить пока не закрыт**)**
-  — regex маркдаун-фенсов в `server/utils/telegram-html.ts` ловит
-  inline code `text \`\`\`js\`\`\` tail` как fenced block и
-  проглатывает текст. Фикс: различать inline code span (один
-  backtick) от fenced block (требует перевода строки после языка);
-  обязательный регресс-тест
-  `expect(toTelegramHtml('text \`\`\`js\`\`\` tail'))
-     .toBe('text <code>js</code> tail')`.
-  Codex (rev `codex-task8-task9-review-2026-07-20.md`).
+- **Task 8 follow-up — ✅ ЗАКРЫТ (`0b78575`, Codex, 2026-07-20)**
+  — regex маркдаун-фенсов в `server/utils/telegram-html.ts` теперь
+  различает inline code span (`text \`\`\`js\`\`\` tail` → `<code>js</code>`)
+  от fenced block (требует перевода строки после языка → `<pre><code class="language-js">…</code></pre>`).
+  Регресс-тест в `telegram-html.test.ts`. Полный vitest зелёный
+  (69/69 файлов, 715/715 тестов) — первый зелёный прогон с начала
+  baseline 9/17 (2026-07-19). Можно пушить.
 - **Concurrency-фикс (отложен из Task 6 review, не блокер)** —
   при двух одновременных запросах со stale UUID возможна гонка
   lookup/register; нужна проверка контракта
@@ -138,8 +136,9 @@
 | Task B — статусная унификация | `13b99fc` | Codex | Claude |
 | Task C — мок сети в тестах | `aea9b04` | Mavis (калибровка) | Claude |
 | Task 6 — re-resolve stale UUID | `2f8d581` | Kimi | Codex |
-| Task 8 — `<pre><code>` нативный | `af92e05` | Claude (fallback) | Codex (есть blocking follow-up — см. очередь) |
+| Task 8 — `<pre><code>` нативный | `af92e05` | Claude (fallback) | Codex (follow-up закрыт в `0b78575`) |
 | Task 9 — broken import hotfix | `506b6a9` | Claude (fallback) | Codex |
 | Task D — хронические тесты | `82a1251` | Codex | Mavis + пользователь (701/701) |
 | Таблица конвергенции | `8167b72` | Kimi | Claude |
 | Docs sync / roles rev6 | `65d051a` | Claude | — |
+| Task 8 follow-up — inline `\`\`\`` | `0b78575` | Codex | кросс-модельный review Codex'а из `codex-task8-task9-review-2026-07-20.md` |

@@ -43,11 +43,34 @@ vi.mock('../services/gemini-direct', () => ({
   }
 }));
 
+vi.mock('../services/ai-service', () => ({
+  aiService: {
+    generateContent: vi.fn(),
+    validateApiKeys: vi.fn()
+  }
+}));
+
+vi.mock('../services/gemini-image', () => {
+  // Прод-код TOOL_IMPLEMENTATIONS.generateImage тянет gemini-image через
+  // dynamic import и зовёт createGeminiImageService().generateImage(...).
+  // Если этого не замокать, тест уходит в реальный Vertex AI и таймаутится
+  // за 5 секунд. Возвращаем заглушку, которая отдаёт success=false,
+  // чтобы сработал FAL-фолбэк (axios.post уже замокан выше).
+  const stub = {
+    generateImage: vi.fn(async () => ({ success: false, error: 'mocked' }))
+  };
+  return {
+    createGeminiImageService: vi.fn(() => stub),
+    GeminiImageService: vi.fn(() => stub)
+  };
+});
+
 import { TOOL_IMPLEMENTATIONS } from '../services/autonomous-ai';
 import axios from 'axios';
 import { directusCrud } from '../services/directus-crud';
 import { webCrawlerAgent } from '../services/web-crawler-agent';
 import { geminiDirect } from '../services/gemini-direct';
+import { aiService } from '../services/ai-service';
 
 describe('AutonomousAI Tool Implementations', () => {
   const mockRequest: any = {
@@ -191,7 +214,15 @@ describe('AutonomousAI Tool Implementations', () => {
 
   describe('rewriteContent', () => {
     it('should rewrite text using AI', async () => {
-      vi.mocked(geminiDirect.generateContent).mockResolvedValueOnce('Shorter version');
+      // Прод-код зовёт aiService.generateContent (не geminiDirect), поэтому
+      // мокаем именно aiService. Раньше мок был на geminiDirect, что
+      // не матчилось и тест уходил в реальный Gemini с таймаутом 5с.
+      vi.mocked(aiService.generateContent).mockResolvedValueOnce({
+        success: true,
+        content: 'Shorter version',
+        service: 'gemini',
+        model: 'gemini-1.5-pro-latest'
+      } as any);
 
       const params = { originalText: 'Long text', instructions: 'Make it shorter' };
       const result = await TOOL_IMPLEMENTATIONS.rewriteContent(params, mockRequest);

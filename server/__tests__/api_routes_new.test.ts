@@ -38,6 +38,23 @@ vi.mock('../services/ai-service', () => ({
   }
 }));
 
+// Mock user-auth: registerRoutes(app) тянет ВСЕ роуты, и каждый проходит
+// через authenticateUser, который в проде делает fetch в Directus за
+// is_smm_admin. В тесте это лишний сетевой вызов на 5+ секунд. Подменяем
+// middleware на no-op, который ставит фиктивного юзера и зовёт next().
+vi.mock('../middleware/user-auth', () => ({
+  authenticateUser: (req: any, _res: any, next: any) => {
+    req.user = {
+      id: 'test-user-id',
+      token: 'mock-token',
+      email: 'test@example.com',
+      is_smm_admin: true,
+    };
+    req.userId = 'test-user-id';
+    next();
+  },
+}));
+
 const app = express();
 app.use(express.json());
 // @ts-ignore

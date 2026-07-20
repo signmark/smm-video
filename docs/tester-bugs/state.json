@@ -2,9 +2,24 @@
   "schema_version": 1,
   "spreadsheet_id": "1G7w_7pqtlF9uXDFEc0bkH5HACbWvX38sn5eCPp-B9no",
   "spreadsheet_title": "ТЕСТ Omemo Tech",
-  "last_sheet_sync": "2026-07-20T18:11:00Z",
-  "last_git_sync": "2026-07-20T18:11:00Z",
-  "sheet_actions_blocked_reason": "API key cannot write to Sheets (Google security policy: writes need OAuth2 / Service Account). Pending SA setup.",
+  "last_sheet_sync": "2026-07-20T18:17:00Z",
+  "last_git_sync": "2026-07-20T18:17:00Z",
+  "sa_configured": true,
+  "sa_email": "mavis-779@smm-by-niap.iam.gserviceaccount.com",
+  "sa_key_path": "C:\\Users\\signm\\.mavis\\secrets\\google-sa.json",
+  "auth_mode": "service_account_oauth2_bearer",
+  "auth_token_endpoint": "https://oauth2.googleapis.com/token",
+  "scopes": ["https://www.googleapis.com/auth/spreadsheets"],
+  "write_capability_verified": true,
+  "write_capability_verified_at": "2026-07-20T18:17:00Z",
+  "last_applied_actions": {
+    "at": "2026-07-20T18:17:00Z",
+    "actions": [
+      {"row": 36, "id": "[no-id]-claude-3.5-markdown-fence", "set_status_to": null, "color": "R0-G255-B0", "note": "status already was Тестировщик"},
+      {"row": 54, "id": "BUG-030", "set_status_to": "Тестировщик", "color": "R0-G255-B0"},
+      {"row": 55, "id": "BUG-031", "set_status_to": "Тестировщик", "color": "R0-G255-B0"}
+    ]
+  },
   "bugs": {
     "[no-id]-gemini-2.5-flash-template": {
       "sheet_row": 26,
@@ -19,7 +34,7 @@
       "mavis_status": "fix_in_git_ux_concern_not_bug",
       "dev_comment_k": "Можно добавить доп. поля для заполнения и самой генерации. На данный этап надо указать в промте явно чем можно заполнять.недостающие данные.",
       "dev_comment_sheet": "SMM Manager: 'Где нашли? У нас все посты можно редактировать' + Laki: 'можно как ux считать' + Dmitry: 'Подумаем как решить'",
-      "sheet_actions_pending": ["color_green_already_status_тестировщик"],
+      "sheet_actions_pending": [],
       "notes": "По сути dev ответил 'у нас есть редактирование, но оно не очевидно' — UX-обсуждение, не bugfix. В git a2d3d65 закрывает часть аспекта."
     },
     "BUG-006": {
@@ -51,8 +66,8 @@
       "mavis_status": "fix_retest_passed_awaiting_status_sync",
       "dev_comment_k": "(шаблон)",
       "dev_comment_sheet": null,
-      "sheet_actions_pending": ["color_green_already_status_тестировщик", "set_h_to_FIXED_or_keep_per_user"],
-      "notes": "L=Исправлено (тестер подтвердил), H=Тестировщик (stale). Консенсус: закрыто, тестер просто не обновил H."
+      "sheet_actions_pending": ["optionally_set_h_to_FIXED_for_tidiness"],
+      "notes": "L=Исправлено (тестер подтвердил), H=Тестировщик (stale). Решили оставить как есть — тестеру виднее когда закрывать. Строка покрашена в зелёный 18:17."
     },
     "BUG-015": {
       "sheet_row": 39,
@@ -68,7 +83,7 @@
       "dev_comment_k": "(шаблон)",
       "dev_comment_sheet": "Dmitry: 'Если у вас есть канал, то после успешного подключения может не обновиться страница и показывать что не подключено. Сейчас это исправляю. Подтвердите, что у вас так же.' + Dmitry: 'Фикшу все, что нашел сам. Если это что-то новое, то нужно проверить сам акк в Ютуб сперва.'",
       "sheet_actions_pending": [],
-      "notes": "SECURITY-RELATED: Codex'овский observability-follow-up док выявил что YouTube settings log УТЕКАЕТ OAuth access/refresh токены в production logs. Отдельный urgent security fix (owner action required: rotate credentials). Сначала ротация, потом ретест."
+      "notes": "🚨 SECURITY-RELATED: Codex'овский observability-follow-up док выявил что YouTube settings log УТЕКАЕТ OAuth access/refresh токены в production logs. Отдельный urgent security fix (owner action required: rotate credentials). Сначала ротация, потом ретест."
     },
     "BUG-027": {
       "sheet_row": 51,
@@ -124,14 +139,14 @@
       "section": "Технический баг / Контент / Карточка контента",
       "reporter": "Михайло",
       "priority": "Средний",
-      "sheet_status": "WIP",
+      "sheet_status": "Тестировщик",
       "fix_commits": ["490dc28", "f6a6135", "9612304"],
       "fix_summary": "490dc28 preserve publish-now content card state (+169/−60, +tests); f6a6135 sync content card publication state; 9612304 keep content creation date immutable",
       "mavis_status": "fix_in_git_awaiting_retest",
       "dev_comment_k": "(шаблон)",
       "dev_comment_sheet": null,
-      "sheet_actions_pending": ["set_h_to_Тестировщик", "color_green"],
-      "notes": "Per owner instruction 18:09: 'mark only really-fixed bugs'. 490dc28 specifically targets 'preserve publish-now content card state' which is the exact symptom."
+      "sheet_actions_pending": [],
+      "notes": "Sheet updated 18:17: H=Тестировщик + зелёный bg. Per owner 18:09 'mark only really-fixed bugs'."
     },
     "BUG-031": {
       "sheet_row": 55,
@@ -140,14 +155,14 @@
       "section": "Технический баг / Контент / Карточка контента",
       "reporter": "Михайло",
       "priority": "Средний",
-      "sheet_status": "WIP",
+      "sheet_status": "Тестировщик",
       "fix_commits": ["eb4d77e"],
       "fix_summary": "eb4d77e: show only connected platforms on content cards (+126/−13, +test in social-platforms.test.ts)",
       "mavis_status": "fix_in_git_awaiting_retest",
       "dev_comment_k": "(шаблон)",
       "dev_comment_sheet": null,
-      "sheet_actions_pending": ["set_h_to_Тестировщик", "color_green"],
-      "notes": "Per owner instruction 18:09: 'mark only really-fixed bugs'. eb4d77e is direct match for the symptom."
+      "sheet_actions_pending": [],
+      "notes": "Sheet updated 18:17: H=Тестировщик + зелёный bg. eb4d77e is direct match for the symptom."
     }
   },
   "closed_bugs_seen": [
@@ -158,5 +173,10 @@
       "sheet_status": "Won't Fix / Ограничение платформы",
       "reason": "Telegram API limitation"
     }
-  ]
+  ],
+  "mavis_cron": {
+    "schedule": "0 * * * *",
+    "status": "configured_but_not_yet_active",
+    "config_note": "Awaiting owner word to start hourly cron (reads sheet + diffs git, updates state.json, applies sheet_actions_pending[]). Per memory entry 2026-07-20 ~18:11: 'Mavis zone = commits + push everywhere; bug tracker is part of that zone.'"
+  }
 }

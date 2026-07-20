@@ -29,7 +29,9 @@
 | `kimi-convergence-table.md` | **Kimi background**: таблица «кто кого вызывает» для конвергенции `services/social/` → `services/social-platforms/`. **Выполнен Kimi**: таблица в `docs/platform-convergence-table.md` (`8167b72`). Промпт остаётся как референс. | done |
 | `baseline-vitest-2026-07-20.txt` | Снимок `npx vitest run` от 2026-07-20: 7 failed / 10 tests (после Task C). Использовался как опорная точка для Task D. | — |
 | `mavis-commit-instructions-2026-07-20.md` | Инструкция Claude'а для Mavis: коммитить строго явными списками, `git add -A` запрещён. Закоммичена в `65d051a`. | — |
-| `codex-task6-review-2026-07-20.md` | Кросс-модельный ревью Codex'а по Task 6 (`2f8d581`) — принято, без блокирующих замечаний. | — |
+| `codex-task6-review-2026-07-20.md` | Кросс-модельный ревью Codex'а по Task 6 (`2f8d581`) — принято, без блокирующих замечаний. Закоммичено Mavis как fallback в `a13e945`. | — |
+| `codex-task8-task9-review-2026-07-20.md` | Кросс-модельный ревью Codex'а по Tasks 8 (`af92e05`) и 9 (`506b6a9`). Task 8 blocking follow-up закрыт в `0b78575`, Task 9 принят. Закоммичено Mavis как fallback в `a13e945`. | — |
+| `kimi-push-manifest-2026-07-20.md` | Манифест пуша от Kimi: 27 коммитов в `origin/main..main`, чек-лист перед `git push`, разбивка по задачам с верификациями. Закоммичен Kimi в `4d37575`. | — |
 
 ## Роли
 
@@ -142,3 +144,5 @@
 | Таблица конвергенции | `8167b72` | Kimi | Claude |
 | Docs sync / roles rev6 | `65d051a` | Claude | — |
 | Task 8 follow-up — inline `\`\`\`` | `0b78575` | Codex | кросс-модельный review Codex'а из `codex-task8-task9-review-2026-07-20.md` |
+| Kimi push manifest | `4d37575` | Kimi | — |
+| Codex reviews (fallback commit) | `a13e945` | Mavis (fallback; content by Codex) | — |

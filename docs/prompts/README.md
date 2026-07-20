@@ -14,28 +14,36 @@
 
 | Файл | Назначение | Параллельность |
 |---|---|---|
+| `claude-roles-and-assignments-2026-07-20.md` | **Роли и раздача** (Claude, утверждено владельцем). Канонический источник того, кто что делает. Синхронизируется явно. | — |
 | `review-follow-ups-2026-07-19.md` | Сводка незакрытых находок от Claude (ревью коммитов `490dc28…299becb`). Сюда же смотрим за «НЕ чинить». | — |
+| `review-follow-ups-2026-07-20.md` | Ревью `d680977` + `97947ae` от Claude. Новые задачи 6/7/8. | — |
 | `kimi-zoo-review-2026-07-19.md` | Обзор состояния хозяйства от Kimi. Не ревью коммитов, а срез системы и процесса целиком. Полезен как сторонний взгляд. | — |
 | `baseline-vitest-2026-07-19.txt` | Снимок `npx vitest run` от 2026-07-19: 9 файлов с 17 упавшими тестами. Используется как baseline в промптах A–D. | — |
-| `codex-telegram-pre-code-and-cleanup.md` | **Task A.** Чинение `<pre>`/`<code>` + hex-сущности в `toTelegramHtml`, мелкие cleanup'ы в `telegram-service.ts`. **Бaг Kimi** (`6ec4ad4`), Kimi подтвердил готовность починить. | ∥ B |
-| `codex-status-unification.md` | **Task B.** Унификация `partial` / `partially_published` в scheduler-write и storage-read. | ∥ A |
-| `codex-mock-network-in-tests.md` | **Task C.** Замокать сеть в `autonomous-ai-tools.test.ts` и `api_routes_new.test.ts` (7 из 17 baseline падений). | строго до D |
-| `codex-fix-chronic-test-failures.md` | **Task D.** Оставшиеся 10 baseline падений в 7 файлах. Цель: `npx vitest run` = exit 0. Запрет на ковровый `it.skip`. | строго после C |
+| `codex-telegram-pre-code-and-cleanup.md` | **Task A.** Чинение `<pre>`/`<code>` + hex-сущности в `toTelegramHtml`. **Уже выполнен Kimi** в `d680977` — не запускать заново; промпт остаётся как референс. | done |
+| `codex-status-unification.md` | **Task B.** Унификация `partial` / `partially_published` в scheduler-write и storage-read. **Codex** сейчас, ∥ C. | ∥ C |
+| `codex-mock-network-in-tests.md` | **Task C.** Замокать сеть в `autonomous-ai-tools.test.ts` и `api_routes_new.test.ts` (7 из 17 baseline падений). **MiniMax/Mavis** (калибровка) сейчас, ∥ B. | ∥ B, строго до D |
+| `codex-fix-chronic-test-failures.md` | **Task D.** Оставшиеся 10 baseline падений в 7 файлах. Цель: `npx vitest run` = exit 0. Запрет на ковровый `it.skip`. Решается после C. | строго после C |
 | `codex-remove-aggressive-tag-fixer.md` | Уже выполнен (коммит `299becb`, запушен). Оставлен как референс. | done |
-| `codex-analytics-channel-id-and-remove-button.md` | Реализован в working tree, ожидает ревью/коммита. | отдельно |
+| `codex-analytics-channel-id-and-remove-button.md` | **Реализован и закоммичен** как `97947ae`. Промпт остаётся как референс. | done |
 
 ## Роли
 
-На 2026-07-19 владелец распределил так:
-- **Codex** — основной исполнитель задач A–D.
-- **Claude / Kimi** — ревью и консультации (Claude — по коммитам,
-  Kimi — по зоопарку в целом).
-- **Mavis** — оркестратор: собирает задачи, верифицирует диффы
-  и чужие утверждения, коммитит, обновляет baseline.
-- **Владелец** — коммитит / пушит / проверяет прод вручную, Mimo
-  деплоит на следующий день.
+Канонический источник: [`claude-roles-and-assignments-2026-07-20.md`](claude-roles-and-assignments-2026-07-20.md).
+Здесь — только короткая выжимка для быстрого взгляда.
 
-Если роль меняется — владелец явно говорит «X теперь делает Y».
+На 2026-07-20 владелец распределил так:
+- **Codex** — основной исполнитель по детальным ТЗ; вычитка чужих ТЗ
+  (поймал 3 ошибки в промптах — поймает и дальше).
+- **Mavis (MiniMax)** — оркестратор. **Сейчас на калибровке** —
+  Task C (мок сети в 2 тест-файлах). Чистая сдача → основной ростер.
+- **Claude** — ревью коммитов → follow-ups с приёмкой; консультации
+  по архитектуре. ТЗ — высокий уровень с обязательной вычиткой.
+- **Kimi** — системные срезы + исполнение в «своём» коде.
+- **Mimo** — деплой на следующий день после пуша.
+- **Владелец** — финальные решения, push, прод-проверка вручную.
+
+Если роль меняется — владелец явно говорит «X теперь делает Y»,
+после чего оркестратор синхронизирует README и ролевую доку.
 
 ## Workflow
 
@@ -77,10 +85,20 @@
 
 ## Что в очереди, но не оформлено в промпт
 
+- **Task 6 (medium)** — протухший `analyticsChannelId` не инвалидируется.
+  При 404 по кешированному UUID нужен один retry: lookup → register.
+  Промпт ещё не написан (см. `review-follow-ups-2026-07-20.md`).
+  Исполнитель: Kimi или Codex, **не Mavis** до перевода в основной ростер.
+- **Task 7 (low-medium)** — lost-update в `persistAnalyticsChannelId`
+  (GET→PATCH fire-and-forget, ставка — токены). **Не раздавать
+  до решения владельца** о выносе поля из JSON.
+- **Task 8 (small)** — `<pre><code>…</code></pre>` рендерит внутренний
+  тег литералом. Промпт в `review-follow-ups-2026-07-20.md`. Кандидат:
+  Mavis вторым заходом (если C чисто), иначе Kimi.
 - **Конвергенция `services/social/` → `services/social-platforms/`.**
   Дублируются telegram/instagram/vk/facebook/base-service. Каждый
-  зверь чинит ту копию, которую нашёл первой. Kimi предлагает
-  таблицу «кто кого вызывает» перед удалением старой иерархии.
+  зверь чинит ту копию, которую нашёл первой. Kimi готовит таблицу
+  «кто кого вызывает» перед удалением старой иерархии.
 - **Даты/статусы в аналитических доках** `docs/` (или увести в
   `_archive`). Замечание Kimi.
 - **Платформы без `analyticsChannelId`** — после деплоя аналитики

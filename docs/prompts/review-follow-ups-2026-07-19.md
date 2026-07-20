@@ -167,3 +167,7 @@ telegram-legacy-format 2/2 — 50/50 зелёные.
 - `/publish/now`: при `partially_published` контент-level `published_at`
   намеренно пишется как `null` (контракт shared/schedule-time.ts:116), карточка
   берёт время из per-platform фолбэка `getPublishedDisplayDate`.
+- `telegram-service.ts`: обрезка до 4096 (`formatTextForTelegram`) и 4000
+  (`prepareTelegramText`) может разрезать парный тег посередине — Telegram
+  ответит ошибкой, сработает внешний retry без HTML. Tag-aware truncate —
+  отдельная задача, если понадобится (замечено Kimi при cleanup Task A).

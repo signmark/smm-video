@@ -2,9 +2,10 @@
 
 Дата подтверждения: 2026-07-20  
 Автор диагностики / первый верификатор: Codex  
-Статус: **SMM MITIGATION READY, upstream fix в scraper API всё ещё нужен**
-Исполнитель: не назначен  
-Вторые глаза для будущего фикса: не назначены
+Статус: **SMM MITIGATION COMMITTED (`876403e`), upstream fix в scraper API всё ещё нужен**
+Исполнитель SMM mitigation: Codex
+Вторые глаза SMM mitigation: Mavis — полный Vitest 717/717
+Исполнитель / вторые глаза upstream fix: не назначены
 
 ## Контракт от владельца
 
@@ -127,7 +128,7 @@ scraper response.
 
 Дата: 2026-07-20
 Исполнитель / первый верификатор: Codex
-Статус: **READY FOR SECOND PAIR OF EYES**
+Статус: **COMMITTED (`876403e`), SECOND PAIR OF EYES COMPLETE (Mavis)**
 
 По прямому поручению владельца SMM больше не доверяет завышенным totals из
 `/analytics`, когда доступен документированный `/posts`:

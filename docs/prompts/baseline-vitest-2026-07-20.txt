@@ -1,0 +1,13 @@
+﻿ FAIL  server/__tests__/ai-assistant-service.test.ts > AIAssistantService > processCommand > should show campaign options for message with URL and create intent
+ FAIL  server/__tests__/ai-assistant-service.test.ts > AIAssistantService > processCommand > should extract campaign name if provided in quotes
+ FAIL  server/__tests__/environment-detector.test.ts > server/utils/environment-detector > detectEnvironment > должен определять development при ENV=development
+ FAIL  server/__tests__/health.test.ts > Health Route > должен возвращать 200 и status ok когда все сервисы healthy
+     45|     expect(response.body.duration_ms).toBeGreaterThanOrEqual(0);
+ FAIL  server/__tests__/health.test.ts > Health Route > должен помечать n8n как unreachable когда get возвращает null
+ FAIL  server/__tests__/logger.test.ts > logger > helper methods > debug should log message
+ FAIL  server/__tests__/publish-scheduler-routing.test.ts > PublishScheduler — роутинг по платформам > неизвестная платформа → publishThroughN8nWebhook (N8N fallback)
+ FAIL  server/__tests__/telegram-collect-comments.test.ts > Telegram collect comments > POST /api/trends/collect-comments-callback > сохраняет комментарии в post_comment с маппингом from_id→author
+ FAIL  server/__tests__/youtube-service.test.ts > YouTubeService > publishContent > should successfully send payload to n8n webhook
+ FAIL  server/__tests__/youtube-service.test.ts > YouTubeService > publishContent > should set isShort to true if content type is clip
+ Test Files  7 failed | 61 passed (68)
+   Duration  5.93s (transform 24.68s, setup 22.45s, import 40.65s, tests 4.03s, environment 13ms)

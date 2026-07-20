@@ -173,13 +173,13 @@
       "reporter": "Михайло",
       "priority": "Средний",
       "sheet_status": "Тестировщик",
-      "fix_commits": ["490dc28", "f6a6135", "9612304"],
-      "fix_summary": "490dc28 preserve publish-now content card state (+169/−60, +tests); f6a6135 sync content card publication state; 9612304 keep content creation date immutable",
+      "fix_commits": ["490dc28", "f6a6135", "9612304", "deddb75"],
+      "fix_summary": "490dc28 preserve publish-now content card state (+169/−60, +tests в published-content.test.ts); f6a6135 sync content card publication state; 9612304 keep content creation date immutable; deddb75 extract resolvePublishFinalization in shared/schedule-time.ts with partial-publish regression tests (61+ lines в schedule-time.test.ts).",
       "mavis_status": "fix_in_git_awaiting_retest",
       "dev_comment_k": "(шаблон)",
       "dev_comment_sheet": null,
       "sheet_actions_pending": [],
-      "notes": "Sheet updated 18:17: H=Тестировщик + зелёный bg. Несмотря на off-by-one в state.json, попало в правильную строку R55 (BUG-030) потому что PowerShell-цикл шёл 0-based и я сместил на 1 ниже реальных строк, но сместил КАЖДУЮ — так что BUG-030 в моей нумерации был 54, а фактически 55; я писал в H55, что и есть BUG-030. Per owner 18:09 'mark only really-fixed bugs'."
+      "notes": "Sheet updated 18:17: H=Тестировщик + зелёный bg. Mavis 18:17 search initially found 3 commits; 19:02 deeper search added deddb75 (partial-publish regression tests). Все 4 фикса покрыты тестами (38/38 в published-content + schedule-time прошли 19:02)."
     },
     "BUG-031": {
       "sheet_row": 56,
@@ -189,13 +189,13 @@
       "reporter": "Михайло",
       "priority": "Средний",
       "sheet_status": "Тестировщик",
-      "fix_commits": ["eb4d77e"],
-      "fix_summary": "eb4d77e: show only connected platforms on content cards (+126/−13, +test in social-platforms.test.ts)",
+      "fix_commits": ["eb4d77e", "d45bee8", "ad6bfef", "78547ba"],
+      "fix_summary": "eb4d77e: show only connected platforms on content cards (+126/−13, +test в social-platforms.test.ts). Supporting fixes: d45bee8 (campaign detail query key collision → connectedPlatforms was always null), ad6bfef (remove refetchOnMount:false so platforms detected correctly), 78547ba (getConnectedPlatforms returns real false instead of null when all disconnected).",
       "mavis_status": "fix_in_git_awaiting_retest",
       "dev_comment_k": "(шаблон)",
       "dev_comment_sheet": null,
       "sheet_actions_pending": [],
-      "notes": "Sheet updated 18:43 (после off-by-one fix): H=Тестировщик + зелёный bg. eb4d77e is direct match for the symptom."
+      "notes": "Sheet updated 18:43: H=Тестировщик + зелёный bg. Mavis 18:17 search found только eb4d77e; 19:02 deeper search added 3 supporting fixes (d45bee8, ad6bfef, 78547ba) that were needed для корректной работы основного фикса. Тесты в social-platforms.test.ts покрывают все 6 кейсов (38/38 pass)."
     }
   },
   "closed_bugs_seen": [

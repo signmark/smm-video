@@ -560,6 +560,49 @@ export async function resolveAnalyticsChannel(
   return null;
 }
 
+/**
+ * Re-resolve после неуспеха запроса по кешированному UUID: канал могли удалить
+ * или пересоздать в скрейпере, а кеш вечный — путь lookup из
+ * resolveAnalyticsChannel с непустым cachedId недостижим, и аналитика кампании
+ * молча умирает. Повторяет resolve с пустым кешем (lookup → register); свежий
+ * UUID персистится внутри resolveAnalyticsChannel.
+ *
+ * Возвращает null, если re-resolve не удался или вернул тот же UUID — тогда
+ * причина сбоя не в протухшем кеше и повторять запрос бессмысленно.
+ * Вызывать не более одного раза на исходный запрос (защита от зацикливания
+ * на стороне вызывающего кода).
+ */
+export async function reresolveAnalyticsChannel(
+  platform: 'telegram' | 'vk',
+  platformChannelId: string,
+  staleChannelId: string,
+  campaignId: string,
+  adminToken: string,
+  campaignName?: string,
+): Promise<string | null> {
+  log(
+    `[ScraperAnalytics] analyticsChannelId ${staleChannelId} отклонён скрейпером — повторный resolve ${platform}:${platformChannelId}`,
+    'info',
+  );
+  const freshChannelId = await resolveAnalyticsChannel(
+    platform,
+    platformChannelId,
+    null,
+    campaignId,
+    adminToken,
+    campaignName,
+  );
+  if (!freshChannelId) return null;
+  if (freshChannelId === staleChannelId) {
+    log(
+      `[ScraperAnalytics] Re-resolve вернул тот же UUID ${staleChannelId} — канал существует, причина сбоя не в протухшем кеше`,
+      'info',
+    );
+    return null;
+  }
+  return freshChannelId;
+}
+
 export async function deleteMonitoringChannel(channelId: string): Promise<boolean> {
   return analyticsDelete(`/api/v1/monitoring/channels/${channelId}`);
 }

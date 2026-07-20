@@ -27,6 +27,7 @@ vi.mock('../services/scraper-analytics', () => ({
   refreshChannelMetrics: vi.fn(),
   forceParseChannel: vi.fn(),
   resolveAnalyticsChannel: vi.fn(),
+  reresolveAnalyticsChannel: vi.fn(),
 }));
 
 import axios from 'axios';
@@ -35,6 +36,7 @@ import {
   getChannelParseStatus,
   refreshChannelMetrics,
   forceParseChannel,
+  reresolveAnalyticsChannel,
   resolveAnalyticsChannel,
 } from '../services/scraper-analytics';
 
@@ -263,5 +265,60 @@ describe('AnalyticsService.refreshCampaignAnalytics', () => {
       message: expect.stringContaining('Аналитика обновлена'),
       processed: 1,
     }));
+  });
+
+  it('re-resolves a stale cached UUID once when parse-status rejects it', async () => {
+    // Task 6: parse-status по протухшему кешу падает (404) — один re-resolve,
+    // повторный parse-status и refresh идут уже по свежему UUID.
+    vi.mocked(axios.get).mockResolvedValue({
+      data: {
+        data: {
+          name: 'Campaign',
+          social_media_settings: {
+            telegram: {
+              chatId: '@public_channel',
+              analyticsChannelId: 'stale-uuid',
+            },
+          },
+        },
+      },
+    } as any);
+    vi.mocked(resolveAnalyticsChannel).mockResolvedValue('stale-uuid');
+    vi.mocked(reresolveAnalyticsChannel).mockResolvedValue('fresh-uuid');
+    vi.mocked(getChannelParseStatus).mockImplementation(async (channelId) => {
+      if (channelId === 'stale-uuid') {
+        throw new Error('Analytics API вернул HTTP 404 для GET /api/v1/monitoring/channels/stale-uuid/parse-status');
+      }
+      return {
+        channel_id: channelId,
+        status: 'idle',
+        last_parsed_at: '2026-07-16T10:00:00Z',
+      } as any;
+    });
+    vi.mocked(refreshChannelMetrics).mockResolvedValue({
+      status: 'completed',
+      processed: 1,
+      failed: 0,
+      skipped: 0,
+      duration_seconds: 1,
+      errors: [],
+    });
+
+    const result = await AnalyticsService.refreshCampaignAnalytics('campaign-1', 7);
+
+    expect(reresolveAnalyticsChannel).toHaveBeenCalledTimes(1);
+    expect(reresolveAnalyticsChannel).toHaveBeenCalledWith(
+      'telegram',
+      '@public_channel',
+      'stale-uuid',
+      'campaign-1',
+      'admin-token',
+      'Campaign',
+    );
+    expect(getChannelParseStatus).toHaveBeenCalledWith('fresh-uuid', true);
+    expect(refreshChannelMetrics).toHaveBeenCalledWith(expect.objectContaining({
+      channels: [expect.objectContaining({ id: 'fresh-uuid' })],
+    }));
+    expect(result).toEqual(expect.objectContaining({ success: true, processed: 1 }));
   });
 });

@@ -14,6 +14,7 @@ vi.mock('axios', () => ({
 
 vi.mock('../services/scraper-analytics', () => ({
   getChannelAnalytics: vi.fn(),
+  reresolveAnalyticsChannel: vi.fn(),
   resolveAnalyticsChannel: vi.fn(),
   getScraperCampaignChannels: vi.fn((settings: any) => {
     const channels = [];
@@ -32,6 +33,7 @@ import { directusApi } from '../directus';
 import { AnalyticsService } from '../services/analytics-service';
 import {
   getChannelAnalytics,
+  reresolveAnalyticsChannel,
   resolveAnalyticsChannel,
 } from '../services/scraper-analytics';
 
@@ -260,5 +262,68 @@ describe('AnalyticsService scraper supplementation', () => {
       'registered-uuid',
       expect.any(Object),
     );
+  });
+
+  it('re-resolves a stale cached UUID once and uses the fresh channel', async () => {
+    // Task 6: кешированный analyticsChannelId протух (канал пересоздали в
+    // скрейпере) — getChannelAnalytics по нему даёт null (404). Один
+    // re-resolve, повторный запрос идёт уже по свежему UUID.
+    vi.mocked(directusApi.get).mockResolvedValue({
+      data: {
+        data: [{
+          id: 'content-1',
+          status: 'published',
+          published_at: '2026-07-15T12:00:00.000Z',
+          social_platforms: {
+            telegram: {
+              status: 'published',
+              postId: '20',
+              publishedAt: '2026-07-15T12:00:00.000Z',
+              analytics: { views: 1, likes: 0, comments: 0, shares: 0 },
+            },
+          },
+        }],
+      },
+    } as any);
+    vi.mocked(axios.get).mockResolvedValue({
+      data: {
+        data: {
+          name: 'Campaign',
+          social_media_settings: {
+            telegram: {
+              chatId: '@tg_channel',
+              analyticsChannelId: 'stale-uuid',
+            },
+          },
+        },
+      },
+    } as any);
+    vi.mocked(resolveAnalyticsChannel).mockResolvedValue('stale-uuid');
+    vi.mocked(reresolveAnalyticsChannel).mockResolvedValue('fresh-uuid');
+    vi.mocked(getChannelAnalytics).mockImplementation(async (channelId) => (
+      channelId === 'stale-uuid'
+        ? null
+        : {
+            total_views: 42,
+            total_likes: 3,
+            total_comments: 2,
+            total_shares: 1,
+          } as any
+    ));
+
+    const result = await AnalyticsService.getCampaignAnalytics('campaign-1', 'thisMonth', 'user-token');
+
+    expect(reresolveAnalyticsChannel).toHaveBeenCalledTimes(1);
+    expect(reresolveAnalyticsChannel).toHaveBeenCalledWith(
+      'telegram',
+      '@tg_channel',
+      'stale-uuid',
+      'campaign-1',
+      'admin-token',
+      'Campaign',
+    );
+    expect(getChannelAnalytics).toHaveBeenCalledWith('stale-uuid', expect.any(Object));
+    expect(getChannelAnalytics).toHaveBeenCalledWith('fresh-uuid', expect.any(Object));
+    expect(result.totalViews).toBe(42);
   });
 });

@@ -178,6 +178,7 @@ export class AnalyticsService {
       getChannelAnalytics,
       getScraperCampaignChannels,
       resolveAnalyticsChannel,
+      reresolveAnalyticsChannel,
     } = await import('./scraper-analytics');
 
     const channelsToLookup = getResolvableCampaignChannels(
@@ -193,7 +194,7 @@ export class AnalyticsService {
 
     for (const ch of channelsToLookup) {
       const platformSettings = socialSettings?.[ch.platform] || {};
-      const scraperChannelId = await resolveAnalyticsChannel(
+      let scraperChannelId = await resolveAnalyticsChannel(
         ch.platform,
         ch.platformId,
         platformSettings.analyticsChannelId,
@@ -203,10 +204,31 @@ export class AnalyticsService {
       );
       if (!scraperChannelId) continue;
 
-      const analytics = await getChannelAnalytics(
+      let analytics = await getChannelAnalytics(
         scraperChannelId,
         { from_date: fromStr, to_date: toStr },
       );
+
+      // Кешированный analyticsChannelId мог протухнуть (канал удалили или
+      // пересоздали в скрейпере): один re-resolve и одна повторная попытка,
+      // иначе аналитика кампании молча умирает до ручной правки настроек.
+      if (!analytics && platformSettings.analyticsChannelId === scraperChannelId) {
+        const freshChannelId = await reresolveAnalyticsChannel(
+          ch.platform,
+          ch.platformId,
+          scraperChannelId,
+          campaignId,
+          adminToken,
+          campaign.name,
+        );
+        if (freshChannelId) {
+          scraperChannelId = freshChannelId;
+          analytics = await getChannelAnalytics(
+            scraperChannelId,
+            { from_date: fromStr, to_date: toStr },
+          );
+        }
+      }
       if (!analytics) continue;
 
       // Скрейпер знает канал, но данных за период у него нет (например, первичный
@@ -266,6 +288,7 @@ export class AnalyticsService {
         refreshChannelMetrics,
         forceParseChannel,
         resolveAnalyticsChannel,
+        reresolveAnalyticsChannel,
       } = await import('./scraper-analytics');
 
       const channelsToLookup = getResolvableCampaignChannels(
@@ -291,7 +314,7 @@ export class AnalyticsService {
 
       for (const ch of channelsToLookup) {
         const platformSettings = socialSettings?.[ch.platform] || {};
-        const scraperChannelId = await resolveAnalyticsChannel(
+        let scraperChannelId = await resolveAnalyticsChannel(
           ch.platform,
           ch.platformId,
           platformSettings.analyticsChannelId,
@@ -302,7 +325,26 @@ export class AnalyticsService {
         if (!scraperChannelId) continue;
         resolvedChannelCount += 1;
 
-        const parseStatus = await getChannelParseStatus(scraperChannelId, true);
+        // Протухший кешированный UUID (канал пересоздан в скрейпере): один
+        // re-resolve и одна повторная попытка. При неудаче пробрасываем исходную
+        // ошибку, сохраняя прежние пользователю сообщения об ошибках.
+        let parseStatus: Awaited<ReturnType<typeof getChannelParseStatus>> = null;
+        try {
+          parseStatus = await getChannelParseStatus(scraperChannelId, true);
+        } catch (statusError) {
+          if (platformSettings.analyticsChannelId !== scraperChannelId) throw statusError;
+          const freshChannelId = await reresolveAnalyticsChannel(
+            ch.platform,
+            ch.platformId,
+            scraperChannelId,
+            campaignId,
+            adminToken,
+            campaign.name,
+          );
+          if (!freshChannelId) throw statusError;
+          scraperChannelId = freshChannelId;
+          parseStatus = await getChannelParseStatus(scraperChannelId, true);
+        }
         if (parseStatus?.status === 'parsing') continue;
 
         if (parseStatus?.status === 'error' || !parseStatus?.last_parsed_at) {

@@ -88,16 +88,34 @@ function extractCodeBlocks(text: string): { text: string; blocks: CodeBlockStash
   return { text: extracted, blocks };
 }
 
+function escapeCodeContent(content: string): string {
+  return content
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .trim();
+}
+
 function restoreCodeBlocks(text: string, blocks: CodeBlockStash[]): string {
   return text.replace(/\x00CB(\d+)\x00/g, (match, indexRaw: string) => {
     const block = blocks[Number(indexRaw)];
     if (!block) return match;
-    const escaped = block.content
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .trim();
-    return `<${block.kind}>${escaped}</${block.kind}>`;
+
+    // Стандартная связка редакторов <pre><code class="language-…">…</code></pre>:
+    // Telegram поддерживает её нативно — сохраняем внутренний <code> тегом
+    // (с language-классом), экранируя только содержимое. Иначе внутренний
+    // <code> отрисовался бы литеральным текстом.
+    if (block.kind === 'pre') {
+      const inner = block.content.trim().match(
+        /^<code(?:\s[^>]*?(class="language-[\w+#-]+")[^>]*|\s[^>]*)?>([\s\S]*?)(?:<\/code>)?$/i,
+      );
+      if (inner) {
+        const langClass = inner[1] ? ` ${inner[1]}` : '';
+        return `<pre><code${langClass}>${escapeCodeContent(inner[2])}</code></pre>`;
+      }
+    }
+
+    return `<${block.kind}>${escapeCodeContent(block.content)}</${block.kind}>`;
   });
 }
 
@@ -255,6 +273,12 @@ export function toTelegramHtml(raw: string): string {
   if (!raw || typeof raw !== 'string') return '';
 
   let text = decodeHtmlEntities(raw);
+  // Markdown-фенсы → <pre> ДО изоляции: их содержимое — литеральный код,
+  // и должно быть защищено от конвертаций наравне с HTML-блоками.
+  text = text.replace(/```([\w+#-]*)[ \t]*\r?\n?([\s\S]*?)```/g, (_m, lang: string, body: string) =>
+    lang
+      ? `<pre><code class="language-${lang}">${body}</code></pre>`
+      : `<pre>${body}</pre>`);
   // pre/code — литеральный текст: изолируем от markdown- и HTML-конвертаций
   const stash = extractCodeBlocks(text);
   text = stash.text;

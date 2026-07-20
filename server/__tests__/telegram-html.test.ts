@@ -158,6 +158,35 @@ describe('toTelegramHtml', () => {
       expect(toTelegramHtml('текст <pre>a < b')).toBe('текст <pre>a &lt; b</pre>');
     });
 
+    it('Task 8: <pre><code> сохраняет внутренний code тегом, а не литералом', () => {
+      expect(toTelegramHtml('<pre><code>x &lt; y</code></pre>'))
+        .toBe('<pre><code>x &lt; y</code></pre>');
+    });
+
+    it('Task 8: language-класс внутреннего code сохраняется (нативно для Telegram)', () => {
+      expect(toTelegramHtml('<pre><code class="language-python">print(1 &lt; 2)</code></pre>'))
+        .toBe('<pre><code class="language-python">print(1 &lt; 2)</code></pre>');
+    });
+
+    it('Task 8: не-language класс внутреннего code отбрасывается, тег остаётся', () => {
+      expect(toTelegramHtml('<pre><code class="hljs">x</code></pre>'))
+        .toBe('<pre><code>x</code></pre>');
+    });
+
+    it('Task 8: markdown-фенс становится <pre> с защищённым содержимым', () => {
+      expect(toTelegramHtml('```\nconst a = 1;\n```')).toBe('<pre>const a = 1;</pre>');
+    });
+
+    it('Task 8: фенс с языком → <pre><code class="language-…">', () => {
+      expect(toTelegramHtml('```js\nif (a < b) x();\n```'))
+        .toBe('<pre><code class="language-js">if (a &lt; b) x();</code></pre>');
+    });
+
+    it('Task 8: HTML внутри фенса не интерпретируется как разметка', () => {
+      expect(toTelegramHtml('```\n<div>hi</div>\n```'))
+        .toBe('<pre>&lt;div&gt;hi&lt;/div&gt;</pre>');
+    });
+
     it('код-блоки соседствуют с обычной разметкой', () => {
       expect(toTelegramHtml('<p>абзац</p><pre>код &lt;tag&gt;</pre><p><b>ещё</b></p>'))
         .toBe('абзац\n\n<pre>код &lt;tag&gt;</pre><b>ещё</b>');

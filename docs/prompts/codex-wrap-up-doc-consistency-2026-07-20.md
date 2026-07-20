@@ -8,12 +8,12 @@ Production code changes: **none**
 
 ## Verified git state
 
-- Current HEAD / origin: `45fbd16`
+- Docs-sync commit: `2b49707` (current HEAD / origin at the follow-up check)
 - BUG-027 reconciliation committed in `88a7ff7`
 - BUG-030/031 deeper tracker reconciliation committed in `45fbd16`
-- Tracked files are clean.
-- Foreign untracked test-output artifacts exist: `vt.out`, `vt2.out`. Codex did not
-  create, modify, or delete them.
+- Before this follow-up edit, the working tree was clean.
+- `vt.out` and `vt2.out` were Mavis test-output redirects. The owner explicitly
+  authorized Codex to remove them after `2b49707`; both files are now gone.
 
 ## Drift to reconcile
 
@@ -42,8 +42,9 @@ Update the closing snapshot to at least `45fbd16`, record BUG-027 as already fix
 awaiting retest via `88a7ff7`, and add the BUG-030/031 deeper reconciliation from
 `45fbd16`.
 
-Do not describe `vt.out` / `vt2.out` as Codex WIP. They are foreign untracked test
-outputs and must be handled by their owner.
+Remove the now-stale `(+ untracked vt.out, vt2.out ...)` note from
+`docs/session-2026-07-20.md`. The files were deleted with explicit owner authorization
+after the docs-sync commit.
 
 ## No new implementation task
 
@@ -55,4 +56,3 @@ No free Codex production-code task was found during this heartbeat:
 - Task 7 remains frozen.
 - Task 10 still requires explicit owner confirmation.
 - YouTube OAuth log redaction remains an urgent separate owner-approved security task.
-

@@ -18,6 +18,40 @@ The production UI and logs were checked against two real campaign configurations
 
 This change adds observability only. It does not claim or implement scraper analytics support for Instagram, Facebook, Threads, or YouTube.
 
+### Telegram `22 views` finding
+
+The suspicious Telegram card showing `11 posts / 22 views` was checked directly
+against the scraper response for channel `@ya_delayu_moschno`.
+
+- The response contains 11 unique post IDs in the selected period.
+- Every unique post has exactly `views: 2`.
+- SMM correctly deduplicates repeated snapshots and then sums current per-post
+  counters: `11 × 2 = 22`.
+- Therefore, `22` does **not** mean 22 distinct people. It is the sum of Telegram
+  post-view counters. The same account viewing 11 posts contributes 11 views.
+- Repeated captures on July 16, 18, 19, and 20 retain the same value of 2, so this is
+  not evidence of a stream of new readers.
+
+Telegram's post API exposes a counter, not viewer identities. One view is plausibly
+the owner's reading session; the second strongly resembles a technical view caused by
+the publishing or scraper Telegram user session. This cannot be proved from aggregate
+responses alone.
+
+Scraper-owner follow-up:
+
+1. Audit the Telegram collector for `messages.getMessagesViews` and ensure
+   `increment=false` whenever metrics are read.
+2. Audit any browser/Telegram-user session that opens the channel viewport while
+   parsing.
+3. Reproduce on a fresh isolated channel with one post and no human readers.
+4. Do not compensate by blindly subtracting one until the technical increment is
+   reproduced and attributed.
+5. Rename the SMM UI metric to `Суммарные просмотры постов` (or add a tooltip) so it
+   is not interpreted as unique viewers.
+
+No force-parse was triggered during this diagnosis because it could itself increment
+the Telegram counter and contaminate the evidence.
+
 ## Implemented
 
 Files:
@@ -141,4 +175,3 @@ This should be handled as a separate urgent security fix:
 - rotate exposed YouTube credentials if the logs are accessible beyond the minimum
   trusted operator set;
 - do not combine that change with this analytics observability patch.
-

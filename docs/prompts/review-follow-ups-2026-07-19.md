@@ -98,22 +98,18 @@ Task B зелёные; преждесуществующие падения по�
 
 ---
 
-## Task 4 (small): тесты ходят в реальную сеть
+## Task 4 — ✅ ЗАКРЫТ (2026-07-20, Mavis, закоммичено aea9b04)
 
-**Проблема:** при прогоне `server/__tests__/autonomous-ai-tools.test.ts`
-реально вызывается Gemini (генерация изображения) и выполняется загрузка в
-боевой Beget S3 (в логах — реальный URL бакета). Это деньги, флак с
-5-секундными таймаутами и мусор в бакете.
-
-**Что сделать:** замокать в этом тест-файле HTTP-клиенты/сервисы
-(`gemini`-генерация, `beget-s3-storage`) так, чтобы ни один тест не делал
-внешних запросов. Проверить остальные упавшие файлы на то же самое
-(`api_routes_new.test.ts` — 5 тестов с таймаутом ровно ~5s, признак реального
-запроса).
-
-**Приёмка:** `npx vitest run server/__tests__/autonomous-ai-tools.test.ts
-server/__tests__/api_routes_new.test.ts` проходит < 5 секунд без сети
-(можно проверить, отключив сеть или подсунув фиктивные env-URL).
+Сдан в рамках калибровочной Task C. Два файла, 7 из 17 baseline падений.
+`autonomous-ai-tools.test.ts` (2 фикса): `rewriteContent` мок переставлен
+с `geminiDirect.generateContent` на правильный `aiService.generateContent`
+(прод не звал geminiDirect); `generateImage` добавлен мок для
+`createGeminiImageService` со stub-сервисом (success: false), чтобы
+управление дошло до замоканного FAL-фолбэка. `api_routes_new.test.ts`
+(5 фиксов одной правкой): `vi.mock('../middleware/user-auth')` с
+no-op `authenticateUser` (req.user + next), иначе `registerRoutes(app)`
+тянул весь auth-middleware, который в каждом роуте лез в Directus через
+`fetch()` и таймаутился 5с. Полный прогон: 9/17 → 7/10, 35.5s → 4.93s.
 
 ---
 
@@ -124,7 +120,11 @@ server/__tests__/api_routes_new.test.ts` проходит < 5 секунд бе�
 `environment-detector` (1), `logger` (1), `health` (2), `youtube-service` (2,
 n8n), `ai-assistant-service` (2), `publish-scheduler-routing` (1, флак — на
 baseline падало 5), `telegram-collect-comments` (1), `autonomous-ai-tools` (2,
-сеть — см. Task 4), `api_routes_new` (5, сеть).
+сеть — закрыто в Task 4 / `aea9b04`), `api_routes_new` (5, сеть — закрыто
+в Task 4 / `aea9b04`).
+
+**Состояние после Task 4 (2026-07-20):** 7 failed файлов / 10 тестов.
+Это Task D territory.
 
 **Что сделать:** разобрать по одному: починить, замокать окружение или пометить
 `it.skip` с TODO и причиной. Цель — зелёный полный прогон, чтобы «тесты прошли»

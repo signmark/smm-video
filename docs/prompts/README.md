@@ -37,7 +37,7 @@
 | `codex-follow-up-final-handoff-2026-07-20.md` | Codex'овский follow-up к финальному ревью: **не блокирует** push и не меняет GREEN. Фиксирует, что секции «Объём ревью» / «На что смотреть» в `kimi-codex-final-review-2026-07-20.md` содержат несуществующие хеши и файлы — канонический manifest для пуша см. выше. Закоммичено Mavis как fallback в `b619384` (content by Codex). | — |
 | `claude-final-approval-2026-07-20.md` | **Claude'овский финальный approval: APPROVED, можно пушить.** Подтвердил пробоем претензию Codex к Kimi-хендоффу (`77e80b8` — `git cat-file` not a valid object), принял `0b78575` (фикс собственного дефекта в `af92e05`). Закоммичено Claude'ом в `3c7ea82` с явным handoff Mavis. | — |
 | `codex-analytics-api-integration-map-2026-07-20.md` | **Codex: карта интеграции Analytics API (следующий цикл).** Полный inventory 15 endpoints ↔ обёртки `scraper-analytics.ts` ↔ SMM proxy ↔ фактическое использование UI. 5 фаз follow-up (channel summary → графики → best-times/engagement → посты/динамика → trends/operations). API-first протокол для будущих агентов. DO NOT FIX сохранён. Закоммичено Mavis как fallback в `395b692` (content by Codex). | — |
-| `codex-prod-analytics-scraper-dedup-2026-07-20.md` | **Codex: prod incident (CONFIRMED), нужен upstream fix в scraper.** `/posts` и `/analytics` считают `post_metrics_history` snapshots как независимые посты, завышая totals (воспроизведено на `@ya_delayu_moschno` и VK `-228626989`). Phase 0 для integration map. Fix — в scraper-сервисе (вне репозитория), не в SMM. DO NOT FIX: не удалять историю, не править числа вручную. Закоммичено Mavis как fallback в `395b692` (content by Codex). | — |
+| `codex-prod-analytics-scraper-dedup-2026-07-20.md` | **Codex: prod incident + SMM-side mitigation.** Scraper `/posts` и `/analytics` считают `post_metrics_history` snapshots как независимые посты (воспроизведено на `@ya_delayu_moschno` и VK `-228626989`). Upstream fix в scraper — вне репо. **SMM-side mitigation в `876403e`**: `getAllChannelPosts` + `aggregateLatestChannelPosts` dedup по `platform_post_id`+`captured_at`. Phase 0 для integration map закрыт на SMM-стороне. DO NOT FIX сохранён. Закоммичено Mavis как fallback в `395b692` (content by Codex), mitigation в `876403e`. | — |
 
 ## Роли
 
@@ -152,3 +152,4 @@
 | Task 8 follow-up — inline `\`\`\`` | `0b78575` | Codex | кросс-модельный review Codex'а из `codex-task8-task9-review-2026-07-20.md` |
 | Kimi push manifest | `4d37575` | Kimi | — |
 | Codex reviews (fallback commit) | `a13e945` | Mavis (fallback; content by Codex) | — |
+| Dedup mitigation (SMM-side) | `876403e` | Codex (delivery), Mavis (second pair of eyes: vitest 717/717) | — |

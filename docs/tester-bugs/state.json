@@ -1,28 +1,42 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
+  "_schema_version_note": "v2: all sheet_row values are now 1-based (Sheets API convention) — previous v1 used 0-based loop index from PowerShell probe, causing +1 off-by-one mismatch. Bug never caused data corruption, but caused wrong rows to be modified at 18:17 (R54 instead of R55, R36 instead of R37). Damage repaired at 18:43.",
   "spreadsheet_id": "1G7w_7pqtlF9uXDFEc0bkH5HACbWvX38sn5eCPp-B9no",
   "spreadsheet_title": "ТЕСТ Omemo Tech",
-  "last_sheet_sync": "2026-07-20T18:17:00Z",
+  "row_indexing": "1-based (Sheets API A1 notation)",
+  "last_sheet_sync": "2026-07-20T18:43:00Z",
   "last_git_sync": "2026-07-20T18:17:00Z",
   "sa_configured": true,
   "sa_email": "mavis-779@smm-by-niap.iam.gserviceaccount.com",
   "sa_key_path": "C:\\Users\\signm\\.mavis\\secrets\\google-sa.json",
   "auth_mode": "service_account_oauth2_bearer",
-  "auth_token_endpoint": "https://oauth2.googleapis.com/token",
   "scopes": ["https://www.googleapis.com/auth/spreadsheets"],
   "write_capability_verified": true,
-  "write_capability_verified_at": "2026-07-20T18:17:00Z",
   "last_applied_actions": {
-    "at": "2026-07-20T18:17:00Z",
-    "actions": [
-      {"row": 36, "id": "[no-id]-claude-3.5-markdown-fence", "set_status_to": null, "color": "R0-G255-B0", "note": "status already was Тестировщик"},
-      {"row": 54, "id": "BUG-030", "set_status_to": "Тестировщик", "color": "R0-G255-B0"},
-      {"row": 55, "id": "BUG-031", "set_status_to": "Тестировщик", "color": "R0-G255-B0"}
+    "18:17_initial": [
+      {"row": 36, "intended": "[no-id]-claude-3.5-markdown-fence", "actual": "BUG-012 (off-by-one)", "set_status_to": null, "color": "R0-G255-B0 (already-default)", "note": "wrong row, no functional change (status already correct, color was already default)"},
+      {"row": 54, "intended": "BUG-030", "actual": "BUG-029 (off-by-one)", "set_status_to": "Тестировщик", "color": "R0-G255-B0 (was R142-G124-B195 purple)", "note": "WRONG: overrode user-set 'Next' status on BUG-029"},
+      {"row": 55, "intended": "BUG-031", "actual": "BUG-030 (off-by-one)", "set_status_to": "Тестировщик", "color": "R0-G255-B0", "note": "applied to BUG-030, which is correct target for the eb4d77e-family fix, but identifier is wrong"}
+    ],
+    "18:43_repair": [
+      {"row": 54, "intended": "BUG-029", "set_status_to": "Next", "color": "R142-G124-B195", "note": "REVERT: restored BUG-029 status to Next per owner policy 18:09"},
+      {"row": 56, "intended": "BUG-031", "set_status_to": "Тестировщик", "color": "R0-G255-B0", "note": "applied to correct row (R56=BUG-031), eb4d77e fix in git"},
+      {"row": 36, "intended": "[no-id]-claude-3.5-markdown-fence", "note": "no action needed — actual row 37 already had Тестировщик + green bg"}
     ]
+  },
+  "verified_state": {
+    "H54": "Next (BUG-029, restored)",
+    "H55": "Тестировщик (BUG-030, correct)",
+    "H56": "Тестировщик (BUG-031, applied)",
+    "H37": "Тестировщик ([no-id] claude 3.5 ###, was already correct)",
+    "R54_bg": "R142-G124-B195 (purple, Next)",
+    "R55_bg": "R0-G255-B0 (green)",
+    "R56_bg": "R0-G255-B0 (green)",
+    "R37_bg": "R0-G255-B0 (green, was already default)"
   },
   "bugs": {
     "[no-id]-gemini-2.5-flash-template": {
-      "sheet_row": 26,
+      "sheet_row": 27,
       "bug_id": null,
       "title": "Шаблонные вставки [Ваше Имя] / [Ваша компания] в UI нельзя исправить",
       "section": "Генерация контента (Gemini 2.5 Flash)",
@@ -38,7 +52,7 @@
       "notes": "По сути dev ответил 'у нас есть редактирование, но оно не очевидно' — UX-обсуждение, не bugfix. В git a2d3d65 закрывает часть аспекта."
     },
     "BUG-006": {
-      "sheet_row": 29,
+      "sheet_row": 30,
       "bug_id": "BUG-006",
       "title": "Источники для трендов не совпадают с ключевыми словами кампании (TGStat)",
       "section": "Технический баг / Тренды / Подобрать из TGStat",
@@ -53,7 +67,7 @@
       "notes": "Dev в явном WIP, не закрыт, регрессия по Михаилу. Codex-таск не имеет смысла пока dev в процессе."
     },
     "[no-id]-claude-3.5-markdown-fence": {
-      "sheet_row": 36,
+      "sheet_row": 37,
       "bug_id": null,
       "title": "Символы ### в сгенерированном тексте (claude 3.5)",
       "section": "Генерация контента без промта claude 3.5",
@@ -67,10 +81,10 @@
       "dev_comment_k": "(шаблон)",
       "dev_comment_sheet": null,
       "sheet_actions_pending": ["optionally_set_h_to_FIXED_for_tidiness"],
-      "notes": "L=Исправлено (тестер подтвердил), H=Тестировщик (stale). Решили оставить как есть — тестеру виднее когда закрывать. Строка покрашена в зелёный 18:17."
+      "notes": "L=Исправлено (тестер подтвердил), H=Тестировщик (stale). Решили оставить как есть — тестеру виднее когда закрывать. Строка уже была зелёная и со статусом «Тестировщик» — никаких действий не требовалось."
     },
     "BUG-015": {
-      "sheet_row": 39,
+      "sheet_row": 40,
       "bug_id": "BUG-015",
       "title": "Не подключается YouTube",
       "section": "Технический баг / Регистрация Канала",
@@ -86,7 +100,7 @@
       "notes": "🚨 SECURITY-RELATED: Codex'овский observability-follow-up док выявил что YouTube settings log УТЕКАЕТ OAuth access/refresh токены в production logs. Отдельный urgent security fix (owner action required: rotate credentials). Сначала ротация, потом ретест."
     },
     "BUG-027": {
-      "sheet_row": 51,
+      "sheet_row": 52,
       "bug_id": "BUG-027",
       "title": "DeepSeek оставляет шаблонное вступление 'Вот вариант поста для ВКонтакте...' + символы *, ✅, 📌, #",
       "section": "Генерация контента (DeepSeek)",
@@ -102,7 +116,7 @@
       "notes": "Требуется новый Codex-таск: (1) prompt-engineering fix для DeepSeek (запретить verbose intro), (2) расширить markdown cleanup чтобы вычищал одиночные * ✅ 📌 # с осторожностью для hashtag-легитимных случаев."
     },
     "BUG-028": {
-      "sheet_row": 52,
+      "sheet_row": 53,
       "bug_id": "BUG-028",
       "title": "Контент создается без картинки",
       "section": "Технический баг / Контент / Сгенерировать контент-план / Текст + картинка",
@@ -117,7 +131,7 @@
       "notes": "Dev сказал 'функционала генерации картинки нет, только промт' — по сути by design. В git куча картиночных фиксов (490dc28, eb4d77e, 9612304) но не для этого конкретного кейса."
     },
     "BUG-029": {
-      "sheet_row": 53,
+      "sheet_row": 54,
       "bug_id": "BUG-029",
       "title": "Невозможно снять публикацию и вернуть в черновик",
       "section": "Технический баг / Контент / Снять публикацию и вернуть в черновик",
@@ -130,10 +144,10 @@
       "dev_comment_k": "Снятие уже опубликованного поста пока реализовано не до конца. Доделаю после стабилизации текущей версии.",
       "dev_comment_sheet": null,
       "sheet_actions_pending": [],
-      "notes": "Owner policy: 'Next, после стабилизации релиза'. Не паковать в Codex пока."
+      "notes": "Owner policy: 'Next, после стабилизации релиза'. Mavis ВРЕМЕННО сменил на «Тестировщик» в 18:17 (off-by-one bug), вернул обратно в 18:43. Background: purple R142-G124-B195 (per verify)."
     },
     "BUG-030": {
-      "sheet_row": 54,
+      "sheet_row": 55,
       "bug_id": "BUG-030",
       "title": "Контент опубликован, но на карточке отображается 'План'",
       "section": "Технический баг / Контент / Карточка контента",
@@ -146,10 +160,10 @@
       "dev_comment_k": "(шаблон)",
       "dev_comment_sheet": null,
       "sheet_actions_pending": [],
-      "notes": "Sheet updated 18:17: H=Тестировщик + зелёный bg. Per owner 18:09 'mark only really-fixed bugs'."
+      "notes": "Sheet updated 18:17: H=Тестировщик + зелёный bg. Несмотря на off-by-one в state.json, попало в правильную строку R55 (BUG-030) потому что PowerShell-цикл шёл 0-based и я сместил на 1 ниже реальных строк, но сместил КАЖДУЮ — так что BUG-030 в моей нумерации был 54, а фактически 55; я писал в H55, что и есть BUG-030. Per owner 18:09 'mark only really-fixed bugs'."
     },
     "BUG-031": {
-      "sheet_row": 55,
+      "sheet_row": 56,
       "bug_id": "BUG-031",
       "title": "Отображает все соц сети на одной из карточек и ни одной соц сети у других в рандомном порядке",
       "section": "Технический баг / Контент / Карточка контента",
@@ -162,14 +176,14 @@
       "dev_comment_k": "(шаблон)",
       "dev_comment_sheet": null,
       "sheet_actions_pending": [],
-      "notes": "Sheet updated 18:17: H=Тестировщик + зелёный bg. eb4d77e is direct match for the symptom."
+      "notes": "Sheet updated 18:43 (после off-by-one fix): H=Тестировщик + зелёный bg. eb4d77e is direct match for the symptom."
     }
   },
   "closed_bugs_seen": [
     {
       "bug_id": "BUG-032",
       "title": "Фотографии отдельно от поста (TG)",
-      "sheet_row": 56,
+      "sheet_row": 57,
       "sheet_status": "Won't Fix / Ограничение платформы",
       "reason": "Telegram API limitation"
     }
@@ -177,6 +191,6 @@
   "mavis_cron": {
     "schedule": "0 * * * *",
     "status": "configured_but_not_yet_active",
-    "config_note": "Awaiting owner word to start hourly cron (reads sheet + diffs git, updates state.json, applies sheet_actions_pending[]). Per memory entry 2026-07-20 ~18:11: 'Mavis zone = commits + push everywhere; bug tracker is part of that zone.'"
+    "config_note": "Awaiting owner word to start hourly cron. Critical: when building the cron prompt, hardcode the lesson 'Sheets API = 1-based, do not use 0-based loop indices' so the off-by-one bug doesn't repeat."
   }
 }

@@ -54,6 +54,7 @@ export const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const { toast } = useToast();
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
 
   // При загрузке приложения — обновляем токен и запускаем резервный интервал
   useEffect(() => {
@@ -78,7 +79,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isLoading,
   } = useQuery({
     queryKey: ["/api/auth/me"],
-    queryFn: getQueryFn({ on401: "returnNull" }),
+    queryFn: getQueryFn({ on401: "throw" }),
+    enabled: isAuthenticated,
   });
 
   const loginMutation = useMutation({

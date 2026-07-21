@@ -5,13 +5,21 @@
 
 import { useAuthStore } from "./store";
 import { decodeJwtPayload } from './jwt';
+import { emitSessionEvent, getSessionSnapshot, isSameSession } from './sessionCoordinator';
 
-export type RefreshAuthResult = 'refreshed' | 'superseded' | 'invalid' | 'unavailable';
+export type RefreshAuthResult = 'refreshed' | 'superseded' | 'session_changed' | 'invalid' | 'unavailable';
 
 let refreshInFlight: Promise<RefreshAuthResult> | null = null;
 
-async function performRefresh(refreshToken: string): Promise<RefreshAuthResult> {
-  if (localStorage.getItem('refresh_token') !== refreshToken) return 'superseded';
+async function performRefresh(refreshToken: string, session = getSessionSnapshot()): Promise<RefreshAuthResult> {
+  if (!isSameSession(session)) return 'session_changed';
+  if (localStorage.getItem('refresh_token') !== refreshToken) {
+    const currentToken = localStorage.getItem('auth_token');
+    const userId = currentToken ? decodeJwtPayload(currentToken)?.id : null;
+    if (!currentToken || !userId || userId !== session.userId) return 'session_changed';
+    useAuthStore.getState().syncAuth(currentToken, userId);
+    return 'superseded';
+  }
   if (!refreshToken) return 'invalid';
 
   let response: Response;
@@ -33,6 +41,7 @@ async function performRefresh(refreshToken: string): Promise<RefreshAuthResult> 
 
   // A logout or another login happened while this request was in flight.
   // Never let the stale response overwrite the newer account/session.
+  if (!isSameSession(session)) return 'session_changed';
   if (localStorage.getItem('refresh_token') !== refreshToken) return 'superseded';
 
   const userId = decodeJwtPayload(data.token)?.id;
@@ -41,6 +50,7 @@ async function performRefresh(refreshToken: string): Promise<RefreshAuthResult> 
   localStorage.setItem('auth_token', data.token);
   if (data.refresh_token) localStorage.setItem('refresh_token', data.refresh_token);
   useAuthStore.getState().setAuth(data.token, userId);
+  emitSessionEvent('refreshed');
   return 'refreshed';
 }
 
@@ -48,7 +58,8 @@ export async function refreshAuthSession(): Promise<RefreshAuthResult> {
   if (!refreshInFlight) {
     const refreshToken = localStorage.getItem('refresh_token');
     if (!refreshToken) return 'invalid';
-    const coordinatedRefresh = async () => performRefresh(refreshToken);
+    const session = getSessionSnapshot();
+    const coordinatedRefresh = async () => performRefresh(refreshToken, session);
     const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined;
     refreshInFlight = (locks
       ? locks.request('smm-auth-refresh', { mode: 'exclusive' }, coordinatedRefresh)

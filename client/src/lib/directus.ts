@@ -2,6 +2,8 @@ import axios from 'axios';
 import { useAuthStore } from './store';
 import { redirectToLogin } from './public-routes';
 import { refreshAuthSession } from './refreshAuth';
+import { decodeJwtPayload } from './jwt';
+import { getSessionSnapshot, isSameSession } from './sessionCoordinator';
 
 // Динамическое получение URL Directus с сервера
 let directusUrl = import.meta.env.VITE_DIRECTUS_URL;
@@ -59,6 +61,9 @@ directusApi.interceptors.request.use(
       config.headers = config.headers || {};
       config.headers['Authorization'] = `Bearer ${token}`;
     }
+    const session = getSessionSnapshot();
+    (config as any)._authSessionId = session.sessionId;
+    (config as any)._authUserId = session.userId;
     return config;
   },
   (error) => {
@@ -68,7 +73,15 @@ directusApi.interceptors.request.use(
 
 // Add response interceptor to handle errors
 directusApi.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    const requestSession = {
+      sessionId: (response.config as any)._authSessionId || null,
+      userId: (response.config as any)._authUserId || null,
+      token: null,
+    };
+    if (!isSameSession(requestSession)) return Promise.reject(new Error('AUTH_SESSION_CHANGED'));
+    return response;
+  },
   async (error) => {
     const originalRequest = error.config;
     const isInvalidSession = error.response?.status === 401
@@ -76,17 +89,31 @@ directusApi.interceptors.response.use(
 
     if (isInvalidSession && originalRequest && !originalRequest._authRetried) {
       originalRequest._authRetried = true;
+      const requestSession = {
+        sessionId: originalRequest._authSessionId || null,
+        userId: originalRequest._authUserId || null,
+        token: null,
+      };
+      if (!isSameSession(requestSession)) return Promise.reject(new Error('AUTH_SESSION_CHANGED'));
       const requestToken = String(originalRequest.headers?.Authorization || '').replace('Bearer ', '');
       const currentToken = localStorage.getItem('auth_token');
 
       // A different request already refreshed the session. Retry immediately and
       // do not rotate the refresh token for a stale 401.
-      if (currentToken && requestToken && currentToken !== requestToken) {
+      if (
+        currentToken
+        && requestToken
+        && currentToken !== requestToken
+        && decodeJwtPayload(currentToken)?.id === requestSession.userId
+      ) {
         originalRequest.headers.Authorization = `Bearer ${currentToken}`;
         return directusApi(originalRequest);
       }
 
       const result = await refreshAuthSession();
+      if (!isSameSession(requestSession) || result === 'session_changed') {
+        return Promise.reject(new Error('AUTH_SESSION_CHANGED'));
+      }
       if (result === 'refreshed' || result === 'superseded') {
         const newToken = localStorage.getItem('auth_token');
         if (newToken) {

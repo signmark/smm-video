@@ -3,6 +3,7 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 // Импортируем хранилище кампании из отдельного файла
 import { useCampaignStore } from './campaignStore';
 import { decodeJwtPayload } from './jwt';
+import { clearSessionId, emitSessionEvent, ensureSessionId, rotateSessionId } from './sessionCoordinator';
 
 interface AuthState {
   token: string | null;
@@ -10,6 +11,7 @@ interface AuthState {
   isAuthenticated: boolean;
   isAdmin: boolean;
   setAuth: (token: string | null, userId: string | null) => void;
+  syncAuth: (token: string, userId: string) => void;
   clearAuth: () => void;
   getAuthToken: () => string | null;
   setIsAdmin: (isAdmin: boolean) => void;
@@ -50,6 +52,9 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: isTokenValid && !!(localStorage.getItem('auth_token') && localStorage.getItem('user_id')),
       isAdmin: isTokenValid ? localStorage.getItem('is_admin') === 'true' : false,
       setAuth: (token, userId) => {
+        const accountChanged = Boolean(token && userId && (!get().isAuthenticated || get().userId !== userId));
+        if (accountChanged) rotateSessionId();
+        else if (token && userId) ensureSessionId();
         // Сохраняем токен и userId в localStorage для прямого доступа
         if (token) {
           localStorage.setItem('auth_token', token);
@@ -69,7 +74,9 @@ export const useAuthStore = create<AuthState>()(
           isAuthenticated: !!token && !!userId,
         });
       },
+      syncAuth: (token, userId) => set({ token, userId, isAuthenticated: true }),
       clearAuth: () => {
+        clearSessionId();
         localStorage.removeItem('auth_token');
         localStorage.removeItem('user_id');
         localStorage.removeItem('refresh_token');
@@ -87,6 +94,7 @@ export const useAuthStore = create<AuthState>()(
           isAuthenticated: false,
           isAdmin: false, // Сбрасываем статус администратора
         });
+        emitSessionEvent('account-changed');
       },
       getAuthToken: () => {
         // Получить действующий токен авторизации
@@ -138,10 +146,12 @@ export const useAuthStore = create<AuthState>()(
             const payload = decodeJwtPayload(token);
             const now = Math.floor(Date.now() / 1000);
             if (payload?.exp && payload.exp < (now + 30)) {
-              ['auth_token','refresh_token','user_id','is_admin','selected_campaign_id','selected_campaign_name'].forEach(k => localStorage.removeItem(k));
-              sessionStorage.clear();
-              get().logout();
-              return false;
+              const { refreshAccessToken } = await import('./auth');
+              try {
+                await refreshAccessToken();
+              } catch {
+                return false;
+              }
             }
           } catch (e) {
             ['auth_token','refresh_token','user_id','is_admin','selected_campaign_id','selected_campaign_name'].forEach(k => localStorage.removeItem(k));

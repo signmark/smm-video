@@ -3,6 +3,7 @@ import { useAuthStore } from "@/lib/store";
 import { handleError } from "@/utils/error-handler";
 import { redirectToLogin } from "@/lib/public-routes";
 import { decodeJwtPayload } from './jwt';
+import { getSessionSnapshot, isSameSession, type SessionSnapshot } from './sessionCoordinator';
 
 
 
@@ -12,7 +13,14 @@ function forceLogout() {
   redirectToLogin();
 }
 
-async function tryRefreshSession() {
+function sessionChangedError() {
+  const error = new Error('AUTH_SESSION_CHANGED');
+  (error as any).sessionChanged = true;
+  return error;
+}
+
+async function tryRefreshSession(expectedSession?: SessionSnapshot) {
+  if (expectedSession && !isSameSession(expectedSession)) throw sessionChangedError();
   const { refreshAuthSession } = await import('@/lib/refreshAuth');
   const result = await refreshAuthSession();
 
@@ -29,12 +37,13 @@ async function tryRefreshSession() {
     throw error;
   }
 
+  if (result === 'session_changed') throw sessionChangedError();
   const error = new Error('Не удалось проверить или обновить сессию. Проверьте соединение и повторите запрос.');
   (error as any).authUnavailable = true;
   throw error;
 }
 
-async function throwIfResNotOk(res: Response, allowAuthRefresh = true) {
+async function throwIfResNotOk(res: Response, allowAuthRefresh = true, expectedSession?: SessionSnapshot) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
 
@@ -51,8 +60,9 @@ async function throwIfResNotOk(res: Response, allowAuthRefresh = true) {
       (res.status === 500 && errorData?.details?.includes?.('TOKEN_EXPIRED'));
 
     if (isAuthFailure) {
+      if (expectedSession && !isSameSession(expectedSession)) throw sessionChangedError();
       if (allowAuthRefresh) {
-        await tryRefreshSession();
+        await tryRefreshSession(expectedSession);
       }
 
       forceLogout();
@@ -86,9 +96,11 @@ export async function apiRequest(
   config: ApiRequestConfig = {}
 ): Promise<any> {
   const { method = 'GET', data, params } = config;
+  const operationSession = getSessionSnapshot();
   
   // Вспомогательная функция для выполнения запроса
   const makeRequest = async (): Promise<Response> => {
+    if (!isSameSession(operationSession)) throw sessionChangedError();
     const token = useAuthStore.getState().token;
     const userId = useAuthStore.getState().userId;
 
@@ -140,17 +152,18 @@ export async function apiRequest(
       credentials: "include",
       cache: method === 'GET' ? 'no-store' : 'default',
     });
+    if (!isSameSession(operationSession)) throw sessionChangedError();
     return Object.assign(response, { __requestToken: requestToken });
   };
 
   try {
     const res = await makeRequest();
-    if (res.status === 401 && (res as any).__requestToken !== useAuthStore.getState().token) {
+    if (res.status === 401 && (res as any).__requestToken !== useAuthStore.getState().token && isSameSession(operationSession)) {
       const retried = await makeRequest();
-      await throwIfResNotOk(retried, false);
+      await throwIfResNotOk(retried, false, operationSession);
       return retried.status === 204 ? { success: true } : retried.json();
     }
-    await throwIfResNotOk(res);
+    await throwIfResNotOk(res, true, operationSession);
     
     // Если статус 204 No Content, не пытаемся распарсить JSON
     if (res.status === 204) {
@@ -160,10 +173,10 @@ export async function apiRequest(
     return res.json();
   } catch (error: any) {
     // Если токен был обновлен, повторяем запрос
-    if (error.tokenRefreshed) {
+    if (error.tokenRefreshed && isSameSession(operationSession)) {
       console.log('Токен обновлен, повтор запроса...');
       const res = await makeRequest();
-      await throwIfResNotOk(res, false);
+      await throwIfResNotOk(res, false, operationSession);
       
       if (res.status === 204) {
         return { success: true };
@@ -181,18 +194,22 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
+    const operationSession = getSessionSnapshot();
     // Функция выполнения запроса
     const makeRequest = async (): Promise<Response> => {
+      if (!isSameSession(operationSession)) throw sessionChangedError();
       const token = useAuthStore.getState().token;
       const userId = useAuthStore.getState().userId;
 
-      return await fetch(queryKey[0] as string, {
+      const response = await fetch(queryKey[0] as string, {
         credentials: "include",
         headers: {
           ...(token ? { "Authorization": `Bearer ${token}` } : {}),
           "x-user-id": userId || ''
         }
       });
+      if (!isSameSession(operationSession)) throw sessionChangedError();
+      return response;
     };
 
     try {
@@ -202,11 +219,11 @@ export const getQueryFn: <T>(options: {
         return null;
       }
 
-      await throwIfResNotOk(res);
+      await throwIfResNotOk(res, true, operationSession);
       return await res.json();
     } catch (error: any) {
       // КРИТИЧНО: Если токен обновился, повторяем запрос (как в apiRequest)
-      if (error.tokenRefreshed) {
+      if (error.tokenRefreshed && isSameSession(operationSession)) {
         console.log('[queryClient] Токен обновлен, повтор запроса...');
         const res = await makeRequest();
         
@@ -214,7 +231,7 @@ export const getQueryFn: <T>(options: {
           return null;
         }
         
-        await throwIfResNotOk(res, false);
+        await throwIfResNotOk(res, false, operationSession);
         return await res.json();
       }
       throw error;

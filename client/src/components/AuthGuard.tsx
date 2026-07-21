@@ -6,6 +6,7 @@ import { refreshAuthSession } from '@/lib/refreshAuth';
 import { decodeJwtPayload } from '@/lib/jwt';
 import { isPublicRoute } from '@/lib/public-routes';
 import { queryClient } from '@/lib/queryClient';
+import { subscribeToSessionEvents } from '@/lib/sessionCoordinator';
 
 interface Props {
   children: React.ReactNode;
@@ -35,6 +36,40 @@ export function AuthGuard({ children }: Props) {
   const [retryNonce, setRetryNonce] = useState(0);
   const setAuth = useAuthStore((state) => state.setAuth);
   const clearAuth = useAuthStore((state) => state.clearAuth);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToSessionEvents((status) => {
+      if (status === 'unavailable') {
+        setSessionError('Сервис авторизации временно недоступен. Данные входа сохранены.');
+        setIsSessionChecked(true);
+      } else if (status === 'invalid') {
+        queryClient.clear();
+        navigate('/auth/login');
+      } else {
+        if (status === 'refreshed') queryClient.invalidateQueries({ queryKey: ['/api/auth/me'] });
+        setRetryNonce((value) => value + 1);
+      }
+    });
+
+    const onStorage = (event: StorageEvent) => {
+      if (!['auth_token', 'refresh_token', 'auth_session_id'].includes(event.key || '')) return;
+      const currentToken = localStorage.getItem('auth_token');
+      const currentUserId = currentToken ? decodeJwtPayload(currentToken)?.id : null;
+      if (currentToken && currentUserId) {
+        useAuthStore.getState().syncAuth(currentToken, currentUserId);
+        setRetryNonce((value) => value + 1);
+      } else if (!localStorage.getItem('refresh_token')) {
+        clearAuth();
+        queryClient.clear();
+        navigate('/auth/login');
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => {
+      unsubscribe();
+      window.removeEventListener('storage', onStorage);
+    };
+  }, [clearAuth, navigate]);
 
   useEffect(() => {
     let cancelled = false;

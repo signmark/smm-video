@@ -1,10 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const setAuth = vi.fn();
+const syncAuth = vi.fn();
 
 vi.mock('../store', () => ({
   useAuthStore: {
-    getState: () => ({ setAuth }),
+    getState: () => ({ setAuth, syncAuth }),
   },
 }));
 
@@ -21,7 +22,9 @@ describe('refreshAuthSession', () => {
     values.clear();
     values.set('refresh_token', 'refresh-token');
     values.set('user_id', 'user-1');
+    values.set('auth_session_id', 'session-1');
     setAuth.mockClear();
+    syncAuth.mockClear();
     vi.stubGlobal('localStorage', {
       getItem: (key: string) => values.get(key) ?? null,
       setItem: (key: string, value: string) => values.set(key, value),
@@ -77,12 +80,32 @@ describe('refreshAuthSession', () => {
     const refresh = refreshAuthSession();
     values.set('refresh_token', 'new-login-refresh');
     values.set('auth_token', tokenFor('new-user'));
+    values.set('user_id', 'new-user');
+    values.set('auth_session_id', 'session-2');
     resolveFetch(new Response(JSON.stringify({
       token: tokenFor('old-user'), refresh_token: 'rotated-old-refresh',
     }), { status: 200, headers: { 'Content-Type': 'application/json' } }));
 
-    await expect(refresh).resolves.toBe('superseded');
+    await expect(refresh).resolves.toBe('session_changed');
     expect(values.get('auth_token')).toBe(tokenFor('new-user'));
     expect(setAuth).not.toHaveBeenCalled();
+  });
+
+  it('syncs the current access token after another tab rotates the same session', async () => {
+    values.set('auth_token', tokenFor('user-1'));
+    vi.stubGlobal('navigator', {
+      locks: {
+        request: vi.fn(async (_name, _options, callback) => {
+          values.set('refresh_token', 'rotated-by-first-tab');
+          values.set('auth_token', tokenFor('user-1'));
+          return callback();
+        }),
+      },
+    });
+    vi.stubGlobal('fetch', vi.fn());
+
+    await expect(refreshAuthSession()).resolves.toBe('superseded');
+    expect(syncAuth).toHaveBeenCalledWith(tokenFor('user-1'), 'user-1');
+    expect(fetch).not.toHaveBeenCalled();
   });
 });

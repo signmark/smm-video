@@ -27,7 +27,7 @@ type FacebookSetupForm = z.infer<typeof facebookSetupSchema>;
 interface FacebookPage {
   id: string;
   name: string;
-  access_token: string;
+  hasAccessToken?: boolean;
   category: string;
   tasks?: string[];
   link?: string;

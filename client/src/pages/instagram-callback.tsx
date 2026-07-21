@@ -49,7 +49,7 @@ export default function InstagramCallback() {
 
       if (response.ok && data.success) {
         console.log('✅ Instagram OAuth успешно завершен');
-        console.log('📤 Отправляем новый токен в wizard через postMessage...');
+        console.log('📤 Уведомляем wizard о серверном сохранении OAuth-сессии...');
         
         setStatus('success');
         setMessage('Instagram авторизация успешно завершена! Данные сохранены в кампании.');
@@ -59,7 +59,6 @@ export default function InstagramCallback() {
           const oauthData = {
             type: 'INSTAGRAM_OAUTH_SUCCESS',
             data: {
-              token: data.longLivedToken, // Новый токен из OAuth
               appId: data.appId, // App ID из верхнего уровня ответа
               instagramAccounts: data.instagramAccounts,
               user: data.user,
@@ -69,7 +68,7 @@ export default function InstagramCallback() {
           
           console.log('📤 Sending OAuth success data to parent window:', {
             type: oauthData.type,
-            tokenPreview: data.longLivedToken?.substring(0, 20) + '...',
+            tokenStored: true,
             appId: data.appId,
             accountsCount: data.instagramAccounts?.length || 0
           });

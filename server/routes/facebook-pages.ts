@@ -1,5 +1,6 @@
 import express from 'express';
 import axios from 'axios';
+import { sanitizeFacebookAccount } from '../services/oauth-response-sanitizer';
 
 const router = express.Router();
 
@@ -178,15 +179,7 @@ router.get('/pages', async (req, res) => {
 
     res.json({
       success: true,
-      pages: pages.map((page: any) => ({
-        id: page.id,
-        name: page.name,
-        category: page.category,
-        access_token: page.access_token, // Токен страницы, если доступен
-        user_token: accessToken, // Пользовательский токен как fallback
-        link: page.link,
-        fan_count: page.fan_count || 0
-      }))
+      pages: pages.map(sanitizeFacebookAccount)
     });
 
   } catch (error: any) {

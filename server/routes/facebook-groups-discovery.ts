@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import axios from 'axios';
+import { sanitizeFacebookAccount } from '../services/oauth-response-sanitizer';
 
 const router = Router();
 
@@ -68,7 +69,7 @@ router.get('/facebook/groups-and-pages', async (req, res) => {
     res.json({
       success: true,
       data: {
-        pages: pagesResponse.data.data || [],
+        pages: (pagesResponse.data.data || []).map(sanitizeFacebookAccount),
         groups: groups,
         permissions: {
           hasPublishToGroups,

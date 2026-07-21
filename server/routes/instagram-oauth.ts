@@ -1,5 +1,6 @@
 import express from 'express';
 import axios from 'axios';
+import { sanitizeInstagramAccount } from '../services/oauth-response-sanitizer';
 import { log } from '../utils/logger';
 
 const router = express.Router();
@@ -349,12 +350,12 @@ router.get('/instagram/auth/callback', async (req, res) => {
     oauthSessions.delete(state);
 
     // Возвращаем успешный ответ с данными
+    const safeInstagramAccounts = webhookData.instagramAccounts.map(sanitizeInstagramAccount);
     const responseData = {
       success: true,
       message: 'Instagram авторизация завершена успешно',
       appId: session.appId, // Важно! App ID должен быть на верхнем уровне
-      longLivedToken, // Токен на верхнем уровне для callback
-      instagramAccounts: webhookData.instagramAccounts,
+      instagramAccounts: safeInstagramAccounts,
       user: userResponse.data,
       expiresIn
     };
@@ -362,7 +363,7 @@ router.get('/instagram/auth/callback', async (req, res) => {
     console.log('📡 CALLBACK RESPONSE - Sending to client:', {
       success: responseData.success,
       message: responseData.message,
-      hasToken: !!responseData.longLivedToken,
+      tokenStored: true,
       userInfo: responseData.user,
       accountsCount: responseData.instagramAccounts?.length || 0
     });

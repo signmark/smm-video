@@ -1,5 +1,6 @@
 import express from 'express';
 import axios from 'axios';
+import { sanitizeFacebookAccount } from '../services/oauth-response-sanitizer';
 
 const router = express.Router();
 
@@ -63,7 +64,7 @@ router.get('/debug-token', async (req, res) => {
         results[endpoint] = {
           success: true,
           count: response.data.data?.length || 0,
-          data: response.data.data || []
+          data: (response.data.data || []).map(sanitizeFacebookAccount),
         };
 
         console.log(`✅ [FACEBOOK-DEBUG] ${endpoint} success:`, {

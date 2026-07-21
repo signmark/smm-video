@@ -24,7 +24,7 @@ async function testInstagramN8NWebhook() {
     content: '🚀 Тестовый пост из SMM Manager через N8N webhook! Автоматизация Instagram работает! #SMM #test #n8n',
     imageUrl: 'https://picsum.photos/1080/1080?random=3',
     username: 'it.zhdanov',
-    password: 'QtpZ3dh70307',
+    password: process.env.INSTAGRAM_TEST_PASSWORD,
     timestamp: new Date().toISOString(),
     platform: 'instagram'
   };

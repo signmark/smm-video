@@ -8,7 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Настройки Instagram
 const INSTAGRAM_USERNAME = 'it.zhdanov';
-const INSTAGRAM_PASSWORD = 'QtpZ3dh70307';
+const INSTAGRAM_PASSWORD = process.env.INSTAGRAM_TEST_PASSWORD;
 
 // Тестовые данные для поста
 const testPost = {

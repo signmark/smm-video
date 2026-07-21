@@ -53,7 +53,7 @@ async function createTestInstagramContent() {
       content: contentData.content,
       imageUrl: contentData.image_url,
       username: 'it.zhdanov',
-      password: 'QtpZ3dh70307',
+      password: process.env.INSTAGRAM_TEST_PASSWORD,
       contentId: directusResponse.data.data.id,
       timestamp: new Date().toISOString()
     };

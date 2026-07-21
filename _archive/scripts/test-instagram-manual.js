@@ -51,7 +51,7 @@ async function postToInstagram() {
     
     await page.click('input[name="password"]');
     await page.keyboard.selectAll();
-    await page.type('input[name="password"]', 'QtpZ3dh70307', { delay: 100 });
+    await page.type('input[name="password"]', process.env.INSTAGRAM_TEST_PASSWORD, { delay: 100 });
     
     // Нажимаем кнопку входа
     console.log('🚪 Нажимаем кнопку входа...');

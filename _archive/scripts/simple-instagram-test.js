@@ -32,7 +32,7 @@ async function testInstagramLogin() {
       // Пытаемся авторизоваться
       const loginData = {
         username: 'it.zhdanov',
-        password: 'QtpZ3dh70307',
+        password: process.env.INSTAGRAM_TEST_PASSWORD,
         queryParams: '{}',
         optIntoOneTap: 'false'
       };

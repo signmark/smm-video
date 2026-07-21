@@ -8,7 +8,7 @@ import path from 'path';
 import axios from 'axios';
 
 const INSTAGRAM_USERNAME = 'it.zhdanov';
-const INSTAGRAM_PASSWORD = 'QtpZ3dh70307';
+const INSTAGRAM_PASSWORD = process.env.INSTAGRAM_TEST_PASSWORD;
 
 async function downloadImage(imageUrl, savePath) {
   console.log(`📥 Скачиваем изображение: ${imageUrl}`);

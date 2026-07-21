@@ -14,7 +14,7 @@ async function testInstagramService() {
     caption: '🚀 Тестовый пост из SMM Manager! Автоматическая публикация работает отлично! #SMM #автоматизация #Instagram #test',
     imageUrl: 'https://picsum.photos/1080/1080?random=2',
     username: 'it.zhdanov',
-    password: 'QtpZ3dh70307'
+    password: process.env.INSTAGRAM_TEST_PASSWORD
   };
   
   console.log('📝 Данные для теста:', {

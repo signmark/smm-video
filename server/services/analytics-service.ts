@@ -7,6 +7,7 @@ import {
   matchesPublishedPlatformPostId,
 } from './analytics-aggregation';
 import type { ChannelPost } from './scraper-analytics';
+import { authorizeCampaignAccess } from './campaign-access';
 
 type AnalyticsPlatform = 'telegram' | 'vk';
 
@@ -107,17 +108,36 @@ function getResolvableCampaignChannels(
 export class AnalyticsService {
   private static readonly ANALYTICS_PAGE_SIZE = 1000;
 
-  private static async getPublishedContent(campaignId: string, token: string): Promise<any[]> {
+  private static async getPublishedContent(
+    campaignId: string,
+    userToken: string,
+    userId?: string,
+    isSmmAdmin = false,
+  ): Promise<any[]> {
     const posts: any[] = [];
+    const serviceToken = process.env.DIRECTUS_STATIC_TOKEN
+      || process.env.DIRECTUS_ADMIN_TOKEN
+      || process.env.DIRECTUS_TOKEN
+      || '';
+    const canUseServiceToken = Boolean(serviceToken && (userId || isSmmAdmin));
+    const readToken = canUseServiceToken ? serviceToken : userToken;
+
+    // Directus user roles can intentionally be narrower than SMM plans. Analytics
+    // is a server-side aggregate, so read it with the service credential while
+    // retaining tenant isolation for ordinary users.
+    const contentFilter: Record<string, unknown> = {
+      campaign_id: { _eq: campaignId },
+      status: { _in: ['published', 'partially_published', 'partial'] },
+    };
+    if (canUseServiceToken && userId && !isSmmAdmin) {
+      contentFilter.user_id = { _eq: userId };
+    }
 
     for (let offset = 0; ; offset += AnalyticsService.ANALYTICS_PAGE_SIZE) {
       const response = await directusApi.get('/items/campaign_content', {
-        headers: { Authorization: `Bearer ${token}` },
+        headers: { Authorization: `Bearer ${readToken}` },
         params: {
-          filter: JSON.stringify({
-            campaign_id: { _eq: campaignId },
-            status: { _in: ['published', 'partially_published', 'partial'] },
-          }),
+          filter: JSON.stringify(contentFilter),
           fields: ['id', 'title', 'status', 'social_platforms', 'scheduled_at', 'published_at'],
           sort: ['-published_at', '-id'],
           limit: AnalyticsService.ANALYTICS_PAGE_SIZE,
@@ -140,7 +160,13 @@ export class AnalyticsService {
    * Дополняет метрики агрегатами собственных каналов кампании.
    * Это временный режим до надёжного сопоставления публикаций по postId в скрейпере.
    */
-  static async getCampaignAnalytics(campaignId: string, period: string, token: string) {
+  static async getCampaignAnalytics(
+    campaignId: string,
+    period: string,
+    token: string,
+    userId?: string,
+    isSmmAdmin = false,
+  ) {
     let dateFrom: Date;
     const now = new Date();
 
@@ -154,7 +180,13 @@ export class AnalyticsService {
     log(`[AnalyticsService] 📊 Запрос аналитики: campaignId=${campaignId}, period=${period}, dateFrom=${dateFrom.toISOString()}`, 'info');
 
     try {
-      const posts = await AnalyticsService.getPublishedContent(campaignId, token);
+      const campaign = await authorizeCampaignAccess(campaignId, userId, token, isSmmAdmin);
+      const posts = await AnalyticsService.getPublishedContent(
+        campaignId,
+        token,
+        userId,
+        isSmmAdmin,
+      );
       log(`[AnalyticsService] ✅ Получено записей контента кампании: ${posts.length}`, 'info');
 
       const aggregated = aggregatePublishedPlatformAnalytics(posts, dateFrom, now);
@@ -170,7 +202,7 @@ export class AnalyticsService {
       // Дополняем метрики из скрейпера (агрегированные по каналу)
       try {
         await AnalyticsService.supplementFromScraper(
-          campaignId, dateFrom, now, posts, platformStatsMap,
+          campaignId, dateFrom, now, posts, platformStatsMap, campaign,
         );
         const platformStats = Array.from(platformStatsMap.values());
         totalPosts = platformStats.reduce((sum, stats) => sum + stats.posts, 0);
@@ -210,7 +242,7 @@ export class AnalyticsService {
       if (error.response) {
         log(`[AnalyticsService] ❌ Directus: ${error.response.status} - ${JSON.stringify(error.response.data)}`, 'error');
       }
-      return { success: true, totalPosts: 0, totalViews: 0, totalLikes: 0, totalShares: 0, totalComments: 0, platforms: [], error: error.message };
+      throw error;
     }
   }
 
@@ -225,8 +257,9 @@ export class AnalyticsService {
     toDate: Date,
     publishedContent: any[],
     platformStatsMap: Map<string, any>,
+    campaign: any,
   ): Promise<void> {
-    const adminToken = process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN || '';
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN || '';
     if (!adminToken) {
       logAnalyticsTrace('campaign_skipped', {
         campaignId,
@@ -236,20 +269,6 @@ export class AnalyticsService {
     }
 
     const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
-
-    // Получаем настройки кампании
-    const campaignResp = await axios.get(`${directusUrl}/items/user_campaigns/${campaignId}`, {
-      headers: { Authorization: `Bearer ${adminToken}` },
-      timeout: 10000
-    });
-    const campaign = campaignResp.data?.data;
-    if (!campaign) {
-      logAnalyticsTrace('campaign_skipped', {
-        campaignId,
-        reason: 'campaign_not_found',
-      });
-      return;
-    }
 
     let socialSettings = campaign.social_media_settings || {};
     if (typeof socialSettings === 'string') {
@@ -469,7 +488,7 @@ export class AnalyticsService {
     campaignId: string,
     requestedDays = 7,
   ): Promise<{ success: boolean; message: string; processed?: number; failed?: number; skipped?: number }> {
-    const adminToken = process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN || '';
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN || '';
     if (!adminToken) return { success: false, message: 'Нет токена для Directus' };
 
     const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';

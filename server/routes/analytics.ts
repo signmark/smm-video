@@ -8,6 +8,7 @@ import { directusAuthManager } from '../services/directus-auth-manager';
 import { geminiDirect } from '../services/gemini-direct';
 import { AnalyticsService } from '../services/analytics-service';
 import axios from 'axios';
+import { authorizeCampaignAccess, CampaignAccessError } from '../services/campaign-access';
 
 export function registerAnalyticsRoutes(app: Express) {
   /**
@@ -21,6 +22,13 @@ export function registerAnalyticsRoutes(app: Express) {
       if (!campaignId) {
         return res.status(400).json({ success: false, error: 'campaignId обязателен' });
       }
+
+      await authorizeCampaignAccess(
+        String(campaignId),
+        req.user?.id,
+        req.user?.token || '',
+        req.user?.is_smm_admin === true,
+      );
 
       log(`[Analytics Route] Запрос на обновление данных для кампании ${campaignId}`, 'info');
 
@@ -36,6 +44,9 @@ export function registerAnalyticsRoutes(app: Express) {
       return res.json({ success: true, message: "Запрос на обновление данных принят" });
     } catch (error: any) {
       log(`[Analytics Route] Ошибка при обновлении: ${error.message}`, 'error');
+      if (error instanceof CampaignAccessError) {
+        return res.status(error.status).json({ success: false, code: error.code, error: 'Кампания не найдена' });
+      }
       res.status(500).json({ success: false, error: "Ошибка при обновлении данных" });
     }
   });
@@ -78,20 +89,30 @@ export function registerAnalyticsRoutes(app: Express) {
 
       log(`[Analytics Route] Запрос для кампании ${campaignId}, период ${period}`, 'info');
 
-      const analyticsData = await AnalyticsService.getCampaignAnalytics(campaignId, period, token);
+      const analyticsData = await AnalyticsService.getCampaignAnalytics(
+        campaignId,
+        period,
+        token,
+        req.user?.id,
+        req.user?.is_smm_admin === true,
+      );
 
       return res.json(analyticsData);
     } catch (error: any) {
       log(`[Analytics Route] Ошибка: ${error.message}`, 'error');
+      if (error instanceof CampaignAccessError) {
+        return res.status(error.status).json({
+          success: false,
+          code: error.code,
+          error: error.status === 404 ? 'Кампания не найдена' : 'Сервис кампаний временно недоступен',
+          retryable: error.status === 503,
+        });
+      }
       res.status(500).json({
         success: false,
         error: "Не удалось загрузить данные аналитики",
-        totalPosts: 0,
-        totalViews: 0,
-        totalLikes: 0,
-        totalShares: 0,
-        totalComments: 0,
-        platforms: []
+        code: 'ANALYTICS_UNAVAILABLE',
+        retryable: true,
       });
     }
   });

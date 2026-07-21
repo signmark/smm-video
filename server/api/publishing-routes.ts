@@ -177,7 +177,12 @@ export function registerPublishingRoutes(app: Express): void {
       const { contentId, content, youtubeSettings, userId } = req.body;
       
       console.log(`[test-youtube] Тестирование YouTube публикации для ${contentId}`);
-      console.log(`[test-youtube] YouTube настройки:`, youtubeSettings);
+      console.log(`[test-youtube] YouTube настройки:`, youtubeSettings ? {
+        channelId: youtubeSettings.channelId,
+        configured: !!youtubeSettings.configured,
+        hasAccessToken: !!youtubeSettings.accessToken,
+        hasRefreshToken: !!youtubeSettings.refreshToken
+      } : null);
       
       // Импортируем YouTube сервис
       const { YouTubeService } = await import('../services/social-platforms/youtube-service');
@@ -236,7 +241,12 @@ export function registerPublishingRoutes(app: Express): void {
       const { content, campaignSettings, userId } = req.body;
       
       console.log('🎬 [YouTube] Прямая публикация YouTube для контента:', content.id);
-      console.log('📺 [YouTube] Настройки YouTube:', campaignSettings.youtube);
+      console.log('📺 [YouTube] Настройки YouTube:', campaignSettings?.youtube ? {
+        channelId: campaignSettings.youtube.channelId,
+        configured: !!campaignSettings.youtube.configured,
+        hasAccessToken: !!campaignSettings.youtube.accessToken,
+        hasRefreshToken: !!campaignSettings.youtube.refreshToken
+      } : null);
       
       const { YouTubeService } = await import('../services/social-platforms/youtube-service');
       const youtubeService = new YouTubeService();

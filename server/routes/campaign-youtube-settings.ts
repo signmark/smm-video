@@ -39,7 +39,12 @@ router.get('/campaigns/:campaignId/youtube-settings', async (req, res) => {
     const socialMediaSettings = campaign.social_media_settings || {};
     const youtubeSettings = socialMediaSettings.youtube || null;
 
-    console.log('📋 [YOUTUBE-SETTINGS] YouTube settings found:', youtubeSettings);
+    console.log('📋 [YOUTUBE-SETTINGS] YouTube settings found:', youtubeSettings ? {
+      channelId: youtubeSettings.channelId,
+      configured: !!youtubeSettings.configured,
+      hasAccessToken: !!youtubeSettings.accessToken,
+      hasRefreshToken: !!youtubeSettings.refreshToken
+    } : null);
 
     res.json({
       success: true,

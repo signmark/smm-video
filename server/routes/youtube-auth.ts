@@ -71,7 +71,7 @@ router.post('/youtube/auth/start', authMiddleware, async (req, res) => {
       message: 'Перейдите по ссылке для авторизации YouTube'
     });
   } catch (error) {
-    console.error('Ошибка инициации YouTube OAuth:', error);
+    console.error('Ошибка инициации YouTube OAuth:', error instanceof Error ? error.message : String(error));
     res.status(500).json({
       error: 'Ошибка инициации авторизации',
       details: error instanceof Error ? error.message : 'Неизвестная ошибка'
@@ -214,7 +214,7 @@ router.get('/youtube/auth/callback', async (req, res) => {
 
     res.redirect('/youtube-callback?' + params.toString());
   } catch (error) {
-    console.error('Ошибка обработки YouTube callback:', error);
+    console.error('Ошибка обработки YouTube callback:', error instanceof Error ? error.message : String(error));
     // Перенаправляем на callback страницу с ошибкой
     const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
     res.redirect('/youtube-callback?error=true&message=' + encodeURIComponent(errorMessage));
@@ -256,7 +256,7 @@ router.post('/youtube/test', authMiddleware, async (req, res) => {
       }
     });
   } catch (error) {
-    console.error('Ошибка тестирования YouTube:', error);
+    console.error('Ошибка тестирования YouTube:', error instanceof Error ? error.message : String(error));
     res.status(500).json({
       error: 'Ошибка тестирования соединения',
       details: error instanceof Error ? error.message : 'Неизвестная ошибка'
@@ -316,7 +316,7 @@ router.post('/youtube/fix-redirect-uri', authMiddleware, async (req, res) => {
     }
 
   } catch (error) {
-    console.error('❌ [youtube-auth] Ошибка при исправлении redirect URI:', error);
+    console.error('❌ [youtube-auth] Ошибка при исправлении redirect URI:', error instanceof Error ? error.message : String(error));
     res.status(500).json({
       error: 'Ошибка при исправлении redirect URI',
       details: error instanceof Error ? error.message : 'Неизвестная ошибка'

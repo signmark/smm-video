@@ -116,11 +116,13 @@ const InstagramSetupWizardSimple: React.FC<InstagramSetupWizardProps> = ({ campa
             if (accessToken) {
               console.log('🔍 Auto-checking Facebook pages for existing Instagram token...');
               try {
-                const facebookResponse = await fetch(`/api/facebook/pages?token=${encodeURIComponent(accessToken)}`, {
-                  method: 'GET',
+                const facebookResponse = await fetch('/api/facebook/pages', {
+                  method: 'POST',
                   headers: {
-                    'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
-                  }
+                    'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({ token: accessToken }),
                 });
 
                 if (facebookResponse.ok) {
@@ -255,11 +257,13 @@ const InstagramSetupWizardSimple: React.FC<InstagramSetupWizardProps> = ({ campa
         // 2. Параллельно проверяем Facebook страницы тем же токеном
         try {
           console.log('🔍 Checking Facebook pages with Instagram token...');
-          const facebookResponse = await fetch(`/api/facebook/pages?token=${encodeURIComponent(formData.accessToken)}`, {
-            method: 'GET',
+          const facebookResponse = await fetch('/api/facebook/pages', {
+            method: 'POST',
             headers: {
-              'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
-            }
+              'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ token: formData.accessToken }),
           });
 
           if (facebookResponse.ok) {

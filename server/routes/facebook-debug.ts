@@ -5,11 +5,15 @@ import { authenticateUser } from '../middleware/user-auth';
 
 const router = express.Router();
 router.use(authenticateUser);
+router.use((_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 
 // GET /api/facebook/debug-token - отладка токена и проверка разрешений
-router.get('/debug-token', async (req, res) => {
+router.post('/debug-token', async (req, res) => {
   try {
-    const { token } = req.query;
+    if (process.env.NODE_ENV === 'production' && req.user?.is_smm_admin !== true) {
+      return res.status(404).json({ error: 'Not found' });
+    }
+    const { token } = req.body || {};
     const accessToken = token;
 
     if (!accessToken) {

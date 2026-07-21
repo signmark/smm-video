@@ -5,11 +5,12 @@ import { authenticateUser } from '../middleware/user-auth';
 
 const router = Router();
 router.use(authenticateUser);
+router.use((_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 
 // API для получения Facebook групп и страниц пользователя
-router.get('/facebook/groups-and-pages', async (req, res) => {
+router.post('/facebook/groups-and-pages', async (req, res) => {
   try {
-    const token = req.query.token as string;
+    const token = req.body?.token as string;
     
     if (!token) {
       return res.status(400).json({

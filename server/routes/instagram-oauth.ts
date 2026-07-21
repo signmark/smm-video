@@ -10,6 +10,13 @@ const router = express.Router();
 
 // Временное хранение для OAuth flow (в продакшене можно использовать Redis)
 const oauthSessions = new Map();
+const OAUTH_SESSION_TTL_MS = 10 * 60 * 1000;
+
+function pruneExpiredOAuthSessions(now = Date.now()) {
+  for (const [key, session] of oauthSessions) {
+    if (now - session.timestamp > OAUTH_SESSION_TTL_MS) oauthSessions.delete(key);
+  }
+}
 
 // Эндпоинт для начала OAuth flow
 router.post('/instagram/auth/start', authenticateUser, async (req, res) => {
@@ -38,11 +45,15 @@ router.post('/instagram/auth/start', authenticateUser, async (req, res) => {
     }
 
     const finalWebhookUrl = process.env.INSTAGRAM_WEBHOOK_URL || '';
+    if (finalWebhookUrl && new URL(finalWebhookUrl).protocol !== 'https:') {
+      throw new Error('INSTAGRAM_WEBHOOK_URL must use HTTPS');
+    }
 
     // Генерируем уникальный state для безопасности
     const state = randomBytes(32).toString('base64url');
 
     // Сохраняем данные сессии
+    pruneExpiredOAuthSessions();
     oauthSessions.set(state, {
       appId,
       appSecret,
@@ -78,7 +89,6 @@ router.post('/instagram/auth/start', authenticateUser, async (req, res) => {
 
     log('instagram-oauth', `OAuth поток запущен для App ID: ${appId}, Campaign ID: ${campaignId}`);
     log('instagram-oauth', `Redirect URI: ${finalRedirectUri}`);
-    log('instagram-oauth', `Auth URL: ${authUrl}`);
     
     res.json({ 
       success: true,
@@ -114,16 +124,14 @@ router.get('/instagram/auth/callback', async (req, res) => {
   }
 
   console.log('✅ OAuth code received: [REDACTED]');
-  console.log('✅ State parameter:', state);
 
   // Получаем данные сессии
   const session = oauthSessions.get(state);
   if (!session) {
-    console.log('❌ Invalid session for state:', state);
-    console.log('📋 Available sessions:', Array.from(oauthSessions.keys()));
+    console.log('❌ Invalid Instagram OAuth session');
     return res.status(400).json({ error: 'Недействительная сессия' });
   }
-  if (Date.now() - session.timestamp > 10 * 60 * 1000) {
+  if (Date.now() - session.timestamp > OAUTH_SESSION_TTL_MS) {
     oauthSessions.delete(state);
     return res.status(400).json({ error: 'OAuth-сессия истекла' });
   }
@@ -341,7 +349,16 @@ router.get('/instagram/auth/callback', async (req, res) => {
       // Дополнительно отправляем в N8N webhook если указан
       if (session.webhookUrl) {
         try {
-          await axios.post(session.webhookUrl, webhookData, {
+          const webhookNotification = {
+            success: true,
+            campaignId: session.campaignId,
+            appId: session.appId,
+            user: { id: webhookData.user?.id, name: webhookData.user?.name },
+            instagramAccounts: webhookData.instagramAccounts.map(sanitizeInstagramAccount),
+            expiresIn,
+            timestamp: webhookData.timestamp,
+          };
+          await axios.post(session.webhookUrl, webhookNotification, {
             headers: {
               'Content-Type': 'application/json'
             },

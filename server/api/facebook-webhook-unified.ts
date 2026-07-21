@@ -8,6 +8,7 @@ import axios from 'axios';
 import log from '../utils/logger';
 import { facebookService } from '../services/social-platforms/facebook-service';
 import { authenticateUser } from '../middleware/user-auth';
+import { authorizeCampaignAccess } from '../services/campaign-access';
 
 const router = Router();
 
@@ -260,12 +261,13 @@ router.post('/update-status', async (req, res) => {
 });
 
 // Маршрут для получения токена конкретной страницы
-router.get('/page-token/:pageId', authenticateUser, async (req, res) => {
+router.post('/page-token/:pageId', authenticateUser, async (req, res) => {
   try {
+    res.set('Cache-Control', 'no-store');
     const { pageId } = req.params;
-    const { token } = req.query;
+    const { token, campaignId } = req.body || {};
     
-    if (!token || !pageId) {
+    if (!token || !pageId || !campaignId) {
       return res.status(400).json({ 
         success: false,
         error: 'Не указан токен пользователя или ID страницы' 
@@ -295,6 +297,26 @@ router.get('/page-token/:pageId', authenticateUser, async (req, res) => {
         error: `Страница с ID ${pageId} не найдена или нет доступа к ней`
       });
     }
+
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
+    const directusUrl = process.env.DIRECTUS_URL;
+    if (!adminToken || !directusUrl) throw new Error('Directus Facebook storage is not configured');
+    const campaign = await authorizeCampaignAccess(campaignId, req.user?.id, adminToken, req.user?.is_smm_admin === true);
+    const existingSettings = campaign.social_media_settings || {};
+    await axios.patch(`${directusUrl}/items/user_campaigns/${campaignId}`, {
+      social_media_settings: {
+        ...existingSettings,
+        facebook: {
+          ...(existingSettings.facebook || {}),
+          token: targetPage.access_token,
+          userToken: token,
+          pageId: targetPage.id,
+          pageName: targetPage.name,
+          configured: true,
+          setupCompletedAt: new Date().toISOString(),
+        },
+      },
+    }, { headers: { Authorization: `Bearer ${adminToken}` } });
     
     log.info(`[Facebook] Токен страницы ${targetPage.name} успешно получен`);
     
@@ -305,7 +327,7 @@ router.get('/page-token/:pageId', authenticateUser, async (req, res) => {
         id: targetPage.id,
         name: targetPage.name,
         category: targetPage.category,
-        access_token: targetPage.access_token,
+        hasAccessToken: Boolean(targetPage.access_token),
       }
     });
   } catch (error: any) {
@@ -319,8 +341,9 @@ router.get('/page-token/:pageId', authenticateUser, async (req, res) => {
 });
 
 // Маршрут для тестирования токена и получения доступных страниц
-router.post('/test-token', async (req, res) => {
+router.post('/test-token', authenticateUser, async (req, res) => {
   try {
+    res.set('Cache-Control', 'no-store');
     const { token } = req.body;
     
     if (!token) {
@@ -330,7 +353,7 @@ router.post('/test-token', async (req, res) => {
       });
     }
     
-    log.info(`[Facebook] Тестирование токена: ${token.substring(0, 10)}...`);
+    log.info('[Facebook] Тестирование предоставленного токена');
     
     // Получаем список страниц
     const apiVersion = 'v19.0'; // Последняя версия API
@@ -355,7 +378,7 @@ router.post('/test-token', async (req, res) => {
         id: page.id,
         name: page.name,
         category: page.category,
-        accessToken: page.access_token,
+        hasAccessToken: Boolean(page.access_token),
       }))
     });
   } catch (error: any) {

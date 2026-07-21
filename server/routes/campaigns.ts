@@ -12,6 +12,7 @@ import axios from 'axios';
 import { getPlanLimits } from '../services/plan-limits';
 import { directusCrud } from '../services/directus-crud';
 import { authorizeCampaignAccess, CampaignAccessError } from '../services/campaign-access';
+import { mergeOAuthSettings, sanitizeOAuthSecrets } from '../services/oauth-response-sanitizer';
 
 /**
  * Удаляет все связанные элементы указанной коллекции для кампании
@@ -161,8 +162,8 @@ export function registerCampaignRoutes(app: Express) {
           link: item.link,
           userId: item.user_id,
           createdAt: item.created_at,
-          socialMediaSettings: item.social_media_settings || {},
-          social_media_settings: item.social_media_settings || {},
+          socialMediaSettings: sanitizeOAuthSecrets(item.social_media_settings || {}),
+          social_media_settings: sanitizeOAuthSecrets(item.social_media_settings || {}),
           trendAnalysisSettings: item.trend_analysis_settings || {},
           trend_analysis_settings: item.trend_analysis_settings || {},
           autonomous_settings: item.autonomous_settings || null,
@@ -209,8 +210,8 @@ export function registerCampaignRoutes(app: Express) {
         link: item.link,
         userId: item.user_id,
         createdAt: item.created_at,
-        socialMediaSettings: item.social_media_settings || {},
-        social_media_settings: item.social_media_settings || {},
+        socialMediaSettings: sanitizeOAuthSecrets(item.social_media_settings || {}),
+        social_media_settings: sanitizeOAuthSecrets(item.social_media_settings || {}),
         trend_analysis_settings: item.trend_analysis_settings || {},
         autonomous_settings: item.autonomous_settings || null,
         content_style: item.content_style || null
@@ -249,22 +250,15 @@ export function registerCampaignRoutes(app: Express) {
         const existingResp = await directusApi.get(`/items/user_campaigns/${id}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
-        const existingVk = existingResp.data.data?.social_media_settings?.vk || {};
-        const incomingVk = updateData.social_media_settings.vk || {};
-        updateData.social_media_settings = {
-          ...updateData.social_media_settings,
-          vk: {
-            ...existingVk,
-            ...incomingVk
-          }
-        };
+        const existingSettings = existingResp.data.data?.social_media_settings || {};
+        updateData.social_media_settings = mergeOAuthSettings(existingSettings, updateData.social_media_settings);
       }
 
       const response = await directusApi.patch(`/items/user_campaigns/${id}`, updateData, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       
-      res.json({ success: true, data: response.data.data });
+      res.json({ success: true, data: sanitizeOAuthSecrets(response.data.data) });
     } catch (error: any) {
       if (error instanceof CampaignAccessError) {
         return res.status(error.status).json({

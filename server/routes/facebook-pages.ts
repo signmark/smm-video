@@ -5,12 +5,12 @@ import { authenticateUser } from '../middleware/user-auth';
 
 const router = express.Router();
 router.use(authenticateUser);
+router.use((_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 
 // GET /api/facebook/pages - получение Facebook страниц пользователя
-router.get('/pages', async (req, res) => {
+router.post('/pages', async (req, res) => {
   try {
-    console.log('🔵 [FACEBOOK-PAGES] Request received with query params:', Object.keys(req.query));
-    const { token, access_token } = req.query;
+    const { token, access_token } = req.body || {};
     const accessToken = token || access_token;
 
     console.log('🔵 [FACEBOOK-PAGES] Extracted tokens:', {

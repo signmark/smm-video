@@ -1,7 +1,20 @@
 import express from 'express';
 import axios from 'axios';
+import { authenticateUser } from '../middleware/user-auth';
+import { authorizeCampaignAccess, CampaignAccessError } from '../services/campaign-access';
+import { sanitizeOAuthSecrets } from '../services/oauth-response-sanitizer';
 
 const router = express.Router();
+router.use(authenticateUser);
+router.param('campaignId', async (req, res, next, campaignId) => {
+  try {
+    await authorizeCampaignAccess(campaignId, req.user?.id, req.user?.token || '', req.user?.is_smm_admin === true);
+    next();
+  } catch (error) {
+    if (error instanceof CampaignAccessError) return res.status(error.status).json({ error: error.code });
+    next(error);
+  }
+});
 
 /**
  * Получение Facebook настроек из JSON кампании
@@ -38,7 +51,7 @@ router.get('/campaigns/:campaignId/facebook-settings', async (req, res) => {
 
     res.json({
       success: true,
-      settings: facebookSettings
+      settings: sanitizeOAuthSecrets(facebookSettings)
     });
 
   } catch (error: any) {
@@ -104,7 +117,9 @@ router.post('/campaigns/:campaignId/facebook-settings', async (req, res) => {
         ...existingFacebook, // Сохраняем существующие данные
         
         // Основной токен страницы для публикации
-        token,
+        token: userAccessToken && token === userAccessToken && existingFacebook.token
+          ? existingFacebook.token
+          : token,
         pageId,
         pageName: pageName || existingFacebook.pageName || '',
         

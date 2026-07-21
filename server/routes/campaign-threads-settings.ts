@@ -1,8 +1,21 @@
 import express from 'express';
 import axios from 'axios';
 import { log } from '../utils/logger';
+import { authenticateUser } from '../middleware/user-auth';
+import { authorizeCampaignAccess, CampaignAccessError } from '../services/campaign-access';
+import { sanitizeOAuthSecrets } from '../services/oauth-response-sanitizer';
 
 const router = express.Router();
+router.use(authenticateUser);
+router.param('campaignId', async (req, res, next, campaignId) => {
+  try {
+    await authorizeCampaignAccess(campaignId, req.user?.id, req.user?.token || '', req.user?.is_smm_admin === true);
+    next();
+  } catch (error) {
+    if (error instanceof CampaignAccessError) return res.status(error.status).json({ error: error.code });
+    next(error);
+  }
+});
 
 router.get('/campaigns/:campaignId/threads-settings', async (req, res) => {
   const { campaignId } = req.params;
@@ -20,7 +33,7 @@ router.get('/campaigns/:campaignId/threads-settings', async (req, res) => {
     );
 
     const settings = response.data.data.social_media_settings?.threads || null;
-    res.json({ success: true, settings });
+    res.json({ success: true, settings: sanitizeOAuthSecrets(settings) });
   } catch (err: any) {
     log('threads-settings', `GET error: ${err.message}`);
     res.status(500).json({ success: false, error: err.message });
@@ -60,7 +73,7 @@ router.patch('/campaigns/:campaignId/threads-settings', async (req, res) => {
       { headers: { Authorization: `Bearer ${tokenToUse}` } }
     );
 
-    res.json({ success: true, settings: threadsSettings });
+    res.json({ success: true, settings: sanitizeOAuthSecrets(threadsSettings) });
   } catch (err: any) {
     log('threads-settings', `PATCH error: ${err.message}`);
     res.status(500).json({ success: false, error: err.message });

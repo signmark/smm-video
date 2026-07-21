@@ -1,8 +1,21 @@
 import express from 'express';
 import { log } from '../utils/logger';
 import axios from 'axios';
+import { authenticateUser } from '../middleware/user-auth';
+import { authorizeCampaignAccess, CampaignAccessError } from '../services/campaign-access';
+import { sanitizeOAuthSecrets } from '../services/oauth-response-sanitizer';
 
 const router = express.Router();
+router.use(authenticateUser);
+router.param('campaignId', async (req, res, next, campaignId) => {
+  try {
+    await authorizeCampaignAccess(campaignId, req.user?.id, req.user?.token || '', req.user?.is_smm_admin === true);
+    next();
+  } catch (error) {
+    if (error instanceof CampaignAccessError) return res.status(error.status).json({ error: error.code });
+    next(error);
+  }
+});
 
 /**
  * Получение Instagram настроек из JSON кампании
@@ -41,7 +54,7 @@ router.get('/campaigns/:campaignId/instagram-settings', async (req, res) => {
 
     res.json({
       success: true,
-      settings: instagramSettings
+      settings: sanitizeOAuthSecrets(instagramSettings)
     });
 
   } catch (error: any) {
@@ -117,7 +130,7 @@ router.patch('/campaigns/:campaignId/instagram-settings', async (req, res) => {
 
     res.json({
       success: true,
-      data: updatedSettings.instagram
+      data: sanitizeOAuthSecrets(updatedSettings.instagram)
     });
 
   } catch (error: any) {

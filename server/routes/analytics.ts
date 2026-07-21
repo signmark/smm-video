@@ -9,6 +9,7 @@ import { geminiDirect } from '../services/gemini-direct';
 import { AnalyticsService } from '../services/analytics-service';
 import axios from 'axios';
 import { authorizeCampaignAccess, CampaignAccessError } from '../services/campaign-access';
+import { sanitizeOAuthSecrets } from '../services/oauth-response-sanitizer';
 
 export function registerAnalyticsRoutes(app: Express) {
   /**
@@ -319,15 +320,15 @@ export function registerAnalyticsRoutes(app: Express) {
     try {
       const { campaignId } = req.params;
       const token = req.user?.token;
-
-      const response = await directusApi.get(`/items/user_campaigns/${campaignId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-
-      const campaign = response.data.data;
+      const campaign = await authorizeCampaignAccess(
+        campaignId,
+        req.user?.id,
+        token || '',
+        req.user?.is_smm_admin === true,
+      );
       const instagramSettings = campaign.social_media_settings?.instagram || {};
 
-      res.json({ success: true, settings: instagramSettings });
+      res.json({ success: true, settings: sanitizeOAuthSecrets(instagramSettings) });
     } catch (error: any) {
       res.status(500).json({ error: 'Failed to get Instagram settings' });
     }

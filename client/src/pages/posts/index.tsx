@@ -157,7 +157,7 @@ export default function Posts() {
   // Состояние для хранения данных публикаций
   
   // Запрос контента кампании для календаря
-  const { data: campaignContentResponse, isLoading: isLoadingContent, isFetching: isFetchingContent, refetch } = useQuery({
+  const { data: campaignContentResponse, isLoading: isLoadingContent, isFetching: isFetchingContent, isError, error, refetch } = useQuery({
     queryKey: ['/api/campaign-content', selectedCampaign?.id],
     queryFn: async () => {
       if (!selectedCampaign?.id) return { data: [] };
@@ -174,7 +174,7 @@ export default function Posts() {
         return responseData;
       } catch (error) {
         console.error('Ошибка при загрузке контента:', error);
-        return { data: [] };
+        throw error;
       }
     },
     enabled: !!selectedCampaign?.id && !!userId,
@@ -717,30 +717,57 @@ export default function Posts() {
                   {t('publishing.published.postsOn', { date: format(selectedDate, 'dd MMMM yyyy', { locale: getDateLocale() }) })}
                 </h3>
                 
-                {isLoadingContent ? (
-                  <div className="p-6 text-center">
-                    <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2" />
-                    <p>{t('common.loading')}</p>
-                  </div>
-                ) : (
-                  <>
-                    {getUniquePostsForDay(selectedDate).length > 0 ? (
-                      <div className="grid gap-3">
-                        {getUniquePostsForDay(selectedDate).map(renderPostCard)}
-                      </div>
-                    ) : (
-                      <div className="text-center py-12 text-muted-foreground">
-                        <p>{t('publishing.published.noPublished')}</p>
-                        <p className="text-sm mt-2">{t('publishing.published.showOnly')}</p>
-                      </div>
-                    )}
-                  </>
-                )}
+              {isError ? (
+                <div className="p-6 text-center border rounded-lg bg-destructive/10 border-destructive/20 my-4">
+                  <p className="text-sm font-medium text-destructive mb-2">Не удалось загрузить публикации</p>
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    onClick={() => !isFetchingContent && refetch()}
+                    disabled={isFetchingContent}
+                  >
+                    {isFetchingContent ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                    Повторить
+                  </Button>
+                </div>
+              ) : isLoadingContent ? (
+                <div className="p-6 text-center">
+                  <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2" />
+                  <p>{t('common.loading')}</p>
+                </div>
+              ) : (
+                <>
+                  {getUniquePostsForDay(selectedDate).length > 0 ? (
+                    <div className="grid gap-3">
+                      {getUniquePostsForDay(selectedDate).map(renderPostCard)}
+                    </div>
+                  ) : (
+                    <div className="text-center py-12 text-muted-foreground">
+                      <p>{t('publishing.published.noPublished')}</p>
+                      <p className="text-sm mt-2">{t('publishing.published.showOnly')}</p>
+                    </div>
+                  )}
+                </>
+              )}
               </div>
             </div>
 
             {/* Секция «Опубликованные (без даты)» */}
-            {!isLoadingContent && getUndatedPublishedPosts().length > 0 && (
+            {isError ? (
+              <div className="mt-6 border-t pt-6 bg-destructive/5 p-4 rounded-lg border border-destructive/15">
+                <h3 className="font-medium text-lg mb-1">Опубликованные (без даты)</h3>
+                <p className="text-sm text-destructive font-medium mb-3">Не удалось загрузить публикации без даты</p>
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  onClick={() => !isFetchingContent && refetch()}
+                  disabled={isFetchingContent}
+                >
+                  {isFetchingContent ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                  Повторить
+                </Button>
+              </div>
+            ) : !isLoadingContent && getUndatedPublishedPosts().length > 0 ? (
               <div className="mt-6 border-t pt-6">
                 <h3 className="font-medium text-lg mb-1">Опубликованные (без даты)</h3>
                 <p className="text-sm text-muted-foreground mb-4">Посты, у которых не удалось определить дату публикации</p>
@@ -748,7 +775,7 @@ export default function Posts() {
                   {getUndatedPublishedPosts().map(renderPostCard)}
                 </div>
               </div>
-            )}
+            ) : null}
           </CardContent>
         </Card>
       )}

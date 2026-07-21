@@ -1,7 +1,7 @@
 # Конвергенция `services/social/` → `services/social-platforms/` — таблица «кто кого зовёт»
 
 **Дата:** 2026-07-20
-**Статус:** черновик анализа — требует ревью владельца перед merge в основную ветку работ
+**Статус:** черновик анализа — требует ревью владельца перед merge в основную ветку работ; обновлено 2026-07-21 (исход Task 10: telegram-proxy удалён, `social-platforms/base-service.ts` — живой)
 **Автор:** Kimi (промпт: `docs/prompts/kimi-convergence-table.md`)
 **Метод:** свежий `git grep` на 2026-07-20, сравнение публичных сигнатур (не тел).
 
@@ -12,12 +12,12 @@
 | `base-service.ts` (526 строк, `BaseSocialService` — fat helper base) | `social/` | Наследники: `social/telegram-service`, `social/instagram-service`, `social/vk-service`; тест `base-social-service.test.ts` | `social-platforms/base-service.ts` | **Расходящийся API**: старый — хелперы (`updatePublicationStatus`, `uploadImagesToImgur`, `processAdditionalImages`, `getSystemToken`), новый — минимальный абстрактный контракт | Требует ручного merge API; уходит вместе со старой иерархией |
 | `facebook.ts` (36 строк, `FacebookSocialService`) | `social/` | `social/index.ts` (фасад) | `social-platforms/facebook-service.ts` | **Шим**: тонкий адаптер над новым сервисом (`publish`, `updatePublicationStatus`) | Удалить дубль после переноса вызова в фасаде на `facebookService` напрямую |
 | `instagram-service.ts` (670 строк, `InstagramService`) | `social/` | `social/index.ts` | `social-platforms/instagram-service.ts` | **Расходящийся API**: `publishToInstagram`/`formatTextForInstagram` vs `publishPost`/`sanitizeText`/`waitForContainer`/`proxyImage`. Одинаковое имя инстанса `instagramService` | Удалить дубль после переноса вызовов (маппинг методов) |
-| `telegram-proxy-service.ts` (613 строк) | `social/` | **НИКТО** (ни статически, ни динамически; `TelegramProxyService` не встречается вне файла) | нет | Dead code | Кандидат на удаление (подтвердить владельцем) |
+| `telegram-proxy-service.ts` (613 строк) | `social/` | **НИКТО** (ни статически, ни динамически; `TelegramProxyService` не встречается вне файла) | нет | ~~Dead code~~ **Удалён 2026-07-21** (Task 10, подтверждено владельцем) | Удалён |
 | `telegram-s3-integration.ts` (280 строк) | `social/` | `social/telegram-service.ts` | нет (в новой TG-сервис проксирует медиа через Cloudinary) | Уникален, связан со старым TG | Уходит вместе со старым `telegram-service`; до этого не трогать |
 | `telegram-service.ts` (1529 строк, `TelegramService`) | `social/` | `social/index.ts`; `social-publishing.ts` (→ `routes/content.ts`, `routes/social.ts`); `api/test-routes-last-telegram.ts`; `telegram-legacy-format.test.ts` | `social-platforms/telegram-service.ts` | **Расходящийся API**: `publishToTelegram`/`formatTextForTelegram`/`sendImagesToTelegram`/`getChatInfo` vs `publishPost`/`deletePost`/`sanitizeText`. **Оба** форматируют через shared `utils/telegram-html` — мост уже есть. Одинаковое имя инстанса `telegramService` | Требует ручного merge API; удалять после перевода `social-publishing.ts` и фасада |
 | `vk-service.ts` (510 строк, `VkService`) | `social/` | `social/index.ts` | `social-platforms/vk-service.ts` | **Расходящийся API**: `publishToVk`/`formatTextForVk` vs `publishPost`/`doWallPost`/`uploadPhoto`/`uploadVideo`/`autoDetectGroupId`; `VK_DEFAULT_APP_ID` только в новом. Одинаковое имя инстанса `vkService` | Удалить дубль после переноса вызовов |
 | `index.ts` (256 строк, фасад `socialPublishingService`) | `social/` | `api/clips-publishing-router.ts`, `api/publishing-routes.ts`, `publish-scheduler.ts:1640` (dynamic); моки в 2 тестах | Функционально — `api/social-publishing-router.ts` (новый роут-уровень) | Фасад легаси-пути; **уже частично на новой иерархии** (`threads`, `youtube`, `youtube-video` статически; `instagram-stories` динамически). **Содержит битый dynamic import `./social-platforms/youtube-shorts-service` (:126)** — такого файла нет, нужен `../` | Фасад — мигрировать вызовы на новый роутер/сервисы, затем удалить; битый импорт — см. «Открытые вопросы» |
-| `base-service.ts` (27 строк, абстрактный контракт) | `social-platforms/` | **НИКТО** | `social/base-service.ts` | **Расходящийся API** + dead code | Удалить как dead, либо сделать реальным контрактом при конвергенции (решение владельца) |
+| `base-service.ts` (27 строк, абстрактный контракт) | `social-platforms/` | **Живой** (проверено 2026-07-21, Task 10): 6 потребителей — 3 наследника `youtube-service` / `tiktok-service` / `vk-clips-service` (`extends BaseSocialService`); `vk-stories` / `instagram-reels` / `facebook` используют `TokenValidationResult` | `social/base-service.ts` | **Расходящийся API**; ~~dead code~~ — контракт новой иерархии, целевая сторона конвергенции (по `kimi-convergence-table.md:38`) | Оставить — снят из dead-code кандидатов 2026-07-21 |
 | `facebook-service.ts` (880 строк) | `social-platforms/` | `api/facebook-webhook-unified.ts`, `api/social-publishing-router.ts`, `publish-scheduler.ts`, `status-validator.ts` | `social/facebook.ts` (шим) | Цель конвергенции | Уникален — оставить |
 | `instagram-reels-service.ts` | `social-platforms/` | `api/clips-publishing-router.ts`, `publish-scheduler.ts`, `status-validator.ts` | нет | Уникален | Уникален — оставить |
 | `instagram-service.ts` (327 строк) | `social-platforms/` | `api/social-publishing-router.ts` (×2), `publish-scheduler.ts` | `social/instagram-service.ts` | Цель конвергенции | Уникален — оставить |
@@ -64,9 +64,11 @@
    `./social-platforms/` → `../social-platforms/` отдельным маленьким
    коммитом (или закрыть переводом youtube-ветки фасада на новый сервис).
    Не ждёт остальные шаги — это прод-баг, см. «Открытые вопросы».
-3. **Dead code.** Удалить `social/telegram-proxy-service.ts` (613 строк,
-   ноль импортёров) и `social-platforms/base-service.ts` (27 строк, ноль
-   импортёров) — после подтверждения владельца. Один коммит, нулевой риск.
+3. **Dead code — закрыто 2026-07-21 (Task 10, подтверждено владельцем).**
+   `social/telegram-proxy-service.ts` (613 строк, ноль импортёров) —
+   **удалён**. `social-platforms/base-service.ts` (27 строк) — **снят из
+   кандидатов: живой** (6 потребителей, 3 наследника), целевая сторона
+   конвергенции.
 4. **VK + Instagram.** Перевести фасад на новые сервисы через тонкий
    адаптер, сохраняющий наружный контракт фасада (`publishToVk` →
    `publishPost`, `publishToInstagram` → `publishPost`; форматирование
@@ -99,8 +101,9 @@
    легаси-заготовки? От ответа зависит объём шага 5.
 3. `api/test-routes-last-telegram.ts` — тестовый роут, зовёт старый TG
    напрямую. Нужен ли в проде?
-4. `social/telegram-proxy-service.ts` — dead по всем grep'ам. Подтвердить
-   удаление владельцем (613 строк).
+4. ~~`social/telegram-proxy-service.ts` — dead по всем grep'ам. Подтвердить
+   удаление владельцем (613 строк).~~ **Закрыто 2026-07-21:** удалён
+   (Task 10, подтверждено владельцем).
 5. Хелперы старого `base-service` (`updatePublicationStatus`,
    `uploadImagesToImgur`, `getSystemToken`) используются тремя старыми
    сервисами; при удалении старой иерархии убедиться, что эквиваленты есть

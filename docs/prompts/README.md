@@ -40,7 +40,7 @@
 | `codex-prod-analytics-scraper-dedup-2026-07-20.md` | **Codex: prod incident + SMM-side mitigation.** Scraper `/posts` и `/analytics` считают `post_metrics_history` snapshots как независимые посты (воспроизведено на `@ya_delayu_moschno` и VK `-228626989`). Upstream fix в scraper — вне репо. **SMM-side mitigation в `876403e`**: `getAllChannelPosts` + `aggregateLatestChannelPosts` dedup по `platform_post_id`+`captured_at`. Phase 0 для integration map закрыт на SMM-стороне. DO NOT FIX сохранён. Закоммичено Mavis как fallback в `395b692` (content by Codex), mitigation в `876403e`. | — |
 | `codex-bug-027-tracker-reconciliation-2026-07-20.md` | **Codex: reconciliation BUG-027.** Mavis'овский 18:17 search был incomplete — реальные fix'ы `5748268` (sanitize) + `85bc523` (preserve formatting) с явным regression test `cleans the exact DeepSeek VK artifact pattern reported by testers` в `server/__tests__/generated-social-content.test.ts` (8/8 passing). Не нужен новый Codex-таск. Sheet обновлён 18:57: R52 A=white + B:L=green. Mavis reconcile `state.json` (fix_commits + статус → `fix_in_git_awaiting_retest`) в `88a7ff7`. Закоммичено Mavis как fallback в `88a7ff7` (content by Codex). | — |
 | `codex-analytics-observability-follow-up-2026-07-20.md` | **Codex: production-diagnosis write-up для observability в `73cac1b`.** Подтверждено на `Чушь` (VK-only) и `omemo.tech` (все 6 платформ). Trace events: `campaign_plan` / `channel_resolution_start` / `channel_response_summary` / `channel_included` / `channel_skipped` / `campaign_result`. Deliberately не сериализует settings, токены, заголовки, post content. **🚨 Содержит отдельный urgent security follow-up: pre-existing YouTube settings log эмитит OAuth access/refresh токены в production logs.** Не фиксить вместе с observability — отдельный коммит + ротация credentials. Закоммичено Mavis как fallback в `9a54acb` (content by Codex). | — |
-| `kimi-task10-evidence-2026-07-21.md` | **Kimi: детальная проверка dead-code кандидатов Task 10.** `social/telegram-proxy-service.ts` (613 строк) — DEAD ✅, доказуемо ноль импортов, битый импорт типов из несуществующего `'../../../shared/types'`, единственный initial commit, функциональность поглощена `telegram-s3-integration.ts`. `social-platforms/base-service.ts` (27 строк) — НЕ мёртвый ❌, 6 живых потребителей, целевая сторона конвергенции. **Ожидает решения владельца:** подтвердить удаление telegram-proxy-service + правка `KNOWN_DEAD` + каскадная проверка `media-proxy-service.ts`; согласиться со снятием base-service из Task 10 + правка 3 docs (convergence-table, session, README). Закоммичено Mavis как fallback. | — |
+| `kimi-task10-evidence-2026-07-21.md` | **Kimi: детальная проверка dead-code кандидатов Task 10.** `social/telegram-proxy-service.ts` (613 строк) — DEAD ✅, доказуемо ноль импортов, битый импорт типов из несуществующего `'../../../shared/types'`, единственный initial commit, функциональность поглощена `telegram-s3-integration.ts`. `social-platforms/base-service.ts` (27 строк) — НЕ мёртвый ❌, 6 живых потребителей, целевая сторона конвергенции. **Решение владельца получено 2026-07-21:** telegram-proxy-service удалён (Task 10), base-service снят из кандидатов (живой); docs обновлены. Каскадная проверка `media-proxy-service.ts` — следующий кандидат, отдельно. Закоммичено Mavis как fallback. | — |
 
 ## Роли
 
@@ -124,14 +124,13 @@
   `persistAnalyticsChannelId` (GET→PATCH fire-and-forget, ставка —
   токены). **Не раздавать** до решения владельца о выносе поля
   из JSON. См. `review-follow-ups-2026-07-20.md`.
-- **Task 10 (новое, из конвергенции, evidence собран Kimi 2026-07-21)**
-  — `social/telegram-proxy-service.ts` (613 строк, не вызывается
-  никем) — DEAD, доказуемо; ожидает подтверждения владельца на
-  удаление + каскадная проверка `media-proxy-service.ts`.
-  `social-platforms/base-service.ts` (27 строк) — **НЕ мёртвый**,
-  снять из Task 10, обновить `docs/platform-convergence-table.md`
-  + `docs/session-2026-07-20.md` + этот README. См.
-  `kimi-task10-evidence-2026-07-21.md`.
+- **Task 10 — ✅ ЗАКРЫТ 2026-07-21 (подтверждено владельцем)**
+  — `social/telegram-proxy-service.ts` (613 строк, не вызывался
+  никем) доказан мёртвым и **удалён**. `social-platforms/base-service.ts`
+  (27 строк) — **живой, снят из кандидатов** (6 потребителей,
+  3 наследника, целевая сторона конвергенции). Документы обновлены:
+  `docs/platform-convergence-table.md`, `docs/session-2026-07-20.md`,
+  этот README. См. `kimi-task10-evidence-2026-07-21.md`.
 - **Конвергенция `services/social/` → `services/platforms/`.**
   Кими сделал таблицу `docs/platform-convergence-table.md` (`8167b72`).
   Реальное сведение иерархий — после утверждения плана миграции.

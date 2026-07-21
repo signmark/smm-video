@@ -60,7 +60,7 @@ describe('AnalyticsService scraper supplementation', () => {
     else process.env.DIRECTUS_ADMIN_TOKEN = previousAdminToken;
   });
 
-  it('uses current channel aggregates without double-counting stored metrics', async () => {
+  it('does not replace campaign metrics with unattributed channel aggregates', async () => {
     vi.mocked(directusApi.get).mockResolvedValue({
       data: {
         data: [{
@@ -106,17 +106,31 @@ describe('AnalyticsService scraper supplementation', () => {
     const result = await AnalyticsService.getCampaignAnalytics('campaign-1', 'thisMonth', 'user-token');
 
     expect(result.totalPosts).toBe(2);
-    expect(result.totalViews).toBe(30);
-    expect(result.totalLikes).toBe(3);
-    expect(result.totalComments).toBe(1);
+    expect(result.totalViews).toBe(12);
+    expect(result.totalLikes).toBe(2);
+    expect(result.totalComments).toBe(0);
     expect(result.platforms).toEqual(expect.arrayContaining([
-      expect.objectContaining({ name: 'vk', posts: 1, views: 10 }),
-      expect.objectContaining({ name: 'telegram', posts: 1, views: 20 }),
+      expect.objectContaining({ name: 'vk', posts: 1, views: 5 }),
+      expect.objectContaining({ name: 'telegram', posts: 1, views: 7 }),
     ]));
   });
 
-  it('deduplicates channel snapshots by post id and keeps the latest capture', async () => {
-    vi.mocked(directusApi.get).mockResolvedValue({ data: { data: [] } } as any);
+  it('matches campaign post ids, excludes other channel posts, and keeps the latest snapshot', async () => {
+    vi.mocked(directusApi.get).mockResolvedValue({
+      data: {
+        data: [{
+          id: 'content-1',
+          status: 'published',
+          social_platforms: {
+            telegram: {
+              status: 'published',
+              postId: 'post-1',
+              publishedAt: '2026-07-15T09:00:00.000Z',
+            },
+          },
+        }],
+      },
+    } as any);
     vi.mocked(axios.get).mockResolvedValue({
       data: {
         data: {
@@ -174,17 +188,91 @@ describe('AnalyticsService scraper supplementation', () => {
       'user-token',
     );
 
-    expect(result.totalPosts).toBe(2);
-    expect(result.totalViews).toBe(35);
-    expect(result.totalLikes).toBe(3);
+    expect(result.totalPosts).toBe(1);
+    expect(result.totalViews).toBe(15);
+    expect(result.totalLikes).toBe(2);
     expect(result.platforms).toEqual([
       expect.objectContaining({
         name: 'telegram',
-        posts: 2,
-        views: 35,
-        likes: 3,
+        posts: 1,
+        views: 15,
+        likes: 2,
       }),
     ]);
+  });
+
+  it('counts only four July 13 campaign publications instead of all thirteen channel posts', async () => {
+    // Production regression 2026-07-21, campaign "Чушь": Directus contained
+    // VK posts 1811-1814, while channel-level scraper data contained 13 posts.
+    vi.setSystemTime(new Date('2026-07-21T12:00:00.000Z'));
+    vi.mocked(directusApi.get).mockResolvedValue({
+      data: {
+        data: ['1811', '1812', '1813', '1814'].map(postId => ({
+          id: `content-${postId}`,
+          status: 'published',
+          social_platforms: {
+            vk: {
+              status: 'published',
+              postId,
+              postUrl: `https://vk.com/wall-228626989_${postId}`,
+              publishedAt: '2026-07-13T07:00:00.000Z',
+            },
+          },
+        })),
+      },
+    } as any);
+    vi.mocked(axios.get).mockResolvedValue({
+      data: {
+        data: {
+          social_media_settings: { vk: { groupId: '-228626989' } },
+        },
+      },
+    } as any);
+    vi.mocked(getChannelAnalytics).mockResolvedValue({
+      total_posts: 13,
+      total_views: 36,
+      total_likes: 0,
+      total_comments: 0,
+      total_shares: 0,
+    } as any);
+    vi.mocked(getAllChannelPosts).mockResolvedValue([
+      ...['1811', '1812', '1813', '1814'].map((postId, index) => ({
+        platform_post_id: `-228626989_${postId}`,
+        captured_at: '2026-07-21T09:00:00.000Z',
+        views: index + 1,
+        likes: 0,
+        comments: 0,
+        shares: 0,
+      })),
+      ...Array.from({ length: 9 }, (_, index) => ({
+        platform_post_id: `-228626989_${1900 + index}`,
+        captured_at: '2026-07-21T09:00:00.000Z',
+        views: 100,
+        likes: 10,
+        comments: 5,
+        shares: 2,
+      })),
+    ] as any);
+
+    const month = await AnalyticsService.getCampaignAnalytics(
+      'campaign-chush',
+      'thisMonth',
+      'user-token',
+    );
+    const sevenDays = await AnalyticsService.getCampaignAnalytics(
+      'campaign-chush',
+      '7days',
+      'user-token',
+    );
+
+    expect(month.totalPosts).toBe(4);
+    expect(month.totalViews).toBe(10);
+    expect(month.platforms).toEqual([
+      expect.objectContaining({ name: 'vk', posts: 4, views: 10 }),
+    ]);
+    expect(sevenDays.totalPosts).toBe(0);
+    expect(sevenDays.totalViews).toBe(0);
+    expect(sevenDays.platforms).toEqual([]);
   });
 
   it('keeps stored metrics when the scraper has no data for the period', async () => {
@@ -400,7 +488,7 @@ describe('AnalyticsService scraper supplementation', () => {
     );
     expect(getChannelAnalytics).toHaveBeenCalledWith('stale-uuid', expect.any(Object));
     expect(getChannelAnalytics).toHaveBeenCalledWith('fresh-uuid', expect.any(Object));
-    expect(result.totalViews).toBe(42);
+    expect(result.totalViews).toBe(1);
   });
 
   it('logs safe campaign decisions and scraper response summaries', async () => {
@@ -468,24 +556,19 @@ describe('AnalyticsService scraper supplementation', () => {
       expect.objectContaining({
         event: 'channel_skipped',
         platform: 'telegram',
-        reason: 'no_scraper_response',
+        reason: 'no_post_level_attribution',
       }),
       expect.objectContaining({
         event: 'channel_response_summary',
         platform: 'vk',
         analyticsReceived: true,
-        source: 'analytics_fallback',
-        metrics: {
-          posts: 2,
-          views: 12,
-          likes: 1,
-          comments: 0,
-          shares: 0,
-        },
+        source: null,
+        metrics: null,
       }),
       expect.objectContaining({
-        event: 'channel_included',
+        event: 'channel_skipped',
         platform: 'vk',
+        reason: 'no_post_level_attribution',
       }),
     ]));
 

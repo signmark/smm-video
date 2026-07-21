@@ -3,6 +3,8 @@ import { log } from '../utils/logger';
 import axios from 'axios';
 import {
   aggregatePublishedPlatformAnalytics,
+  getPublishedPlatformPostIds,
+  matchesPublishedPlatformPostId,
 } from './analytics-aggregation';
 import type { ChannelPost } from './scraper-analytics';
 
@@ -168,7 +170,7 @@ export class AnalyticsService {
       // Дополняем метрики из скрейпера (агрегированные по каналу)
       try {
         await AnalyticsService.supplementFromScraper(
-          campaignId, dateFrom, now, platformStatsMap,
+          campaignId, dateFrom, now, posts, platformStatsMap,
         );
         const platformStats = Array.from(platformStatsMap.values());
         totalPosts = platformStats.reduce((sum, stats) => sum + stats.posts, 0);
@@ -221,6 +223,7 @@ export class AnalyticsService {
     campaignId: string,
     fromDate: Date,
     toDate: Date,
+    publishedContent: any[],
     platformStatsMap: Map<string, any>,
   ): Promise<void> {
     const adminToken = process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN || '';
@@ -366,17 +369,22 @@ export class AnalyticsService {
           ]);
         }
       }
-      const currentMetrics = channelPosts
-        ? aggregateLatestChannelPosts(channelPosts)
-        : analytics && {
-            posts: analytics.total_posts == null
-              ? metric(platformStatsMap.get(ch.platform)?.posts)
-              : metric(analytics.total_posts),
-            views: metric(analytics.total_views),
-            likes: metric(analytics.total_likes),
-            comments: metric(analytics.total_comments),
-            shares: metric(analytics.total_shares),
-          };
+
+      // Channel analytics includes every post in the connected channel, including
+      // manual and foreign posts. Campaign analytics may only use scraper rows whose
+      // platform_post_id belongs to a confirmed publication of this campaign.
+      const expectedPostIds = getPublishedPlatformPostIds(
+        publishedContent,
+        ch.platform,
+        fromDate,
+        toDate,
+      );
+      const matchedChannelPosts = channelPosts?.filter(post => (
+        matchesPublishedPlatformPostId(expectedPostIds, post.platform_post_id)
+      )) ?? null;
+      const currentMetrics = matchedChannelPosts
+        ? aggregateLatestChannelPosts(matchedChannelPosts)
+        : null;
       const responseSummary = {
         campaignId,
         platform: ch.platform,
@@ -385,14 +393,12 @@ export class AnalyticsService {
         analyticsReceived: Boolean(analytics),
         postsReceived: Boolean(channelPosts),
         postRows: channelPosts?.length ?? null,
-        uniquePosts: channelPosts
-          ? aggregateLatestChannelPosts(channelPosts).posts
+        expectedCampaignPostIds: expectedPostIds.size,
+        matchedPostRows: matchedChannelPosts?.length ?? null,
+        uniquePosts: matchedChannelPosts
+          ? aggregateLatestChannelPosts(matchedChannelPosts).posts
           : null,
-        source: channelPosts
-          ? 'posts_dedup'
-          : analytics
-            ? 'analytics_fallback'
-            : null,
+        source: matchedChannelPosts ? 'campaign_posts_dedup' : null,
         metrics: currentMetrics || null,
       };
       logAnalyticsTrace('channel_response_summary', responseSummary);
@@ -402,7 +408,7 @@ export class AnalyticsService {
           campaignId,
           platform: ch.platform,
           scraperChannelId,
-          reason: 'no_scraper_response',
+          reason: channelPosts ? 'no_campaign_post_match' : 'no_post_level_attribution',
         });
         continue;
       }
@@ -445,7 +451,8 @@ export class AnalyticsService {
         comments: 0,
         shares: 0,
       };
-      stats.posts = currentMetrics.posts;
+      // Directus publications are authoritative for the count. Scraper rows only
+      // enrich engagement metrics for matching platform post IDs.
       stats.views = currentMetrics.views;
       stats.likes = currentMetrics.likes;
       stats.comments = currentMetrics.comments;

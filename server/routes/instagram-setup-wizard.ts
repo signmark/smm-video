@@ -2,6 +2,7 @@ import express from 'express';
 import axios from 'axios';
 import { log } from '../utils/logger';
 import { GlobalApiKeysService } from '../services/global-api-keys';
+import { directusApiManager } from '../directus';
 
 const router = express.Router();
 

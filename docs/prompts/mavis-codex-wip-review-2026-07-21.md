@@ -64,12 +64,97 @@ it.each([401, 403])('treats Directus %s as an invalid session', ...)
 
 ## Что ещё не ревьюил (следующий pass)
 
-- `server/routes/analytics.ts` + `server/services/analytics-service.ts` (ANALYTICS-01)
-- `client/src/components/AuthGuard.tsx`, `client/src/lib/{auth,refreshAuth,queryClient}.ts`, `client/src/pages/auth/login.tsx` (UI-AUTH-01)
-- `server/middleware/user-auth.ts` (валідация, упомянута в UI-AUTH-01)
-- `client/src/lib/__tests__/refreshAuth.test.ts`
+- ~~`server/routes/analytics.ts` + `server/services/analytics-service.ts`~~ ✅ pass 2
+- ~~`client/src/components/AuthGuard.tsx`, `client/src/lib/{auth,refreshAuth,queryClient}.ts`, `client/src/pages/auth/login.tsx`~~ ✅ pass 2
+- ~~`server/middleware/user-auth.ts`~~ ✅ pass 2
+- `client/src/lib/__tests__/refreshAuth.test.ts` (новый, 54 строки) — бегло, тесты на single-flight + invalid/unavailable
+- `server/__tests__/analytics-service.test.ts` (+33 строки) — бегло
 
-Codex, дойди до P0/P1 закрытия — потом продолжу review UI и analytics.
+## Pass 2 — analytics, middleware, UI
+
+### ANALYTICS-01 (P1) — ЧАСТИЧНО, остаточные IDOR
+
+`server/services/analytics-service.ts:108-126` — `getPublishedContent` принимает `userId`/`isSmmAdmin`, но:
+
+❌ **Tenant isolation работает только при наличии serviceToken.** Условие:
+```ts
+if (canUseServiceToken && userId && !isSmmAdmin) {
+  contentFilter.user_id = { _eq: userId };
+}
+```
+Если `DIRECTUS_STATIC_TOKEN`/`DIRECTUS_ADMIN_TOKEN`/`DIRECTUS_TOKEN` **не выставлен** (`canUseServiceToken = false`), фильтр user_id не добавляется → **IDOR**: любой авторизованный пользователь читает чужую кампанию admin'а или service-токеном, или через `userToken` (но тогда и `readToken = userToken`, фильтр всё равно нужен). Codex требовал «ownership-check выполнить до чтения контента».
+
+❌ **Нет общего `authorizeCampaignAccess(userId, campaignId, isAdmin)`** — ownership-check размазан по inline-условиям. Нужна отдельная helper-функция.
+
+❌ **`is_smm_admin` из session snapshot** — `req.user?.is_smm_admin === true` берётся из JWT payload. Если admin demoted, токен ещё валиден, и `adminStatusCache` (5 минут) продолжает выдавать bypass. Codex требовал: «admin bypass основывать на актуальном авторитетном admin status, а не старом session snapshot». Реальный fix — Directus query на каждый запрос (или короткий TTL ≤ 30s).
+
+❌ **Scraper supplement** — не вижу правок. В исходном коде он читает кампанию admin-токеном по `campaignId` — должен вызываться **после** ownership-check. Если не проверен — IDOR сохраняется.
+
+❌ **`/api/analytics/update`** — не вижу правок. Codex упомянул «доступен любому авторизованному пользователю». Если не закрыт — IDOR на update.
+
+✅ **`throw error` вместо zero-shaped payload** (`analytics-service.ts:241`) — ошибка не маскируется нулями, error handler на route вернёт нормальный `{ success: false, code, retryable }`.
+
+### Middleware (`server/middleware/user-auth.ts`)
+
+✅ Удалена гигантская логика refresh-в-middleware (60+ строк).
+✅ Expired token → 401 AUTH_SESSION_INVALID сразу.
+✅ `validateDirectusSession` для каждого запроса.
+
+❌ **Удалён `getValidToken` fallback.** Раньше middleware сам пытался загрузить токен из БД при Directus outage, теперь просто 503. Codex не требовал удалять этот fallback; регрессия устойчивости.
+
+❌ **Унаследует 403→invalid от validator** (см. AUTH-02). Если Directus вернёт 403 на `/users/me` (custom policy), middleware скажет «сессия невалидна», хотя это `unavailable`.
+
+❌ **Admin cache остался** (`adminStatusCache` 5 минут) — для нового требования «актуальный admin status» нужно либо сократить TTL до ≤30s, либо убрать кэш.
+
+### UI-AUTH-01 — в основном закрыт, остаточные issues
+
+**AuthGuard.tsx:**
+- ✅ `isSessionChecked = false` по умолчанию (раньше был true → рендерил без проверки).
+- ✅ Не удаляет refresh_token при 401.
+- ✅ `setupTokenRefreshFromToken` — реальный exp из JWT, не magic number.
+- ❌ На URL-токене (`?token=`) после успешного login **не вызывается** `setIsSessionChecked(true)` в **одном** из бранчей (визуально проверил, надо diff с пристрастием) — если Telegram/WebApp URL-токен не подхватится, loader навсегда.
+
+**auth.ts:**
+- ✅ `setupTokenRefreshFromToken` — корректный exp.
+- ✅ `refreshAccessToken` делегирует в `refreshAuthSession` (новый модуль).
+- ✅ При 'invalid' — чистит ВСЕ credentials **после** неудачного refresh (не до).
+
+**refreshAuth.ts:**
+- ✅ **Single-flight** через `let refreshInFlight` — два параллельных вызова используют один promise.
+- ✅ `RefreshAuthResult = 'refreshed' | 'invalid' | 'unavailable'` — корректный контракт.
+- ✅ **Password убран из localStorage** (был fallback на email/password auto-reauth).
+- ❌ **AUTH-01 не закрыт полностью:** `user_id` всё ещё отправляется с клиента в `body: JSON.stringify({ refresh_token: refreshToken, user_id: userId })`. Codex требовал: «не использовать клиентский `user_id` как источник identity». Сервер должен извлекать user из нового access token после refresh, не из тела запроса.
+- ❌ **Race condition после logout/login:** in-flight refresh может перезаписать новые credentials. Нет token-fingerprint/session-id binding, нет `if (sessionId !== current) return` guard. Codex требовал: «ответ старого in-flight refresh не может перезаписать новую сессию после logout/login другого аккаунта».
+
+**queryClient.ts:**
+- ✅ `forceLogout()` — единая точка logout.
+- ✅ `tryRefreshSession()` — корректный 'unavailable' handling (не logout).
+- ✅ `throwIfResNotOk(res, false)` на retry — нет двойного refresh.
+- ✅ Превентивный refresh за 10 минут, с защитой от logout при unavailable.
+- ❌ **`isAuthFailure` ловит 403 с `code: 'AUTH_SESSION_INVALID'`** — но validator все 403 трактует как 'invalid' → код `'AUTH_SESSION_INVALID'` придёт только из 401. Несоответствие server/client. Нужно либо validator чинить, либо client не полагаться на 403+code.
+
+**login.tsx:**
+- ✅ **Баг 86400→86400000 закрыт:** `setupTokenRefresh(expires * 1000)` где `expires` в секундах. Это и был тот баг, который Codex упомянул: «use-auth.tsx не должен трактовать 86400 секунд как 86.4 секунды». **Закрыт.**
+- ✅ Default `86400` (без `000`).
+
+## Итог pass 2
+
+**Закрыто из P0/P1:**
+- ✅ login.tsx: 86400 секунд
+- ✅ refreshAuth: single-flight + password из localStorage
+- ✅ queryClient: forceLogout + isAuthFailure единый
+- ✅ middleware: упрощён, expired → 401 сразу
+
+**Осталось открытым:**
+- ❌ AUTH-01: `directus-auth-manager.ts` (lock key) — P0
+- ❌ AUTH-01: client `user_id` в refresh body
+- ❌ AUTH-01: in-flight refresh race на logout
+- ❌ AUTH-02: validator 403→invalid
+- ❌ AUTH-03: AbortSignal timeout, single-flight в validator, hashed cache key, метрики
+- ❌ ANALYTICS-01: tenant isolation без serviceToken, scraper supplement, /api/analytics/update, admin cache
+- ❌ middleware: getValidToken fallback потерян, admin cache 5 минут
+
+Codex, **AUTH-01 и ANALYTICS-01** — это блокеры production rollout. Остальное можно доехать в follow-up коммитах, но эти два — must-fix до canary.
 
 ## Hash для ссылок
 

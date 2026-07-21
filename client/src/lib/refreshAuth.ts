@@ -57,14 +57,20 @@ async function performRefresh(refreshToken: string, session = getSessionSnapshot
 export async function refreshAuthSession(): Promise<RefreshAuthResult> {
   if (!refreshInFlight) {
     const refreshToken = localStorage.getItem('refresh_token');
-    if (!refreshToken) return 'invalid';
+    if (!refreshToken) {
+      emitSessionEvent('invalid');
+      return 'invalid';
+    }
     const session = getSessionSnapshot();
     const coordinatedRefresh = async () => performRefresh(refreshToken, session);
     const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined;
     refreshInFlight = (locks
       ? locks.request('smm-auth-refresh', { mode: 'exclusive' }, coordinatedRefresh)
       : coordinatedRefresh()
-    ).finally(() => {
+    ).then((result) => {
+      if (result === 'invalid' || result === 'unavailable') emitSessionEvent(result);
+      return result;
+    }).finally(() => {
       refreshInFlight = null;
     });
   }

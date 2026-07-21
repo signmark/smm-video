@@ -30,6 +30,7 @@ describe('refreshAuthSession', () => {
       setItem: (key: string, value: string) => values.set(key, value),
       removeItem: (key: string) => values.delete(key),
     });
+    vi.stubGlobal('window', { dispatchEvent: vi.fn() });
   });
 
   it('stores a refreshed access token and rotated refresh token', async () => {
@@ -51,6 +52,9 @@ describe('refreshAuthSession', () => {
 
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('network unavailable')));
     await expect(refreshAuthSession()).resolves.toBe('unavailable');
+    expect(window.dispatchEvent).toHaveBeenCalledTimes(2);
+    expect((window.dispatchEvent as any).mock.calls.map(([event]: [CustomEvent]) => event.detail.status))
+      .toEqual(['invalid', 'unavailable']);
   });
 
   it('deduplicates concurrent refresh attempts so a rotating token is used once', async () => {

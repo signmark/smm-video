@@ -1,6 +1,5 @@
 import { useAuthStore } from './store';
 import { decodeJwtPayload } from './jwt';
-import { emitSessionEvent } from './sessionCoordinator';
 
 let refreshTimeout: NodeJS.Timeout | null = null;
 let refreshInterval: NodeJS.Timeout | null = null;
@@ -83,11 +82,9 @@ export const refreshAccessToken = async (): Promise<string> => {
     localStorage.removeItem('auth_token');
     localStorage.removeItem('user_id');
     useAuthStore.getState().clearAuth();
-    emitSessionEvent('invalid');
     throw new Error('AUTH_SESSION_INVALID');
   }
   if (result === 'unavailable') {
-    emitSessionEvent('unavailable');
     throw new Error('AUTH_REFRESH_UNAVAILABLE');
   }
   if (result === 'superseded') {

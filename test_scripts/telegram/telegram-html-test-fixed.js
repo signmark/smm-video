@@ -13,7 +13,7 @@ const CONFIG = {
   apiUrl: 'http://localhost:5000',
   campaignId: '46868c44-c6a4-4bed-accf-9ad07bba790e', // ID тестовой кампании
   telegram: {
-    token: '7529101043:AAG298h0iubyeKPuZ-WRtEFbNEnEyqy_XJU',
+    token: 'REVOKED_TELEGRAM_TOKEN_USE_ENV',
     chatId: '-1002302366310'
   }
 };

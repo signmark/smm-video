@@ -8,7 +8,7 @@ import * as dotenv from 'dotenv';
 dotenv.config();
 
 // Настройки Telegram
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '7529101043:AAG298h0iubyeKPuZ-WRtEFbNEnEyqy_XJU';
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || 'REVOKED_TELEGRAM_TOKEN_USE_ENV';
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID || '-1002302366310';
 
 // Функция для логирования в консоль

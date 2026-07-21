@@ -20,7 +20,7 @@ const CAMPAIGN_ID = process.env.CAMPAIGN_ID || '46868c44-c6a4-4bed-accf-9ad07bba
 // Хранилище для настроек, полученных из кампании
 let settings = {
   telegram: {
-    token: process.env.TELEGRAM_BOT_TOKEN || '7529101043:AAG298h0iubyeKPuZ-WRtEFbNEnEyqy_XJU',
+    token: process.env.TELEGRAM_BOT_TOKEN || 'REVOKED_TELEGRAM_TOKEN_USE_ENV',
     chatId: process.env.TELEGRAM_CHAT_ID || '-1002302366310'
   }
 };

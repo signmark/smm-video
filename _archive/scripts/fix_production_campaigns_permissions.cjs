@@ -13,9 +13,9 @@ async function getAdminToken() {
     
     // Пробуем разные варианты админа
     const adminVariants = [
-      { email: 'admin@nplanner.ru', password: 'QtpZ3dh7' },
-      { email: 'lbrspb@gmail.com', password: 'QtpZ3dh7' },
-      { email: 'admin@roboflow.tech', password: 'QtpZ3dh7' }
+      { email: 'admin@nplanner.ru', password: 'CHANGE_ME' },
+      { email: 'lbrspb@gmail.com', password: 'CHANGE_ME' },
+      { email: 'admin@roboflow.tech', password: 'CHANGE_ME' }
     ];
     
     for (const admin of adminVariants) {
@@ -163,7 +163,7 @@ async function main() {
     console.log('Получение пользовательского токена для тестирования...');
     const userResponse = await axios.post(`${PRODUCTION_URL}/auth/login`, {
       email: 'lbrspb@gmail.com',
-      password: 'QtpZ3dh7'
+      password: 'CHANGE_ME'
     });
     
     const userToken = userResponse.data.data.access_token;

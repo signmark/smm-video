@@ -6,7 +6,7 @@ import axios from 'axios';
 
 const DIRECTUS_URL = 'https://directus.roboflow.tech';
 const ADMIN_EMAIL = 'lbrspb@gmail.com';
-const ADMIN_PASSWORD = 'QtpZ3dh7';
+const ADMIN_PASSWORD = 'CHANGE_ME';
 
 async function updateGlobalApiKeysInterface() {
   try {

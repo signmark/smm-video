@@ -11,7 +11,7 @@ const CONFIG = {
   directusUrl: 'https://directus.nplanner.ru',
   credentials: {
     email: 'lbrspb@gmail.com',
-    password: 'QtpZ3dh7'
+    password: 'CHANGE_ME'
   },
   authToken: null, // Будет получен автоматически
   campaignId: '46868c44-c6a4-4bed-accf-9ad07bba790e',

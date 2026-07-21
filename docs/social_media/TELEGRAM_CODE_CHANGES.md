@@ -247,7 +247,7 @@ testRouter.post('/telegram-video', async (req: Request, res: Response) => {
     log(`[Test API] Chat ID: ${chatId}`, 'test');
     
     // Используем токен из запроса или из переменных окружения
-    const botToken = token || process.env.TELEGRAM_BOT_TOKEN || '7529101043:AAG298h0iubyeKPuZ-WRtEFbNEnEyqy_XJU';
+    const botToken = token || process.env.TELEGRAM_BOT_TOKEN || 'REVOKED_TELEGRAM_TOKEN_USE_ENV';
     
     // Получаем экземпляр сервиса TelegramS3Integration
     const { telegramS3Integration } = require('../services/social/telegram-s3-integration');
@@ -300,7 +300,7 @@ testRouter.post('/telegram-content-video', async (req: Request, res: Response) =
     log(`[Test API] Запрос на отправку контента с видео в Telegram`, 'test');
     
     // Используем токен из запроса или из переменных окружения
-    const botToken = token || process.env.TELEGRAM_BOT_TOKEN || '7529101043:AAG298h0iubyeKPuZ-WRtEFbNEnEyqy_XJU';
+    const botToken = token || process.env.TELEGRAM_BOT_TOKEN || 'REVOKED_TELEGRAM_TOKEN_USE_ENV';
     
     // Создаем тестовый контент с видео
     const testContent = {

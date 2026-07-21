@@ -14,8 +14,8 @@ const __dirname = dirname(__filename);
 // Настройки подключения
 const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
 const adminEmail = process.env.DIRECTUS_ADMIN_EMAIL || 'lbrspb@gmail.com';
-const adminPassword = process.env.DIRECTUS_ADMIN_PASSWORD || 'QtpZ3dh7';
-const adminToken = process.env.DIRECTUS_ADMIN_TOKEN || 'zQJK4b84qrQeuTYS2-x9QqpEyDutJGsb';
+const adminPassword = process.env.DIRECTUS_ADMIN_PASSWORD;
+const adminToken = process.env.DIRECTUS_ADMIN_TOKEN;
 
 /**
  * Логирование с поддержкой записи в файл
@@ -39,7 +39,7 @@ async function addAdditionalMediaField() {
     
     // Используем токен администратора из env
     log('Использование административного токена из переменных окружения...');
-    // Уже определен в настройках выше: const adminToken = process.env.DIRECTUS_ADMIN_TOKEN || 'zQJK4b84qrQeuTYS2-x9QqpEyDutJGsb';
+    // Admin token is provided only through DIRECTUS_ADMIN_TOKEN.
     log('Административный токен получен успешно');
     
     // Проверяем наличие поля в схеме

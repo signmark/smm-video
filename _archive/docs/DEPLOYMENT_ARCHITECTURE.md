@@ -9,13 +9,13 @@
 ### 1. Development (Replit)
 - **URL**: `*.replit.dev` (динамический)
 - **Directus**: `https://directus.roboflow.tech`
-- **Администратор**: `admin@roboflow.tech` / `QtpZ3dh7`
+- **Администратор**: `admin@roboflow.tech` / `CHANGE_ME`
 - **Назначение**: Разработка и тестирование
 
 ### 2. Production (VPS сервер)
 - **URL**: `https://smm.omemo.tech`
 - **Directus**: `https://directus.nplanner.ru`
-- **Администратор**: `lbrspb@gmail.com` / `QtpZ3dh7`
+- **Администратор**: `lbrspb@gmail.com` / `CHANGE_ME`
 - **Назначение**: Продакшн для клиентов
 
 ## Автоматическое определение среды
@@ -73,7 +73,7 @@ async function getServerConfig() {
 ```
 DIRECTUS_URL=https://directus.roboflow.tech
 DIRECTUS_ADMIN_EMAIL=admin@roboflow.tech
-DIRECTUS_ADMIN_PASSWORD=QtpZ3dh7
+DIRECTUS_ADMIN_PASSWORD=CHANGE_ME
 VITE_DIRECTUS_URL=https://directus.roboflow.tech
 ```
 
@@ -81,7 +81,7 @@ VITE_DIRECTUS_URL=https://directus.roboflow.tech
 ```
 DIRECTUS_URL=https://directus.nplanner.ru
 DIRECTUS_ADMIN_EMAIL=lbrspb@gmail.com
-DIRECTUS_ADMIN_PASSWORD=QtpZ3dh7
+DIRECTUS_ADMIN_PASSWORD=CHANGE_ME
 VITE_DIRECTUS_URL=https://directus.nplanner.ru
 ```
 

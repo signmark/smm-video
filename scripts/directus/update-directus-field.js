@@ -15,7 +15,7 @@ dotenv.config();
 // Получаем настройки из .env
 const DIRECTUS_URL = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
 const ADMIN_EMAIL = process.env.DIRECTUS_ADMIN_EMAIL || 'lbrspb@gmail.com';
-const ADMIN_PASSWORD = process.env.DIRECTUS_ADMIN_PASSWORD || 'QtpZ3dh7';
+const ADMIN_PASSWORD = process.env.DIRECTUS_ADMIN_PASSWORD;
 
 /**
  * Логирование с поддержкой вывода в консоль и в файл

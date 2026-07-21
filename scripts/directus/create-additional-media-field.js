@@ -4,7 +4,7 @@
 import axios from 'axios';
 
 const DIRECTUS_URL = 'https://directus.nplanner.ru';
-const ADMIN_TOKEN = 'zQJK4b84qrQeuTYS2-x9QqpEyDutJGsb'; // Токен из env
+const ADMIN_TOKEN = 'REVOKED_DIRECTUS_TOKEN_USE_ENV'; // Токен из env
 
 async function createField() {
   console.log('Начинаем создание поля additional_media в коллекции campaign_content');

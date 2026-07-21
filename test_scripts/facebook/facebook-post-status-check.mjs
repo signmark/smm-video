@@ -14,7 +14,7 @@ async function checkFacebookPostStatus() {
     const apiVersion = 'v19.0'; // Версия API
     
     // Получаем токен доступа (из предыдущего успешного запроса)
-    const userAccessToken = 'EAA520SFRtvcBO9Y7LhiiZBqwsqdZCP9JClMUoJZCvjsSc8qs9aheLdWefOqrZBLQhe5T0ZBerS6mZAZAP6D4i8Ln5UBfiIyVEif1LrzcAzG6JNrhW2DJeEzObpp9Mzoh8tDZA9I0HigkLnFZCaJVZCQcGDAkZBRxwnVimZBdbvokeg19i5RuGTbfuFs9UC9R';
+    const userAccessToken = process.env.FACEBOOK_ACCESS_TOKEN;
     
     // Сначала получаем токен страницы
     console.log('Получение токена страницы...');

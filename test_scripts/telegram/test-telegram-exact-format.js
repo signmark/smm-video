@@ -6,7 +6,7 @@
 import axios from 'axios';
 
 // Настройки Telegram
-const token = '7529101043:AAG298h0iubyeKPuZ-WRtEFbNEnEyqy_XJU';
+const token = 'REVOKED_TELEGRAM_TOKEN_USE_ENV';
 const chatId = '-1002302366310';
 
 // Проверяем отправку с HTML-тегами

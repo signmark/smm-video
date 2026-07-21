@@ -11,7 +11,7 @@ import { directusApiManager } from '../directus';
 // Добавляем учетные данные администратора Directus из переменных среды
 const DIRECTUS_URL = process.env.DIRECTUS_URL;
 const DIRECTUS_ADMIN_EMAIL = process.env.DIRECTUS_ADMIN_EMAIL || 'admin@nplanner.ru';
-const DIRECTUS_ADMIN_PASSWORD = process.env.DIRECTUS_ADMIN_PASSWORD || 'Qtpz3dh7';
+const DIRECTUS_ADMIN_PASSWORD = process.env.DIRECTUS_ADMIN_PASSWORD || '';
 const ADMIN_USER_ID = '53921f16-f51d-4591-80b9-8caa4fde4d13'; // ID администратора
 const CAMPAIGN_ID = '46868c44-c6a4-4bed-accf-9ad07bba790e'; // ID кампании для работы
 

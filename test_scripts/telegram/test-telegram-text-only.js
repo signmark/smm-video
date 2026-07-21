@@ -5,7 +5,7 @@
 
 import axios from 'axios';
 
-const API_TOKEN = "7529101043:AAG298h0iubyeKPuZ-WRtEFbNEnEyqy_XJU"; // Тестовый токен
+const API_TOKEN = "REVOKED_TELEGRAM_TOKEN_USE_ENV"; // Тестовый токен
 const CHAT_ID = "-1002302366310"; // Тестовый чат
 
 // Функция для логирования

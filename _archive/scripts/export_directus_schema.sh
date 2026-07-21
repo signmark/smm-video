@@ -9,7 +9,7 @@ POSTGRES_HOST="localhost"
 POSTGRES_PORT="5432"
 POSTGRES_USER="postgres"
 POSTGRES_DB="directus"
-POSTGRES_PASSWORD="QtpZ3dh7"
+POSTGRES_PASSWORD="CHANGE_ME"
 
 # Создать директорию для схемы
 SCHEMA_DIR="/root/directus_schema_$(date +%Y%m%d_%H%M%S)"
@@ -144,7 +144,7 @@ POSTGRES_HOST="localhost"
 POSTGRES_PORT="5432"
 POSTGRES_USER="postgres"
 POSTGRES_DB="directus"
-POSTGRES_PASSWORD="QtpZ3dh7"
+POSTGRES_PASSWORD="CHANGE_ME"
 
 # Проверить аргументы
 if [ $# -eq 0 ]; then

@@ -33,7 +33,7 @@ async function getAdminToken() {
     // Иначе авторизуемся и получаем новый токен
     const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
     const email = process.env.DIRECTUS_ADMIN_EMAIL || 'lbrspb@gmail.com';
-    const password = process.env.DIRECTUS_ADMIN_PASSWORD || 'QtpZ3dh7';
+    const password = process.env.DIRECTUS_ADMIN_PASSWORD || 'CHANGE_ME';
     
     const response = await fetch(`${directusUrl}/auth/login`, {
       method: 'POST',

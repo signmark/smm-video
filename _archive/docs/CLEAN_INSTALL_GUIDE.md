@@ -24,7 +24,7 @@ services:
     restart: always
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: QtpZ3dh7
+      POSTGRES_PASSWORD: CHANGE_ME
       POSTGRES_DB: directus
     volumes:
       - ./postgres:/var/lib/postgresql/data
@@ -44,7 +44,7 @@ services:
       DB_PORT: 5432
       DB_DATABASE: directus
       DB_USER: postgres
-      DB_PASSWORD: QtpZ3dh7
+      DB_PASSWORD: CHANGE_ME
       ADMIN_EMAIL: admin@roboflow.tech
       ADMIN_PASSWORD: admin123456
       PUBLIC_URL: http://localhost:8055

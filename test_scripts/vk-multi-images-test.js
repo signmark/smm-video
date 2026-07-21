@@ -9,7 +9,7 @@ import path from 'path';
 
 config();
 
-const VK_ACCESS_TOKEN = process.env.VK_ACCESS_TOKEN || "vk1.a.0jlmORGkgmds1qIB5btPIIuT1FZ8C_bkGpCcowI9Ml214neQFgVMiYEnePWq48txdx3D7oTtKbEvgnEifytkkyjv1FvooFsI0y_YYPX8Cw__525Tnqt_H7C9hEEdmsqHXExr4Q3DK7CL0quCvnhrhN368Ter9yFLe6buYgpnamBXwUx4yZnRJPdBVfnPmObtZRrXw7NaZJboCqAK8sXLEA";
+const VK_ACCESS_TOKEN = process.env.VK_ACCESS_TOKEN;
 const VK_GROUP_ID = process.env.VK_GROUP_ID || "club228626989";
 
 // Функция для загрузки изображения из файловой системы

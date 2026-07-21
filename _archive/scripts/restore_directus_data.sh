@@ -26,7 +26,7 @@ POSTGRES_HOST="localhost"
 POSTGRES_PORT="5432"
 POSTGRES_USER="postgres"
 POSTGRES_DB="directus"
-POSTGRES_PASSWORD="QtpZ3dh7"
+POSTGRES_PASSWORD="CHANGE_ME"
 
 echo "📍 Восстановление из файла: $BACKUP_FILE"
 echo "📍 База данных: $POSTGRES_DB"

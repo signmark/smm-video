@@ -65,7 +65,7 @@ async function runTest() {
     log('Начало теста Facebook webhook с видео');
     
     // Получаем токен Directus из переменных окружения
-    const adminToken = process.env.DIRECTUS_ADMIN_TOKEN || 'zQJK4b84qrQeuTYS2-x9QqpEyDutJGsb';
+    const adminToken = process.env.DIRECTUS_ADMIN_TOKEN || 'REVOKED_DIRECTUS_TOKEN_USE_ENV';
     
     // ID контента для публикации (должен содержать video_url)
     // В реальном сценарии нужно указать ID существующего контента с видео

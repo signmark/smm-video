@@ -22,6 +22,7 @@ export function sanitizeInstagramAccount(account: any) {
 
 const SECRET_KEYS = new Set([
   'token', 'accesstoken', 'refreshtoken', 'longlivedtoken', 'pageaccesstoken', 'usertoken',
+  'bottoken', 'telegrambottoken',
   'appsecret', 'clientsecret', 'password', 'apikey', 'apisecret',
 ]);
 

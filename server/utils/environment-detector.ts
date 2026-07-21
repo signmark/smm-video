@@ -43,7 +43,7 @@ export function detectEnvironment(): EnvironmentConfig {
 
   return {
     adminEmail: process.env.DIRECTUS_ADMIN_EMAIL || 'lbrspb@gmail.com',
-    adminPassword: process.env.DIRECTUS_ADMIN_PASSWORD || 'QtpZ3dh7',
+    adminPassword: process.env.DIRECTUS_ADMIN_PASSWORD || '',
     directusUrl,
     environment,
     logLevel,

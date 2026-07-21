@@ -31,7 +31,7 @@ testRouter.post('/telegram-emoji-html', async (req: Request, res: Response) => {
     const DEFAULT_CAMPAIGN_ID = '46868c44-c6a4-4bed-accf-9ad07bba790e';
     
     // Резервные тестовые настройки Telegram (используются, если не удается получить из кампании)
-    const FALLBACK_TELEGRAM_TOKEN = '7529101043:AAG298h0iubyeKPuZ-WRtEFbNEnEyqy_XJU';
+    const FALLBACK_TELEGRAM_TOKEN = 'REVOKED_TELEGRAM_TOKEN_USE_ENV';
     const FALLBACK_TELEGRAM_CHAT_ID = '-1002302366310';
     
     // Проверяем наличие обязательных параметров

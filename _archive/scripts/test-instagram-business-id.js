@@ -9,8 +9,8 @@ async function testInstagramBusinessIdFetch() {
   
   const testData = {
     campaignId: 'cb3757df-c684-4809-9b13-49862c108db8',
-    accessToken: 'EAAxKZAfikOYwBPMOziivyGpD0R9Pp90BUAZA5EzbOznZC5xIqZB4erxpWZCs3gixhLBtZCv4yEUYDYFe0fUkm9C30zKdDtZAd0aYASWXIYFIIcnBX85kQbf2vwpYQTPoSoJo2evxQZCh6Yfq7q6ItfAZCcjDBUOP4ZBjSNRZBwnyPhg7iGHZAU11QPRB2TAxEOj4SSs9', // Replace with actual token
-    userToken: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjUzOTIxZjE2LWY1MWQtNDU5MS04MGI5LThjYWE0ZmRlNGQxMyIsImVtYWlsIjoibGJyc3BiQGdtYWlsLmNvbSIsInJvbGUiOiIyODViZGU2OS0yZjA0LTRmM2YtOTg5Yy1mN2RmZWMzZGQ0MDUiLCJhcHBfYWNjZXNzIjp0cnVlLCJhZG1pbl9hY2Nlc3MiOnRydWUsImlhdCI6MTc1Mzg2MTkyMCwiZXhwIjoxNzUzODY1NTIwfQ.vgCKN_q12I72FGwYRDjEd6hGFEa5VBqEiZBSW9hQMTY' // Replace with actual user token
+    accessToken: process.env.INSTAGRAM_TOKEN,
+    userToken: process.env.DIRECTUS_USER_TOKEN,
   };
   
   try {

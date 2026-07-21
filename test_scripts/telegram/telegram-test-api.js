@@ -17,7 +17,7 @@ const CONFIG = {
   apiUrl: 'http://localhost:5000',
   // Проверенные настройки Telegram
   telegram: {
-    token: '7529101043:AAG298h0iubyeKPuZ-WRtEFbNEnEyqy_XJU',
+    token: 'REVOKED_TELEGRAM_TOKEN_USE_ENV',
     chatId: '-1002302366310'
   },
   // Задержка между запросами (мс)

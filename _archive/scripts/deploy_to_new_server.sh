@@ -25,8 +25,8 @@ cat > .env << 'EOL'
 # Directus configuration - production credentials
 DIRECTUS_URL=https://directus.roboflow.tech
 DIRECTUS_ADMIN_EMAIL=lbrspb@gmail.com
-DIRECTUS_ADMIN_PASSWORD=QtpZ3dh7
-DIRECTUS_DB_PASSWORD=QtpZ3dh7
+DIRECTUS_ADMIN_PASSWORD=CHANGE_ME
+DIRECTUS_DB_PASSWORD=CHANGE_ME
 VITE_DIRECTUS_URL=https://directus.roboflow.tech
 
 # Server configuration
@@ -38,7 +38,7 @@ DOCKER_ENV=true
 SESSION_SECRET=your-secure-session-secret-here
 
 # Database configuration
-DATABASE_URL=postgresql://postgres:QtpZ3dh7@localhost:5432/smm_db
+DATABASE_URL=postgresql://postgres:CHANGE_ME@localhost:5432/smm_db
 
 # API Keys - will be loaded from Directus Global API Keys
 EOL
@@ -59,7 +59,7 @@ services:
       - DOCKER_ENV=true
       - DIRECTUS_URL=https://directus.roboflow.tech
       - DIRECTUS_ADMIN_EMAIL=lbrspb@gmail.com
-      - DIRECTUS_ADMIN_PASSWORD=QtpZ3dh7
+      - DIRECTUS_ADMIN_PASSWORD=CHANGE_ME
     volumes:
       - ./uploads:/app/uploads
       - ./logs:/app/logs

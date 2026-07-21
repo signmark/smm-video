@@ -34,7 +34,7 @@ async function testInstagramCarousel() {
     
     // Email и пароль из нашего .env файла
     const email = process.env.DIRECTUS_ADMIN_EMAIL || 'lbrspb@gmail.com';
-    const password = process.env.DIRECTUS_ADMIN_PASSWORD || 'QtpZ3dh7';
+    const password = process.env.DIRECTUS_ADMIN_PASSWORD || 'CHANGE_ME';
     
     const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
     log(`Отправка запроса на ${directusUrl}/auth/login с email: ${email}`);
@@ -131,7 +131,7 @@ async function testInstagramCarousel() {
       log('Добавление настроек Instagram для тестового контента');
       testContent.socialPlatforms = [{
         platform: 'instagram',
-        accessToken: process.env.INSTAGRAM_TOKEN || 'EAA520SFRtvcBO9Y7LhiiZBqwsqdZCP9JClMUoJZCvjsSc8qs9aheLdWefOqrZBLQhe5T0ZBerS6mZAZAP6D4i8Ln5UBfiIyVEif1LrzcAzG6JNrhW2DJeEzObpp9Mzoh8tDZA9I0HigkLnFZCaJVZCQcGDAkZBRxwnVimZBdbvokeg19i5RuGTbfuFs9UC9R',
+        accessToken: process.env.INSTAGRAM_TOKEN,
         businessAccountId: process.env.INSTAGRAM_BUSINESS_ACCOUNT_ID || '17841422577074562'
       }];
       

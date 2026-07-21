@@ -34,7 +34,7 @@ describe('OAuth response sanitizer', () => {
     const result = sanitizeOAuthSecrets({
       youtube: { accessToken: 'a', refresh_token: 'b', channelId: 'channel' },
       instagram: { appSecret: 'c', accounts: [{ pageAccessToken: 'd', id: 'ig' }] },
-      nested: { password: 'e', configured: true },
+      nested: { password: 'e', bot_token: 'f', configured: true },
     });
     expect(result).toEqual({
       youtube: { channelId: 'channel' },

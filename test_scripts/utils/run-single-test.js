@@ -13,7 +13,7 @@ const API_URL = process.env.API_URL || 'http://localhost:5000';
 // Настройки для Telegram из переменных окружения
 const settings = {
   telegram: {
-    token: process.env.TELEGRAM_BOT_TOKEN || '7529101043:AAG298h0iubyeKPuZ-WRtEFbNEnEyqy_XJU',
+    token: process.env.TELEGRAM_BOT_TOKEN || 'REVOKED_TELEGRAM_TOKEN_USE_ENV',
     chatId: process.env.TELEGRAM_CHAT_ID || '-1002302366310'
   }
 };

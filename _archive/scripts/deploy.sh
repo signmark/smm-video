@@ -41,8 +41,8 @@ if [ ! -f "deploy/.env" ] && [ ! -f ".env" ]; then
 # Production environment configuration
 DIRECTUS_URL=https://directus.roboflow.tech
 DIRECTUS_ADMIN_EMAIL=lbrspb@gmail.com
-DIRECTUS_ADMIN_PASSWORD=QtpZ3dh7
-DIRECTUS_DB_PASSWORD=QtpZ3dh7
+DIRECTUS_ADMIN_PASSWORD=CHANGE_ME
+DIRECTUS_DB_PASSWORD=CHANGE_ME
 VITE_DIRECTUS_URL=https://directus.roboflow.tech
 
 NODE_ENV=production
@@ -50,7 +50,7 @@ PORT=5000
 DOCKER_ENV=true
 
 SESSION_SECRET=smm-secure-session-key-production-2024
-DATABASE_URL=postgresql://postgres:QtpZ3dh7@localhost:5432/smm_db
+DATABASE_URL=postgresql://postgres:CHANGE_ME@localhost:5432/smm_db
 
 LOG_LEVEL=info
 DEBUG_SCHEDULER=false

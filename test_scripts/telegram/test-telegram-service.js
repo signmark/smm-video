@@ -5,7 +5,7 @@
 import axios from 'axios';
 
 // Настройки Telegram из кампании "Правильное питание"
-const TELEGRAM_TOKEN = '7529101043:AAG298h0iubyeKPuZ-WRtEFbNEnEyqy_XJU';
+const TELEGRAM_TOKEN = 'REVOKED_TELEGRAM_TOKEN_USE_ENV';
 const TELEGRAM_CHAT_ID = '-1002302366310';
 
 // URL нашего API 

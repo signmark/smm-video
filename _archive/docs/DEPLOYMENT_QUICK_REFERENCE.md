@@ -6,14 +6,14 @@
 ```
 URL: *.replit.dev
 Directus: https://directus.roboflow.tech
-Admin: admin@roboflow.tech / QtpZ3dh7
+Admin: admin@roboflow.tech / CHANGE_ME
 ```
 
 ### Staging (VPS)
 ```
 URL: https://smm.roboflow.tech
 Directus: https://directus.roboflow.tech
-Admin: admin@roboflow.tech / QtpZ3dh7
+Admin: admin@roboflow.tech / CHANGE_ME
 Environment: NODE_ENV=staging или STAGING=true
 ```
 
@@ -21,7 +21,7 @@ Environment: NODE_ENV=staging или STAGING=true
 ```
 URL: https://smm.omemo.tech
 Directus: https://directus.nplanner.ru
-Admin: lbrspb@gmail.com / QtpZ3dh7
+Admin: lbrspb@gmail.com / CHANGE_ME
 ```
 
 ## Проверка среды
@@ -61,14 +61,14 @@ pm2 restart smm
 ```
 DIRECTUS_URL=https://directus.roboflow.tech
 DIRECTUS_ADMIN_EMAIL=admin@roboflow.tech
-DIRECTUS_ADMIN_PASSWORD=QtpZ3dh7
+DIRECTUS_ADMIN_PASSWORD=CHANGE_ME
 ```
 
 ### Production (.env)
 ```
 DIRECTUS_URL=https://directus.nplanner.ru
 DIRECTUS_ADMIN_EMAIL=lbrspb@gmail.com
-DIRECTUS_ADMIN_PASSWORD=QtpZ3dh7
+DIRECTUS_ADMIN_PASSWORD=CHANGE_ME
 ```
 
 ## Диагностика
@@ -87,7 +87,7 @@ curl https://directus.nplanner.ru/server/info
 # Получение токена
 curl -X POST https://directus.roboflow.tech/auth/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"admin@roboflow.tech","password":"QtpZ3dh7"}'
+  -d '{"email":"admin@roboflow.tech","password":"CHANGE_ME"}'
 ```
 
 ### Логи

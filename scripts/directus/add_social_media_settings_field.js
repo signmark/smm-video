@@ -3,8 +3,8 @@ import * as dotenv from 'dotenv';
 dotenv.config();
 
 const DIRECTUS_URL = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
-const DIRECTUS_EMAIL = 'signmark@gmail.com';
-const DIRECTUS_PASSWORD = 'QtpZ3dh7';
+const DIRECTUS_EMAIL = process.env.DIRECTUS_ADMIN_EMAIL;
+const DIRECTUS_PASSWORD = process.env.DIRECTUS_ADMIN_PASSWORD;
 
 async function addSocialMediaSettingsField() {
   try {

@@ -8,7 +8,7 @@ import axios from 'axios';
 // Данные для авторизации
 const authData = {
   email: 'lbrspb@gmail.com',
-  password: 'QtpZ3dh7'
+  password: 'CHANGE_ME'
 };
 
 // URL сервера

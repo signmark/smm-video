@@ -9,7 +9,7 @@ POSTGRES_HOST="localhost"
 POSTGRES_PORT="5432"
 POSTGRES_USER="postgres"
 POSTGRES_DB="directus"
-POSTGRES_PASSWORD="QtpZ3dh7"
+POSTGRES_PASSWORD="CHANGE_ME"
 
 # Список важных таблиц для бэкапа
 IMPORTANT_TABLES=(

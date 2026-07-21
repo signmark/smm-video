@@ -22,8 +22,8 @@ async function authenticate() {
       method: 'post',
       url: 'https://api.nplanner.ru/auth/login',
       data: {
-        email: 'lbrspb@gmail.com',
-        password: 'QtpZ3dh7'
+        email: process.env.DIRECTUS_ADMIN_EMAIL,
+        password: process.env.DIRECTUS_ADMIN_PASSWORD
       }
     });
 

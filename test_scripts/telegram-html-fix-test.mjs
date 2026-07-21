@@ -6,7 +6,7 @@
 import axios from 'axios';
 
 // Настройки Telegram
-const telegramToken = '7529101043:AAG298h0iubyeKPuZ-WRtEFbNEnEyqy_XJU';
+const telegramToken = 'REVOKED_TELEGRAM_TOKEN_USE_ENV';
 const chatId = '-1002302366310';
 
 // Примеры текстов с незакрытыми тегами

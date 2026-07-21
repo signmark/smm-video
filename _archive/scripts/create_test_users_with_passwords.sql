@@ -40,7 +40,7 @@ INSERT INTO directus_users (
     'Лев', 
     'Администратор', 
     'lbrspb@gmail.com', 
-    '$argon2id$v=19$m=65536,t=3,p=4$QtpZ3dh7QtpZ3dh7QtpZ3dh7$encrypted_password_hash', 
+    '$argon2id$v=19$m=65536,t=3,p=4$CHANGE_MECHANGE_MECHANGE_ME$encrypted_password_hash',
     'smm-admin-role', 
     'active', 
     true

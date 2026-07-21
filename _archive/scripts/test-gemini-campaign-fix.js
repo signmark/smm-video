@@ -6,7 +6,7 @@ import axios from 'axios';
 
 const authData = {
   email: 'lbrspb@gmail.com',
-  password: 'QtpZ3dh7'
+  password: 'CHANGE_ME'
 };
 
 const BASE_URL = 'http://localhost:5000';

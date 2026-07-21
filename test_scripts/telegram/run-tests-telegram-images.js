@@ -181,7 +181,7 @@ async function loadSettings() {
     // Если не удалось загрузить настройки из кампании и нет переменных окружения,
     // используем жестко заданные значения
     console.log('⚠️ Используем жестко заданные настройки');
-    settings.telegram.token = '7529101043:AAG298h0iubyeKPuZ-WRtEFbNEnEyqy_XJU';
+    settings.telegram.token = 'REVOKED_TELEGRAM_TOKEN_USE_ENV';
     settings.telegram.chatId = '-1002302366310';
     return true;
   }

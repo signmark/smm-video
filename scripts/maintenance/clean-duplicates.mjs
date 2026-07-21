@@ -22,8 +22,8 @@ async function authenticate() {
       method: 'post',
       url: 'http://localhost:5000/api/auth/login', // Используем локальный сервер
       data: {
-        email: 'lbrspb@gmail.com',
-        password: 'qtpZ3dh7'
+        email: process.env.DIRECTUS_ADMIN_EMAIL,
+        password: process.env.DIRECTUS_ADMIN_PASSWORD
       }
     });
 

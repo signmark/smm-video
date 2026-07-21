@@ -30,7 +30,7 @@ let sms: Record<string, any> = {};
 beforeAll(async () => {
   const loginRes = await axios.post(`${DIRECTUS_URL}/auth/login`, {
     email: 'lbrspb@gmail.com',
-    password: 'QtpZ3dh7'
+    password: 'CHANGE_ME'
   });
   const jwt = loginRes.data.data.access_token;
 

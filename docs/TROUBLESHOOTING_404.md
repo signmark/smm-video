@@ -36,9 +36,9 @@ WARN[0000] The "DIRECTUS_DB_PASSWORD" variable is not set. Defaulting to a blank
 В `docker-compose.yml` добавлен fallback: если `DIRECTUS_DB_PASSWORD` не задан, используется `POSTGRES_PASSWORD`. Убедитесь, что хотя бы `POSTGRES_PASSWORD` задан в `.env`:
 
 ```env
-POSTGRES_PASSWORD=QtpZ3dh7
+POSTGRES_PASSWORD=CHANGE_ME
 # Опционально, если нужен отдельный пароль для Directus:
-# DIRECTUS_DB_PASSWORD=QtpZ3dh7
+# DIRECTUS_DB_PASSWORD=CHANGE_ME
 ```
 
 2. Убедитесь, что база `directus` создана в PostgreSQL (часто создаётся автоматически при первом старте Directus).
@@ -183,7 +183,7 @@ DEBUG: distPath FOUND: /app/dist/public
 
 ```env
 DIRECTUS_URL=https://directus.nplanner.ru
-DIRECTUS_DB_PASSWORD=QtpZ3dh7   # <- обязательно
+DIRECTUS_DB_PASSWORD=CHANGE_ME   # <- обязательно
 DIRECTUS_ADMIN_TOKEN=2bexIeLQqichfy3KseO3V31XDxfY-zP5
 # и т.д.
 ```

@@ -28,7 +28,7 @@ async function testVideoUpload() {
     log('Начало теста прямой загрузки видео в Facebook');
     
     // Получаем параметры из переменных окружения или используем значения по умолчанию
-    const accessToken = process.env.FACEBOOK_ACCESS_TOKEN || 'EAA520SFRtvcBO9Y7LhiiZBqwsqdZCP9JClMUoJZCvjsSc8qs9aheLdWefOqrZBLQhe5T0ZBerS6mZAZAP6D4i8Ln5UBfiIyVEif1LrzcAzG6JNrhW2DJeEzObpp9Mzoh8tDZA9I0HigkLnFZCaJVZCQcGDAkZBRxwnVimZBdbvokeg19i5RuGTbfuFs9UC9R';
+    const accessToken = process.env.FACEBOOK_ACCESS_TOKEN;
     const pageId = process.env.FACEBOOK_PAGE_ID || '2120362494678794';
     const videoUrl = 'https://buran-media.s3.beget.tech/dc14d8d2-0704-4dac-afb5-0ff82a8fd40d.mp4';
     

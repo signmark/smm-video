@@ -14,7 +14,7 @@ const CONFIG = {
   apiUrl: 'http://localhost:5000',
   // Настройки Instagram
   instagram: {
-    token: 'EAA520SFRtvcBO9Y7LhiiZBqwsqdZCP9JClMUoJZCvjsSc8qs9aheLdWefOqrZBLQhe5T0ZBerS6mZAZAP6D4i8Ln5UBfiIyVEif1LrzcAzG6JNrhW2DJeEzObpp9Mzoh8tDZA9I0HigkLnFZCaJVZCQcGDAkZBRxwnVimZBdbvokeg19i5RuGTbfuFs9UC9R',
+    token: process.env.INSTAGRAM_TOKEN,
     businessAccountId: '17841422577074562',
     // Тестовые изображения с правильными соотношениями сторон для Instagram:
     // - Квадратные 1:1 
@@ -29,7 +29,7 @@ const CONFIG = {
   },
   // Настройки Telegram
   telegram: {
-    token: '7529101043:AAG298h0iubyeKPuZ-WRtEFbNEnEyqy_XJU',
+    token: process.env.TELEGRAM_BOT_TOKEN,
     chatId: '-1002302366310'
   }
 };

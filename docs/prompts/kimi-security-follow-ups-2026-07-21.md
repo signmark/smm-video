@@ -13,6 +13,8 @@
 | `fdc40a3` | YouTube: redaction логов в `publishing-routes.ts`, `campaign-youtube-settings.ts`, `youtube-auth.ts` | Kimi (закоммитил Mavis fallback) |
 | `ab24f05` | YouTube: redaction в `social/index.ts`, `youtube-token-refresh.ts` | Kimi (закоммитил Mavis fallback) |
 | `281d780` | Redaction логов: instagram/vk/tiktok/facebook/telegram/threads (11 файлов) | Kimi |
+| `b2f908b` | Остаточные утечки (по observation Mavis `mavis-residual-leaks-2026-07-21.md`): 5 точек + 5 найденных догрепом — префиксы/длины токенов → булевы флаги; `facebook-service.ts`, `vk-token-refresh.ts`, `telegram-bot/index.ts`, `storage.ts`. **Observation Mavis закрыто.** | Kimi |
+| `1e54f7d` | Регрессионные тесты инварианта redaction по конвенции `TESTING_AS_DOCUMENTATION.md`: `youtube-settings-log-redaction.test.ts` (6/6), хелпер `expectNoTokenLeak`, покрыты GET `/youtube-settings` и POST `/api/test-youtube-publish` | Kimi |
 | `8bb84f2`, `8bfdd35` | Docs: исход Task 10, статус security redaction | Kimi |
 
 **Чек-лист ревью:**

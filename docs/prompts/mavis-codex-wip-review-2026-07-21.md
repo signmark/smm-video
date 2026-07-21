@@ -156,6 +156,59 @@ if (canUseServiceToken && userId && !isSmmAdmin) {
 
 Codex, **AUTH-01 и ANALYTICS-01** — это блокеры production rollout. Остальное можно доехать в follow-up коммитах, но эти два — must-fix до canary.
 
+## Pass 3 — testing convention check (`docs/prompts/TESTING_AS_DOCUMENTATION.md`)
+
+Применил 6 правил Claude'овской конвенции к тестам в WIP. **Handoff для Mavis выполнен**: README.md обновлён — ссылка на `docs/prompts/TESTING_AS_DOCUMENTATION.md` в секции `docs/`.
+
+### `server/__tests__/directus-session-validator.test.ts` (35 строк, 3 it)
+
+| Правило | Статус | Замечание |
+|---|---|---|
+| 1. имя = контракт | ⚠️ | `it('accepts a token that Directus recognizes')` — OK. `it.each([401,403])('treats Directus %s as an invalid session')` — **имя фиксирует неправильный контракт** (см. AUTH-02). Когда исправишь validator — тест придётся переписать. |
+| 2. regression-anchor | ❌ | Нет ссылки на инцидент. Стоит добавить комментарий «регрессия 2026-07-21: 403 от Directus /users/me — не всегда expired session». |
+| 3. пример = документация | ✅ | happy-path первый. |
+| 4. комментарии за моками | ❌ | `vi.fn().mockResolvedValue({ ok: true, status: 200 })` — без объяснения, что в проде. Нужно: «прод-код вызывает fetch к /users/me, возвращается 200 с user data». |
+| 5. инвариант через хелпер | ❌ | `expectNoTokenLeak` живёт в `youtube-settings-log-redaction.test.ts`, validator tests его не зовут. Нужен `expectValidation(token, fetchImpl)` или хотя бы `expectValidSession` / `expectInvalidSession` / `expectUnavailable`. |
+| 6. рядом с существующим | ✅ | Рядом с `directus-session-restore.test.ts` и `directus.test.ts`. |
+
+### `server/__tests__/user-auth-session.test.ts` (85 строк, 3 it)
+
+| Правило | Статус | Замечание |
+|---|---|---|
+| 1. имя = контракт | ✅ | «returns an explicit 401 for an expired token without continuing the request» — контракт ясен. |
+| 2. regression-anchor | ❌ | Нет ссылки на инцидент. Это новый тест для нового поведения (validateDirectusSession в middleware) — стоит дать ссылку на `codex-auth-session-analytics-follow-ups-2026-07-21.md`. |
+| 3. пример = документация | ✅ | happy-path `it('continues only after Directus confirms the session', ...)` последний — ок, после invalid/unavailable. |
+| 4. комментарии за моками | ⚠️ | `vi.hoisted` для `validateDirectusSession` и `cacheAuthToken` — без комментария «почему hoisted, что в проде». |
+| 5. инвариант через хелпер | ❌ | Маппинг `result → status + code` повторяется inline в каждом `it.each` — стоит вынести в `expectAuthMapping(validation, expectedStatus, expectedCode)`. |
+
+### `client/src/lib/__tests__/refreshAuth.test.ts` (54 строки, 3 it) — бегло
+
+✅ **Имена — образцовые контракты:**
+- `it('stores a refreshed access token and rotated refresh token', ...)` 
+- `it('distinguishes an invalid refresh token from a temporary outage', ...)` — отлично
+- `it('deduplicates concurrent refresh attempts so a rotating token is used once', ...)` — отлично
+
+⚠️ Не проверил тела (беглый pass). Правила 2-6 — нужна прицельная проверка.
+
+### `server/__tests__/analytics-service.test.ts` (+33 строки, +2 it)
+
+✅ **Имена — образцовые:**
+- `it('uses the service credential and scopes ordinary users to their own content', ...)` — отлично
+- `it('does not disguise a Directus failure as successful zero analytics', ...)` — отлично, отражает Codex требование ANALYTICS-01
+
+⚠️ Не проверил тела. ANALYTICS-01 acceptance tests на scraper supplement и `/api/analytics/update` **отсутствуют** — нужно добавить.
+
+## Итог pass 3
+
+**Закрыто:**
+- ✅ README handoff выполнен (этот коммит).
+- ✅ Имена тестов в refreshAuth + analytics-service — соответствуют конвенции.
+
+**Открыто (Codex):**
+- ❌ `directus-session-validator.test.ts` — имя 403-теста фиксирует неправильный контракт, нет инвариант-хелпера, нет regression-anchor.
+- ❌ `user-auth-session.test.ts` — нет helper для `result → status + code` mapping.
+- ❌ `analytics-service.test.ts` — нет тестов на scraper supplement и `/api/analytics/update`.
+
 ## Hash для ссылок
 
 - Mavis observation (residual leaks, closed): `866c15a` → updated `2372280`

@@ -1883,7 +1883,7 @@ class TelegramBotService {
         // Получаем refreshToken из ответа для сохранения
         // КРИТИЧНО: В production refresh_token в response.data.data.refresh_token
         const refreshToken = isDev ? response.data.refresh_token : response.data.data.refresh_token;
-        console.log('[LOGIN-DEBUG] Extracted refresh_token:', refreshToken ? 'YES (length: ' + refreshToken.length + ')' : 'NO');
+        console.log('[LOGIN-DEBUG] Extracted refresh_token:', refreshToken ? 'YES' : 'NO');
         if (refreshToken) {
           ctx.session.refreshToken = refreshToken;
 

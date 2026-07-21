@@ -297,7 +297,7 @@ export async function refreshVkToken(settings: {
     params.set('client_id', settings.clientId);
     if (settings.deviceId) params.set('device_id', settings.deviceId);
     params.set('state', `refresh_${crypto.randomBytes(8).toString('hex')}`);
-    log(`[VK-REFRESH] Запрос refresh: client_id=${settings.clientId} device_id=${settings.deviceId || 'НЕТ'} refresh_token_prefix=${settings.refreshToken.substring(0, 10)}...`, 'vk-refresh');
+    log(`[VK-REFRESH] Запрос refresh: client_id=${settings.clientId} device_id=${settings.deviceId || 'НЕТ'} has_refresh_token=${settings.refreshToken ? 'YES' : 'NO'}`, 'vk-refresh');
 
     const resp = await axios.post('https://id.vk.com/oauth2/auth', params, {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -438,8 +438,8 @@ async function _doRefreshAndSave(
 
     log(
       `[VK-REFRESH] Сохранено в кампанию ${campaignId}: ` +
-      `accessToken=...${result.accessToken.slice(-6)}, ` +
-      `refreshToken=...${result.refreshToken.slice(-6)}, ` +
+      `hasAccessToken=${result.accessToken ? 'YES' : 'NO'}, ` +
+      `hasRefreshToken=${result.refreshToken ? 'YES' : 'NO'}, ` +
       `deviceId=${updatedVk.deviceId || 'нет'}, ` +
       `clientId=${clientId}, ` +
       `tokenExpiresAt=${tokenExpiresAt}`,

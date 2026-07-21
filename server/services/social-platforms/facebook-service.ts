@@ -97,8 +97,7 @@ class FacebookService {
         throw new Error('Пустой токен доступа пользователя');
       }
 
-      log.info(`[${operationId}] [Facebook] Длина токена пользователя: ${accessToken.length} символов`);
-      log.info(`[${operationId}] [Facebook] Префикс токена: ${accessToken.substring(0, 10)}...`);
+      log.info(`[${operationId}] [Facebook] Токен пользователя получен: ${accessToken ? 'YES' : 'NO'}`);
 
       // Получаем список страниц пользователя
       const pagesUrl = `https://graph.facebook.com/${this.apiVersion}/me/accounts`;
@@ -468,7 +467,6 @@ class FacebookService {
       log.info(`[${operationId}] [Facebook] Анализ настроек: ${JSON.stringify({
         hasToken: !!settings.token,
         hasPageId: !!settings.pageId,
-        tokenPrefix: settings.token ? settings.token.substring(0, 10) + '...' : 'нет',
         pageIdMask: settings.pageId ? `${settings.pageId.substring(0, 5)}...` : 'нет',
         cacheSize: this.pageTokenCache.size
       })}`);
@@ -504,7 +502,7 @@ class FacebookService {
         throw new Error('Не удалось получить токен доступа страницы');
       }
 
-      log.info(`[${operationId}] [Facebook] Токен страницы получен: ${pageAccessToken.substring(0, 10)}...`);
+      log.info(`[${operationId}] [Facebook] Токен страницы получен: ${pageAccessToken ? 'YES' : 'NO'}`);
 
       // Выбираем метод публикации в зависимости от наличия изображения
       log.info(`[${operationId}] [Facebook] Публикация на странице ${pageId}`);

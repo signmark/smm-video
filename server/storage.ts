@@ -1102,7 +1102,7 @@ export class DatabaseStorage implements IStorage {
         const userToken = await this.getAuthToken(currentContent.userId);
         
         if (userToken) {
-          console.log(`Успешно получен токен для обновления, длина: ${userToken.length}`);
+          console.log(`Успешно получен токен для обновления: ${userToken ? 'YES' : 'NO'}`);
           headers['Authorization'] = `Bearer ${userToken}`;
         } else {
           console.warn(`⚠️ Не найден токен авторизации для пользователя ${currentContent.userId}.`);
@@ -1347,7 +1347,7 @@ export class DatabaseStorage implements IStorage {
   async getScheduledCampaignContent(campaignId: string, userId: string, token?: string): Promise<CampaignContent[]> {
     try {
       console.log(`[Scheduled] Получение запланированных публикаций для кампании ${campaignId}, пользователя ${userId}`);
-      console.log(`[Scheduled] Токен передан: ${token ? 'ДА' : 'НЕТ'}, длина: ${token?.length || 0}`);
+      console.log(`[Scheduled] Токен передан: ${token ? 'ДА' : 'НЕТ'}`);
       
       let authToken: string | null | undefined = token;
 
@@ -1357,7 +1357,7 @@ export class DatabaseStorage implements IStorage {
         authToken = await this.getAuthToken(userId);
         console.log(`Получен токен из кэша для пользователя ${userId}: ${authToken ? 'Токен найден' : 'Токен не найден'}`);
       } else {
-        console.log(`[Scheduled] Используем переданный токен, длина: ${authToken.length}`);
+        console.log(`[Scheduled] Используем переданный токен: YES`);
       }
       
       if (!authToken) {

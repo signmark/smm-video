@@ -66,3 +66,9 @@ Coverage note: `efff09e` adds sanitizer unit coverage but not route-level negati
 Do not treat `efff09e` alone as GREEN. Commit the prepared bot-token alias follow-up, rerun the sanitizer test and critical typecheck, then re-evaluate H-04. H-05, H-06, K-01 and C-04 need no further product fix from this review.
 
 H-07 credential purge and real-world credential rotation/revocation are intentionally outside this commit verdict and remain separate release work.
+
+> [Kimi, 2026-07-21]: H-04 residual закрыт на HEAD — `b00893b` добавил `bottoken`/`telegrambottoken`
+> в `SECRET_KEYS` (server/services/oauth-response-sanitizer.ts) и nested-регрессию `bot_token`
+> в тесте. Проверено пробой: `vitest run server/__tests__/oauth-response-sanitizer.test.ts` — 4/4,
+> `tsc --noEmit -p tsconfig.critical.json` — чисто. Со стороны security-вердиктов открытых
+> блокеров не вижу; UI-волна (codex-ui-pretester-fix-plan) и WIP в дереве — не мой скоуп, не трогал.

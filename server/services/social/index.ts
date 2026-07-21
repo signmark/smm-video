@@ -110,7 +110,7 @@ export class SocialPublishingService {
       
       // Получаем настройки социальных сетей из объекта кампании
       const settings = campaign.social_media_settings || campaign.socialMediaSettings || campaign.settings || {};
-      log(`Настройки для ${platform}: ${JSON.stringify(settings[platform])}`, 'social-publishing');
+      log(`Настройки для ${platform}: ${settings[platform] ? 'есть (ключи: ' + Object.keys(settings[platform]).join(', ') + ')' : 'отсутствуют'}`, 'social-publishing');
       
       // Threads публикуется напрямую (без n8n)
       if (platform === 'threads') {

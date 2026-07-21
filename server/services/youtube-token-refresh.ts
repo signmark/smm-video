@@ -72,7 +72,7 @@ export class YouTubeTokenRefresh {
       const data = response.data;
 
       if (!data.access_token) {
-        throw new Error('Google OAuth не вернул access_token. Ответ: ' + JSON.stringify(data));
+        throw new Error('Google OAuth не вернул access_token. Ключи ответа: ' + Object.keys(data || {}).join(', '));
       }
 
       const expiresIn = data.expires_in || 3600;

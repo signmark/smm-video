@@ -42,10 +42,12 @@ import {
 
 describe('AnalyticsService.refreshCampaignAnalytics', () => {
   const previousAdminToken = process.env.DIRECTUS_ADMIN_TOKEN;
+  const previousStaticToken = process.env.DIRECTUS_STATIC_TOKEN;
 
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.DIRECTUS_ADMIN_TOKEN = 'admin-token';
+    delete process.env.DIRECTUS_STATIC_TOKEN;
     vi.mocked(resolveAnalyticsChannel).mockImplementation(async (platform) => (
       platform === 'telegram' ? 'tg-monitor' : 'vk-monitor'
     ));
@@ -54,6 +56,8 @@ describe('AnalyticsService.refreshCampaignAnalytics', () => {
   afterEach(() => {
     if (previousAdminToken === undefined) delete process.env.DIRECTUS_ADMIN_TOKEN;
     else process.env.DIRECTUS_ADMIN_TOKEN = previousAdminToken;
+    if (previousStaticToken === undefined) delete process.env.DIRECTUS_STATIC_TOKEN;
+    else process.env.DIRECTUS_STATIC_TOKEN = previousStaticToken;
   });
 
   it('waits for synchronous scraper refresh and forwards the selected period', async () => {

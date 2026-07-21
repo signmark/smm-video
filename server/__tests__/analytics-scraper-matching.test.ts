@@ -8,6 +8,14 @@ vi.mock('../utils/logger', () => ({
   log: vi.fn(),
 }));
 
+vi.mock('../services/campaign-access', () => ({
+  authorizeCampaignAccess: vi.fn(async () => {
+    const axios = (await import('axios')).default;
+    const response = await axios.get('mock://authorized-campaign');
+    return response.data.data;
+  }),
+}));
+
 vi.mock('axios', () => ({
   default: { get: vi.fn() },
 }));
@@ -42,12 +50,14 @@ import {
 
 describe('AnalyticsService scraper supplementation', () => {
   const previousAdminToken = process.env.DIRECTUS_ADMIN_TOKEN;
+  const previousStaticToken = process.env.DIRECTUS_STATIC_TOKEN;
 
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-07-16T12:00:00.000Z'));
     vi.clearAllMocks();
     process.env.DIRECTUS_ADMIN_TOKEN = 'admin-token';
+    delete process.env.DIRECTUS_STATIC_TOKEN;
     vi.mocked(resolveAnalyticsChannel).mockImplementation(async (platform) => (
       platform === 'vk' ? 'vk-monitor' : 'tg-monitor'
     ));
@@ -58,6 +68,8 @@ describe('AnalyticsService scraper supplementation', () => {
     vi.useRealTimers();
     if (previousAdminToken === undefined) delete process.env.DIRECTUS_ADMIN_TOKEN;
     else process.env.DIRECTUS_ADMIN_TOKEN = previousAdminToken;
+    if (previousStaticToken === undefined) delete process.env.DIRECTUS_STATIC_TOKEN;
+    else process.env.DIRECTUS_STATIC_TOKEN = previousStaticToken;
   });
 
   it('does not replace campaign metrics with unattributed channel aggregates', async () => {

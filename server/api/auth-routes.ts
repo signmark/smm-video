@@ -10,6 +10,8 @@ import { log } from '../utils/logger';
 import { isUserAdmin } from '../routes-global-api-keys';
 import { detectEnvironment } from '../utils/environment-detector';
 import { sendRegistrationPostback } from '../services/partner-postback';
+import { validateDirectusSession } from '../services/directus-session-validator';
+import { refreshDirectusSession } from '../services/directus-refresh-service';
 
 /**
  * Регистрирует маршруты для авторизации
@@ -55,6 +57,23 @@ export function registerAuthRoutes(app: Express): void {
         }
       }
       
+      const validation = await validateDirectusSession(token);
+      if (validation === 'invalid') {
+        return res.status(401).json({
+          valid: false,
+          code: 'AUTH_SESSION_INVALID',
+          error: 'Сессия недействительна',
+          message: 'Требуется обновить сессию или войти заново',
+        });
+      }
+      if (validation === 'unavailable') {
+        return res.status(503).json({
+          valid: false,
+          code: 'AUTH_VALIDATION_UNAVAILABLE',
+          error: 'Не удалось проверить сессию',
+        });
+      }
+
       res.status(200).json({
         valid: true,
         user: {
@@ -311,7 +330,7 @@ export function registerAuthRoutes(app: Express): void {
 
       // expires_at из Directus — абсолютный timestamp в мс
       const expiresAt = response.data.data.expires_at;
-      // expires для клиента в секундах (86400 = 24ч), клиент умножит на 1000 если < 10_000
+      // expires для клиента в секундах (86400 = 24ч)
       const expiresSeconds = expiresAt
         ? Math.max(Math.floor((expiresAt - Date.now()) / 1000), 900)
         : 86400;
@@ -358,12 +377,12 @@ export function registerAuthRoutes(app: Express): void {
   });
 
   // Per-user lock to prevent concurrent refresh token requests
-  const refreshLocks = new Map<string, Promise<any>>();
 
   // Маршрут для обновления токена
   app.post('/api/auth/refresh', async (req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store');
     try {
-      const { refresh_token, user_id } = req.body;
+      const { refresh_token } = req.body;
 
       if (!refresh_token) {
         return res.status(400).json({ 
@@ -372,92 +391,34 @@ export function registerAuthRoutes(app: Express): void {
         });
       }
 
-      const lockKey = user_id || refresh_token;
-      
-      // If there's already a refresh in progress for this user, wait for it
-      if (refreshLocks.has(lockKey)) {
-        try {
-          const result = await refreshLocks.get(lockKey);
-          return res.status(200).json(result);
-        } catch (error) {
-          // If the existing refresh failed, let this one try
-          refreshLocks.delete(lockKey);
-        }
+      const result = await refreshDirectusSession(String(refresh_token));
+      if (result.status === 'invalid') {
+        return res.status(401).json({ code: 'AUTH_SESSION_INVALID', error: 'Session is no longer valid' });
+      }
+      if (result.status === 'rate_limited') {
+        return res.status(429).json({ code: 'AUTH_REFRESH_RATE_LIMITED', error: 'Too many refresh attempts' });
+      }
+      if (result.status === 'unavailable') {
+        return res.status(503).json({ code: 'AUTH_VALIDATION_UNAVAILABLE', error: 'Authentication service is unavailable' });
       }
 
-      // Create a new refresh promise
-      const refreshPromise = (async () => {
-        try {
-          const response = await directusApiManager.post('/auth/refresh', {
-            refresh_token,
-            mode: 'json'
-          });
-          
-          if (response.data?.data?.access_token) {
-            const newAccessToken = response.data.data.access_token;
-            const newRefreshToken = response.data.data.refresh_token;
-            
-            // КРИТИЧНО: Обновляем сессию в DirectusAuthManager для proactive refresh
-            if (user_id && newRefreshToken) {
-              directusAuthManager.upsertSession({
-                userId: user_id,
-                token: newAccessToken,
-                refreshToken: newRefreshToken
-              });
-            }
+      directusAuthManager.upsertSession({
+        userId: result.userId,
+        token: result.accessToken,
+        refreshToken: result.refreshToken,
+        user: result.user,
+      });
 
-            return {
-              success: true,
-              token: newAccessToken,
-              refresh_token: newRefreshToken,
-              expires_at: response.data.data.expires_at
-            };
-          } else {
-            throw new Error('Invalid refresh response');
-          }
-        } catch (refreshError: any) {
-          const errorData = refreshError.response?.data || refreshError.message;
-          if (JSON.stringify(errorData).includes('Invalid user credentials')) {
-            log(`Refresh token expired for user ${user_id} — force logout required`, 'auth');
-          } else {
-            log(`Token refresh failed for user ${user_id || 'unknown'}: ${JSON.stringify(errorData)}`, 'auth');
-          }
-          throw refreshError;
-        } finally {
-          // Always clean up the lock
-          refreshLocks.delete(lockKey);
-        }
-      })();
-
-      // Store the promise
-      refreshLocks.set(lockKey, refreshPromise);
-
-      try {
-        const result = await refreshPromise;
-        return res.status(200).json(result);
-      } catch (refreshError: any) {
-        // Возвращаем ошибку для повторной авторизации пользователя
-        return res.status(401).json({
-          error: 'Token refresh failed',
-          code: 'TOKEN_EXPIRED',
-          message: 'Please log in again'
-        });
-      }
+      return res.status(200).json({
+        success: true,
+        token: result.accessToken,
+        refresh_token: result.refreshToken,
+        expires_at: result.expiresAt,
+      });
     } catch (error: any) {
       console.error('Error in refresh endpoint:', error);
       
-      // Обрабатываем ошибку обновления токена
-      if (error.response && (error.response.status === 401 || error.response.status === 400)) {
-        return res.status(401).json({ 
-          error: 'Недействительный токен',
-          message: 'Требуется повторная авторизация'
-        });
-      }
-
-      return res.status(500).json({ 
-        error: 'Ошибка сервера',
-        message: 'Произошла ошибка при обновлении токена'
-      });
+      return res.status(503).json({ code: 'AUTH_VALIDATION_UNAVAILABLE', error: 'Authentication service is unavailable' });
     }
   });
 
@@ -634,6 +595,7 @@ export function registerAuthRoutes(app: Express): void {
   // Маршрут для получения активной сессии пользователя (единая авторизация веб+бот)
   // Проверяет есть ли активная сессия в DirectusAuthManager для данного userId
   app.get('/api/auth/get-active-session', async (req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store');
     const authHeader = req.headers.authorization;
     
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -660,6 +622,21 @@ export function registerAuthRoutes(app: Express): void {
       }
       
       const userId = payload.id;
+
+      // Нельзя доверять одному только декодированному payload: подпись JWT здесь
+      // не проверяется. Directus должен подтвердить именно предъявленный токен.
+      const presentedTokenValidation = await validateDirectusSession(token);
+      if (presentedTokenValidation !== 'valid') {
+        return res.status(presentedTokenValidation === 'unavailable' ? 503 : 401).json({
+          code: presentedTokenValidation === 'unavailable'
+            ? 'AUTH_VALIDATION_UNAVAILABLE'
+            : 'AUTH_SESSION_INVALID',
+          error: presentedTokenValidation === 'unavailable'
+            ? 'Не удалось проверить сессию'
+            : 'Сессия недействительна',
+          hasActiveSession: false,
+        });
+      }
       
       // Получаем активную сессию из DirectusAuthManager
       const session = directusAuthManager.getSession(userId);
@@ -671,13 +648,51 @@ export function registerAuthRoutes(app: Express): void {
         });
       }
       
-      log(`Active session found for user ${userId}`, 'auth');
-      
+      let activeSession = session;
+      const validation = await validateDirectusSession(activeSession.token);
+
+      if (validation === 'invalid') {
+        const refreshedSession = await directusAuthManager.refreshSession(userId);
+        if (!refreshedSession) {
+          return res.status(401).json({
+            code: 'AUTH_SESSION_INVALID',
+            error: 'Сессия недействительна',
+            hasActiveSession: false,
+          });
+        }
+
+        const refreshedValidation = await validateDirectusSession(refreshedSession.token);
+        if (refreshedValidation !== 'valid') {
+          return res.status(refreshedValidation === 'unavailable' ? 503 : 401).json({
+            code: refreshedValidation === 'unavailable'
+              ? 'AUTH_VALIDATION_UNAVAILABLE'
+              : 'AUTH_SESSION_INVALID',
+            error: 'Не удалось восстановить сессию',
+            hasActiveSession: false,
+          });
+        }
+
+        activeSession = {
+          ...activeSession,
+          token: refreshedSession.token,
+          refreshToken: refreshedSession.refreshToken,
+          expiresAt: refreshedSession.expiresAt,
+        };
+      } else if (validation === 'unavailable') {
+        return res.status(503).json({
+          code: 'AUTH_VALIDATION_UNAVAILABLE',
+          error: 'Не удалось проверить сессию',
+          hasActiveSession: false,
+        });
+      }
+
+      log(`Active session validated for user ${userId}`, 'auth');
+
       res.status(200).json({
         hasActiveSession: true,
-        token: session.token,
-        refresh_token: session.refreshToken,
-        user: session.user
+        token: activeSession.token,
+        refresh_token: activeSession.refreshToken,
+        user: activeSession.user
       });
     } catch (error) {
       console.error('Error getting active session:', error);
@@ -690,6 +705,7 @@ export function registerAuthRoutes(app: Express): void {
   // Маршрут для получения refresh_token (для Telegram WebApp)
   // БЕЗОПАСНО: требует валидный access_token, возвращает refresh_token только для этого пользователя
   app.get('/api/auth/get-refresh-token', async (req: Request, res: Response) => {
+    res.setHeader('Cache-Control', 'no-store');
     const authHeader = req.headers.authorization;
     
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -727,6 +743,18 @@ export function registerAuthRoutes(app: Express): void {
       }
       
       const userId = payload.id;
+
+      const validation = await validateDirectusSession(token);
+      if (validation !== 'valid') {
+        return res.status(validation === 'unavailable' ? 503 : 401).json({
+          code: validation === 'unavailable'
+            ? 'AUTH_VALIDATION_UNAVAILABLE'
+            : 'AUTH_SESSION_INVALID',
+          error: validation === 'unavailable'
+            ? 'Не удалось проверить сессию'
+            : 'Сессия недействительна',
+        });
+      }
       
       // Получаем refresh_token из DirectusAuthManager
       const session = directusAuthManager.getSession(userId);

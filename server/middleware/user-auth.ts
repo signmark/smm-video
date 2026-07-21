@@ -1,8 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
-import { directusApi, directusApiManager } from '../directus';
+import { directusApiManager } from '../directus';
+import { validateDirectusSession } from '../services/directus-session-validator';
 
 const adminStatusCache = new Map<string, { is_smm_admin: boolean; cachedAt: number }>();
-const ADMIN_CACHE_TTL = 5 * 60 * 1000;
+const ADMIN_CACHE_TTL = 30 * 1000;
 
 async function fetchAdminStatus(userId: string): Promise<boolean> {
   const cached = adminStatusCache.get(userId);
@@ -104,65 +105,26 @@ export const authenticateUser = async (req: Request, res: Response, next: NextFu
         }
 
         const currentTime = Math.floor(Date.now() / 1000);
-        if (payload.exp && payload.exp < currentTime) {
-          try {
-            const { directusAuthManager } = await import('../services/directus-auth-manager');
-            const refreshedSession = await directusAuthManager.refreshSession(userId);
+        if (payload.exp && payload.exp <= currentTime) {
+          return res.status(401).json({
+            code: 'AUTH_SESSION_INVALID',
+            error: 'Сессия истекла',
+            expired: true,
+          });
+        }
 
-            if (refreshedSession && refreshedSession.token) {
-              const isAdmin = await fetchAdminStatus(userId);
-              req.user = {
-                id: userId,
-                token: refreshedSession.token,
-                email: payload.email || '',
-                firstName: payload.first_name || '',
-                lastName: payload.last_name || '',
-                is_smm_admin: isAdmin
-              };
-              (req as any).userId = userId;
-              next();
-              return;
-            }
-          } catch (refreshError) {
-            console.error('[AUTH] Ошибка обновления токена:', refreshError);
-          }
-
-          // Токен истёк и refreshSession не дал новый — пробуем getValidToken (загружает из БД, сбрасывает backoff)
-          try {
-            const freshToken = await directusAuthManager.getValidToken(userId);
-            if (freshToken) {
-              const isAdmin = await fetchAdminStatus(userId);
-              req.user = {
-                id: userId,
-                token: freshToken,
-                email: payload.email || '',
-                firstName: payload.first_name || '',
-                lastName: payload.last_name || '',
-                is_smm_admin: isAdmin
-              };
-              (req as any).userId = userId;
-              next();
-              return;
-            }
-          } catch (getValidTokenError) {
-            console.error('[AUTH] getValidToken тоже не дал токен:', getValidTokenError);
-          }
-
-          // Все попытки исчерпаны — токен полностью истёк и рефреш недоступен.
-          // Продолжаем с флагом tokenExpired=true — admin-роуты продолжат работать через admin-token,
-          // user-data роуты получат 401 и покажут "войдите заново".
-          const isAdminExpired = await fetchAdminStatus(userId);
-          req.user = {
-            id: userId,
-            token: token,
-            email: payload.email || '',
-            firstName: payload.first_name || '',
-            lastName: payload.last_name || '',
-            is_smm_admin: isAdminExpired,
-            tokenExpired: true
-          };
-          (req as any).userId = userId;
-          next();
+        const sessionValidation = await validateDirectusSession(token);
+        if (sessionValidation === 'invalid') {
+          return res.status(401).json({
+            code: 'AUTH_SESSION_INVALID',
+            error: 'Сессия недействительна',
+          });
+        }
+        if (sessionValidation === 'unavailable') {
+          return res.status(503).json({
+            code: 'AUTH_VALIDATION_UNAVAILABLE',
+            error: 'Не удалось проверить сессию',
+          });
         }
 
         const isAdmin = await fetchAdminStatus(userId);

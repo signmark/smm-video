@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { useAuthStore } from './store';
 import { redirectToLogin } from './public-routes';
+import { refreshAuthSession } from './refreshAuth';
 
 // Динамическое получение URL Directus с сервера
 let directusUrl = import.meta.env.VITE_DIRECTUS_URL;
@@ -50,10 +51,6 @@ export const getAuthHeaders = () => {
   return token ? { 'Authorization': `Bearer ${token}` } : {};
 };
 
-// Global variable to prevent multiple simultaneous token refresh requests
-let isRefreshing = false;
-let refreshPromise: Promise<string> | null = null;
-
 // Add request interceptor to handle auth token
 directusApi.interceptors.request.use(
   (config) => {
@@ -73,91 +70,31 @@ directusApi.interceptors.request.use(
 directusApi.interceptors.response.use(
   (response) => response,
   async (error) => {
-    // If we get a 401 or 403 error and have a refresh token, try to refresh the access token
-    if (error.response?.status === 401 || error.response?.status === 403) {
-      const refreshToken = localStorage.getItem('refresh_token');
-      if (refreshToken) {
-        // If already refreshing, wait for the existing refresh to complete
-        if (isRefreshing && refreshPromise) {
-          try {
-            const newToken = await refreshPromise;
-            const originalRequest = error.config;
-            originalRequest.headers['Authorization'] = `Bearer ${newToken}`;
-            return axios(originalRequest);
-          } catch (refreshError) {
-            throw refreshError;
-          }
+    const originalRequest = error.config;
+    const isInvalidSession = error.response?.status === 401
+      || (error.response?.status === 403 && error.response?.data?.code === 'AUTH_SESSION_INVALID');
+
+    if (isInvalidSession && originalRequest && !originalRequest._authRetried) {
+      originalRequest._authRetried = true;
+      const requestToken = String(originalRequest.headers?.Authorization || '').replace('Bearer ', '');
+      const currentToken = localStorage.getItem('auth_token');
+
+      // A different request already refreshed the session. Retry immediately and
+      // do not rotate the refresh token for a stale 401.
+      if (currentToken && requestToken && currentToken !== requestToken) {
+        originalRequest.headers.Authorization = `Bearer ${currentToken}`;
+        return directusApi(originalRequest);
+      }
+
+      const result = await refreshAuthSession();
+      if (result === 'refreshed' || result === 'superseded') {
+        const newToken = localStorage.getItem('auth_token');
+        if (newToken) {
+          originalRequest.headers.Authorization = `Bearer ${newToken}`;
+          return directusApi(originalRequest);
         }
-
-        // Start new refresh
-        isRefreshing = true;
-        refreshPromise = (async () => {
-          try {
-            // Use local API endpoint for token refresh
-            const response = await fetch('/api/auth/refresh', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                refresh_token: refreshToken,
-                user_id: localStorage.getItem('user_id')
-              })
-            });
-
-            if (!response.ok) {
-              throw new Error('Failed to refresh token');
-            }
-
-            const data = await response.json();
-            
-            if (!data.success || !data.token) {
-              throw new Error('Invalid refresh response');
-            }
-
-            const access_token = data.token;
-            localStorage.setItem('auth_token', access_token);
-            if (data.refresh_token) {
-              localStorage.setItem('refresh_token', data.refresh_token);
-            }
-
-            // Update auth store
-            const auth = useAuthStore.getState();
-            auth.setAuth(access_token, auth.userId);
-
-            return access_token;
-          } catch (refreshError) {
-            // If refresh fails, clear auth and throw error
-            localStorage.removeItem('auth_token');
-            localStorage.removeItem('refresh_token');
-            localStorage.removeItem('user_id');
-            const auth = useAuthStore.getState();
-            auth.clearAuth();
-            
-            // Redirect to login
-            redirectToLogin();
-            throw new Error('Session expired. Please log in again.');
-          } finally {
-            isRefreshing = false;
-            refreshPromise = null;
-          }
-        })();
-
-        try {
-          const newToken = await refreshPromise;
-          
-          // Retry original request
-          const originalRequest = error.config;
-          originalRequest.headers['Authorization'] = `Bearer ${newToken}`;
-          return axios(originalRequest);
-        } catch (refreshError) {
-          throw refreshError;
-        }
-      } else {
-        // No refresh token, redirect to login
-        ['auth_token','refresh_token','user_id','is_admin','selected_campaign_id','selected_campaign_name'].forEach(k => localStorage.removeItem(k));
-        const auth = useAuthStore.getState();
-        auth.clearAuth();
+      } else if (result === 'invalid') {
+        useAuthStore.getState().clearAuth();
         redirectToLogin();
       }
     }

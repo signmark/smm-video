@@ -10,8 +10,8 @@ export type RefreshAuthResult = 'refreshed' | 'superseded' | 'invalid' | 'unavai
 
 let refreshInFlight: Promise<RefreshAuthResult> | null = null;
 
-async function performRefresh(): Promise<RefreshAuthResult> {
-  const refreshToken = localStorage.getItem('refresh_token');
+async function performRefresh(refreshToken: string): Promise<RefreshAuthResult> {
+  if (localStorage.getItem('refresh_token') !== refreshToken) return 'superseded';
   if (!refreshToken) return 'invalid';
 
   let response: Response;
@@ -46,7 +46,14 @@ async function performRefresh(): Promise<RefreshAuthResult> {
 
 export async function refreshAuthSession(): Promise<RefreshAuthResult> {
   if (!refreshInFlight) {
-    refreshInFlight = performRefresh().finally(() => {
+    const refreshToken = localStorage.getItem('refresh_token');
+    if (!refreshToken) return 'invalid';
+    const coordinatedRefresh = async () => performRefresh(refreshToken);
+    const locks = typeof navigator !== 'undefined' ? navigator.locks : undefined;
+    refreshInFlight = (locks
+      ? locks.request('smm-auth-refresh', { mode: 'exclusive' }, coordinatedRefresh)
+      : coordinatedRefresh()
+    ).finally(() => {
       refreshInFlight = null;
     });
   }

@@ -8,7 +8,7 @@ const VALIDATION_CACHE_TTL_MS = 30_000;
 const VALIDATION_TIMEOUT_MS = 3_000;
 const MAX_CACHE_ENTRIES = 1000;
 
-const metrics = { valid: 0, invalid: 0, unavailable: 0, upstreamRequests: 0, totalLatencyMs: 0 };
+const metrics = { valid: 0, invalid: 0, unavailable: 0, cacheHits: 0, upstreamRequests: 0, totalLatencyMs: 0 };
 
 function tokenFingerprint(token: string): string {
   return createHash('sha256').update(token).digest('hex');
@@ -54,7 +54,12 @@ export async function validateDirectusSession(
 ): Promise<DirectusSessionValidation> {
   const fingerprint = tokenFingerprint(token);
   const cached = validationCache.get(fingerprint);
-  if (cached && cached.expiresAt > Date.now()) return cached.result;
+  if (cached && cached.expiresAt > Date.now()) {
+    metrics.cacheHits += 1;
+    validationCache.delete(fingerprint);
+    validationCache.set(fingerprint, cached);
+    return cached.result;
+  }
   if (cached) validationCache.delete(fingerprint);
 
   const existing = inFlightValidations.get(fingerprint);
@@ -90,6 +95,7 @@ export function resetDirectusSessionValidatorForTests(): void {
   metrics.valid = 0;
   metrics.invalid = 0;
   metrics.unavailable = 0;
+  metrics.cacheHits = 0;
   metrics.upstreamRequests = 0;
   metrics.totalLatencyMs = 0;
 }

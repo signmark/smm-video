@@ -135,9 +135,9 @@ export const useAuthStore = create<AuthState>()(
 
           // ПРИНУДИТЕЛЬНАЯ проверка токена перед запросом
           try {
-            const payload = JSON.parse(atob(token.split('.')[1]));
+            const payload = decodeJwtPayload(token);
             const now = Math.floor(Date.now() / 1000);
-            if (payload.exp && payload.exp < (now + 30)) {
+            if (payload?.exp && payload.exp < (now + 30)) {
               ['auth_token','refresh_token','user_id','is_admin','selected_campaign_id','selected_campaign_name'].forEach(k => localStorage.removeItem(k));
               sessionStorage.clear();
               get().logout();

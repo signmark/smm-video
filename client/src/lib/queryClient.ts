@@ -2,6 +2,7 @@ import { QueryClient, QueryFunction } from "@tanstack/react-query";
 import { useAuthStore } from "@/lib/store";
 import { handleError } from "@/utils/error-handler";
 import { redirectToLogin } from "@/lib/public-routes";
+import { decodeJwtPayload } from './jwt';
 
 
 
@@ -95,7 +96,8 @@ export async function apiRequest(
     // КРИТИЧНО: Буфер 10 минут (600 секунд) чтобы избежать race condition с серверной проверкой
     if (token) {
       try {
-        const payload = JSON.parse(atob(token.split('.')[1]));
+        const payload = decodeJwtPayload(token);
+        if (!payload) throw new Error('Invalid JWT');
         const now = Math.floor(Date.now() / 1000);
         // Если токен истекает в течение 10 минут, обновляем его превентивно
         // Увеличено с 5 до 10 минут для синхронизации с сервером (который проверяет за 7 минут)

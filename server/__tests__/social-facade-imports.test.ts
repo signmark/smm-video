@@ -18,7 +18,8 @@ const SOCIAL_DIR = resolve(__dirname, '../services/social');
 // Доказуемо мёртвые файлы: импортируют несуществующие модули, т.е. не могут
 // быть загружены никем (иначе рантайм упал бы на резолве). Удаление — по
 // решению владельца, см. docs/platform-convergence-table.md.
-const KNOWN_DEAD = new Set(['telegram-proxy-service.ts']);
+// Task 10: telegram-proxy-service.ts удалён (docs/prompts/kimi-task10-evidence-2026-07-21.md).
+const KNOWN_DEAD = new Set<string>();
 
 function resolvesToFile(fromDir: string, specifier: string): boolean {
   const base = resolve(fromDir, specifier);

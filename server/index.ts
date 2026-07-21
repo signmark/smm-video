@@ -763,14 +763,6 @@ app.use('/video-app', (req, res, next) => {
     }
 
     try {
-      const youtubeSettingsRouter = (await import('./routes/campaign-youtube-settings')).default;
-      app.use('/api', youtubeSettingsRouter);
-      log("YouTube Campaign Settings routes registered");
-    } catch (err) {
-      log(`campaign-youtube-settings routes error: ${err instanceof Error ? err.message : String(err)}`);
-    }
-
-    try {
       const campaignSettingsRouter = (await import('./routes/campaign-settings')).default;
       app.use('/api', campaignSettingsRouter);
       log("Campaign Settings routes registered");

@@ -6,6 +6,7 @@ import { Router } from 'express';
 import { YouTubeOAuth } from '../utils/youtube-oauth';
 import { authMiddleware } from '../middleware/auth';
 import { GlobalApiKeysService } from '../services/global-api-keys';
+import { authorizeCampaignAccess } from '../services/campaign-access';
 
 const router = Router();
 
@@ -27,6 +28,8 @@ router.post('/youtube/auth/start', authMiddleware, async (req, res) => {
 
     // Получаем campaignId из тела запроса
     const { campaignId } = req.body;
+    if (!campaignId) return res.status(400).json({ error: 'campaignId обязателен' });
+    await authorizeCampaignAccess(campaignId, userId, req.user?.token || '', req.user?.is_smm_admin === true);
     console.log('[youtube-auth] Starting OAuth for campaignId:', campaignId);
 
     // Получаем конфигурацию YouTube из базы данных
@@ -117,14 +120,7 @@ router.get('/youtube/auth/callback', async (req, res) => {
 
     const stateData = oauthStates.get(stateKey);
 
-    // Для тестовых state параметров и устаревших state используем fallback
-    if (!stateData && stateKey.includes('test_state_manual')) {
-      userId = '53921f16-f51d-4591-80b9-8caa4fde4d13'; // Тестовый пользователь
-    } else if (!stateData && stateKey.includes('53921f16-f51d-4591-80b9-8caa4fde4d13')) {
-      // Fallback для устаревших state параметров, извлекаем userId из самого state
-      userId = '53921f16-f51d-4591-80b9-8caa4fde4d13';
-      console.log('[youtube-auth] Используем fallback для устаревшего state параметра');
-    } else if (!stateData) {
+    if (!stateData) {
       return res.status(400).json({
         error: 'Неверный state параметр'
       });

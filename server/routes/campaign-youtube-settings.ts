@@ -1,26 +1,33 @@
 import express from 'express';
 import axios from 'axios';
 import { log } from '../utils/logger';
+import { authenticateUser } from '../middleware/user-auth';
+import { authorizeCampaignAccess, CampaignAccessError } from '../services/campaign-access';
 
 const router = express.Router();
+router.use(authenticateUser);
+
+function sanitizeYoutubeSettings(settings: any) {
+  if (!settings) return null;
+  return {
+    channelId: settings.channelId || '',
+    channelTitle: settings.channelTitle || '',
+    configured: Boolean(settings.configured && settings.channelId),
+    setupCompletedAt: settings.setupCompletedAt || null,
+    hasAccessToken: Boolean(settings.accessToken),
+    hasRefreshToken: Boolean(settings.refreshToken),
+  };
+}
 
 /**
  * Получение YouTube настроек из JSON кампании
  */
 router.get('/campaigns/:campaignId/youtube-settings', async (req, res) => {
   const { campaignId } = req.params;
-  const userToken = req.headers.authorization?.replace('Bearer ', '');
+  const userToken = req.user?.token || '';
 
   try {
-    // Используем системный токен как fallback для доступа к базе данных
-    const tokenToUse = userToken || process.env.DIRECTUS_TOKEN;
-    
-    if (!tokenToUse) {
-      return res.status(401).json({
-        success: false,
-        error: 'Токен авторизации не доступен'
-      });
-    }
+    await authorizeCampaignAccess(campaignId, req.user?.id, userToken, req.user?.is_smm_admin === true);
 
     console.log('📋 [YOUTUBE-SETTINGS] Loading YouTube settings for campaign:', campaignId);
 
@@ -29,7 +36,7 @@ router.get('/campaigns/:campaignId/youtube-settings', async (req, res) => {
       `${process.env.DIRECTUS_URL}/items/user_campaigns/${campaignId}`,
       {
         headers: {
-          Authorization: `Bearer ${tokenToUse}`,
+          Authorization: `Bearer ${userToken}`,
           'Content-Type': 'application/json'
         }
       }
@@ -48,11 +55,14 @@ router.get('/campaigns/:campaignId/youtube-settings', async (req, res) => {
 
     res.json({
       success: true,
-      settings: youtubeSettings
+      settings: sanitizeYoutubeSettings(youtubeSettings)
     });
 
   } catch (error: any) {
     console.error('❌ Error retrieving YouTube settings:', error.message);
+    if (error instanceof CampaignAccessError) {
+      return res.status(error.status).json({ success: false, code: error.code, error: 'Кампания не найдена' });
+    }
     res.status(500).json({
       success: false,
       error: 'Ошибка при получении YouTube настроек',
@@ -67,15 +77,19 @@ router.get('/campaigns/:campaignId/youtube-settings', async (req, res) => {
 router.patch('/campaigns/:campaignId/youtube-settings', async (req, res) => {
   const { campaignId } = req.params;
   const { accessToken, refreshToken, channelId, channelTitle, setupCompletedAt } = req.body;
-  const userToken = req.headers.authorization?.replace('Bearer ', '');
+  const userToken = req.user?.token || '';
 
   try {
-    if (!accessToken || !channelId) {
+    if (accessToken || refreshToken) {
       return res.status(400).json({
         success: false,
-        error: 'Access Token и Channel ID обязательны'
+        code: 'OAUTH_TOKENS_SERVER_MANAGED',
+        error: 'OAuth-токены сохраняются только серверным callback'
       });
     }
+
+    if (!channelId) return res.status(400).json({ success: false, error: 'Channel ID обязателен' });
+    await authorizeCampaignAccess(campaignId, req.user?.id, userToken, req.user?.is_smm_admin === true);
 
     // Получим существующие настройки кампании
     const getCampaignResponse = await axios.get(
@@ -97,8 +111,6 @@ router.patch('/campaigns/:campaignId/youtube-settings', async (req, res) => {
       ...existingSettings,
       youtube: {
         ...existingYoutube, // Сохраняем существующие данные
-        accessToken,
-        refreshToken: refreshToken || existingYoutube.refreshToken,
         channelId,
         channelTitle: channelTitle || existingYoutube.channelTitle || '',
         setupCompletedAt: setupCompletedAt || new Date().toISOString(),
@@ -123,17 +135,20 @@ router.patch('/campaigns/:campaignId/youtube-settings', async (req, res) => {
     log('YouTube settings saved successfully', {
       campaignId,
       channelTitle: channelTitle,
-      hasAccessToken: !!accessToken
+      hasAccessToken: Boolean(existingYoutube.accessToken)
     });
 
     res.json({
       success: true,
       message: 'YouTube настройки успешно сохранены',
-      settings: updatedSettings.youtube
+      settings: sanitizeYoutubeSettings(updatedSettings.youtube)
     });
 
   } catch (error: any) {
     console.error('❌ Error saving YouTube settings:', error.message);
+    if (error instanceof CampaignAccessError) {
+      return res.status(error.status).json({ success: false, code: error.code, error: 'Кампания не найдена' });
+    }
     res.status(500).json({
       success: false,
       error: 'Ошибка при сохранении YouTube настроек',

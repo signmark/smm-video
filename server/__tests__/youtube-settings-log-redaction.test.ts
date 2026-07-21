@@ -40,7 +40,16 @@ vi.mock('../utils/logger', () => ({ log: vi.fn() }));
 // пользователя через Directus. Этот файл проверяет redaction, а не auth —
 // подменяем middleware пропуском запроса.
 vi.mock('../middleware/user-auth', () => ({
-  authenticateUser: (_req: any, _res: any, next: any) => next(),
+  authenticateUser: (req: any, res: any, next: any) => {
+    const token = req.headers.authorization?.replace('Bearer ', '');
+    if (!token) return res.status(401).json({ error: 'Unauthorized' });
+    req.user = { id: 'user-1', token, is_smm_admin: false };
+    next();
+  },
+}));
+vi.mock('../services/campaign-access', () => ({
+  authorizeCampaignAccess: vi.fn().mockResolvedValue({ id: 'campaign-1', user_id: 'user-1' }),
+  CampaignAccessError: class CampaignAccessError extends Error {},
 }));
 // В проде YouTubeService.publishContent ходит в YouTube Data API с токенами
 // пользователя. Мокаем класс, чтобы тест не уходил в сеть; ответ успешный и
@@ -119,7 +128,7 @@ describe('GET /campaigns/:campaignId/youtube-settings — redaction токено
     capture.restore();
   });
 
-  it('happy-path: авторизованный запрос возвращает настройки клиенту (токены — часть API-ответа)', async () => {
+  it('happy-path: авторизованный запрос возвращает только безопасные метаданные', async () => {
     // Нормальная форма вызова из UI: Bearer-токен пользователя в заголовке,
     // в Directus лежат сохранённые настройки канала.
     mockedAxiosGet.mockResolvedValueOnce(
@@ -137,9 +146,10 @@ describe('GET /campaigns/:campaignId/youtube-settings — redaction токено
 
     expect(response.status).toBe(200);
     expect(response.body.success).toBe(true);
-    // Контракт API: клиенту настройки отдаются целиком, включая токены —
-    // redaction касается ЛОГА, а не ответа авторизованному вызывающему.
-    expect(response.body.settings.accessToken).toBe(ACCESS_TOKEN);
+    expect(response.body.settings.channelId).toBe(CHANNEL_ID);
+    expect(response.body.settings.hasAccessToken).toBe(true);
+    expect(response.body.settings.accessToken).toBeUndefined();
+    expect(response.body.settings.refreshToken).toBeUndefined();
   });
 
   it('регрессия 2026-07-21: лог содержит channelId/configured, но НЕ значения accessToken/refreshToken', async () => {
@@ -178,19 +188,9 @@ describe('GET /campaigns/:campaignId/youtube-settings — redaction токено
   });
 
   it('без Bearer-токена и без DIRECTUS_TOKEN: 401, обращения к Directus нет', async () => {
-    // В проде fallback — системный DIRECTUS_TOKEN из env; убираем его, чтобы
-    // зафиксировать контракт ветки «токен авторизации не доступен».
-    const savedToken = process.env.DIRECTUS_TOKEN;
-    delete process.env.DIRECTUS_TOKEN;
-    try {
-      const response = await request(app).get('/api/campaigns/campaign-1/youtube-settings');
-
-      expect(response.status).toBe(401);
-      expect(response.body.success).toBe(false);
-      expect(mockedAxiosGet).not.toHaveBeenCalled();
-    } finally {
-      if (savedToken !== undefined) process.env.DIRECTUS_TOKEN = savedToken;
-    }
+    const response = await request(app).get('/api/campaigns/campaign-1/youtube-settings');
+    expect(response.status).toBe(401);
+    expect(mockedAxiosGet).not.toHaveBeenCalled();
   });
 
   it('ошибка Directus: 500 и console.error без значений токенов', async () => {
@@ -227,6 +227,7 @@ describe('POST /api/test-youtube-publish — redaction токенов в лог�
     // в теле запроса; хендлер логирует их форму (publishing-routes.ts ~180).
     const response = await request(app)
       .post('/api/test-youtube-publish')
+      .set('Authorization', 'Bearer user-session-token')
       .send({
         contentId: 'content-1',
         content: { title: 'Тест', description: 'Описание', videoUrl: 'https://example.com/v.mp4', tags: [] },

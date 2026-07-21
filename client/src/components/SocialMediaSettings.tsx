@@ -488,100 +488,21 @@ export function SocialMediaSettings({
     channelInfo: any;
     campaignId?: string;  // Добавляем возможность передать campaignId
   }) => {
-    const targetCampaignId = data.campaignId || campaignId;
-    
-    console.log('🎬 [YouTube Complete] Setting form values:', {
+    // OAuth callback already persisted the tokens on the server. The browser only
+    // receives channel metadata and must never round-trip OAuth credentials.
+    form.setValue('youtube.channelId', data.channelId);
+    form.setValue('youtube.channelTitle', data.channelTitle);
+    setYoutubeSettings((current: any) => ({
+      ...(current || {}),
       channelId: data.channelId,
       channelTitle: data.channelTitle,
-      originalCampaignId: campaignId,
-      targetCampaignId: targetCampaignId,
-      campaignIdFromData: data.campaignId
+      configured: true,
+    }));
+    toast({
+      title: "YouTube настроен!",
+      description: `Канал "${data.channelTitle}" готов к публикации видео`
     });
-
-    // Если campaignId из токенов отличается от текущей кампании, сохраняем в правильную кампанию
-    if (data.campaignId && data.campaignId !== campaignId) {
-      console.log('🎯 [YouTube Complete] Saving to different campaign:', data.campaignId);
-      
-      try {
-        // Сохраняем настройки напрямую в указанную кампанию через API
-        const response = await fetch(`/api/campaigns/${data.campaignId}`, {
-          method: 'PATCH',
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            social_media_settings: {
-              youtube: {
-                channelId: data.channelId,
-                channelTitle: data.channelTitle,
-                accessToken: data.accessToken,
-                refreshToken: data.refreshToken
-              }
-            }
-          })
-        });
-        
-        if (response.ok) {
-          console.log('✅ [YouTube Complete] Settings saved to correct campaign:', data.campaignId);
-          toast({
-            title: "YouTube настроен!",
-            description: `Канал "${data.channelTitle}" сохранен в правильную кампанию`
-          });
-        } else {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-      } catch (error) {
-        console.error('❌ [YouTube Complete] Error saving to target campaign:', error);
-        toast({
-          title: "Ошибка сохранения",
-          description: "Не удалось сохранить YouTube настройки в правильную кампанию",
-          variant: "destructive"
-        });
-      }
-    } else {
-      // Сохраняем YouTube настройки напрямую через API (form.setValue асинхронен)
-      try {
-        const currentValues = form.getValues();
-        const mergedData = {
-          ...currentValues,
-          youtube: {
-            channelId: data.channelId,
-            channelTitle: data.channelTitle,
-            accessToken: data.accessToken,
-            refreshToken: data.refreshToken
-          }
-        };
-
-        const response = await apiRequest(`/api/campaigns/${campaignId}`, {
-          method: 'PATCH',
-          data: { social_media_settings: mergedData }
-        });
-
-        // Обновляем form state для UI
-        form.setValue('youtube.channelId', data.channelId);
-        form.setValue('youtube.channelTitle', data.channelTitle);
-        form.setValue('youtube.accessToken', data.accessToken);
-        form.setValue('youtube.refreshToken', data.refreshToken);
-
-        console.log('✅ [YouTube Complete] Settings saved to current campaign');
-
-        toast({
-          title: "YouTube настроен!",
-          description: `Канал "${data.channelTitle}" готов к публикации видео`
-        });
-
-        // Обновляем кэш кампании чтобы accordion показывал "Настроено"
-        if (onSettingsUpdated) onSettingsUpdated();
-      } catch (error) {
-        console.error('❌ [YouTube Complete] Error saving settings:', error);
-        toast({
-          title: "Ошибка сохранения",
-          description: "YouTube настроен, но возникла ошибка при сохранении настроек",
-          variant: "destructive"
-        });
-      }
-    }
+    if (onSettingsUpdated) onSettingsUpdated();
   };
 
   const form = useForm<SocialMediaSettings>({
@@ -951,12 +872,6 @@ export function SocialMediaSettings({
           setYoutubeSettings(data.settings);
           
           // Обновляем поля формы с полученными данными
-          if (data.settings.accessToken) {
-            form.setValue('youtube.accessToken', data.settings.accessToken);
-          }
-          if (data.settings.refreshToken) {
-            form.setValue('youtube.refreshToken', data.settings.refreshToken);
-          }
           if (data.settings.channelId) {
             form.setValue('youtube.channelId', data.settings.channelId);
           }
@@ -1203,12 +1118,6 @@ export function SocialMediaSettings({
 
       
       // Обновляем поля формы с данными из базы
-      if (youtubeSettings.accessToken) {
-        form.setValue('youtube.accessToken', youtubeSettings.accessToken);
-      }
-      if (youtubeSettings.refreshToken) {
-        form.setValue('youtube.refreshToken', youtubeSettings.refreshToken);
-      }
       if (youtubeSettings.channelId) {
         form.setValue('youtube.channelId', youtubeSettings.channelId);
       }
@@ -1219,7 +1128,7 @@ export function SocialMediaSettings({
 
       
       // Принудительно обновляем отображение формы
-      form.trigger(['youtube.accessToken', 'youtube.channelId']);
+      form.trigger('youtube.channelId');
     }
   }, [youtubeSettings, form]);
 

@@ -49,8 +49,7 @@ export function YouTubeSetupWizard({ campaignId, initialSettings, onComplete }: 
             headers: { 'Authorization': `Bearer ${localStorage.getItem('auth_token')}` }
           }).then(r => r.json()).then(data => {
             const s = data.settings;
-            if (s?.channelId && s?.accessToken) {
-              setAuthTokens({ accessToken: s.accessToken, refreshToken: s.refreshToken || '' });
+            if (s?.channelId && s?.configured) {
               const chInfo: YouTubeChannelInfo = {
                 channelId: s.channelId,
                 channelTitle: s.channelTitle || '',
@@ -63,7 +62,7 @@ export function YouTubeSetupWizard({ campaignId, initialSettings, onComplete }: 
               };
               setChannelInfo(chInfo);
               setStep(3);
-              onComplete({ channelId: s.channelId, channelTitle: s.channelTitle || '', accessToken: s.accessToken, refreshToken: s.refreshToken || '', channelInfo: chInfo });
+              onComplete({ channelId: s.channelId, channelTitle: s.channelTitle || '', accessToken: '', refreshToken: '', channelInfo: chInfo });
               setIsLoading(false);
             }
           }).catch(e => console.error('❌ [YouTube Wizard] Error reloading settings:', e));
@@ -178,8 +177,7 @@ export function YouTubeSetupWizard({ campaignId, initialSettings, onComplete }: 
                 if (resp.ok) {
                   const data = await resp.json();
                   const s = data.settings;
-                  if (s?.channelId && s?.accessToken) {
-                    setAuthTokens({ accessToken: s.accessToken, refreshToken: s.refreshToken || '' });
+                  if (s?.channelId && s?.configured) {
                     const chInfo: YouTubeChannelInfo = {
                       channelId: s.channelId,
                       channelTitle: s.channelTitle || '',
@@ -192,7 +190,7 @@ export function YouTubeSetupWizard({ campaignId, initialSettings, onComplete }: 
                     };
                     setChannelInfo(chInfo);
                     setStep(3);
-                    onComplete({ channelId: s.channelId, channelTitle: s.channelTitle || '', accessToken: s.accessToken, refreshToken: s.refreshToken || '', channelInfo: chInfo });
+                    onComplete({ channelId: s.channelId, channelTitle: s.channelTitle || '', accessToken: '', refreshToken: '', channelInfo: chInfo });
                     setIsLoading(false);
                     return;
                   }

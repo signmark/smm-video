@@ -4,82 +4,59 @@
  */
 
 import { useAuthStore } from "./store";
+import { decodeJwtPayload } from './jwt';
 
-/**
- * Обновляет токен авторизации через Directus
- * @returns Promise с результатом обновления (true - успешно, false - ошибка)
- */
-export async function refreshAuthToken(): Promise<boolean> {
-  const token = localStorage.getItem('auth_token');
+export type RefreshAuthResult = 'refreshed' | 'superseded' | 'invalid' | 'unavailable';
+
+let refreshInFlight: Promise<RefreshAuthResult> | null = null;
+
+async function performRefresh(): Promise<RefreshAuthResult> {
   const refreshToken = localStorage.getItem('refresh_token');
-  
-  if (!token && !refreshToken) {
-    console.log('Невозможно обновить токен: отсутствуют токены');
-    return false;
-  }
-  
+  if (!refreshToken) return 'invalid';
+
+  let response: Response;
   try {
-    // Если есть refresh token, пытаемся обновить токен
-    if (refreshToken) {
-      const response = await fetch('/api/auth/refresh', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ refresh_token: refreshToken })
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        // user_id сервер не возвращает в ответе на refresh — берём из localStorage
-        const userId = data.user_id || localStorage.getItem('user_id');
-        if (data.token && userId) {
-          localStorage.setItem('auth_token', data.token);
-          if (data.refresh_token) localStorage.setItem('refresh_token', data.refresh_token);
-          localStorage.setItem('user_id', userId);
-          useAuthStore.getState().setAuth(data.token, userId);
-          
-          console.log('[refreshAuth] Токен успешно обновлен и сохранен');
-          return true;
-        }
-      } else {
-        console.log('Не удалось обновить токен через refresh token, пробуем прямую авторизацию');
-      }
-    }
-    
-    // Если у нас есть сохраненные учетные данные, пробуем автоматическую повторную авторизацию
-    const email = localStorage.getItem('user_email');
-    const password = localStorage.getItem('user_password'); // В реальном приложении не храните пароли в localStorage
-    
-    if (email && password) {
-      const response = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ email, password })
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        if (data.token && data.user_id) {
-          // КРИТИЧНО: Обновляем токен в localStorage И Zustand store
-          localStorage.setItem('auth_token', data.token);
-          localStorage.setItem('user_id', data.user_id);
-          useAuthStore.getState().setAuth(data.token, data.user_id);
-          
-          console.log('[refreshAuth] Токен успешно обновлен через повторную авторизацию');
-          return true;
-        }
-      }
-    }
-    
-    console.log('[refreshAuth] Не удалось обновить токен - все методы исчерпаны');
-    return false;
-  } catch (error) {
-    console.error('Ошибка при обновлении токена:', error);
-    return false;
+    response = await fetch('/api/auth/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+  } catch {
+    return 'unavailable';
   }
+
+  if (response.status === 400 || response.status === 401) return 'invalid';
+  if (!response.ok) return 'unavailable';
+
+  const data = await response.json().catch(() => null);
+  if (!data?.token) return 'unavailable';
+
+  // A logout or another login happened while this request was in flight.
+  // Never let the stale response overwrite the newer account/session.
+  if (localStorage.getItem('refresh_token') !== refreshToken) return 'superseded';
+
+  const userId = decodeJwtPayload(data.token)?.id;
+  if (!userId) return 'unavailable';
+
+  localStorage.setItem('auth_token', data.token);
+  if (data.refresh_token) localStorage.setItem('refresh_token', data.refresh_token);
+  useAuthStore.getState().setAuth(data.token, userId);
+  return 'refreshed';
+}
+
+export async function refreshAuthSession(): Promise<RefreshAuthResult> {
+  if (!refreshInFlight) {
+    refreshInFlight = performRefresh().finally(() => {
+      refreshInFlight = null;
+    });
+  }
+  return refreshInFlight;
+}
+
+/** Backwards-compatible boolean API for existing callers. */
+export async function refreshAuthToken(): Promise<boolean> {
+  const result = await refreshAuthSession();
+  return result === 'refreshed' || result === 'superseded';
 }
 
 /**

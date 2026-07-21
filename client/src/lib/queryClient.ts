@@ -5,63 +5,64 @@ import { redirectToLogin } from "@/lib/public-routes";
 
 
 
-async function throwIfResNotOk(res: Response) {
+function forceLogout() {
+  useAuthStore.getState().logout();
+  queryClient.clear();
+  redirectToLogin();
+}
+
+async function tryRefreshSession() {
+  const { refreshAuthSession } = await import('@/lib/refreshAuth');
+  const result = await refreshAuthSession();
+
+  if (result === 'refreshed' || result === 'superseded') {
+    const error = new Error('TOKEN_REFRESHED');
+    (error as any).tokenRefreshed = true;
+    throw error;
+  }
+
+  if (result === 'invalid') {
+    forceLogout();
+    const error = new Error('AUTH_FAILED');
+    (error as any).authFailed = true;
+    throw error;
+  }
+
+  const error = new Error('Не удалось проверить или обновить сессию. Проверьте соединение и повторите запрос.');
+  (error as any).authUnavailable = true;
+  throw error;
+}
+
+async function throwIfResNotOk(res: Response, allowAuthRefresh = true) {
   if (!res.ok) {
     const text = (await res.text()) || res.statusText;
-    
-    // При 401 пытаемся обновить токен автоматически
-    if (res.status === 401) {
-      // Пробуем обновить токен в фоне
-      const { refreshAuthToken } = await import('@/lib/refreshAuth');
-      const refreshSuccess = await refreshAuthToken();
-      
-      if (refreshSuccess) {
-        // Токен успешно обновлен - выбрасываем ошибку с флагом для повтора запроса
-        const error = new Error('TOKEN_REFRESHED');
-        (error as any).tokenRefreshed = true;
-        throw error;
-      } else {
-        // Не удалось обновить токен - выход из системы
-        useAuthStore.getState().logout();
-        redirectToLogin();
-        // ВАЖНО: throw вместо return, чтобы caller не пытался прочитать тело ответа
-        // (тело уже прочитано через res.text() выше)
-        const error = new Error('AUTH_FAILED');
-        (error as any).authFailed = true;
-        throw error;
-      }
-    }
-    
-    // Проверяем на истекший токен в ответе сервера
-    if (res.status === 500) {
-      try {
-        const errorData = JSON.parse(text);
-        if (errorData.details && errorData.details.includes('TOKEN_EXPIRED')) {
-          // Пытаемся обновить токен
-          const { refreshAuthToken } = await import('@/lib/refreshAuth');
-          const refreshSuccess = await refreshAuthToken();
-          
-          if (refreshSuccess) {
-            const error = new Error('TOKEN_REFRESHED');
-            (error as any).tokenRefreshed = true;
-            throw error;
-          } else {
-            useAuthStore.getState().logout();
-            redirectToLogin();
-            return;
-          }
-        }
-      } catch (parseError) {
-        // Если не удалось распарсить JSON, продолжаем обычную обработку ошибки
-      }
-    }
-    
-    let message = text;
+
+    let errorData: any = null;
     try {
-      const errorData = JSON.parse(text);
-      message = errorData.error || errorData.message || errorData.detail || text;
+      errorData = JSON.parse(text);
     } catch {
-      // Ответ не JSON — показываем исходный текст сервера.
+      // Ответ не JSON — ниже будет использован исходный текст.
+    }
+
+    const isAuthFailure =
+      res.status === 401 ||
+      (res.status === 403 && errorData?.code === 'AUTH_SESSION_INVALID') ||
+      (res.status === 500 && errorData?.details?.includes?.('TOKEN_EXPIRED'));
+
+    if (isAuthFailure) {
+      if (allowAuthRefresh) {
+        await tryRefreshSession();
+      }
+
+      forceLogout();
+      const error = new Error('AUTH_FAILED');
+      (error as any).authFailed = true;
+      throw error;
+    }
+
+    let message = text;
+    if (errorData) {
+      message = errorData.error || errorData.message || errorData.detail || text;
     }
 
     const error = new Error(message);
@@ -100,10 +101,22 @@ export async function apiRequest(
         // Увеличено с 5 до 10 минут для синхронизации с сервером (который проверяет за 7 минут)
         if (payload.exp && payload.exp < (now + 600)) {
           console.log('[queryClient] Токен скоро истечет, превентивное обновление...');
-          const { refreshAuthToken } = await import('@/lib/refreshAuth');
-          await refreshAuthToken();
+          const { refreshAuthSession } = await import('@/lib/refreshAuth');
+          const refreshResult = await refreshAuthSession();
+          if (refreshResult === 'invalid') {
+            forceLogout();
+            const error = new Error('AUTH_FAILED');
+            (error as any).authFailed = true;
+            throw error;
+          }
+          if (refreshResult === 'unavailable' && payload.exp <= now) {
+            const error = new Error('Не удалось обновить истекшую сессию. Проверьте соединение и повторите вход.');
+            (error as any).authUnavailable = true;
+            throw error;
+          }
         }
-      } catch (e) {
+      } catch (e: any) {
+        if (e?.authFailed || e?.authUnavailable) throw e;
         // Если токен поврежден, просто продолжаем - сервер вернет 401
         console.warn('[queryClient] Не удалось проверить срок действия токена');
       }
@@ -117,17 +130,24 @@ export async function apiRequest(
       "x-user-id": useAuthStore.getState().userId || ''
     };
 
-    return await fetch(url + queryString, {
+    const requestToken = useAuthStore.getState().token;
+    const response = await fetch(url + queryString, {
       method,
       headers,
       body: data ? JSON.stringify(data) : undefined,
       credentials: "include",
       cache: method === 'GET' ? 'no-store' : 'default',
     });
+    return Object.assign(response, { __requestToken: requestToken });
   };
 
   try {
     const res = await makeRequest();
+    if (res.status === 401 && (res as any).__requestToken !== useAuthStore.getState().token) {
+      const retried = await makeRequest();
+      await throwIfResNotOk(retried, false);
+      return retried.status === 204 ? { success: true } : retried.json();
+    }
     await throwIfResNotOk(res);
     
     // Если статус 204 No Content, не пытаемся распарсить JSON
@@ -141,7 +161,7 @@ export async function apiRequest(
     if (error.tokenRefreshed) {
       console.log('Токен обновлен, повтор запроса...');
       const res = await makeRequest();
-      await throwIfResNotOk(res);
+      await throwIfResNotOk(res, false);
       
       if (res.status === 204) {
         return { success: true };
@@ -192,7 +212,7 @@ export const getQueryFn: <T>(options: {
           return null;
         }
         
-        await throwIfResNotOk(res);
+        await throwIfResNotOk(res, false);
         return await res.json();
       }
       throw error;

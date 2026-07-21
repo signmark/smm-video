@@ -1,4 +1,4 @@
-import React, { useEffect, Suspense, lazy } from "react";
+import React, { Suspense, lazy } from "react";
 import { Switch, Route, useParams } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -15,31 +15,6 @@ const captureRefCode = () => {
   }
 };
 captureRefCode(); // ← выполняется сразу при импорте модуля, до рендера
-
-// Принудительная очистка истекшего токена
-const clearExpiredToken = () => {
-  const currentPath = window.location.pathname;
-  if (currentPath === '/login' || currentPath === '/auth/login' || currentPath === '/auth/register' || currentPath === '/auth/forgot-password' || currentPath === '/auth/reset-password') {
-    return;
-  }
-
-  const token = localStorage.getItem('auth_token');
-  if (token) {
-    try {
-      const payload = JSON.parse(atob(token.split('.')[1]));
-      const now = Math.floor(Date.now() / 1000);
-      if (payload.exp && payload.exp < now) {
-        ['auth_token','refresh_token','user_id','is_admin','selected_campaign_id','selected_campaign_name'].forEach(k => localStorage.removeItem(k));
-        sessionStorage.clear();
-        window.location.href = '/login';
-      }
-    } catch (e) {
-      ['auth_token','refresh_token','user_id','is_admin','selected_campaign_id','selected_campaign_name'].forEach(k => localStorage.removeItem(k));
-      sessionStorage.clear();
-      window.location.href = '/login';
-    }
-  }
-};
 
 // Lazy loading для основных страниц - это ускоряет первоначальную загрузку
 const Dashboard = lazy(() => import("@/pages/dashboard"));
@@ -250,16 +225,6 @@ function AppWithWebSocket() {
 }
 
 function App() {
-  useEffect(() => {
-    // Первоначальная проверка при загрузке страницы
-    clearExpiredToken();
-
-    // Проверка раз в минуту достаточна — истечение токена не происходит мгновенно
-    const interval = setInterval(clearExpiredToken, 60000);
-
-    return () => clearInterval(interval);
-  }, []);
-
   return (
     <QueryClientProvider client={queryClient}>
       <Toaster />

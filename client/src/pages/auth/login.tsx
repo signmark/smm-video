@@ -58,13 +58,13 @@ export default function Login() {
 
       const authData = await response.json();
       
-      if (!authData?.token) {
+      if (!authData?.token || !authData?.refresh_token || !authData?.user?.id) {
         throw new Error("Неверный формат ответа от сервера");
       }
 
       const access_token = authData.token;
       const refresh_token = authData.refresh_token;
-      const expires = authData.expires || 86400000; // 24 часа по умолчанию (в мс)
+      const expires = authData.expires || 86400; // API возвращает секунды
       const userId = authData.user?.id;
       
 
@@ -79,7 +79,7 @@ export default function Login() {
       setAuth(access_token, userId);
 
       // Устанавливаем автоматическое обновление токена
-      setupTokenRefresh(expires);
+      setupTokenRefresh(expires * 1000);
       
       // Добавляем задержку в 100мс, чтобы дать другим компонентам времени обновиться
       await new Promise(resolve => setTimeout(resolve, 100));

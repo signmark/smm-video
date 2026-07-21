@@ -1,4 +1,5 @@
 import { useAuthStore } from './store';
+import { decodeJwtPayload } from './jwt';
 
 let refreshTimeout: NodeJS.Timeout | null = null;
 let refreshInterval: NodeJS.Timeout | null = null;
@@ -25,6 +26,18 @@ export const setupTokenRefresh = (expiresInMs: number) => {
       console.error('[auth] Ошибка планового обновления токена:', err);
     });
   }, refreshIn);
+};
+
+/** Schedules refresh from the JWT's actual expiry instead of a guessed lifetime. */
+export const setupTokenRefreshFromToken = (token: string) => {
+  try {
+    const payload = decodeJwtPayload(token);
+    if (!payload?.exp) throw new Error('JWT has no expiry');
+    const expiresInMs = payload.exp * 1000 - Date.now();
+    setupTokenRefresh(Math.max(expiresInMs, 0));
+  } catch {
+    setupTokenRefresh(15 * 60 * 1000);
+  }
 };
 
 /**
@@ -61,74 +74,29 @@ export const stopRefreshInterval = () => {
  * Обновляет токен доступа с использованием refresh_token.
  */
 export const refreshAccessToken = async (): Promise<string> => {
-  const refreshToken = localStorage.getItem('refresh_token');
-  const userId = localStorage.getItem('user_id');
+  const { refreshAuthSession } = await import('./refreshAuth');
+  const result = await refreshAuthSession();
 
-  if (!refreshToken) {
-    throw new Error('No refresh token available');
+  if (result === 'invalid') {
+    localStorage.removeItem('refresh_token');
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('user_id');
+    useAuthStore.getState().clearAuth();
+    throw new Error('AUTH_SESSION_INVALID');
+  }
+  if (result === 'unavailable') {
+    throw new Error('AUTH_REFRESH_UNAVAILABLE');
+  }
+  if (result === 'superseded') {
+    const currentToken = localStorage.getItem('auth_token');
+    if (!currentToken) throw new Error('AUTH_SESSION_SUPERSEDED');
+    return currentToken;
   }
 
-  let apiResponse: Response;
-  try {
-    apiResponse = await fetch('/api/auth/refresh', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Cache-Control': 'no-cache',
-        'Pragma': 'no-cache',
-      },
-      body: JSON.stringify({ refresh_token: refreshToken, user_id: userId }),
-    });
-  } catch (networkError) {
-    // Сетевая ошибка — НЕ выходим из системы, просто ждём следующей попытки
-    console.warn('[auth] Сетевая ошибка при обновлении токена, попробуем позже');
-    throw networkError;
-  }
-
-  if (!apiResponse.ok) {
-    if (apiResponse.status === 401) {
-      // Refresh token истёк — тихо чистим только refresh_token
-      localStorage.removeItem('refresh_token');
-      console.warn('[auth] Refresh token истёк');
-      return localStorage.getItem('auth_token') || '';
-    }
-    const errorText = await apiResponse.text().catch(() => '');
-    console.error(`[auth] Ошибка обновления токена: ${apiResponse.status}`, errorText);
-    // НЕ выходим из системы — временная ошибка сервера
-    throw new Error(`Token refresh failed: ${apiResponse.status}`);
-  }
-
-  const data = await apiResponse.json();
-
-  if (!data.success || !data.token) {
-    console.error('[auth] Неверный формат ответа при обновлении токена:', data);
-    throw new Error('Invalid token refresh response');
-  }
-
-  // Обновляем токены
-  localStorage.setItem('auth_token', data.token);
-  if (data.refresh_token) {
-    localStorage.setItem('refresh_token', data.refresh_token);
-  }
-
-  // Обновляем store
-  useAuthStore.getState().setAuth(data.token, userId);
-
-  // expires_at — абсолютный Unix timestamp в мс от Directus
-  // Конвертируем в длительность
-  let expiresInMs: number;
-  if (data.expires_at && data.expires_at > Date.now()) {
-    expiresInMs = data.expires_at - Date.now();
-  } else if (data.expires && data.expires > 0) {
-    // expires может быть секундами или мс
-    expiresInMs = data.expires < 10_000 ? data.expires * 1000 : data.expires;
-  } else {
-    expiresInMs = 15 * 60 * 1000; // 15 минут по умолчанию
-  }
-
-  setupTokenRefresh(expiresInMs);
-
-  return data.token;
+  const token = localStorage.getItem('auth_token');
+  if (!token) throw new Error('AUTH_REFRESH_INVALID_RESPONSE');
+  setupTokenRefreshFromToken(token);
+  return token;
 };
 
 /**
@@ -148,7 +116,7 @@ export const loginWithDirectus = async (email: string, password: string) => {
 
   const authData = await response.json();
 
-  if (!authData.token) {
+  if (!authData.token || !authData.refresh_token || !authData.user?.id) {
     throw new Error('Неверный формат ответа от сервера');
   }
 
@@ -193,6 +161,8 @@ export const logout = async () => {
   try { sessionStorage.clear(); } catch {}
 
   useAuthStore.getState().clearAuth();
+  const { queryClient } = await import('./queryClient');
+  queryClient.clear();
 };
 
 /**

@@ -6,7 +6,7 @@ import {
 } from "@tanstack/react-query";
 import { getQueryFn, apiRequest, queryClient } from "../lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { setupTokenRefresh, refreshAccessToken, startRefreshInterval, stopRefreshInterval } from "@/lib/auth";
+import { setupTokenRefresh, setupTokenRefreshFromToken, refreshAccessToken, startRefreshInterval, stopRefreshInterval } from "@/lib/auth";
 import { useAuthStore } from "@/lib/store";
 
 const AUTH_STORAGE_KEYS = [
@@ -61,8 +61,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const refreshToken = localStorage.getItem('refresh_token');
 
     if (token && refreshToken) {
-      refreshAccessToken().catch(console.error);
+      setupTokenRefreshFromToken(token);
       startRefreshInterval();
+    } else if (refreshToken) {
+      refreshAccessToken().catch(console.error);
     }
 
     return () => {
@@ -95,6 +97,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       const data = await response.json();
+      if (!data?.token || !data?.refresh_token || !data?.user?.id) {
+        throw new Error('Сервер вернул неполную сессию');
+      }
       return { access_token: data.token, refresh_token: data.refresh_token, expires: data.expires || 86400, user: data.user };
     },
     onSuccess: (data: LoginResponse) => {
@@ -111,7 +116,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem('user_id', data.user.id);
       useAuthStore.getState().setAuth(data.access_token, data.user.id);
       // expires от сервера — секунды (86400), конвертируем в мс
-      const expiresInMs = data.expires < 10_000 ? data.expires * 1000 : data.expires;
+      const expiresInMs = data.expires * 1000;
       setupTokenRefresh(expiresInMs);
       startRefreshInterval();
       
@@ -142,6 +147,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       const res = await response.json();
+      if (!res?.token || !res?.refresh_token || !res?.user?.id) {
+        throw new Error('Сервер вернул неполную сессию');
+      }
       return { access_token: res.token, refresh_token: res.refresh_token, expires: res.expires || 86400, user: res.user };
     },
     onSuccess: (data: LoginResponse) => {
@@ -157,7 +165,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem('auth_token', data.access_token);
       localStorage.setItem('refresh_token', data.refresh_token);
       localStorage.setItem('user_id', data.user.id);
-      const expiresInMsReg = data.expires < 10_000 ? data.expires * 1000 : data.expires;
+      const expiresInMsReg = data.expires * 1000;
       setupTokenRefresh(expiresInMsReg);
       startRefreshInterval();
       

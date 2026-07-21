@@ -1,280 +1,146 @@
 import { useEffect, useState } from 'react';
 import { useLocation } from 'wouter';
-import { useAuthStore } from '@/lib/store';
-import { refreshAccessToken } from '@/lib/auth';
 import { Loader2 } from 'lucide-react';
+import { useAuthStore } from '@/lib/store';
+import { refreshAuthSession } from '@/lib/refreshAuth';
+import { decodeJwtPayload } from '@/lib/jwt';
+import { isPublicRoute } from '@/lib/public-routes';
+import { queryClient } from '@/lib/queryClient';
 
 interface Props {
   children: React.ReactNode;
 }
 
+type ValidationResult = 'valid' | 'invalid' | 'unavailable';
+
+async function validateToken(accessToken: string): Promise<ValidationResult> {
+  try {
+    const response = await fetch('/api/auth/check', {
+      headers: { Authorization: `Bearer ${accessToken}`, 'Cache-Control': 'no-cache' },
+      cache: 'no-store',
+    });
+    if (response.ok) return 'valid';
+    if (response.status === 401) return 'invalid';
+    return 'unavailable';
+  } catch {
+    return 'unavailable';
+  }
+}
+
 export function AuthGuard({ children }: Props) {
-  const [, navigate] = useLocation();
-  const [location] = useLocation();
-  const [isSessionChecked, setIsSessionChecked] = useState(true); // КРИТИЧНО: true - рендерим UI сразу
+  const [location, navigate] = useLocation();
+  const [isSessionChecked, setIsSessionChecked] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const token = useAuthStore((state) => state.token);
-  const userId = useAuthStore((state) => state.userId);
+  const [sessionError, setSessionError] = useState<string | null>(null);
+  const [retryNonce, setRetryNonce] = useState(0);
   const setAuth = useAuthStore((state) => state.setAuth);
   const clearAuth = useAuthStore((state) => state.clearAuth);
 
-  // Эффект при загрузке компонента для проверки авторизации (ТОЛЬКО при первой загрузке!)
   useEffect(() => {
-    // Проверяем, есть ли токен в хранилище
-    const storedToken = localStorage.getItem('auth_token');
-    const storedUserId = localStorage.getItem('user_id');
-    const storedRefreshToken = localStorage.getItem('refresh_token');
-    
-    const isLoginPage = location === '/auth/login' || location === '/login';
-    const isRegisterPage = location === '/auth/register';
-    const isForgotPasswordPage = location === '/auth/forgot-password';
-    const isResetPasswordPage = location.startsWith('/auth/reset-password');
-    const isHelpPage = location.startsWith('/help'); // Страницы справки доступны без авторизации
-    const isPricingPage = location === '/pricing'; // Страница тарифов доступна без авторизации
-    const isPublicPage = isLoginPage || isRegisterPage || isForgotPasswordPage || isResetPasswordPage || isHelpPage || isPricingPage;
-    
-    // Убрано избыточное логирование
+    let cancelled = false;
 
-    const validateToken = async (accessToken: string): Promise<boolean> => {
-      try {
-        // Проверяем действительность токена через API
-        const response = await fetch('/api/auth/check', {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-            'Cache-Control': 'no-cache'
-          }
-        });
-
-        if (!response.ok) {
-          if (response.status === 401) {
-            // Токен истек, очищаем localStorage
-            localStorage.removeItem('auth_token');
-            localStorage.removeItem('user_id');
-            localStorage.removeItem('refresh_token');
-          }
-          return false;
-        }
-
-        const data = await response.json();
-        // Token validation result processed
-        
-        return data && data.valid === true;
-      } catch (error) {
-        console.error('AuthGuard: Error validating token:', error);
-        return false;
+    const finish = () => {
+      if (!cancelled) {
+        setIsRefreshing(false);
+        setIsSessionChecked(true);
       }
+    };
+
+    const expireSession = () => {
+      clearAuth();
+      queryClient.clear();
+      if (!isPublicRoute(location)) navigate('/auth/login');
+    };
+
+    const storeSession = async (accessToken: string) => {
+      const userId = decodeJwtPayload(accessToken)?.id;
+      if (!userId) throw new Error('AUTH_SESSION_INVALID');
+      setAuth(accessToken, userId);
+      const { setupTokenRefreshFromToken, startRefreshInterval } = await import('@/lib/auth');
+      setupTokenRefreshFromToken(accessToken);
+      startRefreshInterval();
     };
 
     const checkSession = async () => {
-      // UI уже отображается (isSessionChecked = true), проверка токена в фоне
-      // Не блокируем рендеринг - React Query сам обработает 401 и обновит токен
-      
-      // КРИТИЧНО: Проверяем токен из URL (Telegram WebApp) ПЕРЕД всеми проверками
-      // НЕ обрабатываем ?token= на публичных страницах (reset-password передаёт HMAC-токен, не JWT)
-      const urlParams = new URLSearchParams(window.location.search);
-      const urlToken = isPublicPage ? null : urlParams.get('token');
-      
+      setIsSessionChecked(false);
+      setSessionError(null);
+
+      if (isPublicRoute(location)) {
+        finish();
+        return;
+      }
+
+      const params = new URLSearchParams(window.location.search);
+      const urlToken = params.get('token');
       if (urlToken) {
-        try {
-          // Валидируем токен из URL
-          const isValid = await validateToken(urlToken);
-          
-          if (isValid) {
-            // Сохраняем токен в localStorage
-            localStorage.setItem('auth_token', urlToken);
-            
-            // Получаем userId из токена (JWT payload)
-            try {
-              const payload = JSON.parse(atob(urlToken.split('.')[1]));
-              const urlUserId = payload.id;
-              
-              if (urlUserId) {
-                localStorage.setItem('user_id', urlUserId);
-                setAuth(urlToken, urlUserId);
-                
-                // КРИТИЧНО: Получаем refresh_token с сервера для Telegram WebApp
-                try {
-                  const refreshTokenResponse = await fetch('/api/auth/get-refresh-token', {
-                    method: 'GET',
-                    headers: {
-                      'Authorization': `Bearer ${urlToken}`,
-                      'Content-Type': 'application/json'
-                    }
-                  });
-                  
-                  if (refreshTokenResponse.ok) {
-                    const refreshData = await refreshTokenResponse.json();
-                    if (refreshData.refresh_token) {
-                      localStorage.setItem('refresh_token', refreshData.refresh_token);
-                      console.log('AuthGuard: Refresh token obtained for WebApp session');
-                    }
-                  } else {
-                    console.warn('AuthGuard: Failed to obtain refresh token:', refreshTokenResponse.status);
-                  }
-                } catch (refreshError) {
-                  console.error('AuthGuard: Error getting refresh token:', refreshError);
-                  // Продолжаем работу даже если не получили refresh_token
-                }
-                
-                // Настраиваем автоматическое обновление токена
-                const { setupTokenRefresh } = await import('@/lib/auth');
-                setupTokenRefresh(900); // 15 минут
-              }
-            } catch (e) {
-              console.error('AuthGuard: Failed to parse userId from token:', e);
-            }
-            
-            // Удаляем токен из URL для безопасности
-            window.history.replaceState({}, document.title, window.location.pathname);
-            
-            return;
-          } else {
-            console.warn('AuthGuard: Token from URL is invalid');
-          }
-        } catch (e) {
-          console.error('AuthGuard: Error processing URL token:', e);
-        }
-      }
-      
-      // КРИТИЧНО: Проверяем наличие активной сессии в DirectusAuthManager (единая авторизация веб+бот)
-      // Если залогинились в Telegram боте - сессия автоматически подхватится здесь
-      if (storedToken && storedUserId) {
-        try {
-          const activeSessionResponse = await fetch('/api/auth/get-active-session', {
-            method: 'GET',
-            headers: {
-              'Authorization': `Bearer ${storedToken}`,
-              'Content-Type': 'application/json'
-            }
-          });
-          
-          if (activeSessionResponse.ok) {
-            const sessionData = await activeSessionResponse.json();
-            
-            if (sessionData.hasActiveSession && sessionData.token) {
-              // Обновляем localStorage свежими токенами из DirectusAuthManager
-              localStorage.setItem('auth_token', sessionData.token);
-              localStorage.setItem('user_id', storedUserId);
-              
-              if (sessionData.refresh_token) {
-                localStorage.setItem('refresh_token', sessionData.refresh_token);
-              }
-              
-              // Обновляем store
-              setAuth(sessionData.token, storedUserId);
-              
-              // Настраиваем автоматическое обновление токена
-              const { setupTokenRefresh } = await import('@/lib/auth');
-              setupTokenRefresh(900); // 15 минут
-              
-              console.log('AuthGuard: Active session synced from DirectusAuthManager');
-              setIsSessionChecked(true);
-              return;
-            }
-          }
-        } catch (error) {
-          console.warn('AuthGuard: Could not check active session:', error);
-          // Продолжаем обычную проверку
-        }
-      }
-      
-      // Если есть токен в store и userId, проверяем его действительность
-      if (token && userId) {
-        // Validating token from store
-        const isValid = await validateToken(token);
-        
-        if (isValid) {
-          // Token validation successful
-          setIsSessionChecked(true);
+        const validation = await validateToken(urlToken);
+        if (validation === 'unavailable') {
+          setSessionError('Сервис авторизации временно недоступен. Данные входа сохранены.');
+          finish();
           return;
-        } else {
-          // Token from store is invalid, attempting to restore from localStorage
-          // Токен недействителен, пробуем взять из localStorage
         }
-      }
-      
-      // Если есть сохраненный токен, проверяем его
-      if (storedToken && storedUserId) {
-        // Validating token from localStorage
-        const isValid = await validateToken(storedToken);
-        
-        if (isValid) {
-          // Stored token is valid, restoring session
-          setAuth(storedToken, storedUserId);
-          setIsSessionChecked(true);
-          
-          // ВАЖНО: Восстанавливаем автоматическое обновление токена при загрузке страницы
-          // Токен Directus живет 15 минут (900 секунд)
-          const { setupTokenRefresh } = await import('@/lib/auth');
-          setupTokenRefresh(900); // 900 секунд = 15 минут
-          
+        if (validation === 'valid') {
+          await storeSession(urlToken);
+          const refreshResponse = await fetch('/api/auth/get-refresh-token', {
+            headers: { Authorization: `Bearer ${urlToken}` },
+            cache: 'no-store',
+          }).catch(() => null);
+          if (refreshResponse?.ok) {
+            const data = await refreshResponse.json();
+            if (data?.refresh_token) localStorage.setItem('refresh_token', data.refresh_token);
+          }
+          window.history.replaceState({}, document.title, window.location.pathname);
+          finish();
           return;
-        } else {
-          // Stored token is invalid, attempting to refresh
-          // Сохраненный токен недействителен, пробуем обновить
         }
       }
-      
-      // Пробуем обновить токен
-      if (storedRefreshToken) {
-        try {
-          // Attempting to refresh token
-          setIsRefreshing(true);
-          await refreshAccessToken();
-          
-          // После обновления проверяем, что новый токен появился в localStorage
+
+      const storedToken = localStorage.getItem('auth_token');
+      if (storedToken) {
+        const validation = await validateToken(storedToken);
+        if (validation === 'valid') {
+          await storeSession(storedToken);
+          finish();
+          return;
+        }
+        if (validation === 'unavailable') {
+          setSessionError('Не удалось проверить сессию. Проверьте соединение и повторите.');
+          finish();
+          return;
+        }
+      }
+
+      if (localStorage.getItem('refresh_token')) {
+        setIsRefreshing(true);
+        const result = await refreshAuthSession();
+        if (result === 'refreshed' || result === 'superseded') {
           const refreshedToken = localStorage.getItem('auth_token');
-          const refreshedUserId = localStorage.getItem('user_id');
-          
-          if (refreshedToken && refreshedUserId) {
-            setAuth(refreshedToken, refreshedUserId);
-            setIsRefreshing(false);
-            setIsSessionChecked(true);
-            
-            // ВАЖНО: Настраиваем автоматическое обновление токена после refresh
-            const { setupTokenRefresh } = await import('@/lib/auth');
-            setupTokenRefresh(900); // 900 секунд = 15 минут
-            
+          if (refreshedToken) {
+            await storeSession(refreshedToken);
+            finish();
             return;
-          } else {
-            throw new Error('Failed to obtain new token after refresh');
           }
-        } catch (error) {
-          console.error('AuthGuard: Token refresh failed:', error);
-          setIsRefreshing(false);
-          
-          // Очищаем любые устаревшие токены
-          localStorage.removeItem('auth_token');
-          localStorage.removeItem('refresh_token');
-          localStorage.removeItem('user_id');
-          localStorage.removeItem('is_admin'); // Важно очистить и статус админа
-          clearAuth();
-          
-          // Если обновление не удалось, перенаправляем на страницу входа (кроме публичных страниц)
-          if (!isPublicPage) {
-            navigate('/auth/login');
-          }
-          setIsSessionChecked(true);
+        }
+        if (result === 'unavailable') {
+          setSessionError('Не удалось обновить сессию. Данные входа сохранены — повторите попытку.');
+          finish();
           return;
         }
       }
-      
-      // Если нет ни токена, ни возможности обновить, перенаправляем на логин (кроме публичных страниц)
-      // No valid authentication found
-      if (!isPublicPage) {
-        navigate('/auth/login');
-      }
-      
-      setIsSessionChecked(true);
+
+      expireSession();
+      finish();
     };
 
-    checkSession();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Проверяем сессию ТОЛЬКО при монтировании компонента, не при каждой навигации!
+    checkSession().catch(() => {
+      if (!cancelled) {
+        setSessionError('Не удалось проверить сессию. Повторите попытку.');
+        finish();
+      }
+    });
+    return () => { cancelled = true; };
+  }, [location, retryNonce, clearAuth, navigate, setAuth]);
 
-  // Показываем загрузку пока не проверили сессию
   if (!isSessionChecked) {
     return (
       <div className="flex h-screen items-center justify-center flex-col">
@@ -286,6 +152,22 @@ export function AuthGuard({ children }: Props) {
     );
   }
 
-  // Если проверка прошла, возвращаем дочерние компоненты
+  if (sessionError && !isPublicRoute(location)) {
+    return (
+      <div className="flex min-h-screen items-center justify-center p-6">
+        <div className="max-w-md rounded-lg border bg-background p-6 text-center shadow-sm">
+          <h1 className="mb-2 text-lg font-semibold">Проблема с авторизацией</h1>
+          <p className="mb-4 text-sm text-muted-foreground">{sessionError}</p>
+          <button
+            className="rounded-md bg-primary px-4 py-2 text-primary-foreground"
+            onClick={() => setRetryNonce((value) => value + 1)}
+          >
+            Повторить
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return <>{children}</>;
 }

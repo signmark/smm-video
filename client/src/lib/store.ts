@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 // Импортируем хранилище кампании из отдельного файла
 import { useCampaignStore } from './campaignStore';
+import { decodeJwtPayload } from './jwt';
 
 interface AuthState {
   token: string | null;
@@ -23,9 +24,9 @@ import { api } from './api';
 const checkTokenExpiration = (token: string | null): boolean => {
   if (!token) return false;
   try {
-    const payload = JSON.parse(atob(token.split('.')[1]));
+    const payload = decodeJwtPayload(token);
     const now = Math.floor(Date.now() / 1000);
-    return payload.exp && payload.exp > now;
+    return Boolean(payload?.exp && payload.exp > now);
   } catch {
     return false;
   }
@@ -35,19 +36,17 @@ const checkTokenExpiration = (token: string | null): boolean => {
 const storedToken = localStorage.getItem('auth_token');
 const isTokenValid = checkTokenExpiration(storedToken);
 
-// Если токен истек, очищаем localStorage включая Zustand persist cache
+// An expired access token is recoverable while the refresh token remains valid.
 if (storedToken && !isTokenValid) {
   localStorage.removeItem('auth_token');
-  localStorage.removeItem('user_id');
   localStorage.removeItem('is_admin');
-  localStorage.removeItem('auth-storage'); // сбрасываем Zustand persist чтобы не перезатереть null-значения
 }
 
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
       token: isTokenValid ? storedToken : null,
-      userId: isTokenValid ? localStorage.getItem('user_id') : null,
+      userId: localStorage.getItem('user_id'),
       isAuthenticated: isTokenValid && !!(localStorage.getItem('auth_token') && localStorage.getItem('user_id')),
       isAdmin: isTokenValid ? localStorage.getItem('is_admin') === 'true' : false,
       setAuth: (token, userId) => {

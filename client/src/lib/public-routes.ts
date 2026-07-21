@@ -6,10 +6,12 @@ export const PUBLIC_ROUTES = [
   '/auth/reset-password',
   '/payment/success',
   '/payment/cancel',
+  '/help',
+  '/pricing',
 ];
 
-export function isPublicRoute(): boolean {
-  return PUBLIC_ROUTES.some(p => window.location.pathname === p || window.location.pathname.startsWith(p + '?'));
+export function isPublicRoute(pathname = window.location.pathname): boolean {
+  return PUBLIC_ROUTES.some(p => pathname === p || pathname.startsWith(`${p}/`));
 }
 
 export function redirectToLogin(): void {

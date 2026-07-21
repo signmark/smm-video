@@ -296,8 +296,8 @@ class InstagramDirectService {
       caption: options.caption || '🚀 Тестовый пост из SMM Manager! #SMM #автоматизация #test',
       imageUrl: options.imageUrl || 'https://picsum.photos/1080/1080?random=1',
       settings: {
-        username: options.username || 'it.zhdanov',
-        password: options.password || 'QtpZ3dh70307'
+        username: options.username || process.env.INSTAGRAM_TEST_USERNAME,
+        password: options.password || process.env.INSTAGRAM_TEST_PASSWORD
       }
     };
     

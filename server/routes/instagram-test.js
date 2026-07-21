@@ -4,21 +4,30 @@
 
 import express from 'express';
 import InstagramDirectService from '../services/instagram-direct.js';
+import { authenticateUser } from '../middleware/user-auth.js';
 
 const router = express.Router();
 const instagramService = new InstagramDirectService();
 
 // Тестовый маршрут для проверки Instagram публикации
-router.post('/test-instagram-publish', async (req, res) => {
+router.post('/test-instagram-publish', authenticateUser, async (req, res) => {
   console.log('🧪 Получен запрос на тест Instagram публикации');
   
   try {
     const {
       caption = '🚀 Тестовый пост из SMM Manager! #SMM #автоматизация #test',
       imageUrl = 'https://picsum.photos/1080/1080?random=1',
-      username = 'it.zhdanov',
-      password = 'QtpZ3dh70307'
+      username = process.env.INSTAGRAM_TEST_USERNAME,
+      password = process.env.INSTAGRAM_TEST_PASSWORD
     } = req.body;
+
+    if (!username || !password) {
+      return res.status(503).json({
+        success: false,
+        code: 'INSTAGRAM_TEST_CREDENTIALS_MISSING',
+        error: 'Тестовые учётные данные Instagram не настроены',
+      });
+    }
     
     console.log('📝 Данные для публикации:', {
       caption: caption.substring(0, 50) + '...',
@@ -84,7 +93,7 @@ router.get('/instagram-status', async (req, res) => {
 });
 
 // Маршрут для симуляции webhook публикации
-router.post('/webhook-simulate', async (req, res) => {
+router.post('/webhook-simulate', authenticateUser, async (req, res) => {
   console.log('🔗 Симуляция webhook публикации Instagram');
   
   try {
@@ -108,8 +117,8 @@ router.post('/webhook-simulate', async (req, res) => {
       caption: content,
       imageUrl,
       settings: settings || {
-        username: 'it.zhdanov',
-        password: 'QtpZ3dh70307'
+        username: process.env.INSTAGRAM_TEST_USERNAME,
+        password: process.env.INSTAGRAM_TEST_PASSWORD
       }
     });
     

@@ -197,7 +197,7 @@ class ThreadsService {
       });
       const newToken = res.data.access_token;
       if (newToken) {
-        log(`refreshLongLivedToken: токен успешно обновлён (${String(newToken).substring(0, 20)}...)`, 'threads-service');
+        log(`refreshLongLivedToken: токен успешно обновлён [REDACTED]`, 'threads-service');
         return newToken;
       }
       return accessToken;
@@ -210,7 +210,7 @@ class ThreadsService {
 
   async getLongLivedToken(shortToken: string, appId: string, appSecret: string): Promise<string> {
     try {
-      log(`getLongLivedToken: appId=${appId}, token=${shortToken.substring(0, 20)}...`, 'threads-service');
+      log(`getLongLivedToken: appId=${appId}, hasToken=${!!shortToken}`, 'threads-service');
       const res = await axios.get(THREADS_LONG_LIVED, {
         params: {
           grant_type: 'th_exchange_token',
@@ -218,7 +218,7 @@ class ThreadsService {
           access_token: shortToken
         }
       });
-      log(`getLongLivedToken success: token=${res.data.access_token?.substring(0, 20)}...`, 'threads-service');
+      log(`getLongLivedToken success: hasToken=${!!res.data.access_token}`, 'threads-service');
       return res.data.access_token;
     } catch (err: any) {
       log(`getLongLivedToken ERROR ${err.response?.status}: ${JSON.stringify(err.response?.data)}`, 'threads-service');
@@ -228,7 +228,7 @@ class ThreadsService {
   }
 
   async exchangeCodeForToken(code: string, appId: string, appSecret: string, redirectUri: string): Promise<{ access_token: string; user_id?: string }> {
-    log(`exchangeCodeForToken: appId=${appId}, redirectUri=${redirectUri}, code=${code.substring(0, 20)}...`, 'threads-service');
+    log(`exchangeCodeForToken: appId=${appId}, redirectUri=${redirectUri}, hasCode=${!!code}`, 'threads-service');
     try {
       const body = new URLSearchParams({
         client_id: appId,
@@ -240,7 +240,7 @@ class ThreadsService {
       const res = await axios.post(THREADS_AUTH, body.toString(), {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
       });
-      log(`exchangeCodeForToken success: ${JSON.stringify(res.data)}`, 'threads-service');
+      log(`exchangeCodeForToken success: hasAccessToken=${!!res.data.access_token}, user_id=${res.data.user_id || 'нет'}`, 'threads-service');
       return { access_token: res.data.access_token, user_id: res.data.user_id?.toString() };
     } catch (err: any) {
       log(`exchangeCodeForToken ERROR ${err.response?.status}: ${JSON.stringify(err.response?.data)}`, 'threads-service');

@@ -15,7 +15,7 @@ router.get('/debug-token', async (req, res) => {
       });
     }
 
-    console.log('🔍 [FACEBOOK-DEBUG] Debugging token:', (accessToken as string).substring(0, 20) + '...');
+    console.log('🔍 [FACEBOOK-DEBUG] Debugging token: [REDACTED]');
 
     // Проверяем информацию о токене
     const tokenInfoResponse = await axios.get(`https://graph.facebook.com/v18.0/me`, {
@@ -66,7 +66,16 @@ router.get('/debug-token', async (req, res) => {
           data: response.data.data || []
         };
 
-        console.log(`✅ [FACEBOOK-DEBUG] ${endpoint} success:`, results[endpoint]);
+        console.log(`✅ [FACEBOOK-DEBUG] ${endpoint} success:`, {
+          success: results[endpoint].success,
+          count: results[endpoint].count,
+          accounts: (results[endpoint].data || []).map((account: any) => ({
+            id: account.id,
+            name: account.name,
+            category: account.category,
+            hasAccessToken: !!account.access_token
+          }))
+        });
       } catch (error: any) {
         results[endpoint] = {
           success: false,

@@ -732,7 +732,7 @@ router.post('/tiktok/test-post', authMiddleware, async (req, res) => {
     }
 
     const accessToken = account.access_token;
-    console.log(`[tiktok-test] account=${account.account_username}, token starts with: ${accessToken?.substring(0, 20)}...`);
+    console.log(`[tiktok-test] account=${account.account_username}, hasToken: ${!!accessToken}`);
 
     // Сначала проверим токен через /user/info/
     try {

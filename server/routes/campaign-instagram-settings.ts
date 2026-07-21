@@ -192,7 +192,13 @@ router.post('/campaigns/:campaignId/discover-instagram-accounts', async (req, re
       });
     }
 
-    console.log('🔍 [INSTAGRAM-DISCOVERY] Facebook страницы получены:', pagesResponse.data);
+    console.log('🔍 [INSTAGRAM-DISCOVERY] Facebook страницы получены:', (pagesResponse.data?.data || []).map((page: any) => ({
+      id: page.id,
+      name: page.name,
+      hasAccessToken: !!page.access_token,
+      hasInstagramBusinessAccount: !!page.instagram_business_account,
+      hasConnectedInstagramAccount: !!page.connected_instagram_account
+    })));
 
     const instagramAccounts = [];
 
@@ -373,7 +379,12 @@ router.post('/campaigns/:campaignId/fetch-instagram-business-id', async (req, re
     };
 
     console.log('💾 Saving with Business Account ID:', instagramBusinessAccountId);
-    console.log('💾 Full Instagram settings to save:', JSON.stringify(updatedInstagramSettings, null, 2));
+    console.log('💾 Instagram settings summary:', {
+      hasToken: !!updatedInstagramSettings.token,
+      hasAccessToken: !!updatedInstagramSettings.accessToken,
+      hasAppSecret: !!updatedInstagramSettings.appSecret,
+      businessAccountId: updatedInstagramSettings.businessAccountId || null
+    });
 
     // Сохраняем обновленные настройки используя системный токен
     const updateResponse = await axios.patch(

@@ -254,7 +254,7 @@ export function registerTelegramChannelsRoutes(app: Express) {
       }
 
       console.log(`🤖 [Smart Search] Ключевые слова:`, keywords);
-      console.log(`🔑 [Smart Search] User token (first 20 chars):`, req.userToken?.substring(0, 20) + '...');
+      console.log(`🔑 [Smart Search] User token provided:`, !!req.userToken);
 
       const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
       const finalUrl = directusUrl.endsWith('/') ? directusUrl : directusUrl + '/';

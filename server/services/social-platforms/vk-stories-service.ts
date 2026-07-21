@@ -292,7 +292,7 @@ export class VKStoriesService {
       maxBodyLength: Infinity,
     });
     
-    log(`VK Upload response: ${JSON.stringify(response.data)}`, LOG_PREFIX);
+    log(`VK Upload response keys: ${Object.keys(response.data || {}).join(', ')}, error=${response.data?.error ? JSON.stringify(response.data.error) : 'нет'}`, LOG_PREFIX);
     
     if (response.data.error) {
       throw new Error(`Upload Error: ${JSON.stringify(response.data.error)}`);

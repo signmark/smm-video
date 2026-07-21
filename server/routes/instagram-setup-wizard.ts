@@ -35,14 +35,14 @@ const AXIOS_CONFIG = {
 router.post('/save-config', async (req, res) => {
   try {
     console.log('🔥🔥🔥 INSTAGRAM SETUP SAVE CONFIG START 🔥🔥🔥');
-    console.log('🔥 Instagram Setup Save Config - RAW BODY:', JSON.stringify(req.body, null, 2));
+    console.log('🔥 Instagram Setup Save Config - BODY fields:', Object.keys(req.body || {}));
     console.log('🔥 Instagram Setup Save Config - Content-Type:', req.headers['content-type']);
-    console.log('🔥 Instagram Setup Save Config - Headers:', JSON.stringify(req.headers, null, 2));
+    console.log('🔥 Instagram Setup Save Config - Header keys:', Object.keys(req.headers), '| hasAuthorization:', !!req.headers['authorization']);
     
     const { appId, appSecret, instagramId, userId, state } = req.body;
     const webhookUrl = process.env.INSTAGRAM_WEBHOOK_URL || '';
     
-    console.log('🔥 Extracted data:', { appId, appSecret, instagramId, userId, state });
+    console.log('🔥 Extracted data:', { appId, hasAppSecret: !!appSecret, instagramId, userId, state });
 
     if (!appId || !appSecret || !userId) {
       return res.status(400).json({
@@ -142,7 +142,7 @@ router.get('/status/:userId', async (req, res) => {
  */
 router.post('/start', async (req, res) => {
   try {
-    console.log('🔥 Instagram Setup Start Route - RAW BODY:', req.body);
+    console.log('🔥 Instagram Setup Start Route - BODY fields:', Object.keys(req.body || {}));
     console.log('🔥 Instagram Setup Start Route - Content-Type:', req.headers['content-type']);
     
     const { appId, appSecret, redirectUri, webhookUrl, instagramId, userId } = req.body;

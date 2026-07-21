@@ -92,7 +92,7 @@ router.post('/instagram/auth/start', async (req, res) => {
 // Callback эндпоинт для обработки ответа от Facebook
 router.get('/instagram/auth/callback', async (req, res) => {
   console.log('🚀 INSTAGRAM OAUTH CALLBACK STARTED');
-  console.log('📋 Query parameters:', JSON.stringify(req.query, null, 2));
+  console.log('📋 Query parameters:', Object.keys(req.query));
   
   const { code, state, error } = req.query;
 
@@ -107,7 +107,7 @@ router.get('/instagram/auth/callback', async (req, res) => {
     return res.status(400).json({ error: 'Отсутствует код авторизации или state' });
   }
 
-  console.log('✅ OAuth code received:', code?.toString().substring(0, 20) + '...');
+  console.log('✅ OAuth code received: [REDACTED]');
   console.log('✅ State parameter:', state);
 
   // Получаем данные сессии
@@ -137,9 +137,9 @@ router.get('/instagram/auth/callback', async (req, res) => {
     log('instagram-oauth', 'Шаг 1: Получаем краткосрочный токен...');
     console.log('📋 Token exchange params:', {
       client_id: session.appId,
-      client_secret: session.appSecret?.substring(0, 10) + '...',
+      has_client_secret: !!session.appSecret,
       redirect_uri: session.redirectUri,
-      code: code?.toString().substring(0, 30) + '...'
+      has_code: !!code
     });
     
     // Шаг 1: Обмениваем код на краткосрочный токен
@@ -161,7 +161,7 @@ router.get('/instagram/auth/callback', async (req, res) => {
     }
 
     const shortLivedToken = tokenResponse.data.access_token;
-    console.log('✅ Short-lived token received:', shortLivedToken.substring(0, 20) + '...');
+    console.log('✅ Short-lived token received: [REDACTED]');
 
     log('instagram-oauth', 'Шаг 2: Получаем долгосрочный токен...');
     console.log('🔄 Converting to long-lived token...');
@@ -178,7 +178,7 @@ router.get('/instagram/auth/callback', async (req, res) => {
 
     const longLivedToken = longLivedResponse.data.access_token;
     const expiresIn = longLivedResponse.data.expires_in;
-    console.log('✅ Long-lived token received:', longLivedToken.substring(0, 20) + '...');
+    console.log('✅ Long-lived token received: [REDACTED]');
     console.log('⏰ Token expires in:', expiresIn, 'seconds');
 
     log('instagram-oauth', 'Шаг 3: Получаем информацию о пользователе...');
@@ -290,7 +290,16 @@ router.get('/instagram/auth/callback', async (req, res) => {
 
       // Сохраняем обновленные настройки в кампанию
       console.log('💾 Saving to Directus campaign:', session.campaignId);
-      console.log('📋 Settings being saved:', JSON.stringify(updatedSettings, null, 2));
+      console.log('📋 Settings being saved:', {
+        platforms: Object.keys(updatedSettings),
+        instagram: {
+          appId: updatedInstagramSettings.appId,
+          hasAppSecret: !!updatedInstagramSettings.appSecret,
+          hasToken: !!updatedInstagramSettings.token,
+          businessAccountId: updatedInstagramSettings.businessAccountId || null,
+          instagramAccountsCount: updatedInstagramSettings.instagramAccounts?.length || 0
+        }
+      });
       
       const saveResponse = await axios.patch(
         `${DIRECTUS_URL}/items/user_campaigns/${session.campaignId}`,
@@ -307,10 +316,15 @@ router.get('/instagram/auth/callback', async (req, res) => {
 
       console.log('✅ Instagram settings saved to database successfully!');
       console.log('📋 Save response status:', saveResponse.status);
-      console.log('💾 Final settings saved:', JSON.stringify(updatedInstagramSettings, null, 2));
+      console.log('💾 Final settings saved:', {
+        appId: updatedInstagramSettings.appId,
+        hasAppSecret: !!updatedInstagramSettings.appSecret,
+        hasToken: !!updatedInstagramSettings.token,
+        businessAccountId: updatedInstagramSettings.businessAccountId || null
+      });
       
       log('instagram-oauth', `Instagram настройки успешно сохранены в кампанию ${session.campaignId}`);
-      log('instagram-oauth', `Сохраненные настройки: ${JSON.stringify(updatedInstagramSettings, null, 2)}`);
+      log('instagram-oauth', `Сохраненные настройки: hasToken=${!!updatedInstagramSettings.token}, hasAppSecret=${!!updatedInstagramSettings.appSecret}, businessAccountId=${updatedInstagramSettings.businessAccountId || 'нет'}`);
 
       // Дополнительно отправляем в N8N webhook если указан
       if (session.webhookUrl) {
@@ -349,7 +363,6 @@ router.get('/instagram/auth/callback', async (req, res) => {
       success: responseData.success,
       message: responseData.message,
       hasToken: !!responseData.longLivedToken,
-      tokenPreview: responseData.longLivedToken?.substring(0, 20) + '...',
       userInfo: responseData.user,
       accountsCount: responseData.instagramAccounts?.length || 0
     });

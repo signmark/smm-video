@@ -291,7 +291,7 @@ export class VKClipsService extends BaseSocialService {
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
     );
     
-    log(`VK clips.getUploadServer response: ${JSON.stringify(response.data)}`, LOG_PREFIX);
+    log(`VK clips.getUploadServer response: hasUploadUrl=${!!response.data?.response?.upload_url}, error=${response.data?.error ? JSON.stringify(response.data.error) : 'нет'}`, LOG_PREFIX);
     
     if (response.data.error) {
       const errorCode = response.data.error.error_code;
@@ -324,7 +324,7 @@ export class VKClipsService extends BaseSocialService {
   ): Promise<{ clipId: string; ownerId: string; videoUrl: string }> {
     const cleanGroupId = groupId.replace('club', '').replace('-', '');
     
-    log(`Сохраняю клип через clips.save. Upload result: ${JSON.stringify(uploadResult)}`, LOG_PREFIX);
+    log(`Сохраняю клип через clips.save. Upload result keys: ${Object.keys(uploadResult || {}).join(', ')}`, LOG_PREFIX);
     
     const params: Record<string, string> = {
       group_id: cleanGroupId,
@@ -407,7 +407,7 @@ export class VKClipsService extends BaseSocialService {
       timeout: 300000
     });
     
-    log(`VK Clips Upload response: ${JSON.stringify(response.data)}`, LOG_PREFIX);
+    log(`VK Clips Upload response keys: ${Object.keys(response.data || {}).join(', ')}, error=${response.data?.error ? JSON.stringify(response.data.error) : 'нет'}`, LOG_PREFIX);
     
     // Проверяем ошибки в ответе
     if (response.data.error) {

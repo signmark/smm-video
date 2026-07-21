@@ -15,7 +15,7 @@ router.get('/facebook/groups-and-pages', async (req, res) => {
       });
     }
 
-    console.log('🔍 [FB-GROUPS] Получаем группы и страницы для токена:', token.substring(0, 20) + '...');
+    console.log('🔍 [FB-GROUPS] Получаем группы и страницы, токен предоставлен:', !!token);
 
     // Получаем страницы пользователя
     const pagesResponse = await axios.get(`https://graph.facebook.com/me/accounts`, {
@@ -25,7 +25,12 @@ router.get('/facebook/groups-and-pages', async (req, res) => {
       }
     });
 
-    console.log('📄 [FB-GROUPS] Страницы найдены:', pagesResponse.data);
+    console.log('📄 [FB-GROUPS] Страницы найдены:', (pagesResponse.data?.data || []).map((page: any) => ({
+      id: page.id,
+      name: page.name,
+      category: page.category,
+      hasAccessToken: !!page.access_token
+    })));
 
     // Получаем группы пользователя
     let groups = [];

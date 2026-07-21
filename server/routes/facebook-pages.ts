@@ -6,14 +6,14 @@ const router = express.Router();
 // GET /api/facebook/pages - получение Facebook страниц пользователя
 router.get('/pages', async (req, res) => {
   try {
-    console.log('🔵 [FACEBOOK-PAGES] Request received with query params:', req.query);
+    console.log('🔵 [FACEBOOK-PAGES] Request received with query params:', Object.keys(req.query));
     const { token, access_token } = req.query;
     const accessToken = token || access_token;
 
     console.log('🔵 [FACEBOOK-PAGES] Extracted tokens:', {
-      token: token ? (token as string).substring(0, 20) + '...' : 'null',
-      access_token: access_token ? (access_token as string).substring(0, 20) + '...' : 'null',
-      accessToken: accessToken ? (accessToken as string).substring(0, 20) + '...' : 'null'
+      hasToken: !!token,
+      hasAccessTokenParam: !!access_token,
+      hasAccessToken: !!accessToken
     });
 
     if (!accessToken) {
@@ -23,7 +23,7 @@ router.get('/pages', async (req, res) => {
       });
     }
 
-    console.log('🔵 [FACEBOOK-PAGES] Fetching Facebook pages with token:', (accessToken as string).substring(0, 20) + '...');
+    console.log('🔵 [FACEBOOK-PAGES] Fetching Facebook pages, token provided:', !!accessToken);
 
     // Сначала проверяем тип токена и получаем информацию
     let tokenInfo;
@@ -116,8 +116,7 @@ router.get('/pages', async (req, res) => {
       tasks: account.tasks,
       link: account.link,
       fan_count: account.fan_count,
-      hasAccessToken: !!account.access_token,
-      accessTokenPreview: account.access_token ? account.access_token.substring(0, 20) + '...' : 'none'
+      hasAccessToken: !!account.access_token
     })));
     
     // Фильтруем только Facebook СТРАНИЦЫ, исключаем группы и личные профили

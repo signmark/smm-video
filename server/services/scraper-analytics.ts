@@ -5,7 +5,7 @@ import { log } from '../utils/logger';
 const ANALYTICS_BASE = SCRAPER_BASE;
 
 async function getAnalyticsApiKey(): Promise<string> {
-  // Приоритет: SCRAPER_ANALYTICS_API_KEY → SCRAPER_API_KEY → Directus (trends_scraper / telegram_collect_comments) → захардкоженный fallback
+  // SCRAPER_ANALYTICS_API_KEY загружается из Directus при старте и имеет приоритет над общим ключом scraper.
   if (process.env.SCRAPER_ANALYTICS_API_KEY) return process.env.SCRAPER_ANALYTICS_API_KEY;
   if (process.env.SCRAPER_API_KEY) return process.env.SCRAPER_API_KEY;
   return getScraperApiKey();

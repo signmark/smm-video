@@ -13,6 +13,7 @@ const KEYS_TO_LOAD: string[] = [
   'N8N_ANALYTICS_WEBHOOK',
   'N8N_TRENDS_SOURCES_WEBHOOK',
   'N8N_TRENDS_KEYWORDS_WEBHOOK',
+  'SCRAPER_ANALYTICS_API_KEY',
   'BEGET_S3_ACCESS_KEY',
   'BEGET_S3_SECRET_KEY',
   'BEGET_S3_BUCKET',
@@ -28,6 +29,7 @@ const KEYS_TO_LOAD: string[] = [
 const ALWAYS_OVERRIDE_FROM_DIRECTUS: string[] = [
   'GEMINI_API_KEY',
   'GEMINI_PROXY_URL',
+  'SCRAPER_ANALYTICS_API_KEY',
 ];
 
 export async function loadEnvFromDirectus(): Promise<void> {

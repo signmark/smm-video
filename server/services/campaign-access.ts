@@ -25,7 +25,7 @@ export async function authorizeCampaignAccess(
   try {
     const response = await directusApi.get(`/items/user_campaigns/${encodeURIComponent(campaignId)}`, {
       headers: { Authorization: `Bearer ${serviceToken}` },
-      params: { fields: ['id', 'user_id', 'user_created', 'name', 'social_media_settings'] },
+      params: { fields: ['*'] },
     });
     const campaign = response.data?.data;
     if (!campaign) throw new CampaignAccessError(404, 'CAMPAIGN_NOT_FOUND');

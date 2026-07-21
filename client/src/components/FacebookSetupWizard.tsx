@@ -194,7 +194,9 @@ export default function FacebookSetupWizard({
       console.log('📋 Взять из ИГ: Instagram токен будет использоваться как пользовательский токен для управления Facebook страницами...');
       
       // Используем обычную функцию поиска страниц с Instagram токеном
-      const response = await fetch(`/api/facebook/pages?token=${encodeURIComponent(instagramToken)}`);
+      const response = await fetch(`/api/facebook/pages?token=${encodeURIComponent(instagramToken)}`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+      });
       const data = await response.json();
 
       if (!response.ok) {
@@ -288,7 +290,9 @@ export default function FacebookSetupWizard({
 
     setIsPagesLoading(true);
     try {
-      const response = await fetch(`/api/facebook/pages?token=${encodeURIComponent(token)}`);
+      const response = await fetch(`/api/facebook/pages?token=${encodeURIComponent(token)}`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+      });
       const data = await response.json();
 
       if (!response.ok) {
@@ -411,7 +415,9 @@ export default function FacebookSetupWizard({
                 console.log('🔍 Ищем ВСЕ Facebook страницы доступные Instagram пользовательскому токену...');
                 
                 // ПРИНУДИТЕЛЬНО ИСПОЛЬЗУЕМ ПОЛЬЗОВАТЕЛЬСКИЙ ТОКЕН (НЕ ТОКЕН СТРАНИЦЫ) для получения всех страниц
-                const response = await fetch(`/api/facebook/pages?token=${encodeURIComponent(instagramToken)}&user_token=true`);
+                const response = await fetch(`/api/facebook/pages?token=${encodeURIComponent(instagramToken)}&user_token=true`, {
+                  headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+                });
                 const data = await response.json();
 
                 if (response.ok && data.pages && data.pages.length > 0) {
@@ -472,7 +478,9 @@ export default function FacebookSetupWizard({
     }
 
     try {
-      const response = await fetch(`/api/facebook/page-token/${pageId}?token=${encodeURIComponent(token)}`);
+      const response = await fetch(`/api/facebook/page-token/${pageId}?token=${encodeURIComponent(token)}`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+      });
       const data = await response.json();
 
       if (data.success && data.page) {
@@ -608,7 +616,9 @@ export default function FacebookSetupWizard({
     try {
       console.log(`🔑 Запрашиваем токен страницы для ${pageName} (${pageId})`);
       
-      const pageTokenResponse = await fetch(`/api/facebook/page-token/${pageId}?token=${encodeURIComponent(userToken)}`);
+      const pageTokenResponse = await fetch(`/api/facebook/page-token/${pageId}?token=${encodeURIComponent(userToken)}`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+      });
       const pageTokenData = await pageTokenResponse.json();
 
       if (pageTokenResponse.ok && pageTokenData.success && pageTokenData.page && pageTokenData.page.access_token) {

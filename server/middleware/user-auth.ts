@@ -11,19 +11,8 @@ async function fetchAdminStatus(userId: string): Promise<boolean> {
     return cached.is_smm_admin;
   }
 
-  // Сначала пробуем из кэша сессий (нет сетевого вызова)
-  try {
-    const { directusAuthManager } = await import('../services/directus-auth-manager');
-    const userData = directusAuthManager.getUserData(userId);
-    if (userData && userData.is_smm_admin !== undefined) {
-      const val = userData.is_smm_admin;
-      const isAdmin = val === true || val === 1 || val === '1' || val === 'true';
-      adminStatusCache.set(userId, { is_smm_admin: isAdmin, cachedAt: Date.now() });
-      return isAdmin;
-    }
-  } catch {}
-
-  // Фолбэк: нативный fetch с admin-токеном (без axios interceptors)
+  // Admin privilege is authoritative data. Never repopulate this cache from the
+  // long-lived session snapshot because demotion must take effect within the TTL.
   try {
     const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
     if (!adminToken) {
@@ -34,7 +23,8 @@ async function fetchAdminStatus(userId: string): Promise<boolean> {
     const url = `${directusUrl}/users/${userId}?fields=is_smm_admin`;
     console.log(`[user-auth] fetchAdminStatus: GET ${url}`);
     const resp = await fetch(url, {
-      headers: { Authorization: `Bearer ${adminToken}` }
+      headers: { Authorization: `Bearer ${adminToken}` },
+      signal: AbortSignal.timeout(5_000),
     });
     console.log(`[user-auth] fetchAdminStatus: status=${resp.status}`);
     if (!resp.ok) {

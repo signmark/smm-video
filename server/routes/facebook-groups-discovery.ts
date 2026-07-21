@@ -1,8 +1,10 @@
 import { Router } from 'express';
 import axios from 'axios';
 import { sanitizeFacebookAccount } from '../services/oauth-response-sanitizer';
+import { authenticateUser } from '../middleware/user-auth';
 
 const router = Router();
+router.use(authenticateUser);
 
 // API для получения Facebook групп и страниц пользователя
 router.get('/facebook/groups-and-pages', async (req, res) => {

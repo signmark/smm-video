@@ -7,6 +7,7 @@ import { YouTubeOAuth } from '../utils/youtube-oauth';
 import { authMiddleware } from '../middleware/auth';
 import { GlobalApiKeysService } from '../services/global-api-keys';
 import { authorizeCampaignAccess } from '../services/campaign-access';
+import { randomBytes } from 'node:crypto';
 
 const router = Router();
 
@@ -56,7 +57,7 @@ router.post('/youtube/auth/start', authMiddleware, async (req, res) => {
     };
 
     // Генерируем уникальный state для защиты от CSRF
-    const stateKey = `${userId}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    const stateKey = randomBytes(32).toString('base64url');
     oauthStates.set(stateKey, stateData);
 
     // Кодируем state с данными в Base64 для передачи в URL
@@ -103,15 +104,15 @@ router.get('/youtube/auth/callback', async (req, res) => {
     }
 
     // Декодируем state параметр
-    let stateKey, campaignId;
+    let stateKey;
+    let campaignId: string | undefined;
     let userId;
 
     try {
       // Пробуем декодировать новый формат state
       const decodedState = JSON.parse(Buffer.from(state as string, 'base64').toString());
       stateKey = decodedState.key;
-      campaignId = decodedState.campaignId;
-      console.log('[youtube-auth] Decoded state:', { stateKey, campaignId });
+      console.log('[youtube-auth] Decoded state key received');
     } catch (e) {
       // Fallback для старых форматов state
       stateKey = state as string;
@@ -126,10 +127,9 @@ router.get('/youtube/auth/callback', async (req, res) => {
       });
     } else {
       userId = stateData.userId;
-      // Если campaignId не был извлечен из state URL, берем из stateData
-      if (!campaignId && stateData.campaignId) {
-        campaignId = stateData.campaignId;
-      }
+      // The client-visible base64 state is not authoritative. The campaign is
+      // bound to the opaque server-side state created by the authenticated start.
+      campaignId = stateData.campaignId;
     }
 
     // Проверяем время жизни state (10 минут) только для обычных state
@@ -165,10 +165,11 @@ router.get('/youtube/auth/callback', async (req, res) => {
 
     // Сохраняем токены напрямую в Directus (не через frontend)
     if (campaignId) {
+      const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
+      const directusUrl = process.env.DIRECTUS_URL;
+      if (!adminToken || !directusUrl) throw new Error('Directus OAuth storage is not configured');
       try {
-        const adminToken = process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
-        const directusUrl = process.env.DIRECTUS_URL;
-        if (adminToken && directusUrl) {
+          await authorizeCampaignAccess(campaignId, userId, adminToken, false);
           const axios = (await import('axios')).default;
           const getCamp = await axios.get(`${directusUrl}/items/user_campaigns/${campaignId}`, {
             headers: { Authorization: `Bearer ${adminToken}` }
@@ -192,11 +193,11 @@ router.get('/youtube/auth/callback', async (req, res) => {
             headers: { Authorization: `Bearer ${adminToken}`, 'Content-Type': 'application/json' }
           });
           console.log(`[youtube-auth] ✅ Токены сохранены в Directus для кампании ${campaignId}`);
-        }
       } catch (saveErr: any) {
         console.error(`[youtube-auth] ❌ Ошибка сохранения в Directus: ${saveErr.message}`);
+        throw new Error('Не удалось безопасно сохранить YouTube OAuth-сессию');
       }
-    }
+    } else throw new Error('OAuth state is not bound to a campaign');
 
     const params = new URLSearchParams({
       success: 'true',

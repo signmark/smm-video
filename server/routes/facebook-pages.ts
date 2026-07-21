@@ -1,8 +1,10 @@
 import express from 'express';
 import axios from 'axios';
 import { sanitizeFacebookAccount } from '../services/oauth-response-sanitizer';
+import { authenticateUser } from '../middleware/user-auth';
 
 const router = express.Router();
+router.use(authenticateUser);
 
 // GET /api/facebook/pages - получение Facebook страниц пользователя
 router.get('/pages', async (req, res) => {

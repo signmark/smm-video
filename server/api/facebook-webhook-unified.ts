@@ -7,6 +7,7 @@ import { Router } from 'express';
 import axios from 'axios';
 import log from '../utils/logger';
 import { facebookService } from '../services/social-platforms/facebook-service';
+import { authenticateUser } from '../middleware/user-auth';
 
 const router = Router();
 
@@ -259,7 +260,7 @@ router.post('/update-status', async (req, res) => {
 });
 
 // Маршрут для получения токена конкретной страницы
-router.get('/page-token/:pageId', async (req, res) => {
+router.get('/page-token/:pageId', authenticateUser, async (req, res) => {
   try {
     const { pageId } = req.params;
     const { token } = req.query;

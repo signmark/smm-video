@@ -2,6 +2,9 @@ import express from 'express';
 import axios from 'axios';
 import { sanitizeInstagramAccount } from '../services/oauth-response-sanitizer';
 import { log } from '../utils/logger';
+import { authenticateUser } from '../middleware/user-auth';
+import { authorizeCampaignAccess } from '../services/campaign-access';
+import { randomBytes } from 'node:crypto';
 
 const router = express.Router();
 
@@ -9,9 +12,9 @@ const router = express.Router();
 const oauthSessions = new Map();
 
 // Эндпоинт для начала OAuth flow
-router.post('/instagram/auth/start', async (req, res) => {
+router.post('/instagram/auth/start', authenticateUser, async (req, res) => {
   try {
-    const { appId, appSecret, redirectUri, webhookUrl, instagramId, campaignId } = req.body;
+    const { appId, appSecret, redirectUri, instagramId, campaignId } = req.body;
 
     if (!appId || !appSecret || !campaignId) {
       return res.status(400).json({
@@ -19,6 +22,7 @@ router.post('/instagram/auth/start', async (req, res) => {
         error: 'Требуются: appId, appSecret, campaignId'
       });
     }
+    await authorizeCampaignAccess(campaignId, req.user?.id, req.user?.token || '', req.user?.is_smm_admin === true);
 
     // Определяем правильный redirect URI в зависимости от окружения
     let finalRedirectUri = redirectUri;
@@ -33,10 +37,10 @@ router.post('/instagram/auth/start', async (req, res) => {
       }
     }
 
-    const finalWebhookUrl = webhookUrl || process.env.INSTAGRAM_WEBHOOK_URL || '';
+    const finalWebhookUrl = process.env.INSTAGRAM_WEBHOOK_URL || '';
 
     // Генерируем уникальный state для безопасности
-    const state = Math.random().toString(36).substring(2, 15);
+    const state = randomBytes(32).toString('base64url');
 
     // Сохраняем данные сессии
     oauthSessions.set(state, {
@@ -46,6 +50,7 @@ router.post('/instagram/auth/start', async (req, res) => {
       webhookUrl: finalWebhookUrl,
       instagramId,
       campaignId, // Добавляем campaignId для последующего сохранения
+      userId: req.user?.id,
       timestamp: Date.now()
     });
 
@@ -117,6 +122,10 @@ router.get('/instagram/auth/callback', async (req, res) => {
     console.log('❌ Invalid session for state:', state);
     console.log('📋 Available sessions:', Array.from(oauthSessions.keys()));
     return res.status(400).json({ error: 'Недействительная сессия' });
+  }
+  if (Date.now() - session.timestamp > 10 * 60 * 1000) {
+    oauthSessions.delete(state);
+    return res.status(400).json({ error: 'OAuth-сессия истекла' });
   }
 
   console.log('✅ Session found:', {
@@ -248,7 +257,9 @@ router.get('/instagram/auth/callback', async (req, res) => {
 
       // Получаем текущие настройки кампании
       const DIRECTUS_URL = process.env.DIRECTUS_URL;
-      const DIRECTUS_TOKEN = process.env.DIRECTUS_TOKEN;
+      const DIRECTUS_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
+      if (!DIRECTUS_URL || !DIRECTUS_TOKEN) throw new Error('Directus OAuth storage is not configured');
+      await authorizeCampaignAccess(session.campaignId, session.userId, DIRECTUS_TOKEN, false);
 
       const currentCampaignResponse = await axios.get(
         `${DIRECTUS_URL}/items/user_campaigns/${session.campaignId}`,
@@ -344,6 +355,7 @@ router.get('/instagram/auth/callback', async (req, res) => {
 
     } catch (saveError) {
       log('instagram-oauth', `Ошибка сохранения Instagram настроек: ${saveError}`);
+      throw new Error('Не удалось безопасно сохранить Instagram OAuth-сессию');
     }
 
     // Очищаем сессию
@@ -384,11 +396,11 @@ router.get('/instagram/auth/callback', async (req, res) => {
 });
 
 // Эндпоинт для проверки статуса OAuth сессии
-router.get('/instagram/auth/status/:state', (req, res) => {
+router.get('/instagram/auth/status/:state', authenticateUser, (req, res) => {
   const { state } = req.params;
   const session = oauthSessions.get(state);
   
-  if (!session) {
+  if (!session || session.userId !== req.user?.id) {
     return res.json({ exists: false });
   }
   

@@ -11,6 +11,7 @@ import { adminTokenManager } from '../services/admin-token-manager';
 import axios from 'axios';
 import { getPlanLimits } from '../services/plan-limits';
 import { directusCrud } from '../services/directus-crud';
+import { authorizeCampaignAccess, CampaignAccessError } from '../services/campaign-access';
 
 /**
  * Удаляет все связанные элементы указанной коллекции для кампании
@@ -195,22 +196,10 @@ export function registerCampaignRoutes(app: Express) {
         return res.status(401).json({ error: "Сессия истекла. Пожалуйста, войдите заново.", sessionExpired: true });
       }
 
-      // Use admin token to ensure all fields (including content_style) are returned
-      const adminToken = await adminTokenManager.getAdminToken();
-      const response = await directusApi.get(`/items/user_campaigns/${id}`, {
-        headers: { 'Authorization': `Bearer ${adminToken || token}` }
-      });
-
-      const item = response.data.data;
+      const item = await authorizeCampaignAccess(id, userId, token, req.user?.is_smm_admin === true);
       if (!item) {
         console.error(`[CAMPAIGN_GET] Campaign ${id} not found in Directus`);
         return res.status(404).json({ error: "Campaign not found" });
-      }
-
-      // Soft binding check: allow access if user_id matches OR user_created matches (migration fallback)
-      if (item.user_id !== userId && item.user_created !== userId) {
-        console.error(`[CAMPAIGN_GET_DENIED] User ${userId} attempted to access campaign ${id} (owner: ${item.user_id}, creator: ${item.user_created})`);
-        console.warn(`[CAMPAIGN_GET_BYPASS] Bypassing ownership check for campaign ${id} and user ${userId}`);
       }
 
       const campaign = {
@@ -229,12 +218,13 @@ export function registerCampaignRoutes(app: Express) {
 
       res.json({ success: true, data: campaign });
     } catch (error: any) {
-      const status = error.response?.status;
+      const status = error instanceof CampaignAccessError ? error.status : error.response?.status;
       console.error(`[CAMPAIGN_GET_ERROR] Error fetching campaign ${req.params.id}:`, error.response?.data || error.message);
       // 403 от Directus = кампания удалена или нет доступа, НЕ истечение сессии
       if (status === 401) {
         return res.status(401).json({ error: "Сессия истекла. Пожалуйста, войдите заново.", sessionExpired: true });
       }
+      if (status === 503) return res.status(503).json({ error: "Campaign access temporarily unavailable" });
       res.status(404).json({ error: "Campaign not found" });
     }
   });
@@ -248,17 +238,7 @@ export function registerCampaignRoutes(app: Express) {
       
       if (!userId || !token) return res.status(401).json({ error: "Не авторизован" });
       
-      // Проверяем права перед обновлением
-      const checkResponse = await directusApi.get(`/items/user_campaigns/${id}`, {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      
-      const item = checkResponse.data.data;
-      if (item.user_id !== userId && item.user_created !== userId) {
-        // Soft bypass: log the mismatch but allow update (same as GET route)
-        // user_id field type mismatch (UUID vs string) can cause false denials
-        console.warn(`[CAMPAIGN_PATCH_BYPASS] Owner mismatch for campaign ${id}: item.user_id=${item.user_id}, userId=${userId}. Allowing update.`);
-      }
+      await authorizeCampaignAccess(id, userId, token, req.user?.is_smm_admin === true);
       
       const updateData = { ...req.body };
       // Поле названия в Directus называется 'name' — передаём как есть, без маппинга
@@ -286,6 +266,11 @@ export function registerCampaignRoutes(app: Express) {
       
       res.json({ success: true, data: response.data.data });
     } catch (error: any) {
+      if (error instanceof CampaignAccessError) {
+        return res.status(error.status).json({
+          error: error.status === 404 ? "Campaign not found" : "Campaign access temporarily unavailable",
+        });
+      }
       res.status(500).json({ error: "Failed to update campaign" });
     }
   });

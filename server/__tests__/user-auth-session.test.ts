@@ -36,6 +36,11 @@ function makeResponse() {
 describe('authenticateUser session validation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    process.env.DIRECTUS_URL = 'https://test-directus.example.com';
+    process.env.DIRECTUS_STATIC_TOKEN = 'admin-token';
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      data: { is_smm_admin: false },
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
   });
 
   it('returns an explicit 401 for an expired token without continuing the request', async () => {

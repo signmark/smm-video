@@ -41,6 +41,7 @@
 | `codex-bug-027-tracker-reconciliation-2026-07-20.md` | **Codex: reconciliation BUG-027.** Mavis'овский 18:17 search был incomplete — реальные fix'ы `5748268` (sanitize) + `85bc523` (preserve formatting) с явным regression test `cleans the exact DeepSeek VK artifact pattern reported by testers` в `server/__tests__/generated-social-content.test.ts` (8/8 passing). Не нужен новый Codex-таск. Sheet обновлён 18:57: R52 A=white + B:L=green. Mavis reconcile `state.json` (fix_commits + статус → `fix_in_git_awaiting_retest`) в `88a7ff7`. Закоммичено Mavis как fallback в `88a7ff7` (content by Codex). | — |
 | `codex-analytics-observability-follow-up-2026-07-20.md` | **Codex: production-diagnosis write-up для observability в `73cac1b`.** Подтверждено на `Чушь` (VK-only) и `omemo.tech` (все 6 платформ). Trace events: `campaign_plan` / `channel_resolution_start` / `channel_response_summary` / `channel_included` / `channel_skipped` / `campaign_result`. Deliberately не сериализует settings, токены, заголовки, post content. **🚨 Содержит отдельный urgent security follow-up: pre-existing YouTube settings log эмитит OAuth access/refresh токены в production logs.** Не фиксить вместе с observability — отдельный коммит + ротация credentials. Закоммичено Mavis как fallback в `9a54acb` (content by Codex). | — |
 | `kimi-task10-evidence-2026-07-21.md` | **Kimi: детальная проверка dead-code кандидатов Task 10.** `social/telegram-proxy-service.ts` (613 строк) — DEAD ✅, доказуемо ноль импортов, битый импорт типов из несуществующего `'../../../shared/types'`, единственный initial commit, функциональность поглощена `telegram-s3-integration.ts`. `social-platforms/base-service.ts` (27 строк) — НЕ мёртвый ❌, 6 живых потребителей, целевая сторона конвергенции. **Решение владельца получено 2026-07-21:** telegram-proxy-service удалён (Task 10), каскадно проверен и удалён `media-proxy-service.ts` (мёртв); base-service снят из кандидатов (живой); docs обновлены. Закоммичено Mavis как fallback. | — |
+| `kimi-security-follow-ups-2026-07-21.md` | **Kimi: follow-ups после волны security/Task 10, для зоопарка (адресат ревью+пуша — Mavis).** Чек-лист ревью коммитов `e2f721e`/`fdc40a3`/`ab24f05`/`281d780` (+docs), контрольный grep на токены в логах, полный vitest перед пушем. Очередь: 🚨 ротация YouTube OAuth (владелец); `/youtube-settings` токены в HTTP + нет auth + двойной маунт (high); FB `user_token` клиенту (high); хардкод-секреты `instagram-test.js`, fallback userId в `youtube-auth.ts` (medium); сломанный `instagram-setup-wizard.ts`, 451 pre-existing tsc-ошибок (low). | — |
 
 ## Роли
 
@@ -124,6 +125,8 @@
   (переавторизация YouTube в затронутых кампаниях). Открытый вопрос:
   GET/PATCH `/youtube-settings` отдаёт токены в HTTP-ответе (клиент
   их использует) и смонтирован без auth-middleware — нужно решение.
+  Очередь follow-ups и чек-лист ревью/пуша для Mavis:
+  `kimi-security-follow-ups-2026-07-21.md`.
 - **Task 7 (low-medium, ЗАМОРОЖЕНО)** — lost-update в
   `persistAnalyticsChannelId` (GET→PATCH fire-and-forget, ставка —
   токены). **Не раздавать** до решения владельца о выносе поля

@@ -273,3 +273,9 @@ Claude НЕ мониторит папку непрерывно (частые п�
 > блокеров нет; оформлен отдельным файлом `kimi-review-analytics-attribution-7071816-2026-07-21.md`,
 > там же три косметических замечания (недостижимый reason, мёртвая ветка hasScraperData).
 > Auth/tenant WIP Codex в дереве не трогал.
+> [Kimi, 2026-07-21]: взял кросс-модельный спот-чек security-verdict'ов Codex по handoff
+> `review-auth-analytics-oauth-fixes-2026-07-21.md` (адресат Kimi — security/tenant-isolation;
+> верификатор моей вычитки — Claude, вступает последним в цикле). Итог — отдельным файлом
+> `kimi-auth-oauth-spotcheck-2026-07-21.md`: блокеры подтверждены пробоями, C-04 закрыт
+> на HEAD (`9633cb1`), H-04/H-05 в чужом активном WIP, новая находка K-01 (decode-only
+> `authMiddleware` на publish-роутах). Полный re-audit — после коммита текущего WIP.

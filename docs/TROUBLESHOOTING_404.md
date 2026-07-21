@@ -56,7 +56,7 @@ POSTGRES_PASSWORD=QtpZ3dh7
 curl -s https://directus.nplanner.ru/server/info
 
 # Проверка коллекций (с токеном)
-curl -s -H "Authorization: Bearer 2bexIeLQqichfy3KseO3V31XDxfY-zP5" \
+curl -s -H "Authorization: Bearer ${DIRECTUS_TOKEN}" \
   https://directus.nplanner.ru/collections
 ```
 

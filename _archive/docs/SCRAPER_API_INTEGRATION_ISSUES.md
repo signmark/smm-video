@@ -22,7 +22,7 @@ curl -X POST "http://217.26.25.95:3030/api/v1/monitoring/scheduler/metrics-refre
   channel_ids=00000000-0000-0000-0000-000000000001&\
   channel_ids=00000000-0000-0000-0000-000000000002&\
   days=7&force=true" \
-  -H "Authorization: Bearer N5beUaQCEdBPYed_fZeBIXdXhD6yZBpdbFzcSwB8MVI"
+  -H "Authorization: Bearer ${ANALYTICS_API_KEY}"
 
 # Ответ: HTTP 200
 # {"status":"completed","processed":0,"failed":0,"skipped":0,...}
@@ -34,7 +34,7 @@ curl -X POST "http://217.26.25.95:3030/api/v1/monitoring/scheduler/metrics-refre
   channel_ids=b2dbeda2-2cf6-41c6-8ab3-98dd52de3c17&\
   channel_ids=f350d507-de5d-402d-a8c1-3efc2514d2c1&\
   days=7&force=true" \
-  -H "Authorization: Bearer N5beUaQCEdBPYed_fZeBIXdXhD6yZBpdbFzcSwB8MVI" \
+  -H "Authorization: Bearer ${ANALYTICS_API_KEY}" \
   -m 15
 
 # Ответ: HTTP 000 (таймаут, обрыв соединения)

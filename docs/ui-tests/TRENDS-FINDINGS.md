@@ -35,6 +35,23 @@ POST /api/trends/vk-webhook              (trending posts callback)
 POST /api/trends/tg-webhook              (trending posts callback)
 ```
 
+## Known Issues (follow-up)
+
+### Issue 1: Frontend cache desync when keywords added via Directus API
+- **Severity:** Low
+- **Description:** When keywords are added directly to `campaign_keywords` collection in Directus (bypassing UI), the React Query cache on the campaign page doesn't get invalidated. UI shows "Добавлено 0 ключевых слов" until page reload.
+- **Workaround:** Reload the campaign page after adding keywords via API.
+- **Note:** Adding keywords through the UI works correctly end-to-end.
+
+### Issue 2: trend_analysis_settings.keywords vs campaign_keywords collection
+- **Severity:** Medium
+- **Description:** `PATCH /api/campaigns/:id` saves keywords to `trend_analysis_settings.keywords` but the trends route reads from `campaign_keywords` collection. Two different stores. Setting keywords in `trend_analysis_settings` does NOT make them appear in the trends flow.
+- **Fix needed:** Either unify the stores or make trends route read from both.
+
+### Issue 3: VK trending posts not persisted
+- **Severity:** High
+- **Description:** VK webhook logs "Сохранено 91 VK-постов" but `campaign_trend_topics` has 0 records. The save path has a swallowed error.
+
 ## For Codex
 - The VK trending posts webhook handler says "Сохранено 91" but nothing is in `campaign_trend_topics`. Check if the save is actually failing with a swallowed error.
 - Keywords in `trend_analysis_settings.keywords` are NOT the same as `campaign_keywords` collection. The trends route reads from `campaign_keywords`, the UI reads from `campaign_keywords`.

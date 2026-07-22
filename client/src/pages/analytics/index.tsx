@@ -356,8 +356,13 @@ export default function AnalyticsPage() {
             </div>
           )}
 
-          {/* Data Display */}
-          {analyticsData && (
+          {/* Data Display — gated on BOTH data presence AND !isError so
+              that a failed refetch (refetchOnWindowFocus: true with
+              staleTime: 0 is the common trigger) does not leave the
+              last successful metrics visible while the new error
+              banner is also rendered. Plan Task 3 p.4: "При query
+              error не показывать старые или нулевые выводы". */}
+          {analyticsData && !isError && (
             <>
               {/* Overall Metrics */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">

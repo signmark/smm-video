@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CampaignContent, SocialPlatform } from '@/types';
 import {
+  categorisePlatformFailure,
   countConfirmedPlatformPublications,
   getConfirmedPublicationEvents,
   getConfirmedPublicationDates,
@@ -250,7 +251,9 @@ describe('getFailedPlatforms', () => {
     });
     const failed = getFailedPlatforms(post);
     expect(failed.map((f) => f.platform).sort()).toEqual(['instagram', 'telegram']);
-    expect(failed.find((f) => f.platform === 'telegram')?.reason).toBe('timeout');
+    expect(failed.find((f) => f.platform === 'telegram')?.reasonCategory).toBe('timeout');
+    expect(failed.find((f) => f.platform === 'telegram')?.reasonLabel).toBe('таймаут');
+    expect(failed.find((f) => f.platform === 'instagram')?.reasonCategory).toBe('rate-limit');
   });
 
   it('returns an empty list for fully successful posts', () => {
@@ -261,5 +264,56 @@ describe('getFailedPlatforms', () => {
       } as any,
     });
     expect(getFailedPlatforms(post)).toEqual([]);
+  });
+
+  it('never leaks the raw backend error to the UI label (security: CL-03)', () => {
+    const post = content({
+      status: 'partial',
+      socialPlatforms: {
+        telegram: {
+          status: 'failed',
+          error: 'POST https://api.telegram.org/bot1234567:ABCDEFG/sendMessage returned 401 with token=leaked-secret',
+        } as any,
+      },
+    });
+    const failed = getFailedPlatforms(post);
+    const tg = failed.find((f) => f.platform === 'telegram')!;
+    // The label is a stable, harmless category phrase.
+    expect(tg.reasonLabel).toBe('ошибка авторизации');
+    // The raw text is preserved on the object for tests, but it must
+    // NOT appear in the user-facing reasonLabel.
+    expect(tg.reasonLabel).not.toMatch(/token|leaked|1234567|sendMessage/);
+  });
+
+  it('collapses unknown error strings to a generic category', () => {
+    const post = content({
+      status: 'partial',
+      socialPlatforms: {
+        instagram: {
+          status: 'failed',
+          error: 'something weird and uncategorised',
+        } as any,
+      },
+    });
+    const ig = getFailedPlatforms(post).find((f) => f.platform === 'instagram')!;
+    expect(ig.reasonCategory).toBe('unknown');
+    expect(ig.reasonLabel).toBe('неизвестная ошибка');
+  });
+});
+
+describe('categorisePlatformFailure', () => {
+  it.each<[string | null, string]>([
+    ['401 Unauthorized', 'auth'],
+    ['403 forbidden — token expired', 'auth'],
+    ['429 rate limit exceeded', 'rate-limit'],
+    ['etimedout while sending', 'timeout'],
+    ['econnreset by peer', 'network'],
+    ['invalid JSON in body', 'invalid-content'],
+    ['500 internal server error', 'server'],
+    [null, 'unknown'],
+    [undefined, 'unknown'],
+    ['', 'unknown'],
+  ])('maps %p to %p', (raw, expected) => {
+    expect(categorisePlatformFailure(raw as any)).toBe(expected);
   });
 });

@@ -54,7 +54,46 @@ export default function Posts() {
   const [visibleMonth, setVisibleMonth] = useState<Date>(() => startOfMonth(new Date()));
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [retryingKey, setRetryingKey] = useState<string | null>(null);
+  // Set of post IDs whose "Ошибки публикации → Повторить" is currently
+  // firing. Replaces the previous behaviour where the same button
+  // double-fired because forEach ran in parallel and the single
+  // retryingKey state was overwritten by whichever Promise resolved
+  // last, so the per-card "retrying" indicator was wrong.
+  const [retryingPostIds, setRetryingPostIds] = useState<Set<string>>(() => new Set());
   const [reusingContentId, setReusingContentId] = useState<string | null>(null);
+
+  // Sequential retry for fully-failed posts: one platform at a time so
+  // a non-idempotent backend cannot be hit twice by a double-click. The
+  // per-post set tracks the in-flight state; individual per-platform
+  // buttons in the day's cards still use retryingKey for backward
+  // compatibility.
+  const retryFailedPlatformsSequentially = async (
+    postId: string,
+    platforms: Array<{ platform: string }>,
+  ): Promise<void> => {
+    if (retryingPostIds.has(postId)) return;
+    if (platforms.length === 0) return;
+    setRetryingPostIds((prev) => {
+      const next = new Set(prev);
+      next.add(postId);
+      return next;
+    });
+    try {
+      for (const { platform } of platforms) {
+        try {
+          await retryPlatformPublish(postId, platform);
+        } catch (err) {
+          console.warn('[posts] retry failed for', postId, platform, err);
+        }
+      }
+    } finally {
+      setRetryingPostIds((prev) => {
+        const next = new Set(prev);
+        next.delete(postId);
+        return next;
+      });
+    }
+  };
 
   const reusePost = async (contentId: string) => {
     setReusingContentId(contentId);
@@ -811,9 +850,7 @@ export default function Posts() {
                                 : failedPlatforms
                                     .map(
                                       (p) =>
-                                        `${p.platform}${
-                                          p.reason ? `: ${p.reason}` : ''
-                                        }`,
+                                        `${p.platform}: ${p.reasonLabel}`,
                                     )
                                     .join(', ')}
                             </p>
@@ -822,15 +859,20 @@ export default function Posts() {
                             size="sm"
                             variant="outline"
                             onClick={() => {
-                              // Открываем первый провалившийся диалог —
-                              // пользователь увидит карточку и сможет
-                              // повторить публикацию через существующий
-                              // retry-флоу.
-                              failedPlatforms.forEach((p) => {
-                                retryPlatformPublish(post.id, p.platform);
-                              });
+                              // Sequential retry per platform: forEach fired
+                              // them in parallel which (a) double-published on
+                              // a rapid double-click and (b) made the per-
+                              // post "retrying" state flicker because the
+                              // single retryingKey useState was overwritten
+                              // by whichever Promise resolved last. The
+                              // platform-retry flow is also non-idempotent at
+                              // the network level for some integrations.
+                              void retryFailedPlatformsSequentially(
+                                post.id,
+                                failedPlatforms,
+                              );
                             }}
-                            disabled={isFetchingContent}
+                            disabled={isFetchingContent || retryingPostIds.has(post.id)}
                             data-testid="posts-failed-retry"
                           >
                             Повторить

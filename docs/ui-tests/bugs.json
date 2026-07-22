@@ -1,0 +1,14 @@
+[
+  {
+    "category": "trends",
+    "message": "TGStat input empty — keywords not propagated to trends page",
+    "impact": "medium",
+    "time": "2026-07-22T15:45:11.959Z"
+  },
+  {
+    "category": "trends",
+    "message": "After collecting sources, none appear on page",
+    "impact": "medium",
+    "time": "2026-07-22T15:46:04.159Z"
+  }
+]

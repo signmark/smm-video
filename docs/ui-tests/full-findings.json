@@ -1,0 +1,290 @@
+[
+  {
+    "category": "auth",
+    "message": "Login",
+    "severity": "info",
+    "time": "2026-07-22T15:44:45.927Z"
+  },
+  {
+    "category": "auth",
+    "message": "→ https://smm.omemo.tech/campaigns",
+    "severity": "pass",
+    "time": "2026-07-22T15:44:50.104Z"
+  },
+  {
+    "category": "campaign-create",
+    "message": "=== STEP 1: Create fresh campaign ===",
+    "severity": "info",
+    "time": "2026-07-22T15:44:50.105Z"
+  },
+  {
+    "category": "campaign-create",
+    "message": "Name: UI-Test-1784735093924",
+    "severity": "info",
+    "time": "2026-07-22T15:44:53.939Z"
+  },
+  {
+    "category": "campaign-create",
+    "message": "After create → https://smm.omemo.tech/campaigns/32e28199-257b-46b1-a544-658f7bf704b2",
+    "severity": "pass",
+    "time": "2026-07-22T15:44:57.078Z"
+  },
+  {
+    "category": "campaign-create",
+    "message": "Campaign ID: 32e28199-257b-46b1-a544-658f7bf704b2",
+    "severity": "info",
+    "time": "2026-07-22T15:44:57.177Z"
+  },
+  {
+    "category": "campaign-sections",
+    "message": "=== STEP 2: Campaign sections ===",
+    "severity": "info",
+    "time": "2026-07-22T15:44:57.272Z"
+  },
+  {
+    "category": "campaign-sections",
+    "message": "Section \"Сайт\" — content visible: true",
+    "severity": "pass",
+    "time": "2026-07-22T15:44:57.935Z"
+  },
+  {
+    "category": "campaign-sections",
+    "message": "Section \"Ключевые слова\" — content visible: true",
+    "severity": "pass",
+    "time": "2026-07-22T15:44:58.594Z"
+  },
+  {
+    "category": "campaign-sections",
+    "message": "Section \"Бизнес-анкета\" — content visible: true",
+    "severity": "pass",
+    "time": "2026-07-22T15:44:59.261Z"
+  },
+  {
+    "category": "campaign-sections",
+    "message": "Section \"Настройки анализа трендов\" — content visible: true",
+    "severity": "pass",
+    "time": "2026-07-22T15:44:59.969Z"
+  },
+  {
+    "category": "campaign-sections",
+    "message": "Section \"Настройки публикации\" — content visible: true",
+    "severity": "pass",
+    "time": "2026-07-22T15:45:00.683Z"
+  },
+  {
+    "category": "campaign-sections",
+    "message": "Section \"Генерация контента\" — content visible: true",
+    "severity": "pass",
+    "time": "2026-07-22T15:45:01.363Z"
+  },
+  {
+    "category": "campaign-sections",
+    "message": "Section \"Настройки автономного ассистента\" — content visible: true",
+    "severity": "pass",
+    "time": "2026-07-22T15:45:02.080Z"
+  },
+  {
+    "category": "keywords",
+    "message": "=== STEP 3: Keywords full flow ===",
+    "severity": "info",
+    "time": "2026-07-22T15:45:02.399Z"
+  },
+  {
+    "category": "keywords",
+    "message": "Search for \"юмор\" results: false",
+    "severity": "warn",
+    "time": "2026-07-22T15:45:06.382Z"
+  },
+  {
+    "category": "trend-settings",
+    "message": "=== STEP 4: Trend analysis settings ===",
+    "severity": "info",
+    "time": "2026-07-22T15:45:06.534Z"
+  },
+  {
+    "category": "trend-settings",
+    "message": "Settings inputs found: 9",
+    "severity": "info",
+    "time": "2026-07-22T15:45:07.645Z"
+  },
+  {
+    "category": "trends",
+    "message": "=== STEP 5: Trends page ===",
+    "severity": "info",
+    "time": "2026-07-22T15:45:07.645Z"
+  },
+  {
+    "category": "trends",
+    "message": "TGStat input value: \"\"",
+    "severity": "warn",
+    "time": "2026-07-22T15:45:11.959Z"
+  },
+  {
+    "category": "trends",
+    "message": "BUG: TGStat input empty — keywords not propagated to trends page",
+    "severity": "fail",
+    "time": "2026-07-22T15:45:11.959Z"
+  },
+  {
+    "category": "trends",
+    "message": "Sources section: empty",
+    "severity": "info",
+    "time": "2026-07-22T15:45:13.013Z"
+  },
+  {
+    "category": "trends",
+    "message": "Trends count: 0",
+    "severity": "info",
+    "time": "2026-07-22T15:45:14.068Z"
+  },
+  {
+    "category": "trends",
+    "message": "--- Collect Sources flow ---",
+    "severity": "info",
+    "time": "2026-07-22T15:45:14.156Z"
+  },
+  {
+    "category": "trends",
+    "message": "Platform selection dialog opened",
+    "severity": "pass",
+    "time": "2026-07-22T15:45:15.776Z"
+  },
+  {
+    "category": "trends",
+    "message": "  Instagram checkbox: visible",
+    "severity": "info",
+    "time": "2026-07-22T15:45:15.887Z"
+  },
+  {
+    "category": "trends",
+    "message": "  Telegram checkbox: visible",
+    "severity": "info",
+    "time": "2026-07-22T15:45:15.894Z"
+  },
+  {
+    "category": "trends",
+    "message": "  ВКонтакте checkbox: visible",
+    "severity": "info",
+    "time": "2026-07-22T15:45:15.898Z"
+  },
+  {
+    "category": "trends",
+    "message": "  Facebook: disabled=true",
+    "severity": "info",
+    "time": "2026-07-22T15:45:15.910Z"
+  },
+  {
+    "category": "trends",
+    "message": "Collection started",
+    "severity": "pass",
+    "time": "2026-07-22T15:45:15.996Z"
+  },
+  {
+    "category": "trends",
+    "message": "After collection — sources present: false",
+    "severity": "warn",
+    "time": "2026-07-22T15:46:04.158Z"
+  },
+  {
+    "category": "trends",
+    "message": "BUG: After collecting sources, none appear on page",
+    "severity": "fail",
+    "time": "2026-07-22T15:46:04.159Z"
+  },
+  {
+    "category": "content",
+    "message": "=== STEP 6: Content page ===",
+    "severity": "info",
+    "time": "2026-07-22T15:46:04.297Z"
+  },
+  {
+    "category": "content",
+    "message": "Tab \"Все\"",
+    "severity": "pass",
+    "time": "2026-07-22T15:46:08.399Z"
+  },
+  {
+    "category": "content",
+    "message": "Tab \"Черновики\"",
+    "severity": "pass",
+    "time": "2026-07-22T15:46:09.283Z"
+  },
+  {
+    "category": "content",
+    "message": "Tab \"Запланированные\"",
+    "severity": "pass",
+    "time": "2026-07-22T15:46:10.152Z"
+  },
+  {
+    "category": "content",
+    "message": "Tab \"Опубликованные\"",
+    "severity": "pass",
+    "time": "2026-07-22T15:46:11.040Z"
+  },
+  {
+    "category": "content",
+    "message": "Create dialog open: true",
+    "severity": "pass",
+    "time": "2026-07-22T15:46:13.367Z"
+  },
+  {
+    "category": "content",
+    "message": "  Form fields: 0",
+    "severity": "info",
+    "time": "2026-07-22T15:46:13.374Z"
+  },
+  {
+    "category": "scheduled",
+    "message": "=== STEP 7: Scheduled page ===",
+    "severity": "info",
+    "time": "2026-07-22T15:46:13.400Z"
+  },
+  {
+    "category": "publications",
+    "message": "=== STEP 8: Publications page ===",
+    "severity": "info",
+    "time": "2026-07-22T15:46:16.713Z"
+  },
+  {
+    "category": "publications",
+    "message": "Calendar date clicked",
+    "severity": "pass",
+    "time": "2026-07-22T15:46:21.138Z"
+  },
+  {
+    "category": "analytics",
+    "message": "=== STEP 9: Analytics page ===",
+    "severity": "info",
+    "time": "2026-07-22T15:46:21.138Z"
+  },
+  {
+    "category": "analytics",
+    "message": "Verdict displayed: true",
+    "severity": "pass",
+    "time": "2026-07-22T15:46:24.475Z"
+  },
+  {
+    "category": "responsive",
+    "message": "=== STEP 10: Mobile viewport ===",
+    "severity": "info",
+    "time": "2026-07-22T15:46:25.271Z"
+  },
+  {
+    "category": "responsive",
+    "message": "content-mobile: loaded",
+    "severity": "pass",
+    "time": "2026-07-22T15:46:27.480Z"
+  },
+  {
+    "category": "responsive",
+    "message": "analytics-mobile: loaded",
+    "severity": "pass",
+    "time": "2026-07-22T15:46:29.691Z"
+  },
+  {
+    "category": "responsive",
+    "message": "trends-mobile: loaded",
+    "severity": "pass",
+    "time": "2026-07-22T15:46:31.896Z"
+  }
+]

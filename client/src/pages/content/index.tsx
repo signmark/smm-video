@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, createRef } from "react";
-import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useTranslation } from "react-i18next";
 import { Card, CardContent, CardHeader, CardDescription, CardFooter } from "@/components/ui/card";
@@ -233,6 +233,48 @@ export default function ContentPage() {
   const [unpublishingContentId, setUnpublishingContentId] = useState<string | null>(null);
   const [cloningContentId, setCloningContentId] = useState<string | null>(null);
   const [selectedKeywordIds, setSelectedKeywordIds] = useState<Set<string>>(new Set());
+
+  // Tracks the campaign that the previously rendered data belongs to so we
+  // can detect campaign switches even if the query key change happens before
+  // react-query reports a new placeholder.
+  const lastRenderedCampaignIdRef = useRef<string>(selectedCampaignId);
+
+  // When the active campaign changes, close every dialog whose content
+  // belongs to the old campaign. Without this, the user can keep editing,
+  // scheduling or previewing campaign A's post while the surrounding list
+  // has switched to campaign B.
+  useEffect(() => {
+    if (lastRenderedCampaignIdRef.current === selectedCampaignId) return;
+    lastRenderedCampaignIdRef.current = selectedCampaignId;
+
+    const contentBelongsToActiveCampaign =
+      currentContent && (currentContent as any).campaignId === selectedCampaignId;
+
+    if (!contentBelongsToActiveCampaign) {
+      setIsEditDialogOpen(false);
+      setIsScheduleDialogOpen(false);
+      setIsPreviewOpen(false);
+      setIsGenerateDialogOpen(false);
+      setIsAdaptDialogOpen(false);
+      setIsImageGenerationDialogOpen(false);
+      setIsContentPlanDialogOpen(false);
+      setIsContentTypeDialogOpen(false);
+      setCurrentContent(null);
+      setSelectedKeywordIds(new Set());
+      setBulkSelectedIds(new Set());
+    }
+  }, [
+    selectedCampaignId,
+    currentContent,
+    setIsEditDialogOpen,
+    setIsScheduleDialogOpen,
+    setIsPreviewOpen,
+    setIsGenerateDialogOpen,
+    setIsAdaptDialogOpen,
+    setIsImageGenerationDialogOpen,
+    setIsContentPlanDialogOpen,
+    setIsContentTypeDialogOpen,
+  ]);
 
   // Вспомогательная функция для безопасной установки контента с гарантией наличия массива keywords
   // ВАЖНО: Всегда используйте эту функцию вместо setCurrentContent при установке ненулевых значений,
@@ -664,7 +706,21 @@ export default function ContentPage() {
 
 
   // Запрос списка контента для выбранной кампании
-  const { data: campaignContent = [], isLoading: isLoadingContent, isFetching: isFetchingContent, isError: isContentError, error: contentError, refetch: refetchContent } = useQuery<CampaignContent[]>({
+  // We intentionally do NOT use `keepPreviousData` here: when the user
+  // switches campaigns, the previous campaign's content must NOT remain
+  // visible under the new campaign's name. `isPlaceholderData` is the
+  // react-query signal that we are showing stale data because the key
+  // changed; we hide the cards and disable destructive actions whenever
+  // it is true.
+  const {
+    data: campaignContent = [],
+    isLoading: isLoadingContent,
+    isFetching: isFetchingContent,
+    isPlaceholderData,
+    isError: isContentError,
+    error: contentError,
+    refetch: refetchContent,
+  } = useQuery<CampaignContent[]>({
     queryKey: ["/api/campaign-content", selectedCampaignId || ""],
     queryFn: async () => {
       if (!selectedCampaignId) return [];
@@ -680,7 +736,6 @@ export default function ContentPage() {
     staleTime: 10 * 1000,
     gcTime: 1000 * 60 * 30,
     refetchInterval: isActionActive || isAiGenerating || isBulkProcessing ? 3000 : false,
-    placeholderData: keepPreviousData,
   });
 
   // Запрос ключевых слов кампании
@@ -1865,6 +1920,16 @@ export default function ContentPage() {
                 title="Не удалось загрузить контент кампании"
                 testId="content-query-error"
               />
+            ) : isPlaceholderData ? (
+              <div
+                className="text-center text-muted-foreground py-8 border border-dashed rounded-lg"
+                data-testid="content-campaign-switching"
+                role="status"
+              >
+                <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
+                <p>Загружаем контент выбранной кампании…</p>
+                <p className="text-xs mt-1">Предыдущие данные скрыты, чтобы не смешивать кампании.</p>
+              </div>
             ) : !filteredContent.length ? (
               <p className="text-center text-muted-foreground py-8">
                 Нет контента для этой кампании

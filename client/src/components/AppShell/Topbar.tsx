@@ -247,9 +247,11 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
                       size="icon"
                       className="h-9 w-9 relative"
                       data-testid="button-autonomous-pending"
+                      aria-label={t('topbar.autonomous.pendingLabel')}
+                      title={t('topbar.autonomous.pendingLabel')}
                     >
-                      <ClipboardList className="h-4 w-4 text-amber-500 dark:text-amber-400" />
-                      <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
+                      <ClipboardList className="h-4 w-4 text-amber-500 dark:text-amber-400" aria-hidden="true" />
+                      <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-amber-500 animate-pulse" aria-hidden="true" />
                     </Button>
                   </Link>
                 ) : (
@@ -266,6 +268,17 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
                     className="h-9 w-9 relative"
                     data-testid="button-autonomous-toggle"
                     disabled={isTogglingAutonomous || isStoppingAutonomous}
+                    aria-label={
+                      isAutonomousActive
+                        ? t('topbar.autonomous.stopLabel')
+                        : t('topbar.autonomous.startLabel')
+                    }
+                    aria-pressed={isAutonomousActive}
+                    title={
+                      isAutonomousActive
+                        ? t('topbar.autonomous.stopLabel')
+                        : t('topbar.autonomous.startLabel')
+                    }
                   >
                     <Bot
                       className={`h-4 w-4 transition-colors ${
@@ -275,6 +288,7 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
                           ? 'text-yellow-500 dark:text-yellow-400'
                           : 'text-red-400 dark:text-red-500'
                       }`}
+                      aria-hidden="true"
                     />
                     <span
                       className={`absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full ${
@@ -284,6 +298,7 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
                           ? 'bg-yellow-500 animate-pulse'
                           : 'bg-red-400'
                       }`}
+                      aria-hidden="true"
                     />
                   </Button>
                 )}

@@ -16,7 +16,12 @@
     "settings": "Настройки",
     "tutorial": "Обучение",
     "admin": "Админ",
-    "logout": "Выход"
+    "logout": "Выход",
+    "autonomous": {
+      "startLabel": "Запустить автономный режим",
+      "stopLabel": "Остановить автономный режим",
+      "pendingLabel": "Открыть ожидающее согласование"
+    }
   },
   "common": {
     "create": "Создать",
@@ -121,6 +126,7 @@
     "noDescription": "Описание не добавлено",
     "manage": "Управлять",
     "open": "Открыть",
+    "actionsMenuLabel": "Действия с кампанией {{name}}",
     "settings": "Настройки"
   },
   "content": {
@@ -528,6 +534,8 @@
   },
   "support": {
     "title": "Поддержка",
+    "openLabel": "Открыть чат поддержки",
+    "closeLabel": "Закрыть чат поддержки",
     "supportBot": "Бот поддержки",
     "telegramBot": "@smm_nplanner_sup_bot"
   },

@@ -16,7 +16,12 @@
     "settings": "Configuración",
     "tutorial": "Tutorial",
     "admin": "Admin",
-    "logout": "Salir"
+    "logout": "Salir",
+    "autonomous": {
+      "startLabel": "Iniciar modo autónomo",
+      "stopLabel": "Detener modo autónomo",
+      "pendingLabel": "Abrir aprobación pendiente"
+    }
   },
   "common": {
     "create": "Crear",
@@ -121,6 +126,7 @@
     "noDescription": "Sin descripción",
     "manage": "Gestionar",
     "open": "Abrir",
+    "actionsMenuLabel": "Acciones para la campaña {{name}}",
     "settings": "Configuración"
   },
   "content": {
@@ -528,6 +534,8 @@
   },
   "support": {
     "title": "Soporte",
+    "openLabel": "Abrir chat de soporte",
+    "closeLabel": "Cerrar chat de soporte",
     "supportBot": "Bot de Soporte",
     "telegramBot": "@smm_nplanner_sup_bot"
   },

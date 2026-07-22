@@ -16,7 +16,12 @@
     "settings": "Settings",
     "tutorial": "Tutorial",
     "admin": "Admin",
-    "logout": "Logout"
+    "logout": "Logout",
+    "autonomous": {
+      "startLabel": "Start autonomous mode",
+      "stopLabel": "Stop autonomous mode",
+      "pendingLabel": "Open pending approval"
+    }
   },
   "common": {
     "create": "Create",
@@ -121,6 +126,7 @@
     "noDescription": "No description added",
     "manage": "Manage",
     "open": "Open",
+    "actionsMenuLabel": "Actions for campaign {{name}}",
     "settings": "Settings"
   },
   "content": {
@@ -528,6 +534,8 @@
   },
   "support": {
     "title": "Support",
+    "openLabel": "Open support chat",
+    "closeLabel": "Close support chat",
     "supportBot": "Support Bot",
     "telegramBot": "@smm_nplanner_sup_bot"
   },

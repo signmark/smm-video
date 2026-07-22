@@ -39,6 +39,40 @@ export function hasFailedPublicationAttempt(content: CampaignContent): boolean {
 }
 
 /**
+ * Returns `true` when the post is *entirely* failed (no platform succeeded).
+ * A "partial" post with at least one confirmed publication must NOT be
+ * treated as fully failed.
+ */
+export function isFullyFailedPublication(content: CampaignContent): boolean {
+  if (hasConfirmedPublication(content)) return false;
+  return hasFailedPublicationAttempt(content);
+}
+
+/**
+ * Lists the platforms that failed for a given post. The list is stable
+ * and order-preserving so the UI can show a per-post summary like
+ * "Instagram: timeout, Telegram: rate-limited".
+ */
+export function getFailedPlatforms(
+  content: CampaignContent,
+): Array<{ platform: string; reason: string | null }> {
+  const result: Array<{ platform: string; reason: string | null }> = [];
+  const platforms = content.socialPlatforms || {};
+  for (const [platform, info] of Object.entries(platforms)) {
+    if (!info) continue;
+    const status = (info as any).status;
+    const hasError = Boolean((info as any).error || (info as any).lastError);
+    if (status === 'failed' || (hasError && status !== 'published' && status !== 'partial' && status !== 'partially_published')) {
+      result.push({
+        platform,
+        reason: (info as any).error || (info as any).lastError || null,
+      });
+    }
+  }
+  return result;
+}
+
+/**
  * Fully failed posts have no publication timestamp, but must remain reachable
  * from their intended day so the user can inspect the error and retry.
  */

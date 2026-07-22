@@ -18,8 +18,10 @@ import { platformNames } from "@/lib/social-platforms";
 import {
   countConfirmedPlatformPublications,
   getConfirmedPublicationEvents,
+  getFailedPlatforms,
   getFailedPublicationAttemptDate,
   getPublicationCardDates,
+  isFullyFailedPublication,
 } from "@/lib/published-content";
 import { useTranslation } from 'react-i18next';
 import { apiRequest } from "@/lib/queryClient";
@@ -299,6 +301,14 @@ export default function Posts() {
       return true;
     });
   };
+
+  // Полностью неуспешные посты — есть в календаре (красная точка) и в
+  // platform counts НЕ входят, но в этой секции их можно открыть и
+  // повторить.
+  const fullyFailedPosts = React.useMemo(
+    () => campaignContent.filter(isFullyFailedPublication),
+    [campaignContent],
+  );
 
   const getDayContent = (day: Date) => {
     const key = dayKey(day);
@@ -759,6 +769,68 @@ export default function Posts() {
                 <p className="text-sm text-muted-foreground mb-4">Посты, у которых не удалось определить дату публикации</p>
                 <div className="grid gap-3">
                   {getUndatedPublishedPosts().map(renderPostCard)}
+                </div>
+              </div>
+            ) : null}
+
+            {/* Секция «Ошибки публикации» — fully-failed посты, которые
+                НЕ должны считаться в платформенных счётчиках и в
+                «лучшем времени», но должны быть доступны для повтора.
+                Сами карточки уже добавлены в calendar с красной точкой
+                (см. getDayContent), здесь мы выводим плоский список. */}
+            {!isLoadingContent && fullyFailedPosts.length > 0 ? (
+              <div className="mt-6 border-t pt-6" data-testid="posts-failed-section">
+                <h3 className="font-medium text-lg mb-1 text-destructive">Ошибки публикации</h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Эти посты полностью не опубликованы. Они не входят в счётчики
+                  платформ и в «Лучшее время», но доступны для повтора.
+                </p>
+                <div className="space-y-2">
+                  {fullyFailedPosts.map((post) => {
+                    const failedPlatforms = getFailedPlatforms(post);
+                    return (
+                      <div
+                        key={post.id}
+                        className="p-3 border border-destructive/30 rounded-lg bg-destructive/5"
+                        data-testid="posts-failed-row"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div>
+                            <p className="font-medium">{post.title || 'Без названия'}</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {failedPlatforms.length === 0
+                                ? 'Не удалось опубликовать'
+                                : failedPlatforms
+                                    .map(
+                                      (p) =>
+                                        `${p.platform}${
+                                          p.reason ? `: ${p.reason}` : ''
+                                        }`,
+                                    )
+                                    .join(', ')}
+                            </p>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              // Открываем первый провалившийся диалог —
+                              // пользователь увидит карточку и сможет
+                              // повторить публикацию через существующий
+                              // retry-флоу.
+                              failedPlatforms.forEach((p) => {
+                                retryPlatformPublish(post.id, p.platform);
+                              });
+                            }}
+                            disabled={isFetchingContent}
+                            data-testid="posts-failed-retry"
+                          >
+                            Повторить
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             ) : null}

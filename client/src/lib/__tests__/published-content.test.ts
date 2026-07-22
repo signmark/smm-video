@@ -4,11 +4,13 @@ import {
   countConfirmedPlatformPublications,
   getConfirmedPublicationEvents,
   getConfirmedPublicationDates,
+  getFailedPlatforms,
   getFailedPublicationAttemptDate,
   getPublishedDisplayDate,
   getPublicationCardDates,
   hasConfirmedPublication,
   hasFailedPublicationAttempt,
+  isFullyFailedPublication,
 } from '../published-content';
 
 function content(overrides: Partial<CampaignContent>): CampaignContent {
@@ -204,5 +206,60 @@ describe('published content helpers', () => {
     });
 
     expect(getPublishedDisplayDate(published)?.toISOString()).toBe('2026-07-17T10:00:00.000Z');
+  });
+});
+
+describe('isFullyFailedPublication', () => {
+  it('returns true when all platforms failed', () => {
+    const post = content({
+      status: 'failed',
+      socialPlatforms: {
+        telegram: { status: 'failed', error: 'timeout' },
+        vk: { status: 'failed', error: 'auth' },
+      } as any,
+    });
+    expect(isFullyFailedPublication(post)).toBe(true);
+  });
+
+  it('returns false for a partial post (at least one platform succeeded)', () => {
+    const post = content({
+      status: 'partial',
+      socialPlatforms: {
+        telegram: { status: 'failed', error: 'timeout' },
+        vk: { status: 'published', publishedAt: '2026-07-15T09:00:00.000Z' },
+      } as any,
+    });
+    expect(isFullyFailedPublication(post)).toBe(false);
+  });
+
+  it('returns false for a post with no platforms at all', () => {
+    const post = content({ status: 'draft' });
+    expect(isFullyFailedPublication(post)).toBe(false);
+  });
+});
+
+describe('getFailedPlatforms', () => {
+  it('lists every platform that failed, ignoring successful ones', () => {
+    const post = content({
+      status: 'partial',
+      socialPlatforms: {
+        telegram: { status: 'failed', error: 'timeout' },
+        vk: { status: 'published', publishedAt: '2026-07-15T09:00:00.000Z' },
+        instagram: { status: 'failed', error: 'rate-limit' },
+      } as any,
+    });
+    const failed = getFailedPlatforms(post);
+    expect(failed.map((f) => f.platform).sort()).toEqual(['instagram', 'telegram']);
+    expect(failed.find((f) => f.platform === 'telegram')?.reason).toBe('timeout');
+  });
+
+  it('returns an empty list for fully successful posts', () => {
+    const post = content({
+      status: 'published',
+      socialPlatforms: {
+        telegram: { status: 'published', publishedAt: '2026-07-15T09:00:00.000Z' },
+      } as any,
+    });
+    expect(getFailedPlatforms(post)).toEqual([]);
   });
 });

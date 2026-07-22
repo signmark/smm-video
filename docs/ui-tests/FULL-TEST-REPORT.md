@@ -43,5 +43,14 @@
 - Mobile viewport: all pages load at 375px
 - Cookie banner dismissed correctly
 
+## Root Cause: Broken Onboarding Flow
+
+The full "create campaign → add keywords → collect sources → see trends" flow is broken:
+1. Fresh campaign has 0 keywords
+2. Keyword search in UI sends "юмор" to API but results don't appear (Bug 1)
+3. Without keywords saved via UI, source collection has no search queries
+4. Without sources, trends = 0
+5. **A new user cannot get from "create campaign" to "see trends" through the UI alone**
+
 ## Screenshots
 Saved in `/tmp/smm-ui-full/` (18 screenshots).

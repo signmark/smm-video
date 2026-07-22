@@ -4,6 +4,7 @@ import { geminiDirect } from './gemini-direct';
 import { aiService } from './ai-service';
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
+import { toSafeErrorDetails } from '../utils/safe-error';
 
 const AUTONOMOUS_PERSIST_FILE = join(process.cwd(), 'data', 'autonomous-states.json');
 
@@ -157,7 +158,7 @@ async function saveAutonomousPersistenceDb(state: AutonomousState) {
       await directusCrud.create('autonomous_sessions', record, { authToken: token });
     }
   } catch (e) {
-    console.warn('[AUTONOMOUS] Не удалось сохранить состояние в БД:', e);
+    console.warn('[AUTONOMOUS] Не удалось сохранить состояние в БД:', toSafeErrorDetails(e));
   }
 }
 
@@ -172,7 +173,7 @@ async function deleteAutonomousPersistenceDb(campaignId: string) {
       await directusCrud.delete('autonomous_sessions', rec.id, { authToken: token });
     }
   } catch (e) {
-    console.warn('[AUTONOMOUS] Не удалось удалить состояние из БД:', e);
+    console.warn('[AUTONOMOUS] Не удалось удалить состояние из БД:', toSafeErrorDetails(e));
   }
 }
 
@@ -232,7 +233,7 @@ export async function restoreAutonomousStates() {
     }
     console.log(`[AUTONOMOUS] БД: восстановлено ${(sessions || []).length} сессий`);
   } catch (e) {
-    console.warn('[AUTONOMOUS] Не удалось восстановить из БД:', e);
+    console.warn('[AUTONOMOUS] Не удалось восстановить из БД:', toSafeErrorDetails(e));
   }
 }
 

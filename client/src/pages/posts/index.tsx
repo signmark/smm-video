@@ -25,6 +25,7 @@ import { useTranslation } from 'react-i18next';
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { getPublishedPlatformTimeSummary } from '@shared/schedule-time';
+import { QueryErrorState } from '@/components/QueryErrorState';
 
 function markdownToHtml(text: string): string {
   if (!text) return '';
@@ -600,6 +601,18 @@ export default function Posts() {
             </div>
           </CardContent>
         </Card>
+      ) : isError ? (
+        <Card>
+          <CardContent className="pt-6">
+            <QueryErrorState
+              error={error}
+              onRetry={() => !isFetchingContent && refetch()}
+              isRefetching={isFetchingContent}
+              title="Не удалось загрузить публикации"
+              testId="posts-query-error"
+            />
+          </CardContent>
+        </Card>
       ) : (
         <Card>
 
@@ -627,7 +640,7 @@ export default function Posts() {
                   }}
                   initialFocus
                 />
-                
+
                 <div className="space-y-4">
                   <div>
                     <p className="mb-2 max-w-full leading-tight text-muted-foreground">
@@ -663,7 +676,7 @@ export default function Posts() {
 
 
                 </div>
-                
+
                 {/* Оптимальное время публикации */}
                 {(() => {
                   const hourCounts: Record<number, number> = {};
@@ -701,8 +714,8 @@ export default function Posts() {
                 })()}
 
                 <div className="mt-4 space-y-2">
-                  <Button 
-                    onClick={() => setLocation('/content')} 
+                  <Button
+                    onClick={() => setLocation('/content')}
                     className="w-full"
                     variant="default"
                   >
@@ -711,26 +724,13 @@ export default function Posts() {
                   </Button>
                 </div>
               </div>
-              
+
               <div>
                 <h3 className="font-medium text-lg mb-4">
                   {t('publishing.published.postsOn', { date: format(selectedDate, 'dd MMMM yyyy', { locale: getDateLocale() }) })}
                 </h3>
-                
-              {isError ? (
-                <div className="p-6 text-center border rounded-lg bg-destructive/10 border-destructive/20 my-4">
-                  <p className="text-sm font-medium text-destructive mb-2">Не удалось загрузить публикации</p>
-                  <Button 
-                    size="sm" 
-                    variant="outline" 
-                    onClick={() => !isFetchingContent && refetch()}
-                    disabled={isFetchingContent}
-                  >
-                    {isFetchingContent ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                    Повторить
-                  </Button>
-                </div>
-              ) : isLoadingContent ? (
+
+              {isLoadingContent ? (
                 <div className="p-6 text-center">
                   <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2" />
                   <p>{t('common.loading')}</p>
@@ -752,22 +752,8 @@ export default function Posts() {
               </div>
             </div>
 
-            {/* Секция «Опубликованные (без даты)» */}
-            {isError ? (
-              <div className="mt-6 border-t pt-6 bg-destructive/5 p-4 rounded-lg border border-destructive/15">
-                <h3 className="font-medium text-lg mb-1">Опубликованные (без даты)</h3>
-                <p className="text-sm text-destructive font-medium mb-3">Не удалось загрузить публикации без даты</p>
-                <Button 
-                  size="sm" 
-                  variant="outline" 
-                  onClick={() => !isFetchingContent && refetch()}
-                  disabled={isFetchingContent}
-                >
-                  {isFetchingContent ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                  Повторить
-                </Button>
-              </div>
-            ) : !isLoadingContent && getUndatedPublishedPosts().length > 0 ? (
+            {/* Секция «Опубликованные (без даты)» — скрыта на error, чтобы не дублировать сообщение. */}
+            {!isLoadingContent && getUndatedPublishedPosts().length > 0 ? (
               <div className="mt-6 border-t pt-6">
                 <h3 className="font-medium text-lg mb-1">Опубликованные (без даты)</h3>
                 <p className="text-sm text-muted-foreground mb-4">Посты, у которых не удалось определить дату публикации</p>

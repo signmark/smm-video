@@ -37,6 +37,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { apiRequest } from "@/lib/queryClient";
+import { QueryErrorState } from "@/components/QueryErrorState";
 import type { Campaign, CampaignContent } from "@shared/schema";
 import axios from "axios";
 import { formatDistanceToNow, format, isAfter, isBefore, parseISO, startOfDay, endOfDay } from "date-fns";
@@ -663,7 +664,7 @@ export default function ContentPage() {
 
 
   // Запрос списка контента для выбранной кампании
-  const { data: campaignContent = [], isLoading: isLoadingContent, isFetching: isFetchingContent, refetch: refetchContent } = useQuery<CampaignContent[]>({
+  const { data: campaignContent = [], isLoading: isLoadingContent, isFetching: isFetchingContent, isError: isContentError, error: contentError, refetch: refetchContent } = useQuery<CampaignContent[]>({
     queryKey: ["/api/campaign-content", selectedCampaignId || ""],
     queryFn: async () => {
       if (!selectedCampaignId) return [];
@@ -1856,7 +1857,15 @@ export default function ContentPage() {
             </div>
           </CardHeader>
           <CardContent>
-            {!filteredContent.length ? (
+            {isContentError ? (
+              <QueryErrorState
+                error={contentError}
+                onRetry={() => !isFetchingContent && refetchContent()}
+                isRefetching={isFetchingContent}
+                title="Не удалось загрузить контент кампании"
+                testId="content-query-error"
+              />
+            ) : !filteredContent.length ? (
               <p className="text-center text-muted-foreground py-8">
                 Нет контента для этой кампании
                 {(dateRange.from || dateRange.to) && (

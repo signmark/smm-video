@@ -14,6 +14,7 @@ import { Link } from 'wouter';
 import { useWebSocket } from '@/hooks/use-websocket';
 import { keysToCamel } from '@/lib/utils';
 import { updateContentCachesAfterMoveToDraft } from '@/lib/content-cache-updates';
+import { QueryErrorState } from '@/components/QueryErrorState';
 
 import {
   Card,
@@ -117,6 +118,8 @@ export default function ScheduledPublications() {
     data: scheduledContent = [],
     isLoading: scheduledLoading,
     isFetching: scheduledFetching,
+    isError: scheduledError,
+    error: scheduledErrorDetail,
     refetch: refetchScheduled,
   } = useQuery<CampaignContent[]>({
     queryKey: ['/api/campaign-content', selectedCampaign?.id, 'scheduled'],
@@ -126,13 +129,13 @@ export default function ScheduledPublications() {
         `/api/campaign-content?campaignId=${selectedCampaign!.id}&limit=500`,
         { method: 'GET' }
       );
-      
+
       // Преобразуем ключи из snake_case в camelCase
       const allContent = keysToCamel<CampaignContent[]>(result.data || []);
-      
+
       // Показываем только посты со статусом 'scheduled'
       const scheduled = allContent.filter((content: any) => content.status === 'scheduled');
-      
+
       console.log(`[scheduled] Кампания ${selectedCampaign!.id}: ${scheduled.length} запланированных`);
       return scheduled;
     },
@@ -389,15 +392,17 @@ export default function ScheduledPublications() {
             placeholder={t('publish.scheduled.searchPlaceholder')}
             value={searchQuery}
             onChange={handleSearchChange}
+            disabled={scheduledError}
           />
         </div>
-        
+
         <div>
-          <Select 
+          <Select
             value={selectedPlatform}
             onValueChange={setSelectedPlatform}
+            disabled={scheduledError}
           >
-            <SelectTrigger className="w-full">
+            <SelectTrigger className="w-full" disabled={scheduledError}>
               <div className="flex items-center">
                 <Filter size={16} className="mr-2 text-muted-foreground" />
                 <SelectValue placeholder={t('publish.scheduled.allPlatforms')} />
@@ -408,7 +413,7 @@ export default function ScheduledPublications() {
                 <div className="flex justify-between w-full">
                   <span>{t('publish.scheduled.allPlatforms')}</span>
                   <span className="ml-2 text-xs px-2 py-0.5 bg-muted rounded-full">
-                    {platformCounts.all}
+                    {scheduledError ? '—' : platformCounts.all}
                   </span>
                 </div>
               </SelectItem>
@@ -444,15 +449,18 @@ export default function ScheduledPublications() {
         <div className="flex-1">
           <div className="flex items-center">
             <h3 className="text-lg font-semibold">{t('publishing.scheduled.upcoming')}</h3>
-            <Badge variant="outline" className="ml-2">{upcomingContent.length}</Badge>
+            <Badge variant="outline" className="ml-2">
+              {scheduledError ? '—' : upcomingContent.length}
+            </Badge>
           </div>
         </div>
-        
+
         <Button
           variant="outline"
           size="sm"
           className="gap-2 ml-4"
           onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')}
+          disabled={scheduledError}
         >
           {sortOrder === 'desc' ? (
             <>
@@ -477,6 +485,14 @@ export default function ScheduledPublications() {
               Выберите кампанию в верхней панели, чтобы увидеть запланированные публикации
             </p>
           </div>
+        ) : scheduledError ? (
+          <QueryErrorState
+            error={scheduledErrorDetail}
+            onRetry={() => !scheduledFetching && refetchScheduled()}
+            isRefetching={scheduledFetching}
+            title="Не удалось загрузить запланированные публикации"
+            testId="scheduled-query-error"
+          />
         ) : scheduledLoading ? (
           <div className="space-y-4">
             {[1, 2, 3].map(i => (

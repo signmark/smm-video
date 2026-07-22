@@ -16,7 +16,22 @@
     "settings": "Settings",
     "tutorial": "Tutorial",
     "admin": "Admin",
-    "logout": "Logout"
+    "logout": "Logout",
+    "autonomous": {
+      "startLabel": "Start autonomous mode",
+      "stopLabel": "Stop autonomous mode",
+      "pendingLabel": "Open pending approval"
+    }
+  },
+  "ui": {
+    "retry": "Retry",
+    "loading": "Loading...",
+    "errorTitle": "Failed to load data",
+    "retryingPost": "Retry publication",
+    "campaignSwitching": {
+      "title": "Loading selected campaign content…",
+      "subtitle": "Previous data is hidden to avoid mixing campaigns."
+    }
   },
   "common": {
     "create": "Create",
@@ -121,11 +136,15 @@
     "noDescription": "No description added",
     "manage": "Manage",
     "open": "Open",
+    "actionsMenuLabel": "Actions for campaign {{name}}",
     "settings": "Settings"
   },
   "content": {
     "title": "Content Management",
     "subtitle": "Create, edit, and publish content for social media",
+    "error": {
+      "title": "Failed to load campaign content"
+    },
     "tabs": {
       "all": "All",
       "draft": "Drafts",
@@ -427,7 +446,12 @@
     "rememberMe": "Remember me",
     "forgotPassword": "Forgot password?",
     "dontHaveAccount": "Don't have an account?",
-    "alreadyHaveAccount": "Already have an account?"
+    "alreadyHaveAccount": "Already have an account?",
+    "recovery": {
+      "explanation": "Your login data is kept until you decide to sign out.",
+      "logoutButton": "Sign out and sign in again",
+      "loggingOut": "Signing out..."
+    }
   },
   "profile": {
     "title": "Profile",
@@ -528,6 +552,8 @@
   },
   "support": {
     "title": "Support",
+    "openLabel": "Open support chat",
+    "closeLabel": "Close support chat",
     "supportBot": "Support Bot",
     "telegramBot": "@smm_nplanner_sup_bot"
   },
@@ -607,7 +633,12 @@
       "noScheduled": "No upcoming publications",
       "scheduledWillShow": "Scheduled publications will appear here.",
       "backToList": "Back to Publications",
-      "createPublication": "Create Publication"
+      "createPublication": "Create Publication",
+      "errorTitle": "Failed to load scheduled publications",
+      "overdueSection": {
+        "title": "Overdue and stuck publications",
+        "description": "These records have status 'scheduled' but their date has already passed or is missing. Open a publication to retry, reschedule or move it back to drafts."
+      }
     },
     "published": {
       "title": "Published Posts",
@@ -619,7 +650,18 @@
       "platformPublications": "Platform publications",
       "forMonth": "in {{month}}",
       "contentManagement": "Content Management",
-      "publicationError": "Publication error"
+      "publicationError": "Publication error",
+      "calendarPrevMonth": "Go to previous month",
+      "calendarNextMonth": "Go to next month",
+      "calendarMonth": "Month",
+      "calendarYear": "Year",
+      "errorTitle": "Failed to load publications",
+      "undatedTitle": "Published (no date)",
+      "undatedDescription": "Posts whose publication date could not be determined",
+      "failedSection": {
+        "title": "Publication errors",
+        "description": "These posts did not publish at all. They are not counted in the platform totals or the 'best time' widget, but you can retry them."
+      }
     }
   },
   "tutorials": {

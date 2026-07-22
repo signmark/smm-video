@@ -12,6 +12,12 @@ import { Eye, Heart, Share2, MessageCircle, BarChart3, TrendingUp, TrendingDown,
 import { apiRequest } from '@/lib/queryClient';
 import { useCampaignStore } from '@/lib/campaignStore';
 import { ExportReportDialog } from '@/components/export-report-dialog';
+import {
+  getAnalyticsVerdict,
+  getPlatformEfficiencyLevel,
+  getSampleSummary,
+} from '@/lib/analytics-verdict';
+import { QueryErrorState } from '@/components/QueryErrorState';
 
 
 interface AnalyticsData {
@@ -46,7 +52,7 @@ export default function AnalyticsPage() {
     }
   }, [selectedCampaignId]);
 
-  const { data: analyticsData, isLoading, error } = useQuery<AnalyticsData>({
+  const { data: analyticsData, isLoading, isFetching, isError, error, refetch } = useQuery<AnalyticsData>({
     queryKey: ['analytics', selectedCampaign, selectedPeriod],
     enabled: !!selectedCampaign,
     refetchOnWindowFocus: true,
@@ -54,16 +60,16 @@ export default function AnalyticsPage() {
     staleTime: 0,
     queryFn: async () => {
       console.log('🎯 Загружаем аналитику для кампании:', selectedCampaign, 'период:', selectedPeriod);
-      
+
       // Используем новый backend API endpoint
       const response = await apiRequest(`/api/analytics/${selectedCampaign}?period=${selectedPeriod}`);
-      
+
       if (!response.success) {
         throw new Error(response.error || 'Failed to fetch analytics data');
       }
-      
+
       console.log('📊 Получена аналитика:', response);
-      
+
       return {
         totalPosts: response.totalPosts,
         totalViews: response.totalViews,
@@ -84,6 +90,20 @@ export default function AnalyticsPage() {
 
   const getPlatformEfficiency = (platform: any) => {
     const engagementRate = parseFloat(calculateEngagementRate(platform));
+    const level = getPlatformEfficiencyLevel({
+      posts: platform.posts ?? 0,
+      views: platform.views ?? 0,
+    });
+    // No-data platforms keep the existing palette but must NEVER carry a
+    // judgemental "Низкая" label.
+    if (level === 'no-data') {
+      return {
+        level: 'Нет данных',
+        color: 'text-muted-foreground',
+        icon: BarChart3,
+        bgColor: 'platform-efficiency-empty',
+      };
+    }
     if (engagementRate >= 5) return { level: 'Отличная', color: 'text-green-600 dark:text-green-400', icon: TrendingUp, bgColor: 'platform-efficiency-excellent' };
     if (engagementRate >= 2) return { level: 'Хорошая', color: 'text-blue-600 dark:text-blue-400', icon: Target, bgColor: 'platform-efficiency-good' };
     if (engagementRate >= 1) return { level: 'Средняя', color: 'text-yellow-600 dark:text-yellow-400', icon: TrendingDown, bgColor: 'platform-efficiency-average' };
@@ -104,51 +124,71 @@ export default function AnalyticsPage() {
 
   const getCampaignInsights = () => {
     if (!analyticsData) return [];
-    
+
     const totalEngagement = analyticsData.totalLikes + analyticsData.totalComments + analyticsData.totalShares;
-    const overallEngagementRate = analyticsData.totalViews > 0 
-      ? ((totalEngagement / analyticsData.totalViews) * 100).toFixed(1) 
-      : '0';
-    
-    const insights = [];
-    
-    // Общая эффективность
-    if (parseFloat(overallEngagementRate) >= 3) {
+    const sample = {
+      posts: analyticsData.totalPosts,
+      views: analyticsData.totalViews,
+      engagements: totalEngagement,
+    };
+    const verdict = getAnalyticsVerdict(sample);
+    const summary = getSampleSummary(sample);
+    const insights: any[] = [];
+
+    // Single overall judgement, driven by the verdict so we never produce
+    // contradictory zero-cards + "Низкая эффективность" on a no-data
+    // campaign.
+    if (verdict === 'high') {
       insights.push({
         type: 'success',
         title: t('analytics.highEfficiency'),
-        description: `${t('analytics.overallEngagement')} ${overallEngagementRate}% - ${t('analytics.excellentResult')}`,
-        icon: Award
+        description: summary.detail,
+        icon: Award,
       });
-    } else if (parseFloat(overallEngagementRate) >= 1.5) {
+    } else if (verdict === 'medium') {
       insights.push({
         type: 'info',
         title: t('analytics.averageEfficiency'),
-        description: `${t('analytics.overallEngagement')} ${overallEngagementRate}% - ${t('analytics.growthPotential')}`,
-        icon: Target
+        description: summary.detail,
+        icon: Target,
       });
-    } else {
+    } else if (verdict === 'low') {
       insights.push({
         type: 'warning',
         title: t('analytics.lowEfficiency'),
-        description: `${t('analytics.overallEngagement')} ${overallEngagementRate}% - ${t('analytics.contentOptimizationRequired')}`,
-        icon: TrendingDown
+        description: summary.detail,
+        icon: TrendingDown,
       });
-    }
-
-    // Лучшая платформа
-    const bestPlatform = getBestPlatform();
-    if (bestPlatform && bestPlatform.engagement > 0) {
+    } else {
+      // no-data and insufficient-views: emit a single neutral insight,
+      // NOT a "low efficiency" warning.
       insights.push({
-        type: 'success',
-        title: t('analytics.leadingPlatform'),
-        description: `${bestPlatform.name.toUpperCase()} ${t('analytics.showsBestResults')} (${bestPlatform.engagement}% ${t('analytics.engagement')})`,
-        icon: TrendingUp
+        type: 'info',
+        title: summary.headline,
+        description: summary.detail,
+        icon: BarChart3,
       });
     }
 
-    // Рекомендации по улучшению
-    const lowPerformingPlatforms = analyticsData.platforms.filter(p => parseFloat(calculateEngagementRate(p)) < 1);
+    // Лучшая платформа — only meaningful when there is a real sample.
+    if (verdict !== 'no-data' && verdict !== 'insufficient-views') {
+      const bestPlatform = getBestPlatform();
+      if (bestPlatform && bestPlatform.engagement > 0) {
+        insights.push({
+          type: 'success',
+          title: t('analytics.leadingPlatform'),
+          description: `${bestPlatform.name.toUpperCase()} ${t('analytics.showsBestResults')} (${bestPlatform.engagement}% ${t('analytics.engagement')})`,
+          icon: TrendingUp
+        });
+      }
+    }
+
+    // Рекомендации по улучшению — only for platforms that actually have
+    // data. No-data platforms are silently skipped, not labelled "low".
+    const lowPerformingPlatforms = analyticsData.platforms.filter(p => {
+      if ((p.posts ?? 0) <= 0 || (p.views ?? 0) <= 0) return false;
+      return parseFloat(calculateEngagementRate(p)) < 1;
+    });
     if (lowPerformingPlatforms.length > 0) {
       insights.push({
         type: 'warning',
@@ -274,13 +314,16 @@ export default function AnalyticsPage() {
             </div>
           </div>
 
-          {/* Error State */}
-          {error && (
-            <Alert>
-              <AlertDescription>
-                {t('analytics.errorLoading')}
-              </AlertDescription>
-            </Alert>
+          {/* Error State — replaces the previous generic Alert so we never
+              mix "0" counters with an "Ошибка загрузки" banner. */}
+          {isError && (
+            <QueryErrorState
+              error={error}
+              onRetry={() => !isFetching && refetch()}
+              isRefetching={isFetching}
+              title={t('analytics.errorLoading')}
+              testId="analytics-query-error"
+            />
           )}
 
           {/* Loading State */}
@@ -313,8 +356,13 @@ export default function AnalyticsPage() {
             </div>
           )}
 
-          {/* Data Display */}
-          {analyticsData && (
+          {/* Data Display — gated on BOTH data presence AND !isError so
+              that a failed refetch (refetchOnWindowFocus: true with
+              staleTime: 0 is the common trigger) does not leave the
+              last successful metrics visible while the new error
+              banner is also rendered. Plan Task 3 p.4: "При query
+              error не показывать старые или нулевые выводы". */}
+          {analyticsData && !isError && (
             <>
               {/* Overall Metrics */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">

@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { MessageCircle, Send, User, Bot, X, Phone, Headphones } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { useTranslation } from 'react-i18next';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -27,6 +28,7 @@ declare global {
 }
 
 export function SupportChat({ onClose, showFloatingButton = true }: SupportChatProps) {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState('');
@@ -176,11 +178,14 @@ export function SupportChat({ onClose, showFloatingButton = true }: SupportChatP
           className="fixed bottom-6 right-6 h-14 w-14 rounded-full shadow-lg z-40 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
           size="icon"
           data-testid="button-support-chat"
+          aria-label={isOpen ? t('support.closeLabel') : t('support.openLabel')}
+          aria-expanded={isOpen}
+          title={isOpen ? t('support.closeLabel') : t('support.openLabel')}
         >
           {isOpen ? (
-            <X className="h-6 w-6 text-white" />
+            <X className="h-6 w-6 text-white" aria-hidden="true" />
           ) : (
-            <Headphones className="h-6 w-6 text-white" />
+            <Headphones className="h-6 w-6 text-white" aria-hidden="true" />
           )}
         </Button>
       )}

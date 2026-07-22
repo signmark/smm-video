@@ -14,6 +14,13 @@ import { Link } from 'wouter';
 import { useWebSocket } from '@/hooks/use-websocket';
 import { keysToCamel } from '@/lib/utils';
 import { updateContentCachesAfterMoveToDraft } from '@/lib/content-cache-updates';
+import { QueryErrorState } from '@/components/QueryErrorState';
+import {
+  classifyScheduled,
+  countByBucket,
+  splitScheduled,
+  type ScheduledBuckets,
+} from '@/lib/scheduled-classification';
 
 import {
   Card,
@@ -28,7 +35,7 @@ import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import ScheduledPublicationDetails from '@/components/ScheduledPublicationDetails';
 import { Badge } from '@/components/ui/badge';
-import { Calendar, Clock, Search, RefreshCw, Filter, SortDesc, SortAsc, Loader2 } from 'lucide-react';
+import { Calendar, Clock, Search, RefreshCw, Filter, SortDesc, SortAsc, Loader2, AlertCircle } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { 
@@ -117,6 +124,8 @@ export default function ScheduledPublications() {
     data: scheduledContent = [],
     isLoading: scheduledLoading,
     isFetching: scheduledFetching,
+    isError: scheduledError,
+    error: scheduledErrorDetail,
     refetch: refetchScheduled,
   } = useQuery<CampaignContent[]>({
     queryKey: ['/api/campaign-content', selectedCampaign?.id, 'scheduled'],
@@ -126,13 +135,13 @@ export default function ScheduledPublications() {
         `/api/campaign-content?campaignId=${selectedCampaign!.id}&limit=500`,
         { method: 'GET' }
       );
-      
+
       // Преобразуем ключи из snake_case в camelCase
       const allContent = keysToCamel<CampaignContent[]>(result.data || []);
-      
+
       // Показываем только посты со статусом 'scheduled'
       const scheduled = allContent.filter((content: any) => content.status === 'scheduled');
-      
+
       console.log(`[scheduled] Кампания ${selectedCampaign!.id}: ${scheduled.length} запланированных`);
       return scheduled;
     },
@@ -210,51 +219,50 @@ export default function ScheduledPublications() {
     });
   }, [scheduledContent, searchQuery, selectedPlatform]);
   
-  // Разделение контента на предстоящие и прошедшие публикации
-  const upcomingContent = React.useMemo(() => {
-    if (!filteredContent) return [];
-    
-    // Начало сегодняшнего дня (00:00:00) — показываем все посты на сегодня и позже
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
-    
-    // Показываем все запланированные посты: с датой >= сегодня или вообще без даты
-    const upcoming = filteredContent.filter((content: CampaignContent) => {
-      // Проверяем глобальную дату запланированной публикации
-      if (content.scheduledAt) {
-        const scheduledDate = new Date(content.scheduledAt);
-        // Показываем посты начиная с начала сегодняшнего дня
-        return scheduledDate >= startOfToday;
-      }
-      
-      // Если нет глобальной даты, проверяем социальные платформы
-      if (content.socialPlatforms && typeof content.socialPlatforms === 'object') {
-        for (const platform in content.socialPlatforms) {
-          const platformData = content.socialPlatforms[platform as SocialPlatform];
-          if (platformData?.scheduledAt) {
-            if ((platformData.status === 'pending' || platformData.status === 'scheduled')) {
-              const platformScheduledDate = new Date(platformData.scheduledAt);
-              if (platformScheduledDate >= startOfToday) return true;
-            }
-          }
-        }
-      }
+  // Классифицируем scheduled-контент на три корзины одной функцией, чтобы
+  // счётчики "Все платформы" и "Предстоящие публикации" сходились с тем,
+  // что реально видно на странице (и overdue не пропадал бесследно).
+  const scheduledBuckets: ScheduledBuckets = React.useMemo(
+    () => splitScheduled(filteredContent),
+    [filteredContent],
+  );
+  const scheduledCounts = React.useMemo(
+    () => countByBucket(scheduledBuckets),
+    [scheduledBuckets],
+  );
 
-      // Пост без даты публикации — не показываем в запланированных
-      return false;
-    });
-    
-    // Сортируем по дате (в зависимости от выбранного порядка сортировки)
-    // Посты без даты идут в конец
+  // Разделение контента на предстоящие публикации. Используем
+  // already-classified upcoming bucket, чтобы классификация была одна
+  // и та же для счётчиков и для списка.
+  //
+  // Sorting: the aggregate `content.scheduledAt` can be missing for
+  // posts that only have a per-platform scheduled date; the previous
+  // implementation put those at the end ("Infinity" for asc / "-Infinity"
+  // for desc), which made the per-platform-only posts appear "out of
+  // order" relative to the user's mental calendar. We now read the
+  // canonical date from classifyScheduled, which falls back to the
+  // per-platform scheduledAt.
+  //
+  // Memoisation note: splitScheduled(...) pins `now = new Date()` to
+  // the render in which the deps changed. If the page is left open
+  // across midnight, the "today" boundary will not re-evaluate until
+  // filteredContent changes. This is a documented trade-off, not a
+  // bug — adding a now-tick would force a re-render every minute.
+  const upcomingContent = React.useMemo(() => {
+    const upcoming = [...scheduledBuckets.upcoming];
     return upcoming.sort((a, b) => {
-      const dateA = a.scheduledAt ? new Date(a.scheduledAt).getTime() : (sortOrder === 'desc' ? -Infinity : Infinity);
-      const dateB = b.scheduledAt ? new Date(b.scheduledAt).getTime() : (sortOrder === 'desc' ? -Infinity : Infinity);
-      
-      return sortOrder === 'desc' 
-        ? dateB - dateA 
+      const dateA =
+        classifyScheduled(a).scheduledAt?.getTime() ??
+        (sortOrder === 'desc' ? -Infinity : Infinity);
+      const dateB =
+        classifyScheduled(b).scheduledAt?.getTime() ??
+        (sortOrder === 'desc' ? -Infinity : Infinity);
+
+      return sortOrder === 'desc'
+        ? dateB - dateA
         : dateA - dateB;
     });
-  }, [filteredContent, sortOrder]);
+  }, [scheduledBuckets, sortOrder]);
   
   
   // Обработчики событий
@@ -389,15 +397,17 @@ export default function ScheduledPublications() {
             placeholder={t('publish.scheduled.searchPlaceholder')}
             value={searchQuery}
             onChange={handleSearchChange}
+            disabled={scheduledError}
           />
         </div>
-        
+
         <div>
-          <Select 
+          <Select
             value={selectedPlatform}
             onValueChange={setSelectedPlatform}
+            disabled={scheduledError}
           >
-            <SelectTrigger className="w-full">
+            <SelectTrigger className="w-full" disabled={scheduledError}>
               <div className="flex items-center">
                 <Filter size={16} className="mr-2 text-muted-foreground" />
                 <SelectValue placeholder={t('publish.scheduled.allPlatforms')} />
@@ -407,8 +417,11 @@ export default function ScheduledPublications() {
               <SelectItem value="all">
                 <div className="flex justify-between w-full">
                   <span>{t('publish.scheduled.allPlatforms')}</span>
-                  <span className="ml-2 text-xs px-2 py-0.5 bg-muted rounded-full">
-                    {platformCounts.all}
+                  <span
+                    className="ml-2 text-xs px-2 py-0.5 bg-muted rounded-full"
+                    data-testid="scheduled-all-count"
+                  >
+                    {scheduledError ? '—' : scheduledCounts.total}
                   </span>
                 </div>
               </SelectItem>
@@ -444,15 +457,18 @@ export default function ScheduledPublications() {
         <div className="flex-1">
           <div className="flex items-center">
             <h3 className="text-lg font-semibold">{t('publishing.scheduled.upcoming')}</h3>
-            <Badge variant="outline" className="ml-2">{upcomingContent.length}</Badge>
+            <Badge variant="outline" className="ml-2" data-testid="scheduled-upcoming-count">
+              {scheduledError ? '—' : upcomingContent.length}
+            </Badge>
           </div>
         </div>
-        
+
         <Button
           variant="outline"
           size="sm"
           className="gap-2 ml-4"
           onClick={() => setSortOrder(sortOrder === 'desc' ? 'asc' : 'desc')}
+          disabled={scheduledError}
         >
           {sortOrder === 'desc' ? (
             <>
@@ -477,6 +493,14 @@ export default function ScheduledPublications() {
               Выберите кампанию в верхней панели, чтобы увидеть запланированные публикации
             </p>
           </div>
+        ) : scheduledError ? (
+          <QueryErrorState
+            error={scheduledErrorDetail}
+            onRetry={() => !scheduledFetching && refetchScheduled()}
+            isRefetching={scheduledFetching}
+            title={t('publishing.scheduled.errorTitle')}
+            testId="scheduled-query-error"
+          />
         ) : scheduledLoading ? (
           <div className="space-y-4">
             {[1, 2, 3].map(i => (
@@ -506,7 +530,7 @@ export default function ScheduledPublications() {
         ) : (
           <div className="space-y-2">
             {upcomingContent.map((content: CampaignContent) => (
-              <ScheduledPublicationDetails 
+              <ScheduledPublicationDetails
                 key={content.id}
                 content={content}
                 onCancelSuccess={handleCancelSuccess}
@@ -517,6 +541,38 @@ export default function ScheduledPublications() {
           </div>
         )}
       </div>
+
+      {/* Секция просроченных публикаций — старые scheduled записи,
+          которые ранее исчезали бесследно. Счётчики вверху страницы
+          учитывают их наравне с предстоящими, чтобы N «Все платформы»
+          совпадало с фактически видимыми карточками. */}
+      {!scheduledError && (scheduledBuckets.overdue.length > 0 || scheduledBuckets.unscheduledDate.length > 0) ? (
+        <div className="mt-8" data-testid="scheduled-overdue-section">
+          <div className="flex items-center gap-2 mb-4">
+            <AlertCircle className="h-5 w-5 text-amber-600" />
+            <h3 className="text-lg font-semibold">
+              {t('publishing.scheduled.overdueSection.title')}
+            </h3>
+            <Badge variant="outline" className="ml-2" data-testid="scheduled-overdue-count">
+              {scheduledBuckets.overdue.length + scheduledBuckets.unscheduledDate.length}
+            </Badge>
+          </div>
+          <p className="text-sm text-muted-foreground mb-4">
+            {t('publishing.scheduled.overdueSection.description')}
+          </p>
+          <div className="space-y-2">
+            {[...scheduledBuckets.overdue, ...scheduledBuckets.unscheduledDate].map((content) => (
+              <ScheduledPublicationDetails
+                key={content.id}
+                content={content}
+                onCancelSuccess={handleCancelSuccess}
+                onContentChanged={handleContentChanged}
+                onViewDetails={handleViewDetails}
+              />
+            ))}
+          </div>
+        </div>
+      ) : null}
       
       {/* Диалог для просмотра деталей публикации */}
       <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>

@@ -39,6 +39,103 @@ export function hasFailedPublicationAttempt(content: CampaignContent): boolean {
 }
 
 /**
+ * Returns `true` when the post is *entirely* failed (no platform succeeded).
+ * A "partial" post with at least one confirmed publication must NOT be
+ * treated as fully failed.
+ */
+export function isFullyFailedPublication(content: CampaignContent): boolean {
+  if (hasConfirmedPublication(content)) return false;
+  return hasFailedPublicationAttempt(content);
+}
+
+/**
+ * Categorises a raw platform error / lastError string into a short,
+ * UI-safe label. We MUST NOT render the raw backend text directly: per
+ * the security sanitization cycle (commits efff09e / b00893b) such
+ * strings can contain URLs with leaked tokens, internal stack frames
+ * or PII, and rendering them was the security regression CL-03
+ * pointed out in the Claude review.
+ *
+ * The classifier is intentionally narrow: a handful of well-known
+ * categories plus a generic fallback. Anything that does not match
+ * collapses to 'unknown' so the user sees a stable, harmless phrase.
+ *
+ * The raw reason is still preserved on the returned object as
+ * `rawReason` (camelCase) for the unit tests; the UI must never read
+ * it. In dev, we additionally surface it via console.debug for the
+ * developer console, never in the DOM.
+ */
+export type PlatformFailureCategory =
+  | 'auth'
+  | 'rate-limit'
+  | 'timeout'
+  | 'network'
+  | 'invalid-content'
+  | 'server'
+  | 'unknown';
+
+const REASON_PATTERNS: Array<{ category: PlatformFailureCategory; pattern: RegExp }> = [
+  { category: 'auth', pattern: /(401|403|auth|unauthori[sz]ed|forbidden|token|api[_ -]?key)/i },
+  { category: 'rate-limit', pattern: /(429|rate[\s_-]?limit|too many|throttle)/i },
+  { category: 'timeout', pattern: /(timeout|timed[\s_-]?out|etimedout|deadline)/i },
+  { category: 'network', pattern: /(network|econn|enotfound|econnreset|dns|socket)/i },
+  { category: 'invalid-content', pattern: /(invalid|malformed|bad request|missing|empty)/i },
+  { category: 'server', pattern: /(5\d\d|internal|server error|unavailable)/i },
+];
+
+const REASON_LABELS: Record<PlatformFailureCategory, string> = {
+  auth: 'ошибка авторизации',
+  'rate-limit': 'превышен лимит запросов',
+  timeout: 'таймаут',
+  network: 'сетевая ошибка',
+  'invalid-content': 'некорректный контент',
+  server: 'ошибка сервиса',
+  unknown: 'неизвестная ошибка',
+};
+
+export function categorisePlatformFailure(rawReason: string | null | undefined): PlatformFailureCategory {
+  if (!rawReason) return 'unknown';
+  for (const { category, pattern } of REASON_PATTERNS) {
+    if (pattern.test(rawReason)) return category;
+  }
+  return 'unknown';
+}
+
+export function platformFailureLabel(category: PlatformFailureCategory): string {
+  return REASON_LABELS[category];
+}
+
+/**
+ * Lists the platforms that failed for a given post. The list is stable
+ * and order-preserving so the UI can show a per-post summary like
+ * "Instagram: timeout, Telegram: rate-limit". The UI must read
+ * `reasonLabel` for the user-facing copy and MUST NOT read `rawReason`
+ * (kept only for tests and dev console).
+ */
+export function getFailedPlatforms(
+  content: CampaignContent,
+): Array<{ platform: string; reasonCategory: PlatformFailureCategory; reasonLabel: string; rawReason: string | null }> {
+  const result: Array<{ platform: string; reasonCategory: PlatformFailureCategory; reasonLabel: string; rawReason: string | null }> = [];
+  const platforms = content.socialPlatforms || {};
+  for (const [platform, info] of Object.entries(platforms)) {
+    if (!info) continue;
+    const status = (info as any).status;
+    const rawReason = ((info as any).error || (info as any).lastError || null) as string | null;
+    const hasError = Boolean(rawReason);
+    if (status === 'failed' || (hasError && status !== 'published' && status !== 'partial' && status !== 'partially_published')) {
+      const reasonCategory = categorisePlatformFailure(rawReason);
+      result.push({
+        platform,
+        reasonCategory,
+        reasonLabel: platformFailureLabel(reasonCategory),
+        rawReason,
+      });
+    }
+  }
+  return result;
+}
+
+/**
  * Fully failed posts have no publication timestamp, but must remain reachable
  * from their intended day so the user can inspect the error and retry.
  */

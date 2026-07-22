@@ -18,13 +18,16 @@ import { platformNames } from "@/lib/social-platforms";
 import {
   countConfirmedPlatformPublications,
   getConfirmedPublicationEvents,
+  getFailedPlatforms,
   getFailedPublicationAttemptDate,
   getPublicationCardDates,
+  isFullyFailedPublication,
 } from "@/lib/published-content";
 import { useTranslation } from 'react-i18next';
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { getPublishedPlatformTimeSummary } from '@shared/schedule-time';
+import { QueryErrorState } from '@/components/QueryErrorState';
 
 function markdownToHtml(text: string): string {
   if (!text) return '';
@@ -51,7 +54,46 @@ export default function Posts() {
   const [visibleMonth, setVisibleMonth] = useState<Date>(() => startOfMonth(new Date()));
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [retryingKey, setRetryingKey] = useState<string | null>(null);
+  // Set of post IDs whose "Ошибки публикации → Повторить" is currently
+  // firing. Replaces the previous behaviour where the same button
+  // double-fired because forEach ran in parallel and the single
+  // retryingKey state was overwritten by whichever Promise resolved
+  // last, so the per-card "retrying" indicator was wrong.
+  const [retryingPostIds, setRetryingPostIds] = useState<Set<string>>(() => new Set());
   const [reusingContentId, setReusingContentId] = useState<string | null>(null);
+
+  // Sequential retry for fully-failed posts: one platform at a time so
+  // a non-idempotent backend cannot be hit twice by a double-click. The
+  // per-post set tracks the in-flight state; individual per-platform
+  // buttons in the day's cards still use retryingKey for backward
+  // compatibility.
+  const retryFailedPlatformsSequentially = async (
+    postId: string,
+    platforms: Array<{ platform: string }>,
+  ): Promise<void> => {
+    if (retryingPostIds.has(postId)) return;
+    if (platforms.length === 0) return;
+    setRetryingPostIds((prev) => {
+      const next = new Set(prev);
+      next.add(postId);
+      return next;
+    });
+    try {
+      for (const { platform } of platforms) {
+        try {
+          await retryPlatformPublish(postId, platform);
+        } catch (err) {
+          console.warn('[posts] retry failed for', postId, platform, err);
+        }
+      }
+    } finally {
+      setRetryingPostIds((prev) => {
+        const next = new Set(prev);
+        next.delete(postId);
+        return next;
+      });
+    }
+  };
 
   const reusePost = async (contentId: string) => {
     setReusingContentId(contentId);
@@ -298,6 +340,14 @@ export default function Posts() {
       return true;
     });
   };
+
+  // Полностью неуспешные посты — есть в календаре (красная точка) и в
+  // platform counts НЕ входят, но в этой секции их можно открыть и
+  // повторить.
+  const fullyFailedPosts = React.useMemo(
+    () => campaignContent.filter(isFullyFailedPublication),
+    [campaignContent],
+  );
 
   const getDayContent = (day: Date) => {
     const key = dayKey(day);
@@ -600,6 +650,18 @@ export default function Posts() {
             </div>
           </CardContent>
         </Card>
+      ) : isError ? (
+        <Card>
+          <CardContent className="pt-6">
+            <QueryErrorState
+              error={error}
+              onRetry={() => !isFetchingContent && refetch()}
+              isRefetching={isFetchingContent}
+              title={t('publishing.published.errorTitle')}
+              testId="posts-query-error"
+            />
+          </CardContent>
+        </Card>
       ) : (
         <Card>
 
@@ -617,6 +679,14 @@ export default function Posts() {
                     setVisibleMonth(startOfMonth(date));
                   }}
                   className="rounded-md border"
+                  locale={getDateLocale()}
+                  weekStartsOn={i18n.language.startsWith('en') ? 0 : 1}
+                  labels={{
+                    labelPrevious: () => t('publishing.published.calendarPrevMonth'),
+                    labelNext: () => t('publishing.published.calendarNextMonth'),
+                    labelMonthDropdown: () => t('publishing.published.calendarMonth'),
+                    labelYearDropdown: () => t('publishing.published.calendarYear'),
+                  }}
                   components={{
                     DayContent: ({ date }) => (
                       <div className="flex flex-col items-center">
@@ -627,7 +697,7 @@ export default function Posts() {
                   }}
                   initialFocus
                 />
-                
+
                 <div className="space-y-4">
                   <div>
                     <p className="mb-2 max-w-full leading-tight text-muted-foreground">
@@ -663,7 +733,7 @@ export default function Posts() {
 
 
                 </div>
-                
+
                 {/* Оптимальное время публикации */}
                 {(() => {
                   const hourCounts: Record<number, number> = {};
@@ -701,8 +771,8 @@ export default function Posts() {
                 })()}
 
                 <div className="mt-4 space-y-2">
-                  <Button 
-                    onClick={() => setLocation('/content')} 
+                  <Button
+                    onClick={() => setLocation('/content')}
                     className="w-full"
                     variant="default"
                   >
@@ -711,26 +781,13 @@ export default function Posts() {
                   </Button>
                 </div>
               </div>
-              
+
               <div>
                 <h3 className="font-medium text-lg mb-4">
                   {t('publishing.published.postsOn', { date: format(selectedDate, 'dd MMMM yyyy', { locale: getDateLocale() }) })}
                 </h3>
-                
-              {isError ? (
-                <div className="p-6 text-center border rounded-lg bg-destructive/10 border-destructive/20 my-4">
-                  <p className="text-sm font-medium text-destructive mb-2">Не удалось загрузить публикации</p>
-                  <Button 
-                    size="sm" 
-                    variant="outline" 
-                    onClick={() => !isFetchingContent && refetch()}
-                    disabled={isFetchingContent}
-                  >
-                    {isFetchingContent ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                    Повторить
-                  </Button>
-                </div>
-              ) : isLoadingContent ? (
+
+              {isLoadingContent ? (
                 <div className="p-6 text-center">
                   <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2" />
                   <p>{t('common.loading')}</p>
@@ -752,27 +809,83 @@ export default function Posts() {
               </div>
             </div>
 
-            {/* Секция «Опубликованные (без даты)» */}
-            {isError ? (
-              <div className="mt-6 border-t pt-6 bg-destructive/5 p-4 rounded-lg border border-destructive/15">
-                <h3 className="font-medium text-lg mb-1">Опубликованные (без даты)</h3>
-                <p className="text-sm text-destructive font-medium mb-3">Не удалось загрузить публикации без даты</p>
-                <Button 
-                  size="sm" 
-                  variant="outline" 
-                  onClick={() => !isFetchingContent && refetch()}
-                  disabled={isFetchingContent}
-                >
-                  {isFetchingContent ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
-                  Повторить
-                </Button>
-              </div>
-            ) : !isLoadingContent && getUndatedPublishedPosts().length > 0 ? (
+            {/* Секция «Опубликованные (без даты)» — скрыта на error, чтобы не дублировать сообщение. */}
+            {!isLoadingContent && getUndatedPublishedPosts().length > 0 ? (
               <div className="mt-6 border-t pt-6">
-                <h3 className="font-medium text-lg mb-1">Опубликованные (без даты)</h3>
-                <p className="text-sm text-muted-foreground mb-4">Посты, у которых не удалось определить дату публикации</p>
+                <h3 className="font-medium text-lg mb-1">
+                  {t('publishing.published.undatedTitle')}
+                </h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  {t('publishing.published.undatedDescription')}
+                </p>
                 <div className="grid gap-3">
                   {getUndatedPublishedPosts().map(renderPostCard)}
+                </div>
+              </div>
+            ) : null}
+
+            {/* Секция «Ошибки публикации» — fully-failed посты, которые
+                НЕ должны считаться в платформенных счётчиках и в
+                «лучшем времени», но должны быть доступны для повтора.
+                Сами карточки уже добавлены в calendar с красной точкой
+                (см. getDayContent), здесь мы выводим плоский список. */}
+            {!isLoadingContent && fullyFailedPosts.length > 0 ? (
+              <div className="mt-6 border-t pt-6" data-testid="posts-failed-section">
+                <h3 className="font-medium text-lg mb-1 text-destructive">
+                  {t('publishing.published.failedSection.title')}
+                </h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  {t('publishing.published.failedSection.description')}
+                </p>
+                <div className="space-y-2">
+                  {fullyFailedPosts.map((post) => {
+                    const failedPlatforms = getFailedPlatforms(post);
+                    return (
+                      <div
+                        key={post.id}
+                        className="p-3 border border-destructive/30 rounded-lg bg-destructive/5"
+                        data-testid="posts-failed-row"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div>
+                            <p className="font-medium">{post.title || 'Без названия'}</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {failedPlatforms.length === 0
+                                ? 'Не удалось опубликовать'
+                                : failedPlatforms
+                                    .map(
+                                      (p) =>
+                                        `${p.platform}: ${p.reasonLabel}`,
+                                    )
+                                    .join(', ')}
+                            </p>
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              // Sequential retry per platform: forEach fired
+                              // them in parallel which (a) double-published on
+                              // a rapid double-click and (b) made the per-
+                              // post "retrying" state flicker because the
+                              // single retryingKey useState was overwritten
+                              // by whichever Promise resolved last. The
+                              // platform-retry flow is also non-idempotent at
+                              // the network level for some integrations.
+                              void retryFailedPlatformsSequentially(
+                                post.id,
+                                failedPlatforms,
+                              );
+                            }}
+                            disabled={isFetchingContent || retryingPostIds.has(post.id)}
+                            data-testid="posts-failed-retry"
+                          >
+                            {t('ui.retryingPost')}
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             ) : null}

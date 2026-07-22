@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Menu, X, User, LogOut, Settings, Sun, Moon, Sparkles, Send, CreditCard, Bot, Zap, SlidersHorizontal, GitMerge, ClipboardList } from "lucide-react";
 import { CampaignSelector } from "../CampaignSelector";
@@ -39,19 +39,19 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
   const [showModeDialog, setShowModeDialog] = useState(false);
   const [selectedMode, setSelectedMode] = useState<PipelineMode>('full_auto');
   
-  // Нормализуем location и скрываем селектор на Dashboard и списке кампаний
+  // ÐÐ¾Ñ€Ð¼Ð°Ð»Ð¸Ð·ÑƒÐµÐ¼ location Ð¸ ÑÐºÑ€Ñ‹Ð²Ð°ÐµÐ¼ ÑÐµÐ»ÐµÐºÑ‚Ð¾Ñ€ Ð½Ð° Dashboard Ð¸ ÑÐ¿Ð¸ÑÐºÐµ ÐºÐ°Ð¼Ð¿Ð°Ð½Ð¸Ð¹
   const normalizedLocation = location.replace(/\/+$/, '') || '/';
   const showCampaignSelector = !['/campaigns', '/', '/dashboard'].includes(normalizedLocation);
   
-  // Получаем информацию о пользователе
+  // ÐŸÐ¾Ð»ÑƒÑ‡Ð°ÐµÐ¼ Ð¸Ð½Ñ„Ð¾Ñ€Ð¼Ð°Ñ†Ð¸ÑŽ Ð¾ Ð¿Ð¾Ð»ÑŒÐ·Ð¾Ð²Ð°Ñ‚ÐµÐ»Ðµ
   const userId = useAuthStore((state) => state.userId);
   const isAdmin = useAuthStore((state) => state.isAdmin);
   const token = useAuthStore((state) => state.token);
 
-  // Текущая кампания
+  // Ð¢ÐµÐºÑƒÑ‰Ð°Ñ ÐºÐ°Ð¼Ð¿Ð°Ð½Ð¸Ñ
   const { selectedCampaignId } = useCampaignStore();
 
-  // Статус автономного режима для текущей кампании
+  // Ð¡Ñ‚Ð°Ñ‚ÑƒÑ Ð°Ð²Ñ‚Ð¾Ð½Ð¾Ð¼Ð½Ð¾Ð³Ð¾ Ñ€ÐµÐ¶Ð¸Ð¼Ð° Ð´Ð»Ñ Ñ‚ÐµÐºÑƒÑ‰ÐµÐ¹ ÐºÐ°Ð¼Ð¿Ð°Ð½Ð¸Ð¸
   const { data: autonomousStatus } = useQuery<any>({
     queryKey: ['/api/autonomous/status', selectedCampaignId],
     queryFn: async () => {
@@ -70,14 +70,14 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
   const isAutonomousActive = autonomousStatus?.isActive === true;
   const hasQuotaError = !isAutonomousActive && !!autonomousStatus?.quotaError;
 
-  // Настройки автономного режима из кампании
+  // ÐÐ°ÑÑ‚Ñ€Ð¾Ð¹ÐºÐ¸ Ð°Ð²Ñ‚Ð¾Ð½Ð¾Ð¼Ð½Ð¾Ð³Ð¾ Ñ€ÐµÐ¶Ð¸Ð¼Ð° Ð¸Ð· ÐºÐ°Ð¼Ð¿Ð°Ð½Ð¸Ð¸
   const { data: campaignData } = useQuery<any>({
     queryKey: ['/api/campaigns', selectedCampaignId],
     enabled: !!selectedCampaignId && !!token,
     staleTime: 60000,
   });
 
-  // Формируем описание настроек для тултипа
+  // Ð¤Ð¾Ñ€Ð¼Ð¸Ñ€ÑƒÐµÐ¼ Ð¾Ð¿Ð¸ÑÐ°Ð½Ð¸Ðµ Ð½Ð°ÑÑ‚Ñ€Ð¾ÐµÐº Ð´Ð»Ñ Ñ‚ÑƒÐ»Ñ‚Ð¸Ð¿Ð°
   const autonomousSettings = campaignData?.autonomous_settings;
   const tooltipInterval = isAutonomousActive
     ? autonomousStatus?.interval
@@ -93,9 +93,9 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
     if (!tooltipInterval && !tooltipPosts) return null;
     const interval = tooltipInterval ?? 8;
     const posts = tooltipPosts ?? 1;
-    const postWord = posts === 1 ? 'пост' : posts < 5 ? 'поста' : 'постов';
-    const imgPart = tooltipWithImages !== false ? ' · с картинками' : '';
-    return `${posts} ${postWord} каждые ${interval} ч${imgPart}`;
+    const postWord = posts === 1 ? 'Ð¿Ð¾ÑÑ‚' : posts < 5 ? 'Ð¿Ð¾ÑÑ‚Ð°' : 'Ð¿Ð¾ÑÑ‚Ð¾Ð²';
+    const imgPart = tooltipWithImages !== false ? ' Â· Ñ ÐºÐ°Ñ€Ñ‚Ð¸Ð½ÐºÐ°Ð¼Ð¸' : '';
+    return `${posts} ${postWord} ÐºÐ°Ð¶Ð´Ñ‹Ðµ ${interval} Ñ‡${imgPart}`;
   };
 
   const { mutate: startAutonomousWithMode, isPending: isTogglingAutonomous } = useMutation({
@@ -137,7 +137,7 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
     },
   });
 
-  // Загружаем полный профиль пользователя из API
+  // Ð—Ð°Ð³Ñ€ÑƒÐ¶Ð°ÐµÐ¼ Ð¿Ð¾Ð»Ð½Ñ‹Ð¹ Ð¿Ñ€Ð¾Ñ„Ð¸Ð»ÑŒ Ð¿Ð¾Ð»ÑŒÐ·Ð¾Ð²Ð°Ñ‚ÐµÐ»Ñ Ð¸Ð· API
   const { data: userProfile, isLoading, error } = useQuery<UserProfile>({
     queryKey: ['/api/user/profile', userId || 'me', token],
     enabled: !!token,
@@ -147,7 +147,7 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
   });
 
 
-  // Формируем отображаемое имя пользователя
+  // Ð¤Ð¾Ñ€Ð¼Ð¸Ñ€ÑƒÐµÐ¼ Ð¾Ñ‚Ð¾Ð±Ñ€Ð°Ð¶Ð°ÐµÐ¼Ð¾Ðµ Ð¸Ð¼Ñ Ð¿Ð¾Ð»ÑŒÐ·Ð¾Ð²Ð°Ñ‚ÐµÐ»Ñ
   const getUserDisplayName = () => {
     if (isLoading) return t('common.loading');
     if (!userProfile) return t('auth.login');
@@ -168,7 +168,7 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
   const userDisplayName = getUserDisplayName();
   const userIsAdmin = userProfile?.is_smm_admin || isAdmin;
 
-  // Тема
+  // Ð¢ÐµÐ¼Ð°
   const { resolvedTheme, setColorMode } = useThemeStore();
   
   const toggleTheme = () => {
@@ -179,19 +179,19 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
     <>
     <header className="h-16 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between px-4 lg:px-6 lg:pl-6 shadow-sm safe-area-top safe-area-left safe-area-right">
       <div className="flex items-center gap-4">
-        {/* Menu button - гамбургер на мобильных, toggle коллапса на десктопе */}
+        {/* Menu button - Ð³Ð°Ð¼Ð±ÑƒÑ€Ð³ÐµÑ€ Ð½Ð° Ð¼Ð¾Ð±Ð¸Ð»ÑŒÐ½Ñ‹Ñ…, toggle ÐºÐ¾Ð»Ð»Ð°Ð¿ÑÐ° Ð½Ð° Ð´ÐµÑÐºÑ‚Ð¾Ð¿Ðµ */}
         <Button
           variant="ghost"
           size="icon"
           data-testid="button-menu"
           className="h-9 w-9"
           onClick={onMenuClick}
-          title={isSidebarCollapsed ? "Развернуть меню" : "Свернуть меню"}
+          title={isSidebarCollapsed ? "Ð Ð°Ð·Ð²ÐµÑ€Ð½ÑƒÑ‚ÑŒ Ð¼ÐµÐ½ÑŽ" : "Ð¡Ð²ÐµÑ€Ð½ÑƒÑ‚ÑŒ Ð¼ÐµÐ½ÑŽ"}
         >
           <Menu className="h-4 w-4" />
         </Button>
 
-        {/* Campaign selector - скрываем на странице списка кампаний */}
+        {/* Campaign selector - ÑÐºÑ€Ñ‹Ð²Ð°ÐµÐ¼ Ð½Ð° ÑÑ‚Ñ€Ð°Ð½Ð¸Ñ†Ðµ ÑÐ¿Ð¸ÑÐºÐ° ÐºÐ°Ð¼Ð¿Ð°Ð½Ð¸Ð¹ */}
         {showCampaignSelector && (
           <div className="flex items-center gap-4">
             <CampaignSelector persistSelection={true} />
@@ -228,7 +228,7 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
             onClick={onOpenAIChat}
             className="h-9 w-9 relative"
             data-testid="button-ai-assistant"
-            title="AI Помощник"
+            title="AI ÐŸÐ¾Ð¼Ð¾Ñ‰Ð½Ð¸Ðº"
           >
             <Sparkles className="h-4 w-4 text-purple-600 dark:text-purple-400" />
             <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 animate-pulse" />
@@ -247,9 +247,11 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
                       size="icon"
                       className="h-9 w-9 relative"
                       data-testid="button-autonomous-pending"
+                      aria-label={t('nav.autonomous.pendingLabel')}
+                      title={t('nav.autonomous.pendingLabel')}
                     >
-                      <ClipboardList className="h-4 w-4 text-amber-500 dark:text-amber-400" />
-                      <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-amber-500 animate-pulse" />
+                      <ClipboardList className="h-4 w-4 text-amber-500 dark:text-amber-400" aria-hidden="true" />
+                      <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-amber-500 animate-pulse" aria-hidden="true" />
                     </Button>
                   </Link>
                 ) : (
@@ -266,6 +268,17 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
                     className="h-9 w-9 relative"
                     data-testid="button-autonomous-toggle"
                     disabled={isTogglingAutonomous || isStoppingAutonomous}
+                    aria-label={
+                      isAutonomousActive
+                        ? t('nav.autonomous.stopLabel')
+                        : t('nav.autonomous.startLabel')
+                    }
+                    aria-pressed={isAutonomousActive}
+                    title={
+                      isAutonomousActive
+                        ? t('nav.autonomous.stopLabel')
+                        : t('nav.autonomous.startLabel')
+                    }
                   >
                     <Bot
                       className={`h-4 w-4 transition-colors ${
@@ -275,6 +288,7 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
                           ? 'text-yellow-500 dark:text-yellow-400'
                           : 'text-red-400 dark:text-red-500'
                       }`}
+                      aria-hidden="true"
                     />
                     <span
                       className={`absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full ${
@@ -284,6 +298,7 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
                           ? 'bg-yellow-500 animate-pulse'
                           : 'bg-red-400'
                       }`}
+                      aria-hidden="true"
                     />
                   </Button>
                 )}
@@ -291,35 +306,35 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
               <TooltipContent side="bottom" className="max-w-[220px] text-center">
                 {autonomousStatus?.pendingApprovalStep ? (
                   <div className="space-y-0.5">
-                    <p className="font-medium text-amber-600 dark:text-amber-400">Ожидает одобрения</p>
+                    <p className="font-medium text-amber-600 dark:text-amber-400">ÐžÐ¶Ð¸Ð´Ð°ÐµÑ‚ Ð¾Ð´Ð¾Ð±Ñ€ÐµÐ½Ð¸Ñ</p>
                     <p className="text-xs text-muted-foreground">
-                      AI составил контент-план — нажмите чтобы просмотреть и одобрить
+                      AI ÑÐ¾ÑÑ‚Ð°Ð²Ð¸Ð» ÐºÐ¾Ð½Ñ‚ÐµÐ½Ñ‚-Ð¿Ð»Ð°Ð½ â€” Ð½Ð°Ð¶Ð¼Ð¸Ñ‚Ðµ Ñ‡Ñ‚Ð¾Ð±Ñ‹ Ð¿Ñ€Ð¾ÑÐ¼Ð¾Ñ‚Ñ€ÐµÑ‚ÑŒ Ð¸ Ð¾Ð´Ð¾Ð±Ñ€Ð¸Ñ‚ÑŒ
                     </p>
                   </div>
                 ) : isAutonomousActive ? (
                   <div className="space-y-0.5">
-                    <p className="font-medium text-green-600 dark:text-green-400">Автономный режим активен</p>
+                    <p className="font-medium text-green-600 dark:text-green-400">ÐÐ²Ñ‚Ð¾Ð½Ð¾Ð¼Ð½Ñ‹Ð¹ Ñ€ÐµÐ¶Ð¸Ð¼ Ð°ÐºÑ‚Ð¸Ð²ÐµÐ½</p>
                     {buildAutonomousDesc() && (
                       <p className="text-xs text-muted-foreground">{buildAutonomousDesc()}</p>
                     )}
                     {autonomousStatus?.cyclesCompleted != null && (
-                      <p className="text-xs text-muted-foreground">Циклов: {autonomousStatus.cyclesCompleted} · Постов: {autonomousStatus.postsCreated ?? 0}</p>
+                      <p className="text-xs text-muted-foreground">Ð¦Ð¸ÐºÐ»Ð¾Ð²: {autonomousStatus.cyclesCompleted} Â· ÐŸÐ¾ÑÑ‚Ð¾Ð²: {autonomousStatus.postsCreated ?? 0}</p>
                     )}
-                    <p className="text-xs text-muted-foreground">Нажмите чтобы остановить</p>
+                    <p className="text-xs text-muted-foreground">ÐÐ°Ð¶Ð¼Ð¸Ñ‚Ðµ Ñ‡Ñ‚Ð¾Ð±Ñ‹ Ð¾ÑÑ‚Ð°Ð½Ð¾Ð²Ð¸Ñ‚ÑŒ</p>
                   </div>
                 ) : hasQuotaError ? (
                   <div className="space-y-0.5">
-                    <p className="font-medium text-yellow-600 dark:text-yellow-400">Агент остановлен</p>
+                    <p className="font-medium text-yellow-600 dark:text-yellow-400">ÐÐ³ÐµÐ½Ñ‚ Ð¾ÑÑ‚Ð°Ð½Ð¾Ð²Ð»ÐµÐ½</p>
                     <p className="text-xs text-yellow-700 dark:text-yellow-300">{autonomousStatus.quotaError.message}</p>
-                    <p className="text-xs text-muted-foreground">Нажмите чтобы перезапустить</p>
+                    <p className="text-xs text-muted-foreground">ÐÐ°Ð¶Ð¼Ð¸Ñ‚Ðµ Ñ‡Ñ‚Ð¾Ð±Ñ‹ Ð¿ÐµÑ€ÐµÐ·Ð°Ð¿ÑƒÑÑ‚Ð¸Ñ‚ÑŒ</p>
                   </div>
                 ) : (
                   <div className="space-y-0.5">
-                    <p className="font-medium">Автономный режим выключен</p>
+                    <p className="font-medium">ÐÐ²Ñ‚Ð¾Ð½Ð¾Ð¼Ð½Ñ‹Ð¹ Ñ€ÐµÐ¶Ð¸Ð¼ Ð²Ñ‹ÐºÐ»ÑŽÑ‡ÐµÐ½</p>
                     {buildAutonomousDesc() && (
                       <p className="text-xs text-muted-foreground">{buildAutonomousDesc()}</p>
                     )}
-                    <p className="text-xs text-muted-foreground">Нажмите чтобы запустить сейчас</p>
+                    <p className="text-xs text-muted-foreground">ÐÐ°Ð¶Ð¼Ð¸Ñ‚Ðµ Ñ‡Ñ‚Ð¾Ð±Ñ‹ Ð·Ð°Ð¿ÑƒÑÑ‚Ð¸Ñ‚ÑŒ ÑÐµÐ¹Ñ‡Ð°Ñ</p>
                   </div>
                 )}
               </TooltipContent>
@@ -335,7 +350,7 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
             onClick={onOpenTGBot}
             className="h-9 w-9 relative bg-gradient-to-r from-blue-500 to-cyan-500 text-white hover:from-blue-600 hover:to-cyan-600"
             data-testid="button-tg-bot"
-            title="TG Ассистент"
+            title="TG ÐÑÑÐ¸ÑÑ‚ÐµÐ½Ñ‚"
           >
             <Send className="h-4 w-4" />
             <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-red-500 animate-pulse" />
@@ -349,10 +364,10 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
             size="sm"
             className="hidden sm:flex items-center gap-1.5 h-9 px-3 text-blue-600 dark:text-blue-400 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20"
             data-testid="button-pricing-nav"
-            title="Тарифы"
+            title="Ð¢Ð°Ñ€Ð¸Ñ„Ñ‹"
           >
             <CreditCard className="h-4 w-4" />
-            <span className="text-sm font-medium">Тарифы</span>
+            <span className="text-sm font-medium">Ð¢Ð°Ñ€Ð¸Ñ„Ñ‹</span>
           </Button>
         </Link>
 
@@ -372,7 +387,7 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
               </div>
               {userIsAdmin && (
                 <span className="hidden md:inline-block bg-blue-500 text-white text-xs px-2 py-1 rounded">
-                  СММ Админ
+                  Ð¡ÐœÐœ ÐÐ´Ð¼Ð¸Ð½
                 </span>
               )}
             </Button>
@@ -399,16 +414,16 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
       </div>
     </header>
 
-    {/* Диалог выбора режима автономного ассистента */}
+    {/* Ð”Ð¸Ð°Ð»Ð¾Ð³ Ð²Ñ‹Ð±Ð¾Ñ€Ð° Ñ€ÐµÐ¶Ð¸Ð¼Ð° Ð°Ð²Ñ‚Ð¾Ð½Ð¾Ð¼Ð½Ð¾Ð³Ð¾ Ð°ÑÑÐ¸ÑÑ‚ÐµÐ½Ñ‚Ð° */}
     <Dialog open={showModeDialog} onOpenChange={setShowModeDialog}>
       <DialogContent className="sm:max-w-[520px]" data-testid="dialog-pipeline-mode">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Bot className="h-5 w-5 text-primary" />
-            Запуск автономного ассистента
+            Ð—Ð°Ð¿ÑƒÑÐº Ð°Ð²Ñ‚Ð¾Ð½Ð¾Ð¼Ð½Ð¾Ð³Ð¾ Ð°ÑÑÐ¸ÑÑ‚ÐµÐ½Ñ‚Ð°
           </DialogTitle>
           <DialogDescription>
-            Выберите режим работы — насколько автономно должен действовать ассистент
+            Ð’Ñ‹Ð±ÐµÑ€Ð¸Ñ‚Ðµ Ñ€ÐµÐ¶Ð¸Ð¼ Ñ€Ð°Ð±Ð¾Ñ‚Ñ‹ â€” Ð½Ð°ÑÐºÐ¾Ð»ÑŒÐºÐ¾ Ð°Ð²Ñ‚Ð¾Ð½Ð¾Ð¼Ð½Ð¾ Ð´Ð¾Ð»Ð¶ÐµÐ½ Ð´ÐµÐ¹ÑÑ‚Ð²Ð¾Ð²Ð°Ñ‚ÑŒ Ð°ÑÑÐ¸ÑÑ‚ÐµÐ½Ñ‚
           </DialogDescription>
         </DialogHeader>
 
@@ -417,25 +432,25 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
             {
               id: 'full_auto' as PipelineMode,
               icon: <Zap className="h-5 w-5 text-green-500" />,
-              title: 'Полный автомат',
-              description: 'Генерирует план, пишет тексты, создаёт картинки и публикует по расписанию — без остановок.',
-              badge: 'Рекомендуется',
+              title: 'ÐŸÐ¾Ð»Ð½Ñ‹Ð¹ Ð°Ð²Ñ‚Ð¾Ð¼Ð°Ñ‚',
+              description: 'Ð“ÐµÐ½ÐµÑ€Ð¸Ñ€ÑƒÐµÑ‚ Ð¿Ð»Ð°Ð½, Ð¿Ð¸ÑˆÐµÑ‚ Ñ‚ÐµÐºÑÑ‚Ñ‹, ÑÐ¾Ð·Ð´Ð°Ñ‘Ñ‚ ÐºÐ°Ñ€Ñ‚Ð¸Ð½ÐºÐ¸ Ð¸ Ð¿ÑƒÐ±Ð»Ð¸ÐºÑƒÐµÑ‚ Ð¿Ð¾ Ñ€Ð°ÑÐ¿Ð¸ÑÐ°Ð½Ð¸ÑŽ â€” Ð±ÐµÐ· Ð¾ÑÑ‚Ð°Ð½Ð¾Ð²Ð¾Ðº.',
+              badge: 'Ð ÐµÐºÐ¾Ð¼ÐµÐ½Ð´ÑƒÐµÑ‚ÑÑ',
               badgeColor: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
             },
             {
               id: 'mixed' as PipelineMode,
               icon: <GitMerge className="h-5 w-5 text-blue-500" />,
-              title: 'Смешанный',
-              description: 'Показывает контент-план на одобрение, затем самостоятельно пишет, генерирует картинки и публикует.',
-              badge: 'С одобрением плана',
+              title: 'Ð¡Ð¼ÐµÑˆÐ°Ð½Ð½Ñ‹Ð¹',
+              description: 'ÐŸÐ¾ÐºÐ°Ð·Ñ‹Ð²Ð°ÐµÑ‚ ÐºÐ¾Ð½Ñ‚ÐµÐ½Ñ‚-Ð¿Ð»Ð°Ð½ Ð½Ð° Ð¾Ð´Ð¾Ð±Ñ€ÐµÐ½Ð¸Ðµ, Ð·Ð°Ñ‚ÐµÐ¼ ÑÐ°Ð¼Ð¾ÑÑ‚Ð¾ÑÑ‚ÐµÐ»ÑŒÐ½Ð¾ Ð¿Ð¸ÑˆÐµÑ‚, Ð³ÐµÐ½ÐµÑ€Ð¸Ñ€ÑƒÐµÑ‚ ÐºÐ°Ñ€Ñ‚Ð¸Ð½ÐºÐ¸ Ð¸ Ð¿ÑƒÐ±Ð»Ð¸ÐºÑƒÐµÑ‚.',
+              badge: 'Ð¡ Ð¾Ð´Ð¾Ð±Ñ€ÐµÐ½Ð¸ÐµÐ¼ Ð¿Ð»Ð°Ð½Ð°',
               badgeColor: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
             },
             {
               id: 'controlled' as PipelineMode,
               icon: <SlidersHorizontal className="h-5 w-5 text-orange-500" />,
-              title: 'С контролем',
-              description: 'После каждого шага (план → тексты → картинки) показывает результат и ждёт вашего одобрения.',
-              badge: 'Максимальный контроль',
+              title: 'Ð¡ ÐºÐ¾Ð½Ñ‚Ñ€Ð¾Ð»ÐµÐ¼',
+              description: 'ÐŸÐ¾ÑÐ»Ðµ ÐºÐ°Ð¶Ð´Ð¾Ð³Ð¾ ÑˆÐ°Ð³Ð° (Ð¿Ð»Ð°Ð½ â†’ Ñ‚ÐµÐºÑÑ‚Ñ‹ â†’ ÐºÐ°Ñ€Ñ‚Ð¸Ð½ÐºÐ¸) Ð¿Ð¾ÐºÐ°Ð·Ñ‹Ð²Ð°ÐµÑ‚ Ñ€ÐµÐ·ÑƒÐ»ÑŒÑ‚Ð°Ñ‚ Ð¸ Ð¶Ð´Ñ‘Ñ‚ Ð²Ð°ÑˆÐµÐ³Ð¾ Ð¾Ð´Ð¾Ð±Ñ€ÐµÐ½Ð¸Ñ.',
+              badge: 'ÐœÐ°ÐºÑÐ¸Ð¼Ð°Ð»ÑŒÐ½Ñ‹Ð¹ ÐºÐ¾Ð½Ñ‚Ñ€Ð¾Ð»ÑŒ',
               badgeColor: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300',
             },
           ].map((option) => (
@@ -470,7 +485,7 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
 
         <div className="flex gap-2 justify-end pt-2">
           <Button variant="outline" onClick={() => setShowModeDialog(false)} data-testid="button-mode-cancel">
-            Отмена
+            ÐžÑ‚Ð¼ÐµÐ½Ð°
           </Button>
           <Button
             onClick={() => startAutonomousWithMode(selectedMode)}
@@ -479,7 +494,7 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
             className="gap-2"
           >
             <Bot className="h-4 w-4" />
-            {isTogglingAutonomous ? 'Запускаем…' : 'Запустить'}
+            {isTogglingAutonomous ? 'Ð—Ð°Ð¿ÑƒÑÐºÐ°ÐµÐ¼â€¦' : 'Ð—Ð°Ð¿ÑƒÑÑ‚Ð¸Ñ‚ÑŒ'}
           </Button>
         </div>
       </DialogContent>

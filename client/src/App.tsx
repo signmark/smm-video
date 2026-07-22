@@ -36,26 +36,10 @@ const Login = lazy(() => import("@/pages/auth/login"));
 const Register = lazy(() => import("@/pages/auth/register"));
 const ForgotPassword = lazy(() => import("@/pages/auth/forgot-password"));
 const ResetPassword = lazy(() => import("@/pages/auth/reset-password"));
-const TestPublish = lazy(() => import("@/pages/publish/test-publish"));
-const ImageGenerationTest = lazy(() => import("@/pages/test/image-generation"));
-const TransparentDialogTest = lazy(() => import("@/pages/test/transparent-dialog-test"));
-const AuthBypass = lazy(() => import("@/pages/test/auth-bypass"));
-const FalAiTest = lazy(() => import("@/pages/test/fal-ai-test"));
-const ApiKeyPriorityTest = lazy(() => import("@/pages/test/api-key-priority"));
-const ApiKeysTest = lazy(() => import("@/pages/test/api-keys"));
-const UniversalImageGenTest = lazy(() => import("@/pages/test/universal-image-gen"));
-const TimeDisplayTest = lazy(() => import("@/pages/test/time-display-test"));
-const ErrorHandlingTest = lazy(() => import("@/pages/test/error-handling-test"));
 const GlobalApiKeysPage = lazy(() => import("@/pages/admin/global-api-keys"));
 const UserManagement = lazy(() => import("@/pages/admin/UserManagement"));
 const TelegramChannelsAdmin = lazy(() => import("@/pages/admin/telegram-channels"));
 const PromoCodesAdmin = lazy(() => import("@/pages/admin/promo-codes"));
-const TestPage = lazy(() => import("@/pages/test/index"));
-const HtmlTagsTestPage = lazy(() => import("@/pages/HtmlTagsTestPage"));
-const TelegramTestPage = lazy(() => import("@/pages/telegram-test"));
-const EditorDemoPage = lazy(() => import("@/pages/editor-demo"));
-const AiImageTester = lazy(() => import("@/pages/AiImageTester"));
-const InstagramSimplePage = lazy(() => import("@/pages/instagram-simple"));
 const NotFound = lazy(() => import("@/pages/not-found"));
 const VideoEditor = lazy(() => import("@/pages/video"));
 const YouTubeCallback = lazy(() => import("@/pages/youtube-callback"));
@@ -63,6 +47,40 @@ const InstagramCallback = lazy(() => import("@/pages/instagram-callback"));
 const VkCallback = lazy(() => import("@/pages/vk-callback"));
 const ThreadsCallback = lazy(() => import("@/pages/threads-callback"));
 const AIAssistantPage = lazy(() => import("@/pages/ai-assistant"));
+
+// Internal / test pages. They are NOT imported in production builds so
+// their lazy chunks (and the dev-only auth-bypass mutation logic) never
+// land in the production bundle.
+const IS_DEV = import.meta.env.DEV;
+
+const TestPublish = IS_DEV ? lazy(() => import("@/pages/publish/test-publish")) : null;
+const ImageGenerationTest = IS_DEV ? lazy(() => import("@/pages/test/image-generation")) : null;
+const TransparentDialogTest = IS_DEV ? lazy(() => import("@/pages/test/transparent-dialog-test")) : null;
+const AuthBypass = IS_DEV ? lazy(() => import("@/pages/test/auth-bypass")) : null;
+// AuthBypass intentionally bypasses the Layout: the page exists to
+// mint a fake auth token in localStorage so a Playwright/curl smoke
+// test can reach an authenticated route. Wrapping it in Layout makes
+// the AppShell/Sidebar render against the (still-empty) auth store
+// for the brief window before the page's useEffect sets the token
+// and navigates away, which can show a half-broken logged-out chrome
+// and, in the dev Playwright runs that exercise this page, leaves
+// dangling queries.
+const AuthBypassRoute: React.ComponentType = IS_DEV
+  ? React.memo(() => (AuthBypass ? <AuthBypass /> : <NotFound />))
+  : () => <NotFound />;
+const FalAiTest = IS_DEV ? lazy(() => import("@/pages/test/fal-ai-test")) : null;
+const ApiKeyPriorityTest = IS_DEV ? lazy(() => import("@/pages/test/api-key-priority")) : null;
+const ApiKeysTest = IS_DEV ? lazy(() => import("@/pages/test/api-keys")) : null;
+const UniversalImageGenTest = IS_DEV ? lazy(() => import("@/pages/test/universal-image-gen")) : null;
+const TimeDisplayTest = IS_DEV ? lazy(() => import("@/pages/test/time-display-test")) : null;
+const ErrorHandlingTest = IS_DEV ? lazy(() => import("@/pages/test/error-handling-test")) : null;
+const TestPage = IS_DEV ? lazy(() => import("@/pages/test/index")) : null;
+const HtmlTagsTestPage = IS_DEV ? lazy(() => import("@/pages/HtmlTagsTestPage")) : null;
+const TelegramTestPage = IS_DEV ? lazy(() => import("@/pages/telegram-test")) : null;
+const EditorDemoPage = IS_DEV ? lazy(() => import("@/pages/editor-demo")) : null;
+const AiImageTester = IS_DEV ? lazy(() => import("@/pages/AiImageTester")) : null;
+const InstagramSimplePage = IS_DEV ? lazy(() => import("@/pages/instagram-simple")) : null;
+const StoriesGeneratorTest = IS_DEV ? lazy(() => import("@/pages/test/stories-generator-test")) : null;
 
 // Компоненты системы (не lazy, т.к. нужны всегда)
 import { Layout } from "@/components/Layout";
@@ -75,7 +93,6 @@ import TutorialDetailsPage from './pages/help/tutorial-details';
 
 // Lazy loading для специальных компонентов
 const StoryEditor = lazy(() => import("@/components/stories/StoryEditor"));
-const StoriesGeneratorTest = lazy(() => import("@/pages/test/stories-generator-test"));
 const VideoStoryEditor = lazy(() => import("@/components/stories/VideoStoryEditor"));
 const PricingPage = lazy(() => import("@/pages/pricing"));
 const PaymentSuccessPage = lazy(() => import("@/pages/payment/success"));
@@ -92,6 +109,17 @@ const WithLayout = ({ Component }: { Component: React.ComponentType }) => (
 const wrapWithLayout = (Component: React.ComponentType) =>
   React.memo(() => <WithLayout Component={Component} />);
 
+/**
+ * Returns a route component that is only mounted in development. In
+ * production the lazy import is `null`, so the Switch never registers
+ * the route at all (see below) and even direct navigation falls through
+ * to NotFound.
+ */
+function devOnly(Component: React.ComponentType | null): React.ComponentType {
+  if (!Component) return () => <NotFound />;
+  return wrapWithLayout(Component);
+}
+
 // Мемоизированные компоненты с Layout
 const LayoutDashboard = wrapWithLayout(Dashboard);
 const LayoutCampaigns = wrapWithLayout(Campaigns);
@@ -104,23 +132,23 @@ const LayoutTrends = wrapWithLayout(Trends);
 const LayoutAnalytics = wrapWithLayout(Analytics);
 const LayoutScheduledPublications = wrapWithLayout(ScheduledPublications);
 const LayoutCalendarView = wrapWithLayout(CalendarView);
-const LayoutTestPublish = wrapWithLayout(TestPublish);
-const LayoutImageGenerationTest = wrapWithLayout(ImageGenerationTest);
-const LayoutTransparentDialogTest = wrapWithLayout(TransparentDialogTest);
-const LayoutFalAiTest = wrapWithLayout(FalAiTest);
-const LayoutApiKeyPriorityTest = wrapWithLayout(ApiKeyPriorityTest);
-const LayoutApiKeysTest = wrapWithLayout(ApiKeysTest);
-const LayoutUniversalImageGenTest = wrapWithLayout(UniversalImageGenTest);
-const LayoutHtmlTagsTestPage = wrapWithLayout(HtmlTagsTestPage);
-const LayoutAiImageTester = wrapWithLayout(AiImageTester);
-const LayoutErrorHandlingTest = wrapWithLayout(ErrorHandlingTest);
-const LayoutTestPage = wrapWithLayout(TestPage);
+const LayoutTestPublish = devOnly(TestPublish);
+const LayoutImageGenerationTest = devOnly(ImageGenerationTest);
+const LayoutTransparentDialogTest = devOnly(TransparentDialogTest);
+const LayoutFalAiTest = devOnly(FalAiTest);
+const LayoutApiKeyPriorityTest = devOnly(ApiKeyPriorityTest);
+const LayoutApiKeysTest = devOnly(ApiKeysTest);
+const LayoutUniversalImageGenTest = devOnly(UniversalImageGenTest);
+const LayoutHtmlTagsTestPage = devOnly(HtmlTagsTestPage);
+const LayoutAiImageTester = devOnly(AiImageTester);
+const LayoutErrorHandlingTest = devOnly(ErrorHandlingTest);
+const LayoutTestPage = devOnly(TestPage);
 const LayoutGlobalApiKeysPage = wrapWithLayout(GlobalApiKeysPage);
 const LayoutUserManagement = wrapWithLayout(UserManagement);
-const LayoutEditorDemo = wrapWithLayout(EditorDemoPage);
+const LayoutEditorDemo = devOnly(EditorDemoPage);
 const LayoutBusinessQuestionnaire = wrapWithLayout(BusinessQuestionnairePage);
-const LayoutInstagramSetup = wrapWithLayout(InstagramSimplePage);
-const LayoutStoriesGeneratorTest = wrapWithLayout(StoriesGeneratorTest);
+const LayoutInstagramSetup = devOnly(InstagramSimplePage);
+const LayoutStoriesGeneratorTest = devOnly(StoriesGeneratorTest);
 const LayoutStoriesPage = wrapWithLayout(StoriesPage);
 const LayoutTelegramChannelsAdmin = wrapWithLayout(TelegramChannelsAdmin);
 
@@ -176,7 +204,7 @@ function Router() {
       <Route path="/publish/test" component={LayoutTestPublish} />
       <Route path="/test/image-generation" component={LayoutImageGenerationTest} />
       <Route path="/test/transparent-dialog" component={LayoutTransparentDialogTest} />
-      <Route path="/test/auth-bypass" component={AuthBypass} />
+      <Route path="/test/auth-bypass" component={AuthBypassRoute} />
       <Route path="/test/fal-ai-test" component={LayoutFalAiTest} />
       <Route path="/test/api-key-priority" component={LayoutApiKeyPriorityTest} />
       <Route path="/test/api-keys" component={LayoutApiKeysTest} />

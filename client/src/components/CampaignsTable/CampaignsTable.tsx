@@ -231,13 +231,15 @@ export function CampaignsGrid({
                       </div>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                          <Button 
-                            variant="ghost" 
-                            size="icon" 
+                          <Button
+                            variant="ghost"
+                            size="icon"
                             className="h-8 w-8 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
                             data-testid={`button-actions-${campaign.id}`}
+                            aria-label={t('campaigns.actionsMenuLabel', { name: campaign.name || t('campaigns.noName') })}
+                            title={t('campaigns.actionsMenuLabel', { name: campaign.name || t('campaigns.noName') })}
                           >
-                            <MoreHorizontal className="h-4 w-4" />
+                            <MoreHorizontal className="h-4 w-4" aria-hidden="true" />
                           </Button>
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end" className="w-[160px]">

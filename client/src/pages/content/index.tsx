@@ -708,15 +708,21 @@ export default function ContentPage() {
   // Запрос списка контента для выбранной кампании
   // We intentionally do NOT use `keepPreviousData` here: when the user
   // switches campaigns, the previous campaign's content must NOT remain
-  // visible under the new campaign's name. `isPlaceholderData` is the
-  // react-query signal that we are showing stale data because the key
-  // changed; we hide the cards and disable destructive actions whenever
-  // it is true.
+  // visible under the new campaign's name.
+  //
+  // Rendering is gated on `isLoadingContent` (= "no cache for this key and
+  // a request is in flight") rather than on `isPlaceholderData`: the latter
+  // is only `true` when the `placeholderData` query option returns
+  // something, which we deliberately do not use, so the
+  // `isPlaceholderData` branch was dead and fell through to the
+  // `filteredContent.length === 0` empty-state while the new campaign
+  // loaded — the exact "loading looks like empty" anti-pattern the plan
+  // forbids. `isLoading` correctly distinguishes the two cases: returning
+  // to a campaign that already has a cache shows its data immediately.
   const {
     data: campaignContent = [],
     isLoading: isLoadingContent,
     isFetching: isFetchingContent,
-    isPlaceholderData,
     isError: isContentError,
     error: contentError,
     refetch: refetchContent,
@@ -1920,7 +1926,7 @@ export default function ContentPage() {
                 title="Не удалось загрузить контент кампании"
                 testId="content-query-error"
               />
-            ) : isPlaceholderData ? (
+            ) : isLoadingContent ? (
               <div
                 className="text-center text-muted-foreground py-8 border border-dashed rounded-lg"
                 data-testid="content-campaign-switching"

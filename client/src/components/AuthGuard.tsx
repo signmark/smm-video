@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'wouter';
 import { Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -40,6 +40,11 @@ export function AuthGuard({ children }: Props) {
   const [retryNonce, setRetryNonce] = useState(0);
   const setAuth = useAuthStore((state) => state.setAuth);
   const clearAuth = useAuthStore((state) => state.clearAuth);
+  // После первой успешной проверки сессии повторные валидации (refresh,
+  // storage-события, смена location) не должны размонтировать children:
+  // иначе каждый фоновый refresh токена стирает состояние открытых страниц
+  // (аккордеоны, результаты поиска, черновики форм).
+  const hasCompletedInitialCheck = useRef(false);
 
   // Explicit logout from the recovery screen. Delegates to the single
   // shared logout implementation in @/lib/auth so the refresh interval,
@@ -105,6 +110,7 @@ export function AuthGuard({ children }: Props) {
 
     const finish = () => {
       if (!cancelled) {
+        hasCompletedInitialCheck.current = true;
         setIsRefreshing(false);
         setIsSessionChecked(true);
       }
@@ -126,7 +132,11 @@ export function AuthGuard({ children }: Props) {
     };
 
     const checkSession = async () => {
-      setIsSessionChecked(false);
+      // Скрываем содержимое лоадером только до первой успешной проверки.
+      // Фоновые ре-валидации идут «тихо», без размонтирования страницы.
+      if (!hasCompletedInitialCheck.current) {
+        setIsSessionChecked(false);
+      }
       setSessionError(null);
 
       if (isPublicRoute(location)) {

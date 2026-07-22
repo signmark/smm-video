@@ -1,0 +1,182 @@
+[
+  {
+    "category": "auth",
+    "message": "Starting login",
+    "severity": "info",
+    "time": "2026-07-22T14:34:29.516Z"
+  },
+  {
+    "category": "overlay",
+    "message": "Cookie banner dismissed",
+    "severity": "pass",
+    "time": "2026-07-22T14:34:33.844Z"
+  },
+  {
+    "category": "auth",
+    "message": "Login → https://smm.omemo.tech/campaigns",
+    "severity": "pass",
+    "time": "2026-07-22T14:34:33.851Z"
+  },
+  {
+    "category": "campaigns",
+    "message": "List",
+    "severity": "info",
+    "time": "2026-07-22T14:34:34.069Z"
+  },
+  {
+    "category": "campaigns",
+    "message": "15 cards found",
+    "severity": "info",
+    "time": "2026-07-22T14:34:36.316Z"
+  },
+  {
+    "category": "campaigns",
+    "message": "Create dialog",
+    "severity": "info",
+    "time": "2026-07-22T14:34:36.511Z"
+  },
+  {
+    "category": "click",
+    "message": "open create dialog",
+    "severity": "pass",
+    "time": "2026-07-22T14:34:36.658Z"
+  },
+  {
+    "category": "campaigns",
+    "message": "Name filled",
+    "severity": "pass",
+    "time": "2026-07-22T14:34:38.924Z"
+  },
+  {
+    "category": "campaigns",
+    "message": "Submitted",
+    "severity": "pass",
+    "time": "2026-07-22T14:34:42.023Z"
+  },
+  {
+    "category": "content",
+    "message": "Page",
+    "severity": "info",
+    "time": "2026-07-22T14:34:42.129Z"
+  },
+  {
+    "category": "content",
+    "message": "Tab \"Черновики\"",
+    "severity": "pass",
+    "time": "2026-07-22T14:34:46.539Z"
+  },
+  {
+    "category": "content",
+    "message": "Tab \"Запланированные\"",
+    "severity": "pass",
+    "time": "2026-07-22T14:34:47.610Z"
+  },
+  {
+    "category": "content",
+    "message": "Tab \"Опубликованные\"",
+    "severity": "pass",
+    "time": "2026-07-22T14:34:48.679Z"
+  },
+  {
+    "category": "content",
+    "message": "Tab \"Все\"",
+    "severity": "pass",
+    "time": "2026-07-22T14:34:49.737Z"
+  },
+  {
+    "category": "content",
+    "message": "Create dialog",
+    "severity": "info",
+    "time": "2026-07-22T14:34:49.837Z"
+  },
+  {
+    "category": "click",
+    "message": "open create content",
+    "severity": "pass",
+    "time": "2026-07-22T14:34:49.941Z"
+  },
+  {
+    "category": "scheduled",
+    "message": "Page",
+    "severity": "info",
+    "time": "2026-07-22T14:34:52.575Z"
+  },
+  {
+    "category": "publications",
+    "message": "Page",
+    "severity": "info",
+    "time": "2026-07-22T14:34:55.793Z"
+  },
+  {
+    "category": "publications",
+    "message": "Calendar date 13 clicked",
+    "severity": "pass",
+    "time": "2026-07-22T14:35:00.534Z"
+  },
+  {
+    "category": "analytics",
+    "message": "Page",
+    "severity": "info",
+    "time": "2026-07-22T14:35:00.692Z"
+  },
+  {
+    "category": "analytics",
+    "message": "Switched to 30 days",
+    "severity": "pass",
+    "time": "2026-07-22T14:35:06.536Z"
+  },
+  {
+    "category": "trends",
+    "message": "Page",
+    "severity": "info",
+    "time": "2026-07-22T14:35:06.704Z"
+  },
+  {
+    "category": "trends",
+    "message": "Collect button visible",
+    "severity": "pass",
+    "time": "2026-07-22T14:35:09.926Z"
+  },
+  {
+    "category": "settings",
+    "message": "Social settings",
+    "severity": "info",
+    "time": "2026-07-22T14:35:10.025Z"
+  },
+  {
+    "category": "admin",
+    "message": "api-keys",
+    "severity": "info",
+    "time": "2026-07-22T14:35:12.159Z"
+  },
+  {
+    "category": "admin",
+    "message": "users",
+    "severity": "info",
+    "time": "2026-07-22T14:35:15.848Z"
+  },
+  {
+    "category": "admin",
+    "message": "tg-channels",
+    "severity": "info",
+    "time": "2026-07-22T14:35:19.580Z"
+  },
+  {
+    "category": "dashboard",
+    "message": "Page",
+    "severity": "info",
+    "time": "2026-07-22T14:35:23.313Z"
+  },
+  {
+    "category": "responsive",
+    "message": "Mobile viewport",
+    "severity": "info",
+    "time": "2026-07-22T14:35:26.727Z"
+  },
+  {
+    "category": "auth",
+    "message": "Logout",
+    "severity": "info",
+    "time": "2026-07-22T14:35:33.191Z"
+  }
+]

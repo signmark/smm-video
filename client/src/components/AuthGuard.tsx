@@ -7,6 +7,7 @@ import { decodeJwtPayload } from '@/lib/jwt';
 import { isPublicRoute } from '@/lib/public-routes';
 import { queryClient } from '@/lib/queryClient';
 import { subscribeToSessionEvents } from '@/lib/sessionCoordinator';
+import { logout as performLogout } from '@/lib/auth';
 
 interface Props {
   children: React.ReactNode;
@@ -32,10 +33,36 @@ export function AuthGuard({ children }: Props) {
   const [location, navigate] = useLocation();
   const [isSessionChecked, setIsSessionChecked] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [retryNonce, setRetryNonce] = useState(0);
   const setAuth = useAuthStore((state) => state.setAuth);
   const clearAuth = useAuthStore((state) => state.clearAuth);
+
+  // Explicit logout from the recovery screen. Delegates to the single
+  // shared logout implementation in @/lib/auth so the refresh interval,
+  // server-side session, queryClient cache and localStorage are all
+  // cleared in one place — no second hand-rolled flow.
+  const handleExplicitLogout = async () => {
+    if (isLoggingOut) return;
+    setIsLoggingOut(true);
+    try {
+      await performLogout();
+    } catch (err) {
+      console.warn('[AuthGuard] explicit logout failed', err);
+    } finally {
+      clearAuth();
+      queryClient.clear();
+      // Use wouter navigation when the AuthGuard is mounted, fall back
+      // to a hard redirect for the rare case wouter is not yet ready.
+      if (!isPublicRoute(location)) {
+        navigate('/auth/login');
+      } else {
+        window.location.href = '/auth/login';
+      }
+      setIsLoggingOut(false);
+    }
+  };
 
   useEffect(() => {
     const unsubscribe = subscribeToSessionEvents((status) => {
@@ -190,15 +217,32 @@ export function AuthGuard({ children }: Props) {
   if (sessionError && !isPublicRoute(location)) {
     return (
       <div className="flex min-h-screen items-center justify-center p-6">
-        <div className="max-w-md rounded-lg border bg-background p-6 text-center shadow-sm">
+        <div className="max-w-md rounded-lg border bg-background p-6 text-center shadow-sm" data-testid="authguard-recovery">
           <h1 className="mb-2 text-lg font-semibold">Проблема с авторизацией</h1>
           <p className="mb-4 text-sm text-muted-foreground">{sessionError}</p>
-          <button
-            className="rounded-md bg-primary px-4 py-2 text-primary-foreground"
-            onClick={() => setRetryNonce((value) => value + 1)}
-          >
-            Повторить
-          </button>
+          <p className="mb-4 text-xs text-muted-foreground">
+            Данные входа сохранены, пока вы не решите выйти.
+          </p>
+          <div className="flex flex-col-reverse sm:flex-row sm:justify-center sm:gap-3 gap-2">
+            <button
+              type="button"
+              className="rounded-md border border-border bg-background px-4 py-2 text-foreground hover:bg-muted disabled:opacity-60"
+              onClick={handleExplicitLogout}
+              disabled={isLoggingOut}
+              data-testid="authguard-logout"
+            >
+              {isLoggingOut ? 'Выходим...' : 'Выйти и войти заново'}
+            </button>
+            <button
+              type="button"
+              className="rounded-md bg-primary px-4 py-2 text-primary-foreground disabled:opacity-60"
+              onClick={() => setRetryNonce((value) => value + 1)}
+              disabled={isLoggingOut}
+              data-testid="authguard-retry"
+            >
+              Повторить
+            </button>
+          </div>
         </div>
       </div>
     );

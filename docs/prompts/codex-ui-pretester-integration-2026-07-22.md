@@ -6,6 +6,34 @@
 **Адресат:** Codex (final integration + push)
 **Документ самодостаточен, переписка не требуется.**
 
+## Финальный статус Codex
+
+Интеграция завершена 2026-07-22. Ветка Mavis влита в `main` коммитом
+`b12d3cb`. Помимо замечаний Claude закрыты два дефекта, найденные на
+финальной проверке:
+
+- `eb49bae` — production-настройка Instagram сохранена как пользовательский
+  маршрут, dev/test routes исключены из production bundle; исправлен белый
+  экран `/content`, вызванный обращением к React state setter до его
+  инициализации;
+- `96edb78` — Axios-ошибки Directus persistence больше не выводятся целиком:
+  лог получает только очищенные `name`, `message`, `code`, `status`, без
+  request config, headers, body, stack, паролей и токенов.
+
+Финальные ворота:
+
+- Vitest: 82 файла / 880 тестов — PASS;
+- `tsc -p tsconfig.critical.json` — PASS;
+- `vite build` — PASS;
+- production bundle: 0 dev/test route markers, 0 test/demo/bypass chunks;
+- безопасные Playwright smoke (без создания и публикации контента):
+  navigation + posts — 17/17, content — 7/7; auth setup — PASS;
+- `tsconfig.production.json` всё ещё показывает существующий общий backlog
+  типов вне этого цикла; найденная здесь nullable route-ошибка устранена.
+
+Операционный follow-up после деплоя: сменить Directus admin password, который
+до исправления мог попадать в локальные/server startup logs через Axios config.
+
 ## TL;DR
 
 Owner одобрил 15 коммитов от Mavis, закрывающих 9 тасков плана + 4

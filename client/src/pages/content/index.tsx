@@ -228,6 +228,7 @@ export default function ContentPage() {
   const [isImageGenerationDialogOpen, setIsImageGenerationDialogOpen] = useState(false);
   const [isContentPlanDialogOpen, setIsContentPlanDialogOpen] = useState(false);
   const [isContentTypeDialogOpen, setIsContentTypeDialogOpen] = useState(false);
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [currentContent, setCurrentContent] = useState<CampaignContent | null>(null);
   const [deletingContentId, setDeletingContentId] = useState<string | null>(null);
   const [unpublishingContentId, setUnpublishingContentId] = useState<string | null>(null);
@@ -1614,7 +1615,6 @@ export default function ContentPage() {
 
   // Состояние для модального окна предпросмотра контента
   const [previewContent, setPreviewContent] = useState<CampaignContent | null>(null);
-  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [retryingPlatform, setRetryingPlatform] = useState<string | null>(null);
 
   const retryPlatformPublish = async (contentId: string, platform: string) => {

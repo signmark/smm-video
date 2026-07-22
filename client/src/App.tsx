@@ -47,6 +47,7 @@ const InstagramCallback = lazy(() => import("@/pages/instagram-callback"));
 const VkCallback = lazy(() => import("@/pages/vk-callback"));
 const ThreadsCallback = lazy(() => import("@/pages/threads-callback"));
 const AIAssistantPage = lazy(() => import("@/pages/ai-assistant"));
+const InstagramSimplePage = lazy(() => import("@/pages/instagram-simple"));
 
 // Internal / test pages. They are NOT imported in production builds so
 // their lazy chunks (and the dev-only auth-bypass mutation logic) never
@@ -79,7 +80,6 @@ const HtmlTagsTestPage = IS_DEV ? lazy(() => import("@/pages/HtmlTagsTestPage"))
 const TelegramTestPage = IS_DEV ? lazy(() => import("@/pages/telegram-test")) : null;
 const EditorDemoPage = IS_DEV ? lazy(() => import("@/pages/editor-demo")) : null;
 const AiImageTester = IS_DEV ? lazy(() => import("@/pages/AiImageTester")) : null;
-const InstagramSimplePage = IS_DEV ? lazy(() => import("@/pages/instagram-simple")) : null;
 const StoriesGeneratorTest = IS_DEV ? lazy(() => import("@/pages/test/stories-generator-test")) : null;
 
 // Компоненты системы (не lazy, т.к. нужны всегда)
@@ -147,7 +147,7 @@ const LayoutGlobalApiKeysPage = wrapWithLayout(GlobalApiKeysPage);
 const LayoutUserManagement = wrapWithLayout(UserManagement);
 const LayoutEditorDemo = devOnly(EditorDemoPage);
 const LayoutBusinessQuestionnaire = wrapWithLayout(BusinessQuestionnairePage);
-const LayoutInstagramSetup = devOnly(InstagramSimplePage);
+const LayoutInstagramSetup = wrapWithLayout(InstagramSimplePage);
 const LayoutStoriesGeneratorTest = devOnly(StoriesGeneratorTest);
 const LayoutStoriesPage = wrapWithLayout(StoriesPage);
 const LayoutTelegramChannelsAdmin = wrapWithLayout(TelegramChannelsAdmin);
@@ -201,20 +201,20 @@ function Router() {
       <Route path="/ai-assistant" component={AIAssistantPage} />
       <Route path="/publish/scheduled" component={LayoutScheduledPublications} />
       <Route path="/publish/calendar" component={LayoutCalendarView} />
-      <Route path="/publish/test" component={LayoutTestPublish} />
-      <Route path="/test/image-generation" component={LayoutImageGenerationTest} />
-      <Route path="/test/transparent-dialog" component={LayoutTransparentDialogTest} />
-      <Route path="/test/auth-bypass" component={AuthBypassRoute} />
-      <Route path="/test/fal-ai-test" component={LayoutFalAiTest} />
-      <Route path="/test/api-key-priority" component={LayoutApiKeyPriorityTest} />
-      <Route path="/test/api-keys" component={LayoutApiKeysTest} />
-      <Route path="/editor-demo" component={LayoutEditorDemo} />
-      <Route path="/test/universal-image-gen" component={LayoutUniversalImageGenTest} />
-      <Route path="/test/html-tags" component={LayoutHtmlTagsTestPage} />
-      <Route path="/test/telegram" component={TelegramTestPage} />
-      <Route path="/test/ai-image" component={LayoutAiImageTester} />
-      <Route path="/test/error-handling" component={LayoutErrorHandlingTest} />
-      <Route path="/test/stories-generator" component={LayoutStoriesGeneratorTest} />
+      {IS_DEV && <Route path="/publish/test" component={LayoutTestPublish} />}
+      {IS_DEV && <Route path="/test/image-generation" component={LayoutImageGenerationTest} />}
+      {IS_DEV && <Route path="/test/transparent-dialog" component={LayoutTransparentDialogTest} />}
+      {IS_DEV && <Route path="/test/auth-bypass" component={AuthBypassRoute} />}
+      {IS_DEV && <Route path="/test/fal-ai-test" component={LayoutFalAiTest} />}
+      {IS_DEV && <Route path="/test/api-key-priority" component={LayoutApiKeyPriorityTest} />}
+      {IS_DEV && <Route path="/test/api-keys" component={LayoutApiKeysTest} />}
+      {IS_DEV && <Route path="/editor-demo" component={LayoutEditorDemo} />}
+      {IS_DEV && <Route path="/test/universal-image-gen" component={LayoutUniversalImageGenTest} />}
+      {IS_DEV && <Route path="/test/html-tags" component={LayoutHtmlTagsTestPage} />}
+      {IS_DEV && <Route path="/test/telegram" component={TelegramTestPage!} />}
+      {IS_DEV && <Route path="/test/ai-image" component={LayoutAiImageTester} />}
+      {IS_DEV && <Route path="/test/error-handling" component={LayoutErrorHandlingTest} />}
+      {IS_DEV && <Route path="/test/stories-generator" component={LayoutStoriesGeneratorTest} />}
       <Route path="/admin/global-api-keys" component={LayoutGlobalApiKeysPage} />
       <Route path="/admin/users" component={LayoutUserManagement} />
       <Route path="/admin/telegram-channels" component={LayoutTelegramChannelsAdmin} />

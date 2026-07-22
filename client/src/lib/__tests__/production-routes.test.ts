@@ -31,6 +31,7 @@ describe('isInternalRoute', () => {
     '/analytics',
     '/publish/scheduled',
     '/publish/calendar',
+    '/settings/instagram-setup',
     '/campaigns',
     '/campaigns/abc-123',
     '/dashboard',

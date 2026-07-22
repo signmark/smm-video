@@ -16,6 +16,7 @@ import { keysToCamel } from '@/lib/utils';
 import { updateContentCachesAfterMoveToDraft } from '@/lib/content-cache-updates';
 import { QueryErrorState } from '@/components/QueryErrorState';
 import {
+  classifyScheduled,
   countByBucket,
   splitScheduled,
   type ScheduledBuckets,
@@ -233,11 +234,29 @@ export default function ScheduledPublications() {
   // Разделение контента на предстоящие публикации. Используем
   // already-classified upcoming bucket, чтобы классификация была одна
   // и та же для счётчиков и для списка.
+  //
+  // Sorting: the aggregate `content.scheduledAt` can be missing for
+  // posts that only have a per-platform scheduled date; the previous
+  // implementation put those at the end ("Infinity" for asc / "-Infinity"
+  // for desc), which made the per-platform-only posts appear "out of
+  // order" relative to the user's mental calendar. We now read the
+  // canonical date from classifyScheduled, which falls back to the
+  // per-platform scheduledAt.
+  //
+  // Memoisation note: splitScheduled(...) pins `now = new Date()` to
+  // the render in which the deps changed. If the page is left open
+  // across midnight, the "today" boundary will not re-evaluate until
+  // filteredContent changes. This is a documented trade-off, not a
+  // bug — adding a now-tick would force a re-render every minute.
   const upcomingContent = React.useMemo(() => {
     const upcoming = [...scheduledBuckets.upcoming];
     return upcoming.sort((a, b) => {
-      const dateA = a.scheduledAt ? new Date(a.scheduledAt).getTime() : (sortOrder === 'desc' ? -Infinity : Infinity);
-      const dateB = b.scheduledAt ? new Date(b.scheduledAt).getTime() : (sortOrder === 'desc' ? -Infinity : Infinity);
+      const dateA =
+        classifyScheduled(a).scheduledAt?.getTime() ??
+        (sortOrder === 'desc' ? -Infinity : Infinity);
+      const dateB =
+        classifyScheduled(b).scheduledAt?.getTime() ??
+        (sortOrder === 'desc' ? -Infinity : Infinity);
 
       return sortOrder === 'desc'
         ? dateB - dateA
@@ -479,7 +498,7 @@ export default function ScheduledPublications() {
             error={scheduledErrorDetail}
             onRetry={() => !scheduledFetching && refetchScheduled()}
             isRefetching={scheduledFetching}
-            title="Не удалось загрузить запланированные публикации"
+            title={t('publishing.scheduled.errorTitle')}
             testId="scheduled-query-error"
           />
         ) : scheduledLoading ? (
@@ -531,15 +550,15 @@ export default function ScheduledPublications() {
         <div className="mt-8" data-testid="scheduled-overdue-section">
           <div className="flex items-center gap-2 mb-4">
             <AlertCircle className="h-5 w-5 text-amber-600" />
-            <h3 className="text-lg font-semibold">Просроченные и зависшие публикации</h3>
+            <h3 className="text-lg font-semibold">
+              {t('publishing.scheduled.overdueSection.title')}
+            </h3>
             <Badge variant="outline" className="ml-2" data-testid="scheduled-overdue-count">
               {scheduledBuckets.overdue.length + scheduledBuckets.unscheduledDate.length}
             </Badge>
           </div>
           <p className="text-sm text-muted-foreground mb-4">
-            Эти записи имеют статус «запланировано», но их дата уже прошла
-            или не указана. Откройте публикацию, чтобы повторить, перепланировать
-            или вернуть в черновики.
+            {t('publishing.scheduled.overdueSection.description')}
           </p>
           <div className="space-y-2">
             {[...scheduledBuckets.overdue, ...scheduledBuckets.unscheduledDate].map((content) => (

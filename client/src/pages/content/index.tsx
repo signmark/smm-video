@@ -1923,7 +1923,7 @@ export default function ContentPage() {
                 error={contentError}
                 onRetry={() => !isFetchingContent && refetchContent()}
                 isRefetching={isFetchingContent}
-                title="Не удалось загрузить контент кампании"
+                title={t('content.error.title')}
                 testId="content-query-error"
               />
             ) : isLoadingContent ? (
@@ -1933,8 +1933,8 @@ export default function ContentPage() {
                 role="status"
               >
                 <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
-                <p>Загружаем контент выбранной кампании…</p>
-                <p className="text-xs mt-1">Предыдущие данные скрыты, чтобы не смешивать кампании.</p>
+                <p>{t('ui.campaignSwitching.title')}</p>
+                <p className="text-xs mt-1">{t('ui.campaignSwitching.subtitle')}</p>
               </div>
             ) : !filteredContent.length ? (
               <p className="text-center text-muted-foreground py-8">

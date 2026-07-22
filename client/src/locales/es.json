@@ -23,6 +23,16 @@
       "pendingLabel": "Abrir aprobación pendiente"
     }
   },
+  "ui": {
+    "retry": "Reintentar",
+    "loading": "Cargando...",
+    "errorTitle": "Error al cargar datos",
+    "retryingPost": "Reintentar publicación",
+    "campaignSwitching": {
+      "title": "Cargando contenido de la campaña seleccionada…",
+      "subtitle": "Los datos anteriores se ocultan para no mezclar campañas."
+    }
+  },
   "common": {
     "create": "Crear",
     "edit": "Editar",
@@ -132,6 +142,9 @@
   "content": {
     "title": "Gestión de Contenido",
     "subtitle": "Crear, editar y publicar contenido para redes sociales",
+    "error": {
+      "title": "Error al cargar contenido de la campaña"
+    },
     "tabs": {
       "all": "Todos",
       "draft": "Borradores",
@@ -433,7 +446,12 @@
     "rememberMe": "Recuérdame",
     "forgotPassword": "¿Olvidaste tu contraseña?",
     "dontHaveAccount": "¿No tienes cuenta?",
-    "alreadyHaveAccount": "¿Ya tienes cuenta?"
+    "alreadyHaveAccount": "¿Ya tienes cuenta?",
+    "recovery": {
+      "explanation": "Tus datos de inicio de sesión se guardan hasta que decidas salir.",
+      "logoutButton": "Salir y volver a iniciar sesión",
+      "loggingOut": "Saliendo..."
+    }
   },
   "profile": {
     "title": "Perfil",
@@ -615,7 +633,12 @@
       "noScheduled": "No hay publicaciones programadas",
       "scheduledWillShow": "Las publicaciones programadas aparecerán aquí.",
       "backToList": "Volver a Publicaciones",
-      "createPublication": "Crear Publicación"
+      "createPublication": "Crear Publicación",
+      "errorTitle": "Error al cargar publicaciones programadas",
+      "overdueSection": {
+        "title": "Publicaciones vencidas y atascadas",
+        "description": "Estos registros tienen estado «programado» pero su fecha ya pasó o falta. Abre la publicación para reintentar, reprogramar o devolverla a borradores."
+      }
     },
     "published": {
       "title": "Posts Publicados",
@@ -631,7 +654,14 @@
       "calendarPrevMonth": "Ir al mes anterior",
       "calendarNextMonth": "Ir al mes siguiente",
       "calendarMonth": "Mes",
-      "calendarYear": "Año"
+      "calendarYear": "Año",
+      "errorTitle": "Error al cargar publicaciones",
+      "undatedTitle": "Publicados (sin fecha)",
+      "undatedDescription": "Publicaciones cuya fecha de publicación no se pudo determinar",
+      "failedSection": {
+        "title": "Errores de publicación",
+        "description": "Estas publicaciones no se publicaron. No cuentan en los totales de plataformas ni en «Mejor hora», pero puedes reintentarlas."
+      }
     }
   },
   "tutorials": {

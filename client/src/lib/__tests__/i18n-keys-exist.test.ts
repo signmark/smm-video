@@ -38,6 +38,26 @@ const KEY_PATHS = [
   'publishing.published.calendarNextMonth',
   'publishing.published.calendarMonth',
   'publishing.published.calendarYear',
+  // F-02: shared UI labels
+  'ui.retry',
+  'ui.loading',
+  'ui.errorTitle',
+  'ui.retryingPost',
+  'ui.campaignSwitching.title',
+  'ui.campaignSwitching.subtitle',
+  // F-02: page-specific labels
+  'publishing.published.errorTitle',
+  'publishing.published.undatedTitle',
+  'publishing.published.undatedDescription',
+  'publishing.published.failedSection.title',
+  'publishing.published.failedSection.description',
+  'publishing.scheduled.errorTitle',
+  'publishing.scheduled.overdueSection.title',
+  'publishing.scheduled.overdueSection.description',
+  'content.error.title',
+  'auth.recovery.explanation',
+  'auth.recovery.logoutButton',
+  'auth.recovery.loggingOut',
 ];
 
 describe('i18n keys referenced by aria-labels exist in all locales', () => {

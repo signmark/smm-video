@@ -657,7 +657,7 @@ export default function Posts() {
               error={error}
               onRetry={() => !isFetchingContent && refetch()}
               isRefetching={isFetchingContent}
-              title="Не удалось загрузить публикации"
+              title={t('publishing.published.errorTitle')}
               testId="posts-query-error"
             />
           </CardContent>
@@ -680,7 +680,7 @@ export default function Posts() {
                   }}
                   className="rounded-md border"
                   locale={getDateLocale()}
-                  weekStartsOn={i18n.language === 'en' ? 0 : 1}
+                  weekStartsOn={i18n.language.startsWith('en') ? 0 : 1}
                   labels={{
                     labelPrevious: () => t('publishing.published.calendarPrevMonth'),
                     labelNext: () => t('publishing.published.calendarNextMonth'),
@@ -812,8 +812,12 @@ export default function Posts() {
             {/* Секция «Опубликованные (без даты)» — скрыта на error, чтобы не дублировать сообщение. */}
             {!isLoadingContent && getUndatedPublishedPosts().length > 0 ? (
               <div className="mt-6 border-t pt-6">
-                <h3 className="font-medium text-lg mb-1">Опубликованные (без даты)</h3>
-                <p className="text-sm text-muted-foreground mb-4">Посты, у которых не удалось определить дату публикации</p>
+                <h3 className="font-medium text-lg mb-1">
+                  {t('publishing.published.undatedTitle')}
+                </h3>
+                <p className="text-sm text-muted-foreground mb-4">
+                  {t('publishing.published.undatedDescription')}
+                </p>
                 <div className="grid gap-3">
                   {getUndatedPublishedPosts().map(renderPostCard)}
                 </div>
@@ -827,10 +831,11 @@ export default function Posts() {
                 (см. getDayContent), здесь мы выводим плоский список. */}
             {!isLoadingContent && fullyFailedPosts.length > 0 ? (
               <div className="mt-6 border-t pt-6" data-testid="posts-failed-section">
-                <h3 className="font-medium text-lg mb-1 text-destructive">Ошибки публикации</h3>
+                <h3 className="font-medium text-lg mb-1 text-destructive">
+                  {t('publishing.published.failedSection.title')}
+                </h3>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Эти посты полностью не опубликованы. Они не входят в счётчики
-                  платформ и в «Лучшее время», но доступны для повтора.
+                  {t('publishing.published.failedSection.description')}
                 </p>
                 <div className="space-y-2">
                   {fullyFailedPosts.map((post) => {
@@ -875,7 +880,7 @@ export default function Posts() {
                             disabled={isFetchingContent || retryingPostIds.has(post.id)}
                             data-testid="posts-failed-retry"
                           >
-                            Повторить
+                            {t('ui.retryingPost')}
                           </Button>
                         </div>
                       </div>

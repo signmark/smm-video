@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useLocation } from 'wouter';
 import { Loader2 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '@/lib/store';
 import { refreshAuthSession } from '@/lib/refreshAuth';
 import { decodeJwtPayload } from '@/lib/jwt';
@@ -30,6 +31,7 @@ async function validateToken(accessToken: string): Promise<ValidationResult> {
 }
 
 export function AuthGuard({ children }: Props) {
+  const { t } = useTranslation();
   const [location, navigate] = useLocation();
   const [isSessionChecked, setIsSessionChecked] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -221,7 +223,7 @@ export function AuthGuard({ children }: Props) {
           <h1 className="mb-2 text-lg font-semibold">Проблема с авторизацией</h1>
           <p className="mb-4 text-sm text-muted-foreground">{sessionError}</p>
           <p className="mb-4 text-xs text-muted-foreground">
-            Данные входа сохранены, пока вы не решите выйти.
+            {t('auth.recovery.explanation')}
           </p>
           <div className="flex flex-col-reverse sm:flex-row sm:justify-center sm:gap-3 gap-2">
             <button
@@ -231,7 +233,7 @@ export function AuthGuard({ children }: Props) {
               disabled={isLoggingOut}
               data-testid="authguard-logout"
             >
-              {isLoggingOut ? 'Выходим...' : 'Выйти и войти заново'}
+              {isLoggingOut ? t('auth.recovery.loggingOut') : t('auth.recovery.logoutButton')}
             </button>
             <button
               type="button"
@@ -240,7 +242,7 @@ export function AuthGuard({ children }: Props) {
               disabled={isLoggingOut}
               data-testid="authguard-retry"
             >
-              Повторить
+              {t('ui.retry')}
             </button>
           </div>
         </div>

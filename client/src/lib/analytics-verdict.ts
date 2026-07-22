@@ -51,7 +51,8 @@ export function getAnalyticsVerdict(sample: AnalyticsSample): AnalyticsVerdict {
   const rate = (sample.engagements / sample.views) * 100;
   if (rate >= ENGAGEMENT_RATE_THRESHOLDS.high) return 'high';
   if (rate >= ENGAGEMENT_RATE_THRESHOLDS.medium) return 'medium';
-  if (rate >= ENGAGEMENT_RATE_THRESHOLDS.low) return 'low';
+  // Anything that does not reach the 'medium' (>= 2%) threshold is
+  // 'low'; rate < 1% falls through here as well.
   return 'low';
 }
 
@@ -86,7 +87,7 @@ const RATE_HEADLINES: Record<Exclude<AnalyticsVerdict, 'no-data' | 'insufficient
 const RATE_DETAILS: Record<Exclude<AnalyticsVerdict, 'no-data' | 'insufficient-views'>, string> = {
   high: 'Кампания стабильно набирает вовлечённость выше 5%. Сохраняйте текущий формат.',
   medium: 'Вовлечённость 2–5%. Есть потенциал для тестов с новыми форматами и временем публикации.',
-  low: 'Вовлечённость ниже 1%. Попробуйте сменить тон, формат и время публикации.',
+  low: 'Вовлечённость ниже 2%. Попробуйте сменить тон, формат и время публикации.',
 };
 
 export function getSampleSummary(sample: AnalyticsSample): SampleSummary {

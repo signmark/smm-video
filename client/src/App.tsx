@@ -57,7 +57,17 @@ const TestPublish = IS_DEV ? lazy(() => import("@/pages/publish/test-publish")) 
 const ImageGenerationTest = IS_DEV ? lazy(() => import("@/pages/test/image-generation")) : null;
 const TransparentDialogTest = IS_DEV ? lazy(() => import("@/pages/test/transparent-dialog-test")) : null;
 const AuthBypass = IS_DEV ? lazy(() => import("@/pages/test/auth-bypass")) : null;
-const AuthBypassRoute: React.ComponentType = devOnly(AuthBypass);
+// AuthBypass intentionally bypasses the Layout: the page exists to
+// mint a fake auth token in localStorage so a Playwright/curl smoke
+// test can reach an authenticated route. Wrapping it in Layout makes
+// the AppShell/Sidebar render against the (still-empty) auth store
+// for the brief window before the page's useEffect sets the token
+// and navigates away, which can show a half-broken logged-out chrome
+// and, in the dev Playwright runs that exercise this page, leaves
+// dangling queries.
+const AuthBypassRoute: React.ComponentType = IS_DEV
+  ? React.memo(() => (AuthBypass ? <AuthBypass /> : <NotFound />))
+  : () => <NotFound />;
 const FalAiTest = IS_DEV ? lazy(() => import("@/pages/test/fal-ai-test")) : null;
 const ApiKeyPriorityTest = IS_DEV ? lazy(() => import("@/pages/test/api-key-priority")) : null;
 const ApiKeysTest = IS_DEV ? lazy(() => import("@/pages/test/api-keys")) : null;

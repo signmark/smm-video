@@ -619,7 +619,11 @@
       "platformPublications": "Platform publications",
       "forMonth": "in {{month}}",
       "contentManagement": "Content Management",
-      "publicationError": "Publication error"
+      "publicationError": "Publication error",
+      "calendarPrevMonth": "Go to previous month",
+      "calendarNextMonth": "Go to next month",
+      "calendarMonth": "Month",
+      "calendarYear": "Year"
     }
   },
   "tutorials": {

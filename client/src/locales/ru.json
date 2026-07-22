@@ -619,7 +619,11 @@
       "platformPublications": "Публикации по платформам",
       "forMonth": "за {{month}}",
       "contentManagement": "Управление контентом",
-      "publicationError": "Ошибка публикации"
+      "publicationError": "Ошибка публикации",
+      "calendarPrevMonth": "Перейти к предыдущему месяцу",
+      "calendarNextMonth": "Перейти к следующему месяцу",
+      "calendarMonth": "Месяц",
+      "calendarYear": "Год"
     }
   },
   "tutorials": {

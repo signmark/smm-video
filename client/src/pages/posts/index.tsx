@@ -640,6 +640,14 @@ export default function Posts() {
                     setVisibleMonth(startOfMonth(date));
                   }}
                   className="rounded-md border"
+                  locale={getDateLocale()}
+                  weekStartsOn={i18n.language === 'en' ? 0 : 1}
+                  labels={{
+                    labelPrevious: () => t('publishing.published.calendarPrevMonth'),
+                    labelNext: () => t('publishing.published.calendarNextMonth'),
+                    labelMonthDropdown: () => t('publishing.published.calendarMonth'),
+                    labelYearDropdown: () => t('publishing.published.calendarYear'),
+                  }}
                   components={{
                     DayContent: ({ date }) => (
                       <div className="flex flex-col items-center">

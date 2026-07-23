@@ -780,43 +780,4 @@ export function registerAuthRoutes(app: Express): void {
     }
   });
 
-  // Маршрут для получения токена системы
-  app.get('/api/auth/system-token', async (req: Request, res: Response) => {
-    try {
-      // Получаем токен администратора из кэша для внутренних операций
-      const { directusApiManager } = await import('../directus.js');
-      const adminUserId = '61941d89-55c2-4def-83a3-bc8bfbd21d6f'; // admin@nplanner.ru
-      
-      const cachedToken = directusApiManager.getCachedToken(adminUserId);
-      
-      if (cachedToken && cachedToken.token) {
-        return res.status(200).json({
-          success: true,
-          token: cachedToken.token
-        });
-      }
-      
-      // Fallback: получаем новый токен напрямую
-      const adminToken = await directusApiManager.getAdminToken();
-      
-      if (adminToken) {
-        return res.status(200).json({
-          success: true,
-          token: adminToken
-        });
-      }
-      
-      return res.status(500).json({ 
-        success: false, 
-        message: 'Не удалось получить системный токен' 
-      });
-      
-    } catch (error: any) {
-      console.error('Error getting system token:', error.message);
-      return res.status(500).json({
-        success: false,
-        message: 'Ошибка получения системного токена'
-      });
-    }
-  });
-}
+  }

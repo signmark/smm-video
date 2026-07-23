@@ -197,4 +197,19 @@ describe('Auth Flow Integration Tests', () => {
       expect(directusPayload).not.toHaveProperty('date_created');
     });
   });
+
+  describe('GET /api/auth/system-token (should be removed)', () => {
+    it('should return 404 for anonymous request', async () => {
+      const response = await request(app).get('/api/auth/system-token');
+      expect(response.status).toBe(404);
+    });
+
+    it('should return 404 for authenticated user request', async () => {
+      const mockToken = createMockToken({ id: 'test-user-id', email: 'test@example.com' });
+      const response = await request(app)
+        .get('/api/auth/system-token')
+        .set('Authorization', `Bearer ${mockToken}`);
+      expect(response.status).toBe(404);
+    });
+  });
 });

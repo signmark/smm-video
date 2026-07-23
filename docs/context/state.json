@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "project": "smm-video",
+  "snapshot_date": "2026-07-23",
+  "stage": "production / security incident response / pre-tester hardening aftermath",
+  "priorities": [
+    {
+      "id": "P0",
+      "name": "Security hotfixes (incident wave)",
+      "ref": "docs/PRIORITIZED_IMPROVEMENT_PLAN_2026-07-23.md#1-5",
+      "owner": "Codex (server/api, server/__tests__)",
+      "wip_in_tree": "M server/__tests__/auth_flow.test.ts, M server/api/auth-routes.ts"
+    },
+    {
+      "id": "P1",
+      "name": "Defensive perimeter (fail-closed, CI regression suite, CSP)",
+      "ref": "docs/PRIORITIZED_IMPROVEMENT_PLAN_2026-07-23.md#6-8"
+    },
+    {
+      "id": "P2",
+      "name": "Engineering gates (type-check, logging, reproducible build)",
+      "ref": "docs/PRIORITIZED_IMPROVEMENT_PLAN_2026-07-23.md#9-11"
+    }
+  ],
+  "decisions": [
+    {
+      "what": "Mavis пушит если в docs/prompts/* явно зафиксировано делегирование, или docs-only пост-пуш",
+      "why": "экономит цикл owner-gate, владелец явно сказал 2026-07-20",
+      "date": "2026-07-20",
+      "ref": "docs/prompts/kimi-push-manifest-2026-07-20.md#4"
+    },
+    {
+      "what": "Canonical multi-model review cycle: implementer → auto tests → independent reviewer → fix → owner gate → merge → deploy",
+      "why": "формализует уже работающую цепочку Codex/Claude/Kimi/Mavis, защищает от регрессий",
+      "date": "2026-07-23",
+      "ref": "AGENTS.md#канонический-цикл-multi-model-review"
+    },
+    {
+      "what": "Single-writer: один файл = один исполнитель одновременно",
+      "why": "избежать конфликтующих изменений от нескольких моделей",
+      "date": "2026-07-21",
+      "ref": "zookeeper AGENTS.md (заимствовано)"
+    },
+    {
+      "what": "Mavis не пишет прод-код в server/client/shared",
+      "why": "это зона Codex/Kimi/Claude, Mavis = ревью + docs + мониторинг",
+      "date": "2026-07-20",
+      "ref": "Mavis memory (profile)"
+    },
+    {
+      "what": "API-вывод ≠ UI-проверка",
+      "why": "владелец поймал Mavis на ложном 'READY' 2026-07-22, два бага в моих API-вызовах",
+      "date": "2026-07-22",
+      "ref": "docs/captains-log/2026-07-22.md"
+    }
+  ],
+  "constraints": [
+    "Анти-форензик: column A в Google Sheets не красить (это ID-колонка)",
+    "Канонические sheet-цвета: Next=purple R142-G124-B195, Тестировщик=green R0-G255-B0, WIP=белый",
+    "«N» в контексте багов = bug_id (BUG-NNN), не sheet row",
+    "Push delegation действительно только если в docs/prompts/* явно зафиксировано для текущего цикла",
+    "Security-критичные пуши (credentials, system-token) — только владелец"
+  ],
+  "open_tasks": [
+    {
+      "id": "OT-001",
+      "name": "F-02 RU-хардкод в новом UI",
+      "owner": "Claude (следующий цикл i18n)",
+      "ref": "docs/captains-log/2026-07-22.md"
+    },
+    {
+      "id": "OT-002",
+      "name": "Playwright smoke 'analytics period reflects UI'",
+      "owner": "владелец (gate)",
+      "ref": "docs/captains-log/2026-07-22.md"
+    }
+  ],
+  "known_defects": [
+    {
+      "id": "BUG-027",
+      "name": "DeepSeek промпт + markdown cleanup",
+      "status": "closed",
+      "fix_commits": ["5748268", "85bc523"],
+      "regression_test": "server/__tests__/generated-social-content.test.ts"
+    }
+  ],
+  "models": {
+    "primary_executor": "Codex",
+    "reviewer": "Claude",
+    "fallback_executor": "Kimi",
+    "deployer": "Mimo",
+    "reviewer_dispatcher": "Mavis (cross-verify, не первичный ревьюер)"
+  },
+  "test_state": {
+    "vitest_files": "69/69",
+    "vitest_tests": "717/717",
+    "last_verified": "2026-07-20 (см. docs/session-2026-07-20.md)",
+    "warning": "после security-фиксов перепрогнать — счёт может измениться"
+  }
+}

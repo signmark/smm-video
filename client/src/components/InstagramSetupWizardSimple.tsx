@@ -60,11 +60,17 @@ const InstagramSetupWizardSimple: React.FC<InstagramSetupWizardProps> = ({ campa
         
         toast({
           title: "Instagram подключен",
-          description: "Настройки обновлены"
+          description: "Ищем доступные аккаунты..."
         });
         
         // Перезагружаем настройки с сервера
         onSettingsRefresh?.();
+        
+        // Автоматически ищем аккаунты (токен уже в Directus, не нужен в браузере)
+        setTimeout(() => {
+          console.log('🔍 Auto-discovering Instagram accounts after OAuth...');
+          handleDiscoverAccounts();
+        }, 1000);
       }
     };
 
@@ -90,9 +96,14 @@ const InstagramSetupWizardSimple: React.FC<InstagramSetupWizardProps> = ({ campa
             setFormData(prev => ({ ...prev, configured: true }));
             toast({
               title: "Instagram подключен",
-              description: "Настройки обновлены"
+              description: "Ищем доступные аккаунты..."
             });
             onSettingsRefresh?.();
+            // Автоматически ищем аккаунты
+            setTimeout(() => {
+              console.log('🔍 Auto-discovering Instagram accounts after OAuth (localStorage)...');
+              handleDiscoverAccounts();
+            }, 1000);
           }
         } catch (e) {
           localStorage.removeItem('instagram_oauth_result');
@@ -734,8 +745,8 @@ const InstagramSetupWizardSimple: React.FC<InstagramSetupWizardProps> = ({ campa
               />
             </div>
 
-            {/* Кнопка поиска аккаунтов */}
-            {formData.accessToken && !showAccountSelection && (
+            {/* Кнопка поиска аккаунтов — показываем если настроено (есть токен в DB) но аккаунты ещё не выбраны */}
+            {formData.configured && !showAccountSelection && !formData.businessAccountId && (
               <Button 
                 onClick={handleDiscoverAccounts}
                 disabled={isProcessing}
@@ -792,21 +803,17 @@ const InstagramSetupWizardSimple: React.FC<InstagramSetupWizardProps> = ({ campa
               </div>
             )}
 
-            {/* Business Account ID (всегда отображается если есть токен) */}
-            {formData.accessToken && (
+            {/* Business Account ID — показываем если аккаунт выбран */}
+            {formData.businessAccountId && (
               <div className="space-y-2">
-                <Label htmlFor="businessAccountId">Business Account ID</Label>
+                <Label htmlFor="businessAccountId">Выбранный Instagram аккаунт</Label>
                 <Input
                   id="businessAccountId"
                   type="text"
                   value={formData.businessAccountId || ''}
-                  onChange={(e) => setFormData(prev => ({ ...prev, businessAccountId: e.target.value }))}
-                  placeholder={formData.businessAccountId ? "ID выбранного аккаунта" : "Сначала найдите и выберите аккаунт"}
-                  readOnly={!!formData.businessAccountId}
+                  readOnly
                 />
-                {formData.businessAccountId && (
-                  <p className="text-xs text-green-600">✓ Аккаунт выбран</p>
-                )}
+                <p className="text-xs text-green-600">✓ Аккаунт выбран для публикации</p>
               </div>
             )}
           </CardContent>

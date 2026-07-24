@@ -128,7 +128,8 @@
     "reviewer": "Mavis (единственный штатный; эталон — kimi-task8-review-2026-07-20)",
     "fallback_executor": "Mavis (условно, при недоступности Hermes + явном поручении owner'а; ревьюер тогда Mimo)",
     "deployer": "Mimo (+ второй ревьюер Docker/CI/deploy)",
-    "departed_2026_07_24": ["Codex", "Claude", "Kimi"]
+    "optional_architect": "Claude Fable 5 (v3, вечер 2026-07-24: возвращён owner'ом, HIGH priority при наличии оплаты; плотные планы security/multi-file, co-author; профиль docs/agents/claude.md)",
+    "departed_2026_07_24": ["Codex", "Kimi"]
   },
   "test_state": {
     "vitest_files": "69/69",

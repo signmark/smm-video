@@ -32,6 +32,14 @@
 - `vite build` — проходит.
 - Prod smoke: `/` = 200; `GET /api/vk/token-webhook/<id>/status` = `{ready:true,...}`; 9/9 oauth-bypass смонтированы; контейнер обслуживает запросы.
 
+## Дополнение (89be723f): Facebook через Instagram-токен
+
+Флоу «взять токен из ИГ» восстановлен серверно:
+- `POST /api/facebook/pages` принимает `{ campaignId }` — `resolveFacebookUserToken` (facebook-pages.ts) достаёт IG-токен или fb.userToken из Directus, с authorizeCampaignAccess;
+- `POST /api/facebook/page-token/:pageId` — token в body опционален, тот же fallback;
+- `POST /campaigns/:id/facebook-settings` — token опционален (fallback fb.token → IG-токен); принимает camelCase и snake_case (ручной выбор страницы слал `page_id` → pageId сохранялся undefined — старый баг, починен);
+- `FacebookSetupWizard.tsx` — клиент больше не читает IG-токены, шлёт `{ campaignId }`; ручной ввод токена остаётся fallback'ом.
+
 ## Открытое / для Mavis
 
 - Регрессионных тестов на новые fallback'и нет (нарушение DoD §2, осознанно — owner просил быстро; кандидаты: PATCH vk-settings без token, discover без body-токена, /validate/vk по campaignId).

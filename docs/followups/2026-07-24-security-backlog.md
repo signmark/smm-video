@@ -129,40 +129,57 @@
 
 | Статус | Кол-во | Пункты |
 |---|---|---|
-| ✅ Закрыто | 2 | §1, OAuth incident |
+| ✅ Закрыто | 1 | §1 |
+| 🟠 Mitigated, closure blocked | 1 | OAuth callback 401 incident |
 | ⛔ Deferred | 1 | §3 (до августа) |
 | 🟡 Открыто | 13 | §2, §4-§15 |
 
 ## Инцидент: OAuth callback блокировка (2026-07-24)
 
 ### Описание
-Все OAuth callback'и (YouTube, VK, Instagram, Threads, TikTok) начали отдавать 401 — авторизация через соцсети была полностью сломана. Также `/api/vk/token-webhook/:campaignId` (POST от needanapp.ru) — VK токены не приходили.
+24.07 владелец подтвердил 401 на YouTube OAuth callback. Для публичных callback'ов YouTube, VK, Instagram, Threads и TikTok, а также `/api/vk/token-webhook/:campaignId`, применён общий ранний bypass. После деплоя callback handlers снова достижимы, но точный blast radius и источник 401 по prod-артефакту не сохранены доказательствами.
 
 ### Корневая причина
-`requireActiveSubscription` (commit `a3ba91133` от Replit Agent, 25.06.2026) — глобальный middleware на ALL `/api/*` запросы. OAuth callback'и приходят без Bearer-токена (провайдеры редиректят), и middleware блокировал их с 401 до этого.
+**Не подтверждена.** Commit `a3ba91133` от Replit Agent действительно добавил глобальный `requireActiveSubscription`, но уже в первой версии middleware:
+
+- GET/HEAD/OPTIONS всегда вызывают `next()`;
+- мутации без пользовательского токена также вызывают `next()`;
+- блокировка истёкшей подписки возвращает 403, не наблюдавшийся 401.
+
+Поэтому `requireActiveSubscription` не объясняет GET-401 OAuth callback'ов и не может считаться root cause этого инцидента. Удаление `/api/auth/system-token` в `1473f4bf` также не имело runtime-вызовов из callback handlers. Требуется установить, какой именно prod build/middleware возвращал 401.
 
 ### Timeline
 1. **25.06.2026** — `requireActiveSubscription` добавлен глобально (Replit Agent)
 2. **23.07.2026 18:00** — `1473f4bf` удалил `/api/auth/system-token` (security §1)
-3. **23.07.2026 вечер / 24.07.2026 утро** — OAuth callback'и начали 401
-4. **24.07.2026 утро** — обнаружен инцидент
-5. **24.07.2026 09:23** — `122fe5f56` Codex: OAuth handlers смонтированы через `app.get` ДО middleware
-6. **24.07.2026 09:36** — `c09948994` Codex: добавлен VK token-webhook (POST/OPTIONS) bypass
-7. **24.07.2026 09:53** — `dcf62ee7c` Mimo: добавлен `express.json()` перед bypass (фикс crash loop — `req.body undefined`)
+3. **24.07.2026 утро** — владелец сообщил о 401 на YouTube callback
+4. **24.07.2026 11:43 MSK** — Mavis, `838e8769`: попытка bypass-флага для `requireActiveSubscription`; в prod не устранила 401
+5. **24.07.2026 12:16 MSK** — Mavis, `771d66d9` (merge `122fe5f5`): GET callback handlers смонтированы до middleware
+6. **24.07.2026 12:28 MSK** — Mavis, `02b47f53` (merge `c0994899`): добавлены POST/OPTIONS VK token-webhook
+7. **24.07.2026 12:49 MSK** — Mimo обнаружил crash loop из-за `req.body === undefined`; Mavis зафиксировал parser fix в `156ec84b` (merge `e7c31890`), владелец независимо добавил эквивалентный `6c5c9920`
+8. **24.07.2026 15:28 MSK** — Hermes, `f40fc6ec`: добавил публичный VK status endpoint
 
-### Кто виноват
-- **Replit Agent** (`a3ba91133`) — добавил `requireActiveSubscription` глобально без учёта OAuth callback'ов
-- **Ни Codex, ни Mimo** не сломали — они фиксили уже сломанное
+### Текущая mitigation
+`server/index.ts` монтирует выбранные handlers через `app.{get,post,options}` до остальных middleware. Это восстанавливает достижимость callback'ов независимо от неизвестного глобального auth-gate.
 
-### Фикс
-`index.ts`: OAuth handlers монтируются через `app.{get,post,options}` ДО глобальных middleware. Express применяет handlers в порядке регистрации — первый совпавший срабатывает.
+Read-only prod smoke 24.07 после pull `bcff975d`: YouTube без params → 400, Instagram → 400, Threads probe → 200, TikTok → 302, VK → 302; ни один из пяти GET callback'ов не вернул 401. Это подтверждает mitigation, но не root cause и не полный OAuth flow с валидным `state`.
 
-### Предотвращение
-- Добавить e2e smoke для OAuth callback'ов после каждого деплоя
-- Не монтировать auth middleware глобально без whitelist для публичных endpoints
+### Блокеры закрытия
+
+1. **P0 — root cause/provenance не установлены.** Нет зафиксированного commit SHA или digest проблемного prod-артефакта и нет строки middleware, вернувшей 401. Нельзя назначать виновника по корреляции.
+2. **P1 — ранний JSON parser затрагивает весь API.** Два одинаковых `app.use('/api', express.json({ limit: '1mb' }))` в `server/index.ts` выполняются до штатного parser с лимитом 50 MB. Любой JSON `/api/*` больше 1 MB теперь получит 413, хотя callback parser нужен только VK webhook.
+3. **P1 — callbacks обходят весь baseline-контур.** Ранние handlers завершают ответ до helmet, CORS, rate limiting, cache-control и HTTP logging, а не только до предполагаемого auth-gate.
+4. **P1 security — VK webhook/status доверяют одному `campaignId`.** Публичный POST использует admin token для записи social settings, а публичный GET — для чтения статуса, без подписи/одноразового state и без tenant ownership gate.
+5. **P1 — нет регрессионных тестов на wiring.** 83/83 test files и 883/883 tests проходят на `bcff975d`, но поиск по тестам не находит покрытия `PUBLIC_OAUTH_CALLBACKS`/`oauth-bypass`; зелёный suite не доказывает этот fix.
+
+### Эскалация по каноническому циклу
+
+1. **Hermes — исполнитель:** заменить emergency bypass на явный public-callback router после baseline middleware и до конкретного auth-gate; ограничить 1 MB parser только POST VK webhook; убрать дубль parser; добавить интеграционные негативные тесты (anonymous callback достигает handler, protected endpoint остаётся 401/403, malformed/oversized webhook, обычный `/api` JSON >1 MB не режется новым parser); отдельно закрыть подпись/state и tenant binding VK webhook/status.
+2. **Mavis — независимый ревьюер:** проверить каждый blocker по `review-verdict-template.md`, самостоятельно прогнать tests/build и подтвердить, что тест падает без исправления.
+3. **Mimo — deploy/prod provenance и второй reviewer:** зафиксировать SHA/digest реально работавшего prod build до mitigation, найти источник 401 по artifact/log diff, проверить Docker/deploy-часть и после owner gate задеплоить только подтверждённый main.
+4. **Owner (Dmitry) — gate:** решить merge/deploy после независимого verdict; security-critical push и ручные prod-hotfix'ы без зафиксированного делегирования не выполнять.
 
 ### Статус
-✅ **CLOSED** (fix deployed: `c09948994` + `dcf62ee7c`)
+🟠 **MITIGATED, CLOSURE BLOCKED** — live-доступность восстановлена, но root cause не доказан и blockers выше открыты.
 
 ---
 
@@ -175,11 +192,13 @@
 - `docs/PRIORITIZED_IMPROVEMENT_PLAN_2026-07-23.md` — источник пунктов
 - `docs/captains-log/2026-07-23.md` — Agent OS + начало цикла
 - `docs/captains-log/2026-07-24.md` — security §1 closure + этот беклог
+- `docs/followups/2026-07-24-oauth-callback-401-incident.md` — подробная первичная хронология Mavis; гипотезы о prod build и blast radius не считать установленными фактами, при расхождении приоритет у перепроверенного раздела выше
 - `1473f4bf` — коммит закрытия §1
-- `122fe5f56` — Codex: OAuth callback bypass (app.get до middleware)
-- `c09948994` — Codex: VK token-webhook POST/OPTIONS bypass
-- `dcf62ee7c` — Mimo: express.json() fix для req.body undefined
-- `a3ba91133` — Replit Agent: requireActiveSubscription (корневая причина инцидента)
+- `771d66d9` / `122fe5f5` — Mavis + owner merge: OAuth GET callback emergency bypass
+- `02b47f53` / `c0994899` — Mavis + owner merge: VK token-webhook POST/OPTIONS bypass
+- `156ec84b` / `e7c31890` / `6c5c9920` — parser fix после обнаруженного Mimo crash loop (в main попали два эквивалентных mount)
+- `f40fc6ec` — Hermes: VK token-webhook status bypass
+- `a3ba91133` — Replit Agent: введение `requireActiveSubscription`; проверен и исключён как объяснение GET-401
 - `MEMORY.md` (Mavis agent) — урок про middleware ordering vs 404 catch-all
 - `c0ff1d4` (бывший `fde12ed`) — untrack `.env.example`
 

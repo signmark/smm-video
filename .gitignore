@@ -95,3 +95,9 @@ video-app/data/audio/
 *.ogg
 *.webm
 
+
+# Local artifacts (agents, snapshots, scratch)
+.worktrees/
+data/database.db
+project_snapshot.txt
+webbridge-req-*.json

@@ -11,6 +11,7 @@ import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { createServer, request as httpRequest } from 'http';
 import { WebSocketServer } from 'ws';
+import { isWsAllowed } from './utils/ws-gate';
 import { broadcastNotification, setNotificationBroadcaster } from './services/notification-bus';
 import { registerRoutes } from "./routes";
 import { registerFalAiImageRoutes } from "./routes-fal-ai-images";
@@ -208,9 +209,17 @@ wss.on('connection', (ws) => {
 });
 
 // Вручную обрабатываем upgrade — только /ws идёт в наш WSS, остальное (Vite HMR) пропускается
+// Security §5 (2026-07-24): в production /ws временно закрыт (события всех пользователей
+// уходили любому анонимному клиенту). Гейт: server/utils/ws-gate.ts
 server.on('upgrade', (request, socket, head) => {
   const { pathname } = new URL(request.url || '/', `http://${request.headers.host}`);
   if (pathname === '/ws') {
+    if (!isWsAllowed(process.env)) {
+      log('WebSocket upgrade отклонён: /ws закрыт в production (security §5)', 'websocket');
+      socket.write('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
+      socket.destroy();
+      return;
+    }
     wss.handleUpgrade(request, socket as any, head, (ws) => {
       wss.emit('connection', ws, request);
     });
@@ -403,52 +412,13 @@ log('YouTube Auth and Settings routes registered early to avoid 404 errors');
 
 
 // Регистрируем маршрут загрузки изображений раньше Vite
-import multer from 'multer';
+// Security §4 (2026-07-24): hardened — лимит размера, MIME+magic bytes allowlist,
+// серверный S3 key, без утечки error.message. Логика: server/api/upload-image-route.ts
 import { BegetS3StorageAws } from './services/beget-s3-storage-aws';
-import { authMiddleware } from './middleware/auth';
+import { registerUploadImageRoute } from './api/upload-image-route';
 
-const uploadMiddleware = multer({ storage: multer.memoryStorage() });
-
-app.post('/api/s3/upload-image', authMiddleware, uploadMiddleware.single('image'), async (req, res) => {
-  try {
-    const file = req.file;
-
-    if (!file) {
-      console.error('[s3-upload-file] Файл не получен');
-      return res.status(400).json({ success: false, error: 'Отсутствует файл изображения' });
-    }
-
-    console.log('[s3-upload-file] Получен файл:', file.originalname, 'размер:', file.size);
-
-    const s3Storage = new BegetS3StorageAws();
-    const filename = `stories/story-${Date.now()}-${file.originalname}`;
-    const contentType = file.mimetype || 'image/jpeg';
-
-    const result = await s3Storage.uploadFile({
-      key: filename,
-      fileData: file.buffer,
-      contentType: contentType
-    });
-
-    if (!result.success || !result.url) {
-      throw new Error(result.error || 'Ошибка загрузки в S3');
-    }
-
-    console.log('[s3-upload-file] Загружено на Beget S3:', result.url);
-    return res.json({
-      success: true,
-      data: {
-        url: result.url,
-        display_url: result.url,
-        link: result.url
-      }
-    });
-  } catch (error: any) {
-    console.error('[s3-upload-file] Ошибка загрузки:', error.message);
-    return res.status(500).json({ success: false, error: error.message });
-  }
-});
-log('Image upload route registered early');
+registerUploadImageRoute(app, () => new BegetS3StorageAws());
+log('Image upload route registered early (hardened, security §4)');
 
 // Instagram Campaign Settings маршруты будут зарегистрированы ПОСЛЕ registerRoutes
 // чтобы иметь приоритет над конфликтующими маршрутами в routes.ts

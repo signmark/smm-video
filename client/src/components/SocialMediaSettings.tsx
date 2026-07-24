@@ -335,7 +335,7 @@ export function SocialMediaSettings({
 
     setLoadingVkGroups(true);
     try {
-      const response = await fetch(`/api/vk/groups?access_token=${encodeURIComponent(token)}`);
+      const response = await fetch(`/api/campaigns/${campaignId}/vk-groups`);
       const data = await response.json();
       
       if (data.success && data.groups) {
@@ -1029,8 +1029,8 @@ export function SocialMediaSettings({
       
       // Приводим данные из базы к формату схемы формы
       const formattedInstagramData = {
-        token: instagramSettings.longLivedToken || instagramSettings.accessToken || instagramSettings.token || '',
-        accessToken: instagramSettings.longLivedToken || instagramSettings.accessToken || instagramSettings.token || '',
+        token: instagramSettings.configured ? '__configured__' : '',
+        accessToken: instagramSettings.configured ? '__configured__' : '',
         businessAccountId: instagramSettings.businessAccountId || instagramSettings.instagramId || '',
         appId: instagramSettings.appId || '',
         appSecret: instagramSettings.appSecret || '',
@@ -1582,6 +1582,16 @@ export function SocialMediaSettings({
           ...(data as any).youtube
         }
       };
+
+      // Не отправляем плейсхолдеры токенов обратно — они затирают real токены в Directus
+      for (const platform of ['instagram', 'facebook', 'youtube', 'vk', 'threads'] as const) {
+        const p = (submittedData as any)[platform];
+        if (p) {
+          for (const key of ['token', 'accessToken', 'refreshToken', 'longLivedToken']) {
+            if (p[key] === '__configured__') delete p[key];
+          }
+        }
+      }
 
       // Используем apiRequest для правильной авторизации
       const response = await apiRequest(`/api/campaigns/${campaignId}`, {

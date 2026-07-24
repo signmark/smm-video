@@ -150,7 +150,7 @@ const VkSetupWizard: React.FC<VkSetupWizardProps> = ({ campaignId, onComplete, o
   const fetchVkGroups = async (token: string) => {
     setIsProcessing(true);
     try {
-      const response = await fetch(`/api/vk/groups?access_token=${encodeURIComponent(token)}`);
+      const response = await fetch(`/api/campaigns/${campaignId}/vk-groups`);
       const data = await response.json();
       if (data.success && data.groups) {
         setAvailableGroups(data.groups);

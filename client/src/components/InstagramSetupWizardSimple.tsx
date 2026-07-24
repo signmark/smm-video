@@ -133,17 +133,17 @@ const InstagramSetupWizardSimple: React.FC<InstagramSetupWizardProps> = ({ campa
           const data = await response.json();
           if (data.success && data.settings) {
             const settings = data.settings;
-            const accessToken = settings.accessToken || settings.longLivedToken || settings.token || '';
+            const isConfigured = settings.configured === true;
             
             setFormData({
               appId: settings.appId || '',
               appSecret: settings.appSecret || '',
-              accessToken: accessToken,
+              accessToken: isConfigured ? '__configured__' : '',
               businessAccountId: settings.businessAccountId || settings.instagramId || ''
             });
 
-            // Если есть токен - автоматически проверяем Facebook страницы
-            if (accessToken) {
+            // Если настроено - автоматически проверяем Facebook страницы
+            if (isConfigured) {
               console.log('🔍 Auto-checking Facebook pages for existing Instagram token...');
               try {
                 const facebookResponse = await fetch('/api/facebook/pages', {
@@ -256,9 +256,10 @@ const InstagramSetupWizardSimple: React.FC<InstagramSetupWizardProps> = ({ campa
       if (settingsResponse.ok) {
         const settingsData = await settingsResponse.json();
         if (settingsData.success && settingsData.settings) {
-          // Используем самый свежий токен из базы данных
-          accessTokenToUse = settingsData.settings.longLivedToken || settingsData.settings.accessToken || settingsData.settings.token || formData.accessToken;
-          console.log('🔍 Using fresh token from database:', accessTokenToUse.substring(0, 30) + '...');
+          // Токены не приходят в GET (санкция sanitizeOAuthSecrets)
+          // Используем сохранённый в форме accessToken (он установлен при OAuth)
+          console.log('🔍 Settings loaded, configured:', settingsData.settings.configured);
+          accessTokenToUse = formData.accessToken;
         }
       }
 

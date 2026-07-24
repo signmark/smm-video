@@ -1,6 +1,6 @@
 # smm-video — project memory for AI agents
 
-**Снимок:** 2026-07-23
+**Снимок:** 2026-07-24
 **Для кого:** любая модель (Codex / Claude / Kimi / Mimo / Mavis), открывшая проект впервые или после паузы.
 
 ---
@@ -21,11 +21,11 @@ SMM Manager — автоматизация публикации и аналит�
 ## Текущее состояние
 
 - **Repo:** `G:\Projects\smm-video`, ветка `main`
-- **Свежие коммиты:** `fde12ed` (chore security, untrack `.env.example`), `990ee7e` (fix auth), `4f933cf` (docs ui-tests), `86ddab0` (test ui campaign), `77aa39f` (docs ui-tests follow-up)
-- **Working tree:** `M server/__tests__/auth_flow.test.ts`, `M server/api/auth-routes.ts` — **security hotfixes в работе** (см. `docs/PRIORITIZED_IMPROVEMENT_PLAN_2026-07-23.md`, пункты 1-2). `?? .env.example`, `?? docs/PRIORITIZED_IMPROVEMENT_PLAN_2026-07-23.md` — плановые untracked.
+- **Свежие коммиты:** `dd37dda` (docs followups, security backlog snapshot), `1473f4bf` (fix auth, remove public /api/auth/system-token — **§1 DONE**), `c0ff1d4`/`1a010a94` (Agent OS — AGENTS.md, captain's log), `fde12ed` (chore security, untrack `.env.example`)
+- **Working tree:** clean для моих файлов. `?? docs/PRIORITIZED_IMPROVEMENT_PLAN_2026-07-23.md`, `?? project_snapshot.txt`, `?? webbridge-req-kb*.json`, `?? zoo_analysis.md` — **не мои**, не трогаю.
 - **Tests:** 69/69 файлов, ~717 тестов зелёных (см. `docs/session-2026-07-20.md`, актуальный счёт — последний замер был 717, обновлять после security-фиксов).
 - **Production:** под управлением Mimo (следующий день после пуша).
-- **Текущий приоритетный план:** `docs/PRIORITIZED_IMPROVEMENT_PLAN_2026-07-23.md` — 15 пунктов, security-first (incident wave: 1-5, защитный контур: 6-8, engineering gates: 9-11, масштабирование: 12-14, performance: 15). **Это НЕ моя (Mavis) зона** — я не лезу в `server/api/`, `server/__tests__/`, `client/`, `shared/`. Только `docs/`, `AGENTS.md`, коммиты готового WIP, мониторинг.
+- **Текущий приоритетный план:** `docs/PRIORITIZED_IMPROVEMENT_PLAN_2026-07-23.md` — 15 пунктов, security-first (incident wave: 1-5, защитный контур: 6-8, engineering gates: 9-11, масштабирование: 12-14, performance: 15). **Снимок прогресса на 2026-07-24:** `docs/followups/2026-07-24-security-backlog.md` (§1 closed, §3 deferred, §2/§4-§15 open). **Это НЕ моя (Mavis) зона** — я не лезу в `server/api/`, `server/__tests__/`, `client/`, `shared/`. Только `docs/`, `AGENTS.md`, коммиты готового WIP, мониторинг.
 
 ## Канонический цикл multi-model review
 
@@ -66,7 +66,7 @@ SMM Manager — автоматизация публикации и аналит�
 
 ## Open questions / known issues
 
-- **Security incident ongoing** (см. `PRIORITIZED_IMPROVEMENT_PLAN_2026-07-23.md`): leaked credentials в `.env.example`, public Directus admin token, scheduler любого пользователя, non-auth WS broadcast. Кто-то (Codex?) уже начал фиксить, Mavis не лезет.
+- **Security incident partial closure** (см. `docs/followups/2026-07-24-security-backlog.md`): §1 (public Directus admin token) **CLOSED** в `1473f4bf`. §3 (credentials rotation) **DEFERRED** до августа 2026 owner'ом. Остальное (scheduler, upload, WS, fail-closed, CSP, tsc, etc.) — см. беклог.
 - **Captain's Log отсутствует** (до 2026-07-23). Создан в этом цикле (`docs/captains-log/`).
 - **Context Engine в zookeeper есть, в smm-video — нет** (до этого цикла). Создан в этом цикле (`docs/context/state.json`).
 - **AGENTS.md** — этот файл. Создан 2026-07-23.

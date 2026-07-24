@@ -7,7 +7,7 @@
 
 ## Входной ритуал (каждая сессия)
 
-1. `AGENTS.md` → этот файл → `.agents/memory/MEMORY.md`.
+1. `AGENTS.md` → этот файл → `.agents/memory/MEMORY.md`. Для ревью кода обязательна ориентация по `docs/agents/codebase-map.md` (слои роутов, инварианты, метод диагностики).
 2. `git log --oneline -10`, `git status --short`.
 3. `docs/context/state.json` — актуален ли снимок; обновить, если события ушли вперёд.
 4. Входящие handoff'ы: свежие `docs/prompts/hermes-*.md` без твоего вердикта = твоя очередь.

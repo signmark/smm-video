@@ -2,7 +2,7 @@
 
 **Снимок:** 2026-07-24 (v2 — смена состава)
 **Для кого:** любая модель, открывшая проект впервые или после паузы.
-**Активный состав (с 2026-07-24):** Гермес (Hermes), Мавис (Mavis/MiniMax), Мимо (Mimo). Codex, Claude и Kimi выбыли из доступа owner'а. Персональные инструкции — в `docs/agents/<имя>.md`. **Каждый агент обязан прочитать свой профиль перед первой задачей сессии.**
+**Активный состав (с 2026-07-24):** Гермес (Hermes), Мавис (Mavis/MiniMax), Мимо (Mimo). Codex, Claude и Kimi выбыли из доступа owner'а. Персональные инструкции — в `docs/agents/<имя>.md`. **Каждый агент обязан прочитать свой профиль перед первой задачей сессии.** Ориентация в коде — `docs/agents/codebase-map.md` (топология, слои роутов, поток публикации, метод диагностики).
 
 ---
 
@@ -22,7 +22,7 @@ SMM Manager — автоматизация публикации и аналит�
 ## Текущее состояние
 
 - **Repo:** `G:\Projects\smm-video`, ветка `main`
-- **Свежие коммиты:** `dd37dda` (docs followups, security backlog snapshot), `1473f4bf` (fix auth, remove public /api/auth/system-token — **§1 DONE**), `c0ff1d4`/`1a010a94` (Agent OS — AGENTS.md, captain's log), `fde12ed` (chore security, untrack `.env.example`)
+- **Свежие коммиты (2026-07-24):** `33b258c6` (fix vk: блок «Группа для публикации»), `89be723f` (fix fb: подключение через IG-токен из базы), `05eb8aef`/`15b649d8` (**соцсети без токенов в браузере**, задеплоено на prod — контракт: `.agents/memory/oauth-sanitizer-contract.md`), `f217c01c` (спеки §6-§15), `34a8ebf4`/`e102578d` (**§2, §4, §5-low DONE**), `1473f4bf` (**§1 DONE** — remove public /api/auth/system-token)
 - **Working tree:** clean для моих файлов. `?? docs/PRIORITIZED_IMPROVEMENT_PLAN_2026-07-23.md`, `?? project_snapshot.txt`, `?? webbridge-req-kb*.json`, `?? zoo_analysis.md` — **не мои**, не трогаю.
 - **Tests:** 69/69 файлов, ~717 тестов зелёных (см. `docs/session-2026-07-20.md`, актуальный счёт — последний замер был 717, обновлять после security-фиксов).
 - **Production:** под управлением Mimo (следующий день после пуша).

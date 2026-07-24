@@ -1,28 +1,47 @@
 {
   "schema_version": 1,
   "project": "smm-video",
-  "snapshot_date": "2026-07-23",
-  "stage": "production / security incident response / pre-tester hardening aftermath",
+  "snapshot_date": "2026-07-24",
+  "stage": "production / security backlog execution (specs §6-§15) / roster of three",
   "priorities": [
     {
       "id": "P0",
-      "name": "Security hotfixes (incident wave)",
-      "ref": "docs/PRIORITIZED_IMPROVEMENT_PLAN_2026-07-23.md#1-5",
-      "owner": "Codex (server/api, server/__tests__)",
-      "wip_in_tree": "M server/__tests__/auth_flow.test.ts, M server/api/auth-routes.ts"
+      "name": "Security backlog по готовым спекам, порядок: §7 CI → §6 fail-closed → §11 Docker → §10 health/logging → далее по docs/specs/README.md",
+      "ref": "docs/followups/2026-07-24-security-backlog.md",
+      "owner": "Hermes (исполнитель)",
+      "note": "§1 CLOSED (1473f4bf), §2/§4/§5-low CLOSED (e102578d, 34a8ebf4), §3 DEFERRED до августа 2026 (owner)"
     },
     {
       "id": "P1",
-      "name": "Defensive perimeter (fail-closed, CI regression suite, CSP)",
-      "ref": "docs/PRIORITIZED_IMPROVEMENT_PLAN_2026-07-23.md#6-8"
+      "name": "Регрессионные тесты на social-token fallback'и (долг из hermes-social-ui-token-removal)",
+      "ref": "docs/prompts/hermes-social-ui-token-removal-2026-07-24.md#открытое--для-mavis",
+      "owner": "Hermes, ревью Mavis"
     },
     {
       "id": "P2",
-      "name": "Engineering gates (type-check, logging, reproducible build)",
-      "ref": "docs/PRIORITIZED_IMPROVEMENT_PLAN_2026-07-23.md#9-11"
+      "name": "Engineering gates (полный tsc §9, decomposition §15)",
+      "ref": "docs/specs/"
     }
   ],
   "decisions": [
+    {
+      "what": "Смена состава: Hermes = исполнитель, Mavis = единственный штатный ревьюер + docs/контекст, Mimo = deploy + infra-ревью. Codex/Claude/Kimi выбыли",
+      "why": "owner потерял доступ к Codex/Claude/Kimi по лимитам; роли перераспределены по силе/оснащённости",
+      "date": "2026-07-24",
+      "ref": "docs/prompts/claude-roster-handoff-2026-07-24.md"
+    },
+    {
+      "what": "Запрет 'Mavis не пишет прод-код' снят УСЛОВНО: только при недоступности Hermes и явном поручении owner'а; ревьюером тогда становится Mimo",
+      "why": "нужен fallback-исполнитель в составе из трёх; правило 'исполнитель ≠ ревьюер' ненарушимо",
+      "date": "2026-07-24",
+      "ref": "docs/prompts/claude-roster-handoff-2026-07-24.md#решения"
+    },
+    {
+      "what": "OAuth sanitizer contract: фронт не читает токены из API, статус по несекретным полям, токен-операции серверные по campaignId, без плейсхолдеров",
+      "why": "sanitizeOAuthSecrets вырезает секреты из ответов; контракт ломали дважды (пропавшие бейджи, откат c82f182f)",
+      "date": "2026-07-24",
+      "ref": ".agents/memory/oauth-sanitizer-contract.md"
+    },
     {
       "what": "Mavis пушит если в docs/prompts/* явно зафиксировано делегирование, или docs-only пост-пуш",
       "why": "экономит цикл owner-gate, владелец явно сказал 2026-07-20",
@@ -31,7 +50,7 @@
     },
     {
       "what": "Canonical multi-model review cycle: implementer → auto tests → independent reviewer → fix → owner gate → merge → deploy",
-      "why": "формализует уже работающую цепочку Codex/Claude/Kimi/Mavis, защищает от регрессий",
+      "why": "формализует работающую цепочку, защищает от регрессий; адаптирован под тройку 2026-07-24",
       "date": "2026-07-23",
       "ref": "AGENTS.md#канонический-цикл-multi-model-review"
     },
@@ -42,14 +61,8 @@
       "ref": "zookeeper AGENTS.md (заимствовано)"
     },
     {
-      "what": "Mavis не пишет прод-код в server/client/shared",
-      "why": "это зона Codex/Kimi/Claude, Mavis = ревью + docs + мониторинг",
-      "date": "2026-07-20",
-      "ref": "Mavis memory (profile)"
-    },
-    {
       "what": "API-вывод ≠ UI-проверка",
-      "why": "владелец поймал Mavis на ложном 'READY' 2026-07-22, два бага в моих API-вызовах",
+      "why": "владелец поймал Mavis на ложном 'READY' 2026-07-22, два бага в API-вызовах",
       "date": "2026-07-22",
       "ref": "docs/captains-log/2026-07-22.md"
     }
@@ -59,13 +72,15 @@
     "Канонические sheet-цвета: Next=purple R142-G124-B195, Тестировщик=green R0-G255-B0, WIP=белый",
     "«N» в контексте багов = bug_id (BUG-NNN), не sheet row",
     "Push delegation действительно только если в docs/prompts/* явно зафиксировано для текущего цикла",
-    "Security-критичные пуши (credentials, system-token) — только владелец"
+    "Security-критичные пуши (credentials, system-token) — только владелец",
+    "§3 (ротация credentials) DEFERRED до августа 2026 — не трогать без owner'а",
+    "SSH Hermes к prod — только read-only диагностика; деплой за Mimo"
   ],
   "open_tasks": [
     {
       "id": "OT-001",
       "name": "F-02 RU-хардкод в новом UI",
-      "owner": "Claude (следующий цикл i18n)",
+      "owner": "не назначен (ex-Claude, цикл i18n)",
       "ref": "docs/captains-log/2026-07-22.md"
     },
     {
@@ -73,6 +88,24 @@
       "name": "Playwright smoke 'analytics period reflects UI'",
       "owner": "владелец (gate)",
       "ref": "docs/captains-log/2026-07-22.md"
+    },
+    {
+      "id": "OT-003",
+      "name": "Регрессионные тесты social-token fallback'ов (PATCH vk-settings без token, discover без body-токена, /validate/vk по campaignId)",
+      "owner": "Hermes",
+      "ref": "docs/prompts/hermes-social-ui-token-removal-2026-07-24.md"
+    },
+    {
+      "id": "OT-004",
+      "name": "Выпилить мёртвый дубликат роута discover-instagram-accounts (campaign-instagram-settings.ts ~597)",
+      "owner": "Hermes (chore)",
+      "ref": "docs/prompts/hermes-social-ui-token-removal-2026-07-24.md"
+    },
+    {
+      "id": "OT-005",
+      "name": "Ротация токенов VK/IG/YouTube/Threads + appSecret (засветились во внешнем чате)",
+      "owner": "владелец (август 2026, вместе с §3)",
+      "ref": "docs/prompts/hermes-social-ui-token-removal-2026-07-24.md"
     }
   ],
   "known_defects": [
@@ -82,19 +115,25 @@
       "status": "closed",
       "fix_commits": ["5748268", "85bc523"],
       "regression_test": "server/__tests__/generated-social-content.test.ts"
+    },
+    {
+      "id": "TS-PREEXIST",
+      "name": "2 pre-existing TS-ошибки: campaign-vk-settings.ts (log с объектом), campaign-instagram-settings.ts (debugError unknown)",
+      "status": "open",
+      "ref": "docs/prompts/hermes-social-ui-token-removal-2026-07-24.md"
     }
   ],
   "models": {
-    "primary_executor": "Codex",
-    "reviewer": "Claude",
-    "fallback_executor": "Kimi",
-    "deployer": "Mimo",
-    "reviewer_dispatcher": "Mavis (cross-verify, не первичный ревьюер)"
+    "primary_executor": "Hermes",
+    "reviewer": "Mavis (единственный штатный; эталон — kimi-task8-review-2026-07-20)",
+    "fallback_executor": "Mavis (условно, при недоступности Hermes + явном поручении owner'а; ревьюер тогда Mimo)",
+    "deployer": "Mimo (+ второй ревьюер Docker/CI/deploy)",
+    "departed_2026_07_24": ["Codex", "Claude", "Kimi"]
   },
   "test_state": {
     "vitest_files": "69/69",
-    "vitest_tests": "717/717",
+    "vitest_tests": "~717",
     "last_verified": "2026-07-20 (см. docs/session-2026-07-20.md)",
-    "warning": "после security-фиксов перепрогнать — счёт может измениться"
+    "warning": "после security-фиксов и social-token работ перепрогнать — счёт мог измениться; social-token коммиты ушли без новых регрессионных тестов (OT-003)"
   }
 }

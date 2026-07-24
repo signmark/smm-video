@@ -2,6 +2,7 @@
 - [Comment collector scraper](comment-collector-scraper.md) — новый скрейпер 31.129.109.216:3030, Bearer токен, пакетный API; ключ в Directus collect_comments_bearer
 - [N8n removal](n8n-removal.md) — n8n полностью удалён; все вебхуки заменены прямыми сервисами; publish-scheduler.ts — главный путь публикации
 - [User token policy](user-token-policy.md) — UI-операции ТОЛЬКО через user token; admin-token только для серверных задач; tokenExpired флаг → 401 sessionExpired
+- [OAuth sanitizer contract](oauth-sanitizer-contract.md) — фронт НИКОГДА не читает токены из API; статус «настроено» по несекретным полям (pageId/groupId/chatId...); токен-операции серверные по campaignId; никаких плейсхолдеров; ломали дважды
 - [Vite build memory](vite-build-memory.md) — vite build падает с exit -1 без вывода; нужно NODE_OPTIONS="--max-old-space-size=1024" npx vite build
 - [HeyGen avatar/agent](heygen-avatar-integration.md) — avatar клип липсинкается под тот же TTS, что муксит assembler (-map 1:a:0), нет двойного звука; avatar обрабатывается в I2V И T2V; agent — short-circuit без сцен
 - [Gemini proxy + TTS ударения](gemini-proxy-and-tts-accent.md) — Gemini-вызовы ТОЛЬКО через GEMINI_PROXY_URL (триальный ключ, прямой = 403); русские ударения омографов через U+0301 от Gemini, OpenAI/Edge их читают, HF — нет

@@ -129,15 +129,16 @@ const VkSetupWizard: React.FC<VkSetupWizardProps> = ({ campaignId, onComplete, o
   const fetchVkGroupsFromCampaign = async () => {
     setIsProcessing(true);
     try {
-      const resp = await fetch(`/api/campaigns/${campaignId}/vk-settings`, {
+      // Серверный endpoint — токен НЕ передаётся в браузер
+      const resp = await fetch(`/api/campaigns/${campaignId}/vk-groups`, {
         headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` }
       });
       const data = await resp.json();
-      if (data.settings?.token) {
-        setAccessToken(data.settings.token);
-        await fetchVkGroups(data.settings.token);
+      if (data.success && data.groups) {
+        setAvailableGroups(data.groups);
+        setCurrentStep(2);
       } else {
-        throw new Error('Токен не найден в настройках кампании');
+        throw new Error(data.error || 'Ошибка получения групп');
       }
     } catch (err: any) {
       toast({ title: 'Ошибка', description: err.message, variant: 'destructive' });
@@ -167,21 +168,12 @@ const VkSetupWizard: React.FC<VkSetupWizardProps> = ({ campaignId, onComplete, o
   const selectVkGroup = async (groupId: string, groupName: string) => {
     setIsProcessing(true);
     try {
-      const savedResp = await fetch(`/api/campaigns/${campaignId}/vk-settings`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` }
-      });
-      const savedData = await savedResp.json();
-      const saved = savedData.settings || {};
-
+      // Только groupId/groupName — токен уже в Directus, сервер сохранит его через mergeOAuthSettings
       const body: Record<string, any> = {
-        token: accessToken || saved.token,
         groupId,
         groupName,
         setupCompletedAt: new Date().toISOString(),
       };
-      if (saved.refreshToken || refreshToken) body.refreshToken = saved.refreshToken || refreshToken;
-      if (saved.clientId || clientId) body.clientId = saved.clientId || clientId;
-      if (saved.deviceId || deviceId) body.deviceId = saved.deviceId || deviceId;
 
       const response = await fetch(`/api/campaigns/${campaignId}/vk-settings`, {
         method: 'PATCH',

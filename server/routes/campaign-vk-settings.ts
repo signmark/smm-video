@@ -175,4 +175,84 @@ router.patch('/campaigns/:campaignId/vk-settings', async (req, res) => {
   }
 });
 
+/**
+ * Серверная загрузка VK групп — токен НЕ передаётся в браузер.
+ * Фронтенд вызывает этот эндпоинт вместо /api/vk/groups?access_token=...
+ */
+router.get('/campaigns/:campaignId/vk-groups', async (req, res) => {
+  const { campaignId } = req.params;
+  const userToken = req.headers.authorization?.replace('Bearer ', '');
+
+  try {
+    const tokenToUse = userToken || process.env.DIRECTUS_TOKEN;
+    if (!tokenToUse) {
+      return res.status(401).json({ success: false, error: 'Токен авторизации не доступен' });
+    }
+
+    const getCampaignResponse = await axios.get(
+      `${process.env.DIRECTUS_URL}/items/user_campaigns/${campaignId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${tokenToUse}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    const campaign = getCampaignResponse.data.data;
+    const vkSettings = campaign.social_media_settings?.vk;
+    const accessToken = vkSettings?.token;
+
+    if (!accessToken) {
+      return res.status(400).json({ success: false, error: 'VK токен не найден в настройках кампании' });
+    }
+
+    // Запрашиваем группы через VK API (сервер → VK, без браузера)
+    const isV2 = String(accessToken).startsWith('vk2.');
+    const params: Record<string, any> = {
+      extended: 1,
+      fields: 'name,screen_name,members_count,description,photo_200',
+      v: isV2 ? '5.199' : '5.131',
+    };
+    if (!isV2) params.access_token = accessToken;
+    params.filter = 'admin,editor,moder';
+
+    const headers = isV2 ? { Authorization: `Bearer ${accessToken}` } : {};
+
+    let vkResponse = await axios.get('https://api.vk.com/method/groups.get', {
+      params, headers, timeout: 10000
+    });
+
+    let vkData = vkResponse.data;
+
+    // Если с фильтром ошибка — пробуем без
+    if (vkData.error) {
+      delete params.filter;
+      vkResponse = await axios.get('https://api.vk.com/method/groups.get', {
+        params, headers, timeout: 10000
+      });
+      vkData = vkResponse.data;
+    }
+
+    if (vkData.error) {
+      return res.status(400).json({ success: false, error: vkData.error.error_msg || 'Ошибка VK API' });
+    }
+
+    const groups = (vkData.response?.items || []).map((item: any) => ({
+      id: String(item.id),
+      name: item.name,
+      screen_name: item.screen_name,
+      members_count: item.members_count,
+      photo_200: item.photo_200,
+    }));
+
+    log(`[VK-GROUPS] Загружено ${groups.length} групп для кампании ${campaignId}`);
+    res.json({ success: true, groups });
+
+  } catch (error: any) {
+    console.error('❌ Error fetching VK groups:', error.message);
+    res.status(500).json({ success: false, error: 'Ошибка при загрузке VK групп' });
+  }
+});
+
 export default router;

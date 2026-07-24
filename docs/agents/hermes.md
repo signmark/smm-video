@@ -70,9 +70,9 @@ npx playwright test                              # смоки (config: playwrigh
 - **Subscription enforcement:** identity через /users/me с токеном; expire_date нет в JWT.
 - **Express middleware ordering vs 404 catch-all** — почему удалённый route отдаёт 401, а не 404 (см. MEMORY.md).
 
-## Текущий next-up (2026-07-24)
+## Текущий next-up (2026-07-24, вечер)
 
-По беклогу: **§2 admin-only scheduler** (low effort, паттерн §1) → **§4 upload hardening** → **§5 WS isolation (temp close)**. Не брать §3.
+§2, §4, §5-low закрыты Claude (`e102578d`, `34a8ebf4`, handoff `docs/prompts/claude-security-2-4-5-2026-07-24.md`). Дальше — строго по готовым спекам в `docs/specs/` (порядок в их README): **§7 CI → §6 fail-closed → §11 Docker → §10 health/logging → ...** Спека = scope, самодеятельная декомпозиция не нужна. Не брать §3.
 
 ## Выходной ритуал
 

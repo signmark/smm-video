@@ -8,8 +8,8 @@
 
 | Hash | Что | Файлы |
 |---|---|---|
-| `47d95938` | §2 admin-only scheduler | `server/middleware/user-auth.ts` (+`requireSmmAdmin`), `server/api/publishing-routes.ts`, новый `server/__tests__/scheduler-admin-gate.test.ts`, моки в 4 существующих тест-файлах |
-| `9cfa3a1f` | §4 upload hardening + §5 WS temp close | новый `server/api/upload-image-route.ts`, новый `server/utils/ws-gate.ts`, `server/index.ts` (wiring), 2 новых тест-файла |
+| `e102578d` | §2 admin-only scheduler | `server/middleware/user-auth.ts` (+`requireSmmAdmin`), `server/api/publishing-routes.ts`, новый `server/__tests__/scheduler-admin-gate.test.ts`, моки в 4 существующих тест-файлах |
+| `34a8ebf4` | §4 upload hardening + §5 WS temp close | новый `server/api/upload-image-route.ts`, новый `server/utils/ws-gate.ts`, `server/index.ts` (wiring), 2 новых тест-файла |
 
 ## Что сделано
 

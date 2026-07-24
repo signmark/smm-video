@@ -151,6 +151,9 @@ const PUBLIC_OAUTH_CALLBACKS: Array<{
   { router: vkOAuthRouter, routerPath: '/vk/token-webhook/:campaignId', publicPath: '/api/vk/token-webhook/:campaignId', method: 'options' },
 ];
 
+// Body parser для POST/OPTIONS callback'ов — нужен ДО хендлеров, иначе req.body = undefined
+app.use('/api', express.json({ limit: '1mb' }));
+
 for (const { router, routerPath, publicPath, method } of PUBLIC_OAUTH_CALLBACKS) {
   // Найти внутренний handler в router'е по path и method
   const layer = (router as any).stack.find(

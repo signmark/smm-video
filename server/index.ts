@@ -104,6 +104,29 @@ app.set('etag', false);
 // а не клиента. 1 = доверяем одному ближайшему прокси.
 app.set('trust proxy', 1);
 
+// === Public OAuth callback bypass (security plan §N — fix 2026-07-24) ===
+// Внешние провайдеры (Google / VK / Instagram / Threads / TikTok) редиректят
+// пользователя обратно на /api/*/auth/callback БЕЗ Bearer-токена нашего приложения.
+// Эти пути публичные by design — handler валидирует state против серверного
+// хранилища (см. youtube-auth.ts:122, instagram-oauth.ts, threads-oauth.ts и т.д.).
+// Глобальный auth-gate должен пропускать их; флаг ниже читается в
+// middleware/require-active-subscription.ts. Не удалять без апдейта security-плана.
+const PUBLIC_OAUTH_CALLBACKS = new Set([
+  '/api/youtube/auth/callback',
+  '/api/vk/auth/callback',
+  '/api/vk/oauth2/callback',
+  '/api/vk/callback',
+  '/api/instagram/auth/callback',
+  '/api/threads/auth/callback',
+  '/api/tiktok/auth/callback',
+]);
+app.use((req, _res, next) => {
+  if (req.method === 'GET' && PUBLIC_OAUTH_CALLBACKS.has(req.path)) {
+    (req as any)._publicOauthBypass = true;
+  }
+  next();
+});
+
 // Security-заголовки. CSP/frameguard/CORP отключены намеренно: приложение работает
 // как Telegram Mini App внутри iframe (web.telegram.org) и грузит ассеты с S3.
 // Остаются полезные дефолты helmet: nosniff, HSTS, referrer-policy, X-DNS-Prefetch и т.д.

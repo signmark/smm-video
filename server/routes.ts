@@ -45,6 +45,9 @@ declare global {
         is_smm_admin?: boolean;
         tokenExpired?: boolean;
       };
+      // Флаг bypass для публичных OAuth callback'ов (см. server/index.ts,
+      // security plan §N fix 2026-07-24).
+      _publicOauthBypass?: boolean;
     }
   }
 }

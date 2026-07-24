@@ -96,6 +96,11 @@ export const requireActiveSubscription = async (
     // Чтение разрешено всегда — пользователь может сохранить/мигрировать свои данные
     if (!MUTATING_METHODS.has(req.method.toUpperCase())) return next();
 
+    // Публичные OAuth callback'ов (security plan §N fix 2026-07-24) — провайдеры
+    // (Google/VK/Instagram/FB/Threads/TikTok) редиректят без app Bearer-токена,
+    // валидация делается через `state`-параметр на уровне handler'а.
+    if ((req as any)._publicOauthBypass) return next();
+
     // Разрешённые префиксы (авторизация/оплата/продление)
     if (ALLOWED_PREFIXES.some((p) => req.path === p || req.path.startsWith(p + '/'))) {
       return next();

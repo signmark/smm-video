@@ -265,21 +265,36 @@ router.post('/page-token/:pageId', authenticateUser, async (req, res) => {
   try {
     res.set('Cache-Control', 'no-store');
     const { pageId } = req.params;
-    const { token, campaignId } = req.body || {};
-    
-    if (!token || !pageId || !campaignId) {
-      return res.status(400).json({ 
+    let { token } = req.body || {};
+    const { campaignId } = req.body || {};
+
+    if (!pageId || !campaignId) {
+      return res.status(400).json({
         success: false,
-        error: 'Не указан токен пользователя или ID страницы' 
+        error: 'Не указан ID страницы или кампании'
       });
     }
-    
+
+    // Токены в браузер не приходят (sanitizeOAuthSecrets) — без токена в body
+    // используем сохранённый в кампании (Instagram / Facebook userToken)
+    if (!token) {
+      const { resolveFacebookUserToken } = await import('../routes/facebook-pages');
+      token = await resolveFacebookUserToken(campaignId, req);
+    }
+
+    if (!token) {
+      return res.status(400).json({
+        success: false,
+        error: 'Не указан токен пользователя: подключите Instagram или введите токен вручную'
+      });
+    }
+
     log.info(`[Facebook] Получение токена для страницы ${pageId}`);
-    
+
     // Получаем список страниц с их токенами
     const apiVersion = 'v19.0';
     const pagesUrl = `https://graph.facebook.com/${apiVersion}/me/accounts`;
-    
+
     const pagesResponse = await axios.get(pagesUrl, {
       params: { access_token: token }
     });

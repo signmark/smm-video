@@ -163,61 +163,39 @@ export default function FacebookSetupWizard({
     setIsPagesLoading(true);
     
     try {
-      console.log('📋 Взять из ИГ: Получение Instagram токена из настроек кампании...');
-      
-      // Получаем Instagram токен из настроек кампании
-      const campaignResponse = await fetch(`/api/campaigns/${campaignId}`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
-        }
-      });
-      
-      const campaignData = await campaignResponse.json();
-      
-      // Ищем Instagram токен в настройках
-      const instagramSettings = campaignData.data?.social_media_settings?.instagram;
-      const instagramToken = instagramSettings?.accessToken || 
-                           instagramSettings?.token ||
-                           instagramSettings?.longLivedToken;
-      
-      console.log('📋 Взять из ИГ: Instagram токен найден:', !!instagramToken);
-      
-      if (!instagramToken) {
-        toast({
-          title: "Instagram токен не найден",
-          description: "Сначала настройте Instagram через мастер настройки",
-          variant: "destructive",
-        });
-        return;
-      }
-      
-      // Устанавливаем Instagram токен как пользовательский токен для управления Facebook страницами
-      form.setValue('token', instagramToken);
-      
-      console.log('📋 Взять из ИГ: Instagram токен будет использоваться как пользовательский токен для управления Facebook страницами...');
-      
-      // Используем обычную функцию поиска страниц с Instagram токеном
+      // Токены в браузер не приходят (sanitizeOAuthSecrets) — сервер сам
+      // возьмёт Instagram токен из настроек кампании по campaignId
+      console.log('📋 Взять из ИГ: запрашиваем страницы через Instagram токен на сервере...');
+
       const response = await fetch('/api/facebook/pages', {
         method: 'POST',
         headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: instagramToken }),
+        body: JSON.stringify({ campaignId }),
       });
       const data = await response.json();
 
       if (!response.ok) {
+        if (data.code === 'NO_TOKEN') {
+          toast({
+            title: "Instagram токен не найден",
+            description: "Сначала настройте Instagram через мастер настройки",
+            variant: "destructive",
+          });
+          return;
+        }
         throw new Error(data.error || 'Ошибка получения страниц');
       }
 
       if (data.pages && data.pages.length > 0) {
         setPages(data.pages);
         toast({
-          title: "Instagram токен скопирован",
-          description: `Токен скопирован из Instagram настроек. Найдено ${data.pages.length} страниц`,
+          title: "Страницы найдены через Instagram",
+          description: `Найдено ${data.pages.length} страниц`,
         });
       } else {
         toast({
-          title: "Токен скопирован, но страницы не найдены",
-          description: "Instagram токен скопирован, но Facebook страницы не найдены",
+          title: "Страницы не найдены",
+          description: "Instagram подключён, но доступные Facebook страницы не найдены",
           variant: "destructive",
         });
       }
@@ -233,58 +211,14 @@ export default function FacebookSetupWizard({
     }
   };
 
-  // Функция для получения Facebook страниц
+  // Функция для получения Facebook страниц.
+  // Без токена в форме сервер сам использует Instagram/Facebook токен кампании.
   const handleFetchPages = async () => {
     const formData = form.getValues();
-    let token = formData.token;
-    
-    // АВТОМАТИЧЕСКОЕ ИСПОЛЬЗОВАНИЕ INSTAGRAM ТОКЕНА: Если токена нет, пробуем взять из Instagram
-    if (!token || token.length < 10) {
-      console.log('🔄 Токен отсутствует, пробуем автоматически использовать Instagram токен...');
-      
-      try {
-        const instagramResponse = await fetch(`/api/campaigns/${campaignId}/instagram-settings`, {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
-          }
-        });
-
-        if (instagramResponse.ok) {
-          const instagramData = await instagramResponse.json();
-          if (instagramData.success && instagramData.settings) {
-            const instagramSettings = instagramData.settings;
-            const instagramToken = instagramSettings.accessToken || 
-                                 instagramSettings.token ||
-                                 instagramSettings.longLivedToken;
-            
-            if (instagramToken && instagramToken.length > 50) {
-              console.log('✅ Автоматически используем Instagram токен для поиска Facebook страниц');
-              token = instagramToken;
-              form.setValue('token', token);
-              
-              toast({
-                title: "Instagram токен использован",
-                description: "Автоматически используется Instagram токен для поиска Facebook страниц",
-              });
-            }
-          }
-        }
-      } catch (error) {
-        console.error('❌ Ошибка получения Instagram токена:', error);
-      }
-    }
-    
-    if (!token || token.length < 10) {
-      toast({
-        title: "Ошибка",
-        description: "Введите действительный токен доступа или настройте Instagram",
-        variant: "destructive",
-      });
-      return;
-    }
+    const token = formData.token;
 
     // Проверяем что токен не содержит лог консоли
-    if (token.includes('Facebook Wizard:') || token.includes('%20') || token.includes('FacebookSetupWizard')) {
+    if (token && (token.includes('Facebook Wizard:') || token.includes('%20') || token.includes('FacebookSetupWizard'))) {
       toast({
         title: "Ошибка",
         description: "Поле токена содержит некорректные данные. Введите настоящий Facebook токен.",
@@ -298,11 +232,19 @@ export default function FacebookSetupWizard({
       const response = await fetch('/api/facebook/pages', {
         method: 'POST',
         headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token }),
+        body: JSON.stringify(token && token.length >= 10 ? { token } : { campaignId }),
       });
       const data = await response.json();
 
       if (!response.ok) {
+        if (data.code === 'NO_TOKEN') {
+          toast({
+            title: "Ошибка",
+            description: "Введите токен доступа или сначала настройте Instagram",
+            variant: "destructive",
+          });
+          return;
+        }
         throw new Error(data.error || 'Ошибка получения страниц');
       }
 
@@ -392,95 +334,45 @@ export default function FacebookSetupWizard({
     };
 
     const checkAndUseInstagramTokenAndLoadPages = async () => {
+      // Токены в браузер не приходят — сервер сам берёт Instagram токен кампании.
+      // Тихо: если Instagram не подключён, просто ничего не грузим.
+      setIsPagesLoading(true);
       try {
-        console.log('📋 Автоматическая загрузка Facebook страниц через Instagram токен...');
-        const instagramResponse = await fetch(`/api/campaigns/${campaignId}/instagram-settings`, {
-          headers: {
-            'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
-          }
+        console.log('📋 Автоматическая загрузка Facebook страниц через токен кампании...');
+        const response = await fetch('/api/facebook/pages', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ campaignId }),
         });
+        const data = await response.json();
 
-        if (instagramResponse.ok) {
-          const instagramData = await instagramResponse.json();
-          console.log('📋 Instagram settings проверены:', instagramData);
-
-          if (instagramData.success && instagramData.settings) {
-            const instagramSettings = instagramData.settings;
-            const instagramToken = instagramSettings.accessToken || 
-                                 instagramSettings.token ||
-                                 instagramSettings.longLivedToken;
-            
-            if (instagramToken && instagramToken.length > 50) {
-              console.log('✅ Instagram токен найден, автоматически загружаем ВСЕ доступные Facebook страницы с ПОЛЬЗОВАТЕЛЬСКИМ токеном');
-              
-              // Устанавливаем Instagram токен как пользовательский токен
-              form.setValue('token', instagramToken);
-              
-              // СРАЗУ ЗАГРУЖАЕМ ВСЕ СТРАНИЦЫ с пользовательским токеном по умолчанию
-              setIsPagesLoading(true);
-              try {
-                console.log('🔍 Ищем ВСЕ Facebook страницы доступные Instagram пользовательскому токену...');
-                
-                // ПРИНУДИТЕЛЬНО ИСПОЛЬЗУЕМ ПОЛЬЗОВАТЕЛЬСКИЙ ТОКЕН (НЕ ТОКЕН СТРАНИЦЫ) для получения всех страниц
-                const response = await fetch('/api/facebook/pages', {
-                  method: 'POST',
-                  headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}`, 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ token: instagramToken, user_token: true }),
-                });
-                const data = await response.json();
-
-                if (response.ok && data.pages && data.pages.length > 0) {
-                  setPages(data.pages);
-                  console.log(`🎯 НАЙДЕНО ${data.pages.length} Facebook страниц с Instagram пользовательским токеном:`, 
-                    data.pages.map((p: any) => `${p.name} (${p.id})`).join(', '));
-                  
-                  toast({
-                    title: `${data.pages.length} Facebook страниц найдено`,
-                    description: `Все доступные страницы загружены через Instagram токен`,
-                  });
-                } else {
-                  console.log('❌ Страницы не найдены через Instagram пользовательский токен');
-                  toast({
-                    title: "Страницы не найдены",
-                    description: "Instagram токен найден, но доступные Facebook страницы не обнаружены",
-                    variant: "destructive",
-                  });
-                }
-              } catch (error) {
-                console.error('❌ Ошибка загрузки всех Facebook страниц через Instagram:', error);
-                toast({
-                  title: "Ошибка загрузки страниц",
-                  description: "Не удалось загрузить все Facebook страницы через Instagram токен",
-                  variant: "destructive",
-                });
-              } finally {
-                setIsPagesLoading(false);
-              }
-            } else {
-              console.log('❌ Instagram токен не найден или некорректный');
-            }
-          } else {
-            console.log('❌ Instagram настройки не найдены');
-          }
+        if (response.ok && data.pages && data.pages.length > 0) {
+          setPages(data.pages);
+          toast({
+            title: `${data.pages.length} Facebook страниц найдено`,
+            description: `Все доступные страницы загружены через Instagram токен`,
+          });
         } else {
-          console.log('❌ Ошибка получения Instagram настроек');
+          console.log('📋 Автозагрузка страниц: страницы не найдены или токена нет:', data.error || data.code);
         }
       } catch (error) {
-        console.error('❌ Ошибка при проверке Instagram настроек:', error);
+        console.error('❌ Ошибка автозагрузки Facebook страниц:', error);
+      } finally {
+        setIsPagesLoading(false);
       }
     };
 
     loadExistingFacebookSettings();
   }, [campaignId]);
 
-  // Получение токена конкретной страницы
+  // Получение токена конкретной страницы (без токена в форме сервер берёт токен кампании)
   const handleGetPageToken = async (pageId: string) => {
     const token = form.getValues('token');
-    
-    if (!token || !pageId) {
+
+    if (!pageId) {
       toast({
         title: "Ошибка",
-        description: "Введите токен и ID страницы",
+        description: "Введите ID страницы",
         variant: "destructive",
       });
       return;
@@ -490,7 +382,7 @@ export default function FacebookSetupWizard({
       const response = await fetch(`/api/facebook/page-token/${pageId}`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, campaignId }),
+        body: JSON.stringify({ token: token || undefined, campaignId }),
       });
       const data = await response.json();
 
@@ -533,15 +425,6 @@ export default function FacebookSetupWizard({
     const token = formData.token;
     const manualPageId = formData.manualPageId;
     const manualPageName = formData.manualPageName;
-    
-    if (!token || token.length < 10) {
-      toast({
-        title: "Ошибка",
-        description: "Сначала введите токен доступа",
-        variant: "destructive",
-      });
-      return;
-    }
 
     if (!manualPageId) {
       toast({
@@ -565,10 +448,11 @@ export default function FacebookSetupWizard({
           'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
         },
         body: JSON.stringify({
-          token: token,
-          page_id: manualPageId,
-          page_name: pageName,
-          user_token: token
+          // Токен опционален — без него сервер использует сохранённый токен кампании
+          token: token || undefined,
+          pageId: manualPageId,
+          pageName: pageName,
+          userToken: token || undefined
         })
       });
 
@@ -601,10 +485,10 @@ export default function FacebookSetupWizard({
 
   // Обработчик выбора Facebook страницы из списка
   const handlePageSelect = async (pageId: string, pageName: string) => {
-    const userToken = form.getValues('token'); // Пользовательский токен для получения списка страниц
-    
+    const userToken = form.getValues('token'); // Пользовательский токен (пустой — сервер возьмёт токен кампании)
+
     // Проверяем что токен не содержит лог консоли перед передачей
-    if (userToken.includes('Facebook Wizard:') || userToken.includes('%20') || userToken.includes('FacebookSetupWizard')) {
+    if (userToken && (userToken.includes('Facebook Wizard:') || userToken.includes('%20') || userToken.includes('FacebookSetupWizard'))) {
       toast({
         title: "Ошибка",
         description: "Токен поврежден. Введите новый токен Facebook.",
@@ -629,7 +513,7 @@ export default function FacebookSetupWizard({
       const pageTokenResponse = await fetch(`/api/facebook/page-token/${pageId}`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: userToken, campaignId }),
+        body: JSON.stringify({ token: userToken || undefined, campaignId }),
       });
       const pageTokenData = await pageTokenResponse.json();
 
@@ -725,10 +609,10 @@ export default function FacebookSetupWizard({
                         {...field}
                       />
                     </FormControl>
-                    <Button 
-                      type="button" 
+                    <Button
+                      type="button"
                       onClick={handleFetchPages}
-                      disabled={isPagesLoading || !form.getValues('token')}
+                      disabled={isPagesLoading}
                       size="sm"
                     >
                       {isPagesLoading ? (
@@ -758,9 +642,9 @@ export default function FacebookSetupWizard({
           
           {/* Автоматическое получение страниц */}
           <div className="flex gap-2">
-            <Button 
+            <Button
               onClick={handleFetchPages}
-              disabled={isPagesLoading || !form.getValues('token')}
+              disabled={isPagesLoading}
               className="bg-blue-600 hover:bg-blue-700"
             >
               {isPagesLoading ? (

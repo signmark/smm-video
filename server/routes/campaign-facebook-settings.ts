@@ -69,7 +69,11 @@ router.get('/campaigns/:campaignId/facebook-settings', async (req, res) => {
  */
 router.post('/campaigns/:campaignId/facebook-settings', async (req, res) => {
   const { campaignId } = req.params;
-  const { token, pageId, pageName, userToken: userAccessToken } = req.body;
+  // Принимаем и camelCase, и snake_case (ручной выбор в визарде шлёт page_id/page_name)
+  const token = req.body.token;
+  const pageId = req.body.pageId || req.body.page_id;
+  const pageName = req.body.pageName || req.body.page_name;
+  const userAccessToken = req.body.userToken || req.body.user_token;
   const authToken = req.headers.authorization?.replace('Bearer ', '');
 
   if (!authToken) {
@@ -79,15 +83,15 @@ router.post('/campaigns/:campaignId/facebook-settings', async (req, res) => {
     });
   }
 
-  if (!token) {
+  if (!pageId) {
     return res.status(400).json({
       success: false,
-      error: 'Facebook токен обязателен'
+      error: 'Page ID обязателен'
     });
   }
 
   // Проверяем что токен не содержит лог консоли
-  if (token.includes('Facebook Wizard:') || token.includes('%20') || token.includes('FacebookSetupWizard')) {
+  if (token && (token.includes('Facebook Wizard:') || token.includes('%20') || token.includes('FacebookSetupWizard'))) {
     return res.status(400).json({
       success: false,
       error: 'Получен некорректный токен Facebook'
@@ -109,6 +113,19 @@ router.post('/campaigns/:campaignId/facebook-settings', async (req, res) => {
     const campaign = getCampaignResponse.data.data;
     const existingSocialSettings = campaign.social_media_settings || {};
     const existingFacebook = existingSocialSettings.facebook || {};
+    const existingInstagram = existingSocialSettings.instagram || {};
+
+    // Токен в body опционален (клиент его больше не видит) — fallback:
+    // уже сохранённый facebook.token, затем Instagram-токен (флоу «Взять из ИГ»)
+    const tokenToSave = token
+      || existingFacebook.token
+      || existingInstagram.longLivedToken || existingInstagram.accessToken || existingInstagram.token;
+    if (!tokenToSave) {
+      return res.status(400).json({
+        success: false,
+        error: 'Facebook токен не найден: подключите Instagram или введите токен вручную'
+      });
+    }
 
     // Объединяем существующие и новые настройки с раздельным хранением токенов
     const updatedSettings = {
@@ -119,12 +136,12 @@ router.post('/campaigns/:campaignId/facebook-settings', async (req, res) => {
         // Основной токен страницы для публикации
         token: userAccessToken && token === userAccessToken && existingFacebook.token
           ? existingFacebook.token
-          : token,
+          : tokenToSave,
         pageId,
         pageName: pageName || existingFacebook.pageName || '',
-        
+
         // Пользовательский токен для получения списка страниц
-        userToken: userAccessToken || existingFacebook.userToken || token,
+        userToken: userAccessToken || existingFacebook.userToken || tokenToSave,
         
         // Метаданные
         setupCompletedAt: new Date().toISOString(),

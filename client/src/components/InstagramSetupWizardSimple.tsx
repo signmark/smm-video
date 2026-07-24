@@ -19,9 +19,10 @@ interface InstagramSetupWizardProps {
     needsReload?: boolean;
   }) => void;
   onCancel: () => void;
+  onSettingsRefresh?: () => void;
 }
 
-const InstagramSetupWizardSimple: React.FC<InstagramSetupWizardProps> = ({ campaignId, onComplete, onCancel }) => {
+const InstagramSetupWizardSimple: React.FC<InstagramSetupWizardProps> = ({ campaignId, onComplete, onCancel, onSettingsRefresh }) => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [showAccountSelection, setShowAccountSelection] = useState(false);
   const [availableAccounts, setAvailableAccounts] = useState<Array<{
@@ -53,30 +54,17 @@ const InstagramSetupWizardSimple: React.FC<InstagramSetupWizardProps> = ({ campa
 
       if (event.data.type === 'INSTAGRAM_OAUTH_SUCCESS') {
         console.log('✅ Instagram OAuth success message received!');
-        console.log('📋 OAuth data:', event.data.data);
         
-        // Обновляем токен в форме с полученным токеном
-        if (event.data.data.token) {
-          console.log('🔑 Updating accessToken in form:', event.data.data.token.substring(0, 20) + '...');
-          setFormData(prev => ({
-            ...prev,
-            accessToken: event.data.data.token
-          }));
-          
-          toast({
-            title: "Токен обновлен",
-            description: "Instagram токен автоматически обновлен из OAuth окна",
-            variant: "default"
-          });
-        }
+        // Не ищем токен — просто помечаем как настроенный и перезагружаем
+        setFormData(prev => ({ ...prev, configured: true }));
         
-        // Если есть App ID - тоже обновляем
-        if (event.data.data.appId) {
-          setFormData(prev => ({
-            ...prev,
-            appId: event.data.data.appId
-          }));
-        }
+        toast({
+          title: "Instagram подключен",
+          description: "Настройки обновлены"
+        });
+        
+        // Перезагружаем настройки с сервера
+        onSettingsRefresh?.();
       }
     };
 
@@ -87,7 +75,38 @@ const InstagramSetupWizardSimple: React.FC<InstagramSetupWizardProps> = ({ campa
     return () => {
       window.removeEventListener('message', handleOAuthMessage);
     };
-  }, [toast]);
+  }, [toast, onSettingsRefresh]);
+
+  // Слушатель localStorage как backup (переживает cross-origin opener loss)
+  useEffect(() => {
+    const checkStorage = () => {
+      const raw = localStorage.getItem('instagram_oauth_result');
+      if (raw) {
+        try {
+          const data = JSON.parse(raw);
+          if (data.success) {
+            localStorage.removeItem('instagram_oauth_result');
+            localStorage.removeItem('instagram_oauth_timestamp');
+            setFormData(prev => ({ ...prev, configured: true }));
+            toast({
+              title: "Instagram подключен",
+              description: "Настройки обновлены"
+            });
+            onSettingsRefresh?.();
+          }
+        } catch (e) {
+          localStorage.removeItem('instagram_oauth_result');
+        }
+      }
+    };
+    
+    // Проверяем при монтировании
+    checkStorage();
+    
+    // Слушаем изменения storage (из других tab/окон)
+    window.addEventListener('storage', checkStorage);
+    return () => window.removeEventListener('storage', checkStorage);
+  }, [toast, onSettingsRefresh]);
 
   // Загружаем существующие данные из кампании и проверяем Facebook
   useEffect(() => {

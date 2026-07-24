@@ -54,32 +54,23 @@ export default function InstagramCallback() {
         setStatus('success');
         setMessage('Instagram авторизация успешно завершена! Данные сохранены в кампании.');
         
-        // Отправляем данные в родительское окно
+        // Сигнализируем об успехе через localStorage (переживает cross-origin opener loss)
+        const oauthResult = { success: true, configured: true, campaignId: state };
+        localStorage.setItem('instagram_oauth_result', JSON.stringify(oauthResult));
+        localStorage.setItem('instagram_oauth_timestamp', Date.now().toString());
+        
+        // Также пробуем postMessage (если opener доступен)
         if (window.opener) {
-          const oauthData = {
-            type: 'INSTAGRAM_OAUTH_SUCCESS',
-            data: {
-              appId: data.appId, // App ID из верхнего уровня ответа
-              instagramAccounts: data.instagramAccounts,
-              user: data.user,
-              success: true
-            }
-          };
-          
-          console.log('📤 Sending OAuth success data to parent window:', {
-            type: oauthData.type,
-            tokenStored: true,
-            appId: data.appId,
-            accountsCount: data.instagramAccounts?.length || 0
-          });
-          
-          window.opener.postMessage(oauthData, window.location.origin);
+          window.opener.postMessage({ 
+            type: 'INSTAGRAM_OAUTH_SUCCESS', 
+            data: oauthResult 
+          }, window.location.origin);
         }
         
-        // Закрываем окно через 3 секунды
+        // Автозакрытие через 1.5 секунды
         setTimeout(() => {
           window.close();
-        }, 3000);
+        }, 1500);
       } else {
         console.log('❌ Ошибка callback API:', data.error);
         setStatus('error');

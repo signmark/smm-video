@@ -228,8 +228,15 @@ export function SocialMediaSettings({
     const settings = form.getValues();
     
     switch (platform) {
-      case 'instagram':
-        return !!(settings.instagram?.accessToken || settings.instagram?.token) && !!settings.instagram?.businessAccountId;
+      case 'instagram': {
+        // Используем серверные настройки (instagramSettings) если доступны,
+        // иначе fallback на форму. Токены НЕ хранятся в браузере — проверяем businessAccountId
+        const igSettings = (instagramSettings as any) || {};
+        const igForm = settings.instagram || {};
+        const hasBusinessAccountId = !!(igSettings.businessAccountId || igSettings.instagramId || igForm.businessAccountId);
+        // Серверный флаг configured или наличие businessAccountId означает подключение
+        return !!(igSettings.configured || hasBusinessAccountId);
+      }
       case 'youtube':
         return !!settings.youtube?.channelId && !!settings.youtube?.accessToken;
       case 'facebook':
@@ -2074,7 +2081,7 @@ export function SocialMediaSettings({
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                           Загрузка...
                         </>
-                      ) : (instagramSettings?.configured || instagramSettings?.token) ? 'Пересконфигурировать' : 'Настроить Instagram'}
+                      ) : (instagramSettings?.configured || instagramSettings?.businessAccountId || instagramSettings?.instagramId) ? 'Пересконфигурировать' : 'Настроить Instagram'}
                     </Button>
                   </div>
                 </div>
@@ -2087,6 +2094,9 @@ export function SocialMediaSettings({
                     campaignId={campaignId}
                     onCancel={() => {
                       setShowInstagramWizard(false);
+                    }}
+                    onSettingsRefresh={() => {
+                      loadInstagramSettings();
                     }}
                     onComplete={(data) => {
                       console.log('📸 [Instagram Simple Wizard] Settings updated:', data);

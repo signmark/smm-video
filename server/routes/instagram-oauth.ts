@@ -378,22 +378,27 @@ router.get('/instagram/auth/callback', async (req, res) => {
     // Очищаем сессию
     oauthSessions.delete(state);
 
-    // Возвращаем успешный ответ с данными
+    // Возвращаем успешный ответ БЕЗ токенов (токены хранятся только на сервере)
     const safeInstagramAccounts = webhookData.instagramAccounts.map(sanitizeInstagramAccount);
     const responseData = {
       success: true,
       message: 'Instagram авторизация завершена успешно',
-      appId: session.appId, // Важно! App ID должен быть на верхнем уровне
-      instagramAccounts: safeInstagramAccounts,
-      user: userResponse.data,
-      expiresIn
+      configured: true,
+      businessAccountId: webhookData.instagramAccounts?.[0]?.instagramId || null,
+      campaignId: state,
+      instagramAccounts: safeInstagramAccounts.map(a => ({
+        id: a.id,
+        username: a.username,
+        name: a.name,
+        profilePicture: a.profilePicture
+      }))
     };
     
-    console.log('📡 CALLBACK RESPONSE - Sending to client:', {
+    console.log('📡 CALLBACK RESPONSE - Sending to client (no tokens):', {
       success: responseData.success,
       message: responseData.message,
-      tokenStored: true,
-      userInfo: responseData.user,
+      configured: responseData.configured,
+      businessAccountId: responseData.businessAccountId,
       accountsCount: responseData.instagramAccounts?.length || 0
     });
     

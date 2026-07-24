@@ -129,9 +129,42 @@
 
 | Статус | Кол-во | Пункты |
 |---|---|---|
-| ✅ Закрыто | 1 | §1 |
+| ✅ Закрыто | 2 | §1, OAuth incident |
 | ⛔ Deferred | 1 | §3 (до августа) |
 | 🟡 Открыто | 13 | §2, §4-§15 |
+
+## Инцидент: OAuth callback блокировка (2026-07-24)
+
+### Описание
+Все OAuth callback'и (YouTube, VK, Instagram, Threads, TikTok) начали отдавать 401 — авторизация через соцсети была полностью сломана. Также `/api/vk/token-webhook/:campaignId` (POST от needanapp.ru) — VK токены не приходили.
+
+### Корневая причина
+`requireActiveSubscription` (commit `a3ba91133` от Replit Agent, 25.06.2026) — глобальный middleware на ALL `/api/*` запросы. OAuth callback'и приходят без Bearer-токена (провайдеры редиректят), и middleware блокировал их с 401 до этого.
+
+### Timeline
+1. **25.06.2026** — `requireActiveSubscription` добавлен глобально (Replit Agent)
+2. **23.07.2026 18:00** — `1473f4bf` удалил `/api/auth/system-token` (security §1)
+3. **23.07.2026 вечер / 24.07.2026 утро** — OAuth callback'и начали 401
+4. **24.07.2026 утро** — обнаружен инцидент
+5. **24.07.2026 09:23** — `122fe5f56` Codex: OAuth handlers смонтированы через `app.get` ДО middleware
+6. **24.07.2026 09:36** — `c09948994` Codex: добавлен VK token-webhook (POST/OPTIONS) bypass
+7. **24.07.2026 09:53** — `dcf62ee7c` Mimo: добавлен `express.json()` перед bypass (фикс crash loop — `req.body undefined`)
+
+### Кто виноват
+- **Replit Agent** (`a3ba91133`) — добавил `requireActiveSubscription` глобально без учёта OAuth callback'ов
+- **Ни Codex, ни Mimo** не сломали — они фиксили уже сломанное
+
+### Фикс
+`index.ts`: OAuth handlers монтируются через `app.{get,post,options}` ДО глобальных middleware. Express применяет handlers в порядке регистрации — первый совпавший срабатывает.
+
+### Предотвращение
+- Добавить e2e smoke для OAuth callback'ов после каждого деплоя
+- Не монтировать auth middleware глобально без whitelist для публичных endpoints
+
+### Статус
+✅ **CLOSED** (fix deployed: `c09948994` + `dcf62ee7c`)
+
+---
 
 ## Рекомендуемый next-up
 
@@ -143,6 +176,10 @@
 - `docs/captains-log/2026-07-23.md` — Agent OS + начало цикла
 - `docs/captains-log/2026-07-24.md` — security §1 closure + этот беклог
 - `1473f4bf` — коммит закрытия §1
+- `122fe5f56` — Codex: OAuth callback bypass (app.get до middleware)
+- `c09948994` — Codex: VK token-webhook POST/OPTIONS bypass
+- `dcf62ee7c` — Mimo: express.json() fix для req.body undefined
+- `a3ba91133` — Replit Agent: requireActiveSubscription (корневая причина инцидента)
 - `MEMORY.md` (Mavis agent) — урок про middleware ordering vs 404 catch-all
 - `c0ff1d4` (бывший `fde12ed`) — untrack `.env.example`
 

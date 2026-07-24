@@ -1,11 +1,11 @@
 # docs/agents — персональные инструкции активного состава
 
 **Создано:** 2026-07-24 (Claude, по поручению owner'а — см. `docs/prompts/claude-roster-handoff-2026-07-24.md`)
-**Состав:** Hermes (исполнитель) · Mavis (ревьюер + docs) · Mimo (deploy + infra-ревью)
+**Состав v3 (2026-07-24 вечер):** Hermes (исполнитель) · Mavis (ревьюер + docs) · Mimo (deploy + infra-ревью) · **Claude (Fable 5, HIGH priority, опциональный архитектурный ревью + co-author)**
 
 ## Зачем это
 
-Codex, Claude и Kimi выбыли. Оставшаяся тройка закрывает все роли. Слабость модели компенсируется процессом: жёсткие чек-листы, обязательный cross-verify, маленькие срезы задач, шаблоны с обязательными секциями. Профиль — не справка, а рабочая инструкция: агент проходит по ней каждую сессию.
+Codex и Kimi выбыли. Активная тройка (Hermes/Mavis/Mimo) закрывает все базовые роли. Claude добавлен в v3 как **HIGH priority** опциональный агент: плотные security-планы + co-author в UI/social ветках. Слабость модели компенсируется процессом: жёсткие чек-листы, обязательный cross-verify, маленькие срезы задач, шаблоны с обязательными секциями. Профиль — не справка, а рабочая инструкция: агент проходит по ней каждую сессию.
 
 ## Файлы
 
@@ -14,6 +14,7 @@ Codex, Claude и Kimi выбыли. Оставшаяся тройка закры
 | `hermes.md` | Hermes — исполнитель (код, тесты, merge, смоки) |
 | `mavis.md` | Mavis — независимый ревьюер, docs, мониторинг |
 | `mimo.md` | Mimo — production deploy, infra-ревью |
+| `claude.md` | **Claude (Fable 5) — HIGH priority, опциональный архитектурный ревью + co-author** |
 | `templates/handoff-template.md` | шаблон handoff исполнителя |
 | `templates/review-verdict-template.md` | шаблон вердикта ревьюера |
 | `templates/session-checklist.md` | входной/выходной ритуал + Definition of Done (общий для всех) |

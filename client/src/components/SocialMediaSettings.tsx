@@ -1862,6 +1862,29 @@ export function SocialMediaSettings({
               </div>
               )}
 
+              {/* Текущая группа + смена группы (когда VK подключён) */}
+              {(vkSettings?.groupId || form.watch('vk.groupId')) && vkGroups.length === 0 && (
+                <div className="flex items-center justify-between gap-3 p-3 rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20">
+                  <div className="text-sm text-green-800 dark:text-green-200">
+                    <span className="font-medium">Группа для публикации:</span>{' '}
+                    {vkSettings?.groupName || form.watch('vk.groupName') || `ID ${vkSettings?.groupId || form.watch('vk.groupId')}`}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={fetchVkGroups}
+                    disabled={loadingVkGroups}
+                    data-testid="button-vk-change-group"
+                  >
+                    {loadingVkGroups
+                      ? <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Загрузка...</>
+                      : '🔄 Сменить группу'}
+                  </Button>
+                </div>
+              )}
+
               {/* Ручной ввод — по ссылке */}
               <div>
                 <button

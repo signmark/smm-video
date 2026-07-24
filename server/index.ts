@@ -104,28 +104,48 @@ app.set('etag', false);
 // а не клиента. 1 = доверяем одному ближайшему прокси.
 app.set('trust proxy', 1);
 
-// === Public OAuth callback bypass (security plan §N — fix 2026-07-24) ===
+// === Universal public OAuth callback bypass (security plan §N — fix 2026-07-24) ===
 // Внешние провайдеры (Google / VK / Instagram / Threads / TikTok) редиректят
 // пользователя обратно на /api/*/auth/callback БЕЗ Bearer-токена нашего приложения.
+// Также needanapp.ru (прокси для VK) стучит по /api/vk/callback для отправки токенов.
+//
 // Эти пути публичные by design — handler валидирует state против серверного
 // хранилища (см. youtube-auth.ts:122, instagram-oauth.ts, threads-oauth.ts и т.д.).
-// Глобальный auth-gate должен пропускать их; флаг ниже читается в
-// middleware/require-active-subscription.ts. Не удалять без апдейта security-плана.
-const PUBLIC_OAUTH_CALLBACKS = new Set([
-  '/api/youtube/auth/callback',
-  '/api/vk/auth/callback',
-  '/api/vk/oauth2/callback',
-  '/api/vk/callback',
-  '/api/instagram/auth/callback',
-  '/api/threads/auth/callback',
-  '/api/tiktok/auth/callback',
-]);
-app.use((req, _res, next) => {
-  if (req.method === 'GET' && PUBLIC_OAUTH_CALLBACKS.has(req.path)) {
-    (req as any)._publicOauthBypass = true;
+//
+// Чтобы обойти ЛЮБОЙ глобальный `app.use('/api', authMiddleware)` (в т.ч. чужой,
+// добавленный в Mimo'вой security-hardening сборке) — мы монтируем handler'ы
+// НАПРЯМУЮ через app.get В САМОМ НАЧАЛЕ, до всех остальных middleware.
+// Express применяет обработчики в порядке регистрации, и app.get, зарегистрированный
+// раньше app.use('/api', X), сработает первым — X не получит шанса отбить запрос 401.
+// Не удалять без апдейта security-плана.
+import youtubeAuthRouter from './routes/youtube-auth';
+import vkOAuthRouter from './routes/vk-oauth';
+import instagramOAuthRouter from './routes/instagram-oauth';
+import threadsOAuthRouter from './routes/threads-oauth';
+import tiktokAuthRouter from './routes/tiktok-auth';
+
+const PUBLIC_OAUTH_CALLBACKS = [
+  { router: youtubeAuthRouter, routerPath: '/youtube/auth/callback', publicPath: '/api/youtube/auth/callback' },
+  { router: vkOAuthRouter, routerPath: '/vk/oauth2/callback', publicPath: '/api/vk/oauth2/callback' },
+  { router: vkOAuthRouter, routerPath: '/vk/callback', publicPath: '/api/vk/callback' },
+  { router: instagramOAuthRouter, routerPath: '/instagram/auth/callback', publicPath: '/api/instagram/auth/callback' },
+  { router: threadsOAuthRouter, routerPath: '/threads/auth/callback', publicPath: '/api/threads/auth/callback' },
+  { router: tiktokAuthRouter, routerPath: '/tiktok/auth/callback', publicPath: '/api/tiktok/auth/callback' },
+];
+
+for (const { router, routerPath, publicPath } of PUBLIC_OAUTH_CALLBACKS) {
+  // Найти внутренний handler в router'е по path
+  const layer = (router as any).stack.find(
+    (l: any) => l.route && l.route.path === routerPath
+  );
+  if (!layer) {
+    console.warn(`[oauth-bypass] ⚠️ Не найден handler для ${publicPath} в роутере — пропускаю`);
+    continue;
   }
-  next();
-});
+  const innerHandler = layer.route.stack[0].handle;
+  app.get(publicPath, innerHandler);
+  console.log(`[oauth-bypass] ✅ ${publicPath} → смонтирован до всех middleware`);
+}
 
 // Security-заголовки. CSP/frameguard/CORP отключены намеренно: приложение работает
 // как Telegram Mini App внутри iframe (web.telegram.org) и грузит ассеты с S3.

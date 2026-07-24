@@ -148,13 +148,28 @@ router.patch('/campaigns/:campaignId/instagram-settings', async (req, res) => {
  */
 router.post('/campaigns/:campaignId/discover-instagram-accounts', async (req, res) => {
   const { campaignId } = req.params;
-  const { accessToken } = req.body;
+  let { accessToken } = req.body;
 
   try {
+    // Клиент больше не видит токены (sanitizeOAuthSecrets) — если токен не пришёл
+    // в body, берём сохранённый OAuth-callback'ом токен из настроек кампании.
+    if (!accessToken) {
+      const userToken = req.headers.authorization?.replace('Bearer ', '');
+      const tokenToUse = userToken || process.env.DIRECTUS_TOKEN;
+      if (tokenToUse) {
+        const campaignResp = await axios.get(
+          `${process.env.DIRECTUS_URL}/items/user_campaigns/${campaignId}`,
+          { headers: { Authorization: `Bearer ${tokenToUse}` } }
+        );
+        const ig = campaignResp.data.data?.social_media_settings?.instagram || {};
+        accessToken = ig.longLivedToken || ig.accessToken || ig.token;
+      }
+    }
+
     if (!accessToken) {
       return res.status(400).json({
         success: false,
-        error: 'Access Token обязателен для поиска аккаунтов'
+        error: 'Instagram не авторизован: подключите аккаунт через OAuth или введите Access Token'
       });
     }
 

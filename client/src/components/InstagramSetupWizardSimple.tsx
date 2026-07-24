@@ -30,7 +30,13 @@ const InstagramSetupWizardSimple: React.FC<InstagramSetupWizardProps> = ({ campa
     name: string;
     username?: string;
   }>>([]);
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<{
+    appId: string;
+    appSecret: string;
+    accessToken: string;
+    businessAccountId: string;
+    configured?: boolean;
+  }>({
     appId: '',
     appSecret: '',
     accessToken: '',
@@ -139,7 +145,10 @@ const InstagramSetupWizardSimple: React.FC<InstagramSetupWizardProps> = ({ campa
               appId: settings.appId || '',
               appSecret: settings.appSecret || '',
               accessToken: accessToken,
-              businessAccountId: settings.businessAccountId || settings.instagramId || ''
+              businessAccountId: settings.businessAccountId || settings.instagramId || '',
+              // Токены вырезаны сервером — «настроено» определяем по серверному флагу
+              // и несекретным полям (businessAccountId / список найденных аккаунтов)
+              configured: !!(settings.configured || settings.businessAccountId || settings.instagramId || settings.instagramAccounts?.length)
             });
 
             // Если есть токен - автоматически проверяем Facebook страницы
@@ -231,47 +240,19 @@ const InstagramSetupWizardSimple: React.FC<InstagramSetupWizardProps> = ({ campa
 
   // Функция для загрузки доступных Instagram аккаунтов и автоматической настройки Facebook
   const handleDiscoverAccounts = async () => {
-    if (!formData.accessToken) {
-      toast({
-        title: "Ошибка",
-        description: "Введите Access Token для поиска аккаунтов",
-        variant: "destructive"
-      });
-      return;
-    }
-
     setIsProcessing(true);
     try {
-      // 1. Получаем свежие настройки Instagram из базы данных
-      console.log('🔍 Loading fresh Instagram settings from database...');
-      const settingsResponse = await fetch(`/api/campaigns/${campaignId}/instagram-settings`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
-        }
-      });
-
-      let accessTokenToUse = formData.accessToken;
-
-      if (settingsResponse.ok) {
-        const settingsData = await settingsResponse.json();
-        if (settingsData.success && settingsData.settings) {
-          // Используем самый свежий токен из базы данных
-          accessTokenToUse = settingsData.settings.longLivedToken || settingsData.settings.accessToken || settingsData.settings.token || formData.accessToken;
-          console.log('🔍 Using fresh token from database:', accessTokenToUse.substring(0, 30) + '...');
-        }
-      }
-
-      // 2. Находим Instagram аккаунты с правильным токеном
+      // Токены не приходят в браузер (sanitizeOAuthSecrets) — если пользователь
+      // не ввёл токен вручную, сервер сам возьмёт сохранённый OAuth-токен из базы.
       const instagramResponse = await fetch(`/api/campaigns/${campaignId}/discover-instagram-accounts`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
         },
-        body: JSON.stringify({
-          accessToken: accessTokenToUse
-        })
+        body: JSON.stringify(
+          formData.accessToken ? { accessToken: formData.accessToken } : {}
+        )
       });
 
       const instagramData = await instagramResponse.json();
@@ -285,6 +266,8 @@ const InstagramSetupWizardSimple: React.FC<InstagramSetupWizardProps> = ({ campa
         setShowAccountSelection(true);
         
         // 2. Параллельно проверяем Facebook страницы тем же токеном
+        // (только если токен введён вручную — из базы он в браузер не приходит)
+        if (formData.accessToken) {
         try {
           console.log('🔍 Checking Facebook pages with Instagram token...');
           const facebookResponse = await fetch('/api/facebook/pages', {
@@ -343,6 +326,7 @@ const InstagramSetupWizardSimple: React.FC<InstagramSetupWizardProps> = ({ campa
         } catch (fbError) {
           console.error('Error checking Facebook pages:', fbError);
           // Не показываем ошибку пользователю, так как это дополнительная функция
+        }
         }
 
         toast({

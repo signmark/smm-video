@@ -87,10 +87,10 @@ router.patch('/campaigns/:campaignId/vk-settings', async (req, res) => {
   const userToken = req.headers.authorization?.replace('Bearer ', '');
 
   try {
-    if (!token || !groupId) {
+    if (!groupId) {
       return res.status(400).json({
         success: false,
-        error: 'Token и Group ID обязательны'
+        error: 'Group ID обязателен'
       });
     }
 
@@ -126,10 +126,19 @@ router.patch('/campaigns/:campaignId/vk-settings', async (req, res) => {
     }
 
     // Шаг 2: Запись через admin-токен (надёжно, без риска 403 на запись)
+    // Токен в body опционален: клиент его больше не видит (sanitizeOAuthSecrets),
+    // поэтому при отсутствии используем уже сохранённый token-webhook'ом.
     const existingVk = existingSettings.vk || {};
+    const tokenToSave = token || existingVk.token;
+    if (!tokenToSave) {
+      return res.status(400).json({
+        success: false,
+        error: 'VK токен не найден: получите токен через needanapp или вставьте вручную'
+      });
+    }
     const vkUpdate: Record<string, any> = {
       ...existingVk,
-      token,
+      token: tokenToSave,
       groupId,
       groupName: groupName || existingVk.groupName || '',
       setupCompletedAt: setupCompletedAt || new Date().toISOString(),
@@ -157,7 +166,7 @@ router.patch('/campaigns/:campaignId/vk-settings', async (req, res) => {
       }
     );
 
-    log('VK settings saved successfully', { campaignId, groupName, hasToken: !!token });
+    log('VK settings saved successfully', { campaignId, groupName, hasToken: !!tokenToSave });
 
     res.json({
       success: true,

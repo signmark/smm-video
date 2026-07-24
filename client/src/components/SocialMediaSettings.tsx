@@ -222,6 +222,8 @@ export function SocialMediaSettings({
   const vkReconnectListenerRef = useRef<((e: MessageEvent) => void) | null>(null);
   const vkReconnectCheckRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const vkValidatedForSettingsRef = useRef<any>(null);
+  // true после «Отмена» или таймаута — блокирует авто-рестарт поллинга из useEffect
+  const vkPollCancelledRef = useRef(false);
 
   // Функция проверки статуса настройки платформ
   const isConfigured = (platform: 'instagram' | 'youtube' | 'facebook' | 'vk' | 'telegram' | 'threads' | 'tiktok') => {
@@ -237,16 +239,18 @@ export function SocialMediaSettings({
         // Серверный флаг configured или наличие businessAccountId означает подключение
         return !!(igSettings.configured || hasBusinessAccountId);
       }
+      // Токены вырезаются сервером (sanitizeOAuthSecrets) и в браузер не приходят —
+      // статус определяем по несекретным полям, которые сохраняются вместе с токеном.
       case 'youtube':
-        return !!settings.youtube?.channelId && !!settings.youtube?.accessToken;
+        return !!settings.youtube?.channelId;
       case 'facebook':
-        return !!settings.facebook?.token && !!settings.facebook?.pageId;
+        return !!settings.facebook?.pageId;
       case 'vk':
-        return !!settings.vk?.token && !!settings.vk?.groupId;
+        return !!(settings.vk?.groupId || (vkSettings as any)?.groupId);
       case 'telegram':
-        return !!settings.telegram?.token && !!settings.telegram?.chatId;
+        return !!settings.telegram?.chatId;
       case 'threads':
-        return !!(settings as any).threads?.accessToken && !!(settings as any).threads?.threadsUserId;
+        return !!(settings as any).threads?.threadsUserId;
       case 'tiktok':
         return false;
       default:
@@ -321,21 +325,13 @@ export function SocialMediaSettings({
     }
   };
 
-  // Функция получения VK групп (через серверный прокси для обхода CORS и IP-привязки токена)
+  // Функция получения VK групп — серверный эндпоинт, токен из Directus (в браузер не приходит)
   const fetchVkGroups = async () => {
-    const token = form.getValues('vk.token');
-    if (!token) {
-      toast({
-        title: "Ошибка",
-        description: "Сначала введите токен VK",
-        variant: "destructive"
-      });
-      return;
-    }
-
     setLoadingVkGroups(true);
     try {
-      const response = await fetch(`/api/vk/groups?access_token=${encodeURIComponent(token)}`);
+      const response = await fetch(`/api/campaigns/${campaignId}/vk-groups`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` }
+      });
       const data = await response.json();
       
       if (data.success && data.groups) {
@@ -600,17 +596,15 @@ export function SocialMediaSettings({
             headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` }
           });
           const d2 = await resp2.json();
-          if (d2.settings?.token) {
-            form.setValue('vk.token', d2.settings.token);
-            // Группа уже выбрана — не показываем селектор повторно
-            if (d2.settings.groupId) {
-              form.setValue('vk.groupId', d2.settings.groupId);
-              toast({ title: "VK переподключён", description: "Группа сохранена, публикации возобновлены." });
-            } else if (!vkGroupsFetchedRef.current) {
-              vkGroupsFetchedRef.current = true;
-              fetchVkGroups();
-              toast({ title: "VK переподключён", description: "Выберите группу для публикации." });
-            }
+          // Токен в ответ не приходит (sanitizeOAuthSecrets) — смотрим на groupId
+          if (d2.settings?.groupId) {
+            form.setValue('vk.groupId', d2.settings.groupId);
+            if (d2.settings.groupName) form.setValue('vk.groupName', d2.settings.groupName);
+            toast({ title: "VK переподключён", description: "Группа сохранена, публикации возобновлены." });
+          } else if (!vkGroupsFetchedRef.current) {
+            vkGroupsFetchedRef.current = true;
+            fetchVkGroups();
+            toast({ title: "VK переподключён", description: "Выберите группу для публикации." });
           }
           loadVkSettings();
         }
@@ -641,6 +635,7 @@ export function SocialMediaSettings({
   // Запуск polling VK токена (общий для auto-start и ручного запуска)
   const startVkPolling = useCallback(() => {
     if (vkPollRef.current || vkPolling) return; // уже запущен
+    vkPollCancelledRef.current = false;
     setVkPolling(true);
     vkPollRef.current = setInterval(async () => {
       try {
@@ -658,15 +653,15 @@ export function SocialMediaSettings({
             headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` }
           });
           const d2 = await resp2.json();
-          if (d2.settings?.token) {
-            form.setValue('vk.token', d2.settings.token);
-            if (d2.settings.groupId) {
-              form.setValue('vk.groupId', d2.settings.groupId);
-            } else if (!vkGroupsFetchedRef.current) {
-              vkGroupsFetchedRef.current = true;
-              fetchVkGroups();
-            }
+          // Токен в ответ не приходит (sanitizeOAuthSecrets) — смотрим на groupId
+          if (d2.settings?.groupId) {
+            form.setValue('vk.groupId', d2.settings.groupId);
+            if (d2.settings.groupName) form.setValue('vk.groupName', d2.settings.groupName);
+          } else if (!vkGroupsFetchedRef.current) {
+            vkGroupsFetchedRef.current = true;
+            fetchVkGroups();
           }
+          loadVkSettings();
         }
       } catch {}
     }, 3000);
@@ -674,6 +669,7 @@ export function SocialMediaSettings({
       if (vkPollRef.current) {
         clearInterval(vkPollRef.current);
         vkPollRef.current = null;
+        vkPollCancelledRef.current = true; // не рестартовать автоматически после таймаута
         setVkPolling(false);
       }
       vkPollTimeoutRef.current = null;
@@ -689,6 +685,7 @@ export function SocialMediaSettings({
       clearTimeout(vkPollTimeoutRef.current);
       vkPollTimeoutRef.current = null;
     }
+    vkPollCancelledRef.current = true; // «Отмена» пользователя — авто-рестарт запрещён
     setVkPolling(false);
   }, []);
 
@@ -1018,7 +1015,10 @@ export function SocialMediaSettings({
   // Auto-polling: запускаем poll когда инструкции needanapp видны (VK не настроен / токен невалиден / authExpired)
   useEffect(() => {
     const shouldShowNeedanapp = !isConfigured('vk') || vkStatus.isValid === false || vkSettings?.authExpired;
-    if (shouldShowNeedanapp && !vkPolling && !vkPollRef.current) {
+    // Не рестартуем, если пользователь нажал «Отмена», истёк таймаут
+    // или токен уже получен и идёт выбор группы
+    if (shouldShowNeedanapp && !vkPolling && !vkPollRef.current
+        && !vkPollCancelledRef.current && !vkGroupsFetchedRef.current) {
       startVkPolling();
     }
   }, [vkSettings, vkStatus, isConfigured, vkPolling, startVkPolling]);

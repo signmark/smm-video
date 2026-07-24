@@ -9,6 +9,7 @@ import log from '../utils/logger';
 import { facebookService } from '../services/social-platforms/facebook-service';
 import { authenticateUser } from '../middleware/user-auth';
 import { authorizeCampaignAccess } from '../services/campaign-access';
+import { resolvePlatformToken } from '../services/campaign-token-resolver';
 
 const router = Router();
 
@@ -278,8 +279,7 @@ router.post('/page-token/:pageId', authenticateUser, async (req, res) => {
     // Токены в браузер не приходят (sanitizeOAuthSecrets) — без токена в body
     // используем сохранённый в кампании (Instagram / Facebook userToken)
     if (!token) {
-      const { resolveFacebookUserToken } = await import('../routes/facebook-pages');
-      token = await resolveFacebookUserToken(campaignId, req);
+      token = await resolvePlatformToken(campaignId, 'facebook', { user: req.user });
     }
 
     if (!token) {

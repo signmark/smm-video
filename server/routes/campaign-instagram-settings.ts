@@ -4,6 +4,7 @@ import axios from 'axios';
 import { authenticateUser } from '../middleware/user-auth';
 import { authorizeCampaignAccess, CampaignAccessError } from '../services/campaign-access';
 import { sanitizeOAuthSecrets } from '../services/oauth-response-sanitizer';
+import { resolvePlatformToken } from '../services/campaign-token-resolver';
 
 const router = express.Router();
 router.use(authenticateUser);
@@ -153,17 +154,9 @@ router.post('/campaigns/:campaignId/discover-instagram-accounts', async (req, re
   try {
     // Клиент больше не видит токены (sanitizeOAuthSecrets) — если токен не пришёл
     // в body, берём сохранённый OAuth-callback'ом токен из настроек кампании.
+    // Доступ к кампании уже проверен router.param('campaignId').
     if (!accessToken) {
-      const userToken = req.headers.authorization?.replace('Bearer ', '');
-      const tokenToUse = userToken || process.env.DIRECTUS_TOKEN;
-      if (tokenToUse) {
-        const campaignResp = await axios.get(
-          `${process.env.DIRECTUS_URL}/items/user_campaigns/${campaignId}`,
-          { headers: { Authorization: `Bearer ${tokenToUse}` } }
-        );
-        const ig = campaignResp.data.data?.social_media_settings?.instagram || {};
-        accessToken = ig.longLivedToken || ig.accessToken || ig.token;
-      }
+      accessToken = await resolvePlatformToken(campaignId, 'instagram');
     }
 
     if (!accessToken) {

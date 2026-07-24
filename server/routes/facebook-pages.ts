@@ -2,26 +2,12 @@ import express from 'express';
 import axios from 'axios';
 import { sanitizeFacebookAccount } from '../services/oauth-response-sanitizer';
 import { authenticateUser } from '../middleware/user-auth';
-import { authorizeCampaignAccess, CampaignAccessError } from '../services/campaign-access';
+import { CampaignAccessError } from '../services/campaign-access';
+import { resolvePlatformToken } from '../services/campaign-token-resolver';
 
 const router = express.Router();
 router.use(authenticateUser);
 router.use((_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
-
-/**
- * Токены в браузер не приходят (sanitizeOAuthSecrets) — по campaignId достаём
- * пользовательский токен из настроек кампании: сперва Instagram (флоу
- * «Взять из ИГ»), затем сохранённый Facebook userToken/token.
- */
-export async function resolveFacebookUserToken(campaignId: string, req: express.Request): Promise<string | undefined> {
-  const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
-  if (!adminToken) return undefined;
-  const campaign = await authorizeCampaignAccess(campaignId, req.user?.id, adminToken, req.user?.is_smm_admin === true);
-  const sms = campaign.social_media_settings || {};
-  const ig = sms.instagram || {};
-  const fb = sms.facebook || {};
-  return ig.longLivedToken || ig.accessToken || ig.token || fb.userToken || fb.token;
-}
 
 // GET /api/facebook/pages - получение Facebook страниц пользователя
 router.post('/pages', async (req, res) => {
@@ -38,7 +24,7 @@ router.post('/pages', async (req, res) => {
 
     if (!accessToken && campaignId) {
       try {
-        accessToken = await resolveFacebookUserToken(campaignId, req);
+        accessToken = await resolvePlatformToken(campaignId, 'facebook', { user: req.user });
         console.log('🔵 [FACEBOOK-PAGES] Token resolved from campaign settings:', !!accessToken);
       } catch (error) {
         if (error instanceof CampaignAccessError) {

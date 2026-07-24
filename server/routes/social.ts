@@ -12,6 +12,7 @@ import {
   validateYoutubeApiKey
 } from '../services/social-api-validator';
 import { threadsService } from '../services/social-platforms/threads-service';
+import { getCampaignSocialSettings, pickPlatformToken } from '../services/campaign-token-resolver';
 import { normalizeInstagramUrl } from '../utils/social-helpers';
 import axios from 'axios';
 
@@ -115,17 +116,9 @@ export function registerSocialRoutes(app: Express) {
     // берём accessToken из настроек кампании. Клиенту возвращается только валидность.
     if (!accessToken && req.body.campaignId) {
       try {
-        const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
-        if (adminToken && process.env.DIRECTUS_URL) {
-          const axios = (await import('axios')).default;
-          const resp = await axios.get(
-            `${process.env.DIRECTUS_URL}/items/user_campaigns/${req.body.campaignId}`,
-            { headers: { Authorization: `Bearer ${adminToken}` } }
-          );
-          const threads = resp.data.data?.social_media_settings?.threads || {};
-          accessToken = threads.accessToken;
-          threadsUserId = threadsUserId || threads.threadsUserId;
-        }
+        const sms = await getCampaignSocialSettings(req.body.campaignId);
+        accessToken = pickPlatformToken(sms, 'threads');
+        threadsUserId = threadsUserId || sms.threads?.threadsUserId;
       } catch {}
     }
 

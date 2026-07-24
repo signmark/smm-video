@@ -3,6 +3,7 @@ import axios from 'axios';
 import { authenticateUser } from '../middleware/user-auth';
 import { authorizeCampaignAccess, CampaignAccessError } from '../services/campaign-access';
 import { sanitizeOAuthSecrets } from '../services/oauth-response-sanitizer';
+import { pickPlatformToken } from '../services/campaign-token-resolver';
 
 const router = express.Router();
 router.use(authenticateUser);
@@ -113,13 +114,12 @@ router.post('/campaigns/:campaignId/facebook-settings', async (req, res) => {
     const campaign = getCampaignResponse.data.data;
     const existingSocialSettings = campaign.social_media_settings || {};
     const existingFacebook = existingSocialSettings.facebook || {};
-    const existingInstagram = existingSocialSettings.instagram || {};
 
     // Токен в body опционален (клиент его больше не видит) — fallback:
-    // уже сохранённый facebook.token, затем Instagram-токен (флоу «Взять из ИГ»)
+    // уже сохранённый facebook.token, затем каскад «Взять из ИГ» (общий резолвер)
     const tokenToSave = token
       || existingFacebook.token
-      || existingInstagram.longLivedToken || existingInstagram.accessToken || existingInstagram.token;
+      || pickPlatformToken(existingSocialSettings, 'instagram');
     if (!tokenToSave) {
       return res.status(400).json({
         success: false,

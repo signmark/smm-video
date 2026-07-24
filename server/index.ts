@@ -149,6 +149,8 @@ const PUBLIC_OAUTH_CALLBACKS: Array<{
   { router: vkOAuthRouter, routerPath: '/vk/token-webhook/:campaignId', publicPath: '/api/vk/token-webhook/:campaignId', method: 'post' },
   // CORS preflight от needanapp (vk.needanapp.ru → smm.omemo.tech)
   { router: vkOAuthRouter, routerPath: '/vk/token-webhook/:campaignId', publicPath: '/api/vk/token-webhook/:campaignId', method: 'options' },
+  // VK polling status — UI pollит этот эндпоинт без токена, чтобы узнать пришёл ли токен от needanapp
+  { router: vkOAuthRouter, routerPath: '/vk/token-webhook/:campaignId/status', publicPath: '/api/vk/token-webhook/:campaignId/status', method: 'get' },
 ];
 
 // Body parser для POST/OPTIONS callback'ов — нужен ДО хендлеров, иначе req.body = undefined

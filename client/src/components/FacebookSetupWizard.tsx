@@ -174,9 +174,11 @@ export default function FacebookSetupWizard({
       
       const campaignData = await campaignResponse.json();
       
-      // Ищем Instagram токен в настройках (токен скрыт, смотрим configured)
+      // Ищем Instagram токен в настройках
       const instagramSettings = campaignData.data?.social_media_settings?.instagram;
-      const instagramToken = instagramSettings?.configured ? form.getValues('token') || localStorage.getItem('instagram_token') : undefined;
+      const instagramToken = instagramSettings?.accessToken || 
+                           instagramSettings?.token ||
+                           instagramSettings?.longLivedToken;
       
       console.log('📋 Взять из ИГ: Instagram токен найден:', !!instagramToken);
       
@@ -251,7 +253,9 @@ export default function FacebookSetupWizard({
           const instagramData = await instagramResponse.json();
           if (instagramData.success && instagramData.settings) {
             const instagramSettings = instagramData.settings;
-            const instagramToken = instagramSettings.configured ? form.getValues('token') : undefined;
+            const instagramToken = instagramSettings.accessToken || 
+                                 instagramSettings.token ||
+                                 instagramSettings.longLivedToken;
             
             if (instagramToken && instagramToken.length > 50) {
               console.log('✅ Автоматически используем Instagram токен для поиска Facebook страниц');
@@ -402,7 +406,9 @@ export default function FacebookSetupWizard({
 
           if (instagramData.success && instagramData.settings) {
             const instagramSettings = instagramData.settings;
-            const instagramToken = instagramSettings.configured ? form.getValues('token') : undefined;
+            const instagramToken = instagramSettings.accessToken || 
+                                 instagramSettings.token ||
+                                 instagramSettings.longLivedToken;
             
             if (instagramToken && instagramToken.length > 50) {
               console.log('✅ Instagram токен найден, автоматически загружаем ВСЕ доступные Facebook страницы с ПОЛЬЗОВАТЕЛЬСКИМ токеном');

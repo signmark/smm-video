@@ -133,17 +133,17 @@ const InstagramSetupWizardSimple: React.FC<InstagramSetupWizardProps> = ({ campa
           const data = await response.json();
           if (data.success && data.settings) {
             const settings = data.settings;
-            const isConfigured = settings.configured === true;
+            const accessToken = settings.accessToken || settings.longLivedToken || settings.token || '';
             
             setFormData({
               appId: settings.appId || '',
               appSecret: settings.appSecret || '',
-              accessToken: isConfigured ? '__configured__' : '',
+              accessToken: accessToken,
               businessAccountId: settings.businessAccountId || settings.instagramId || ''
             });
 
-            // Если настроено - автоматически проверяем Facebook страницы
-            if (isConfigured) {
+            // Если есть токен - автоматически проверяем Facebook страницы
+            if (accessToken) {
               console.log('🔍 Auto-checking Facebook pages for existing Instagram token...');
               try {
                 const facebookResponse = await fetch('/api/facebook/pages', {
@@ -256,10 +256,9 @@ const InstagramSetupWizardSimple: React.FC<InstagramSetupWizardProps> = ({ campa
       if (settingsResponse.ok) {
         const settingsData = await settingsResponse.json();
         if (settingsData.success && settingsData.settings) {
-          // Токены не приходят в GET (санкция sanitizeOAuthSecrets)
-          // Используем сохранённый в форме accessToken (он установлен при OAuth)
-          console.log('🔍 Settings loaded, configured:', settingsData.settings.configured);
-          accessTokenToUse = formData.accessToken;
+          // Используем самый свежий токен из базы данных
+          accessTokenToUse = settingsData.settings.longLivedToken || settingsData.settings.accessToken || settingsData.settings.token || formData.accessToken;
+          console.log('🔍 Using fresh token from database:', accessTokenToUse.substring(0, 30) + '...');
         }
       }
 

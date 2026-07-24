@@ -140,6 +140,8 @@ export function SocialMediaSettings({
 
   // Состояние для Threads настроек из базы данных
   const [threadsSettings, setThreadsSettings] = useState<any>(null);
+  // Показ блоков настройки Threads, когда уже подключено (переподключение)
+  const [threadsShowSetup, setThreadsShowSetup] = useState(false);
   const [loadingThreadsSettings, setLoadingThreadsSettings] = useState(false);
   const [showThreadsOAuthForm, setShowThreadsOAuthForm] = useState(false);
 
@@ -2294,14 +2296,52 @@ export function SocialMediaSettings({
               </div>
 
               {threadsSettings?.username && (
-                <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+                <div className="flex items-center justify-between gap-3 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
                   <p className="text-sm text-green-800 dark:text-green-200">
                     <span className="font-medium">Подключено:</span> @{threadsSettings.username}
                     {threadsSettings.threadsUserId && <span className="text-xs ml-2 opacity-70">(ID: {threadsSettings.threadsUserId})</span>}
                   </p>
+                  <div className="flex gap-2 shrink-0">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={threadsStatus.isLoading}
+                      data-testid="button-threads-check"
+                      onClick={async () => {
+                        // Токен в браузер не приходит — сервер проверит его по campaignId
+                        setThreadsStatus({ isLoading: true });
+                        try {
+                          const resp = await fetch('/api/validate/threads', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('auth_token')}` },
+                            body: JSON.stringify({ campaignId })
+                          });
+                          const data = await resp.json();
+                          setThreadsStatus({ isLoading: false, isValid: data.success, message: data.message });
+                          toast({ title: data.success ? 'Подключение работает' : 'Ошибка подключения', description: data.message, variant: data.success ? 'default' : 'destructive' });
+                        } catch (e: any) {
+                          setThreadsStatus({ isLoading: false, isValid: false, message: e.message });
+                        }
+                      }}
+                    >
+                      {threadsStatus.isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : 'Проверить'}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      data-testid="button-threads-reconnect"
+                      onClick={() => setThreadsShowSetup(v => !v)}
+                    >
+                      {threadsShowSetup ? 'Скрыть' : '🔄 Переподключить'}
+                    </Button>
+                  </div>
                 </div>
               )}
 
+              {/* Блоки настройки — при подключённом Threads спрятаны за «Переподключить» */}
+              {(!threadsSettings?.username || threadsShowSetup) && (<>
               <div className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-lg border space-y-3">
                 <h4 className="font-medium text-sm">Подключение через OAuth</h4>
                 <div className="grid grid-cols-2 gap-2">
@@ -2440,6 +2480,7 @@ export function SocialMediaSettings({
                         const data = await resp.json();
                         if (data.success) {
                           setThreadsSettings(data.settings);
+                          setThreadsShowSetup(false);
                           toast({ title: 'Сохранено', description: 'Настройки Threads сохранены' });
                           if (onSettingsUpdated) onSettingsUpdated();
                         } else {
@@ -2454,6 +2495,7 @@ export function SocialMediaSettings({
                   </Button>
                 </div>
               </div>
+              </>)}
             </AccordionContent>
           </AccordionItem>
 

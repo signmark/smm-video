@@ -109,7 +109,27 @@ export function registerSocialRoutes(app: Express) {
   });
 
   app.post("/api/validate/threads", authenticateUser, async (req, res) => {
-    const result = await threadsService.validateToken({ accessToken: req.body.accessToken, threadsUserId: req.body.threadsUserId });
+    let { accessToken, threadsUserId } = req.body;
+
+    // Токены вырезаны из браузера (sanitizeOAuthSecrets) — при наличии campaignId
+    // берём accessToken из настроек кампании. Клиенту возвращается только валидность.
+    if (!accessToken && req.body.campaignId) {
+      try {
+        const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+        if (adminToken && process.env.DIRECTUS_URL) {
+          const axios = (await import('axios')).default;
+          const resp = await axios.get(
+            `${process.env.DIRECTUS_URL}/items/user_campaigns/${req.body.campaignId}`,
+            { headers: { Authorization: `Bearer ${adminToken}` } }
+          );
+          const threads = resp.data.data?.social_media_settings?.threads || {};
+          accessToken = threads.accessToken;
+          threadsUserId = threadsUserId || threads.threadsUserId;
+        }
+      } catch {}
+    }
+
+    const result = await threadsService.validateToken({ accessToken, threadsUserId });
     const message = result.error
       ? result.error
       : result.pendingReview

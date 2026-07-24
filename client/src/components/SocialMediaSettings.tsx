@@ -325,13 +325,18 @@ export function SocialMediaSettings({
     }
   };
 
-  // Функция получения VK групп — серверный эндпоинт, токен из Directus (в браузер не приходит)
+  // Функция получения VK групп. Токен из базы в браузер не приходит —
+  // по умолчанию группы грузит сервер по campaignId; если пользователь
+  // вставил токен вручную, используем его напрямую.
   const fetchVkGroups = async () => {
     setLoadingVkGroups(true);
     try {
-      const response = await fetch(`/api/campaigns/${campaignId}/vk-groups`, {
-        headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` }
-      });
+      const manualToken = form.getValues('vk.token');
+      const response = manualToken
+        ? await fetch(`/api/vk/groups?access_token=${encodeURIComponent(manualToken)}`)
+        : await fetch(`/api/campaigns/${campaignId}/vk-groups`, {
+            headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` }
+          });
       const data = await response.json();
       
       if (data.success && data.groups) {
@@ -694,12 +699,12 @@ export function SocialMediaSettings({
   const handleSwitchInstagramAccount = async () => {
 
     
-    if (!instagramSettings?.accessToken) {
-
+    // Токен в браузер не приходит — сервер сам возьмёт его из настроек кампании
+    if (!instagramSettings?.configured && !instagramSettings?.businessAccountId) {
       toast({
         variant: "destructive",
         title: "Ошибка",
-        description: "Сначала настройте Instagram токен"
+        description: "Сначала подключите Instagram через OAuth"
       });
       return;
     }
@@ -713,9 +718,7 @@ export function SocialMediaSettings({
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
         },
-        body: JSON.stringify({
-          accessToken: instagramSettings.accessToken
-        })
+        body: JSON.stringify({})
       });
 
       const data = await response.json();
@@ -1054,23 +1057,24 @@ export function SocialMediaSettings({
   // Обновляем форму когда VK настройки загружены
   useEffect(() => {
     if (vkSettings) {
-      // Обновляем поля формы с данными из базы
-      if (vkSettings.token) {
-        form.setValue('vk.token', vkSettings.token);
-      }
+      // Токен из базы в браузер не приходит (sanitizeOAuthSecrets) — заполняем только groupId
       if (vkSettings.groupId) {
         form.setValue('vk.groupId', vkSettings.groupId);
+      }
+      if (vkSettings.groupName) {
+        form.setValue('vk.groupName', vkSettings.groupName);
       }
 
       // Принудительно обновляем отображение формы
       form.trigger('vk');
 
-      // Автоматически проверяем токен при загрузке (тихо, без тоста)
+      // Автоматически проверяем токен при загрузке (тихо, без тоста) —
+      // сервер сам достанет токен по campaignId
       // Пропускаем если уже валидировали для этих же настроек (защита от цикла)
-      if (vkSettings.token && vkValidatedForSettingsRef.current !== vkSettings) {
+      if (vkSettings.groupId && vkValidatedForSettingsRef.current !== vkSettings) {
         vkValidatedForSettingsRef.current = vkSettings;
         setVkStatus({ isLoading: true });
-        api.post('/validate/vk', { token: vkSettings.token, groupId: vkSettings.groupId, campaignId })
+        api.post('/validate/vk', { groupId: vkSettings.groupId, campaignId })
           .then(response => {
             setVkStatus({
               isLoading: false,
@@ -1908,7 +1912,7 @@ export function SocialMediaSettings({
                       variant="default" 
                       size="sm"
                       onClick={fetchVkGroups}
-                      disabled={loadingVkGroups || !form.watch('vk.token')}
+                      disabled={loadingVkGroups}
                     >
                       {loadingVkGroups ? 
                         <Loader2 className="h-4 w-4 animate-spin" /> : 
@@ -1918,7 +1922,7 @@ export function SocialMediaSettings({
                   </div>
                   {form.watch('vk.token') && (
                     <div className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded">
-                      ✅ Токен: {form.watch('vk.token')?.substring(0, 20)}...
+                      ✅ Токен введён
                     </div>
                   )}
                 </FormItem>
@@ -2049,9 +2053,9 @@ export function SocialMediaSettings({
                     </p>
                   </div>
                   <div className="flex space-x-2">
-                    {instagramSettings?.accessToken && (
-                      <Button 
-                        type="button" 
+                    {(instagramSettings?.configured || instagramSettings?.businessAccountId) && (
+                      <Button
+                        type="button"
                         variant="outline"
                         size="sm"
                         onClick={handleSwitchInstagramAccount}
@@ -2071,7 +2075,7 @@ export function SocialMediaSettings({
                     )}
                     <Button 
                       type="button" 
-                      variant={instagramSettings?.configured || instagramSettings?.token ? "default" : "outline"}
+                      variant={instagramSettings?.configured || instagramSettings?.businessAccountId ? "default" : "outline"}
                       size="sm"
                       onClick={() => openWizardIfAllowed('instagram', () => setShowInstagramWizard(true))}
                       disabled={loadingInstagramSettings}
@@ -2213,11 +2217,11 @@ export function SocialMediaSettings({
                   <div className="flex space-x-2">
                     <Button 
                       type="button" 
-                      variant={form.watch('facebook.token') ? "default" : "outline"}
+                      variant={form.watch('facebook.pageId') ? "default" : "outline"}
                       size="sm"
                       onClick={() => openWizardIfAllowed('facebook', () => setShowFacebookWizard(true))}
                     >
-                      {form.watch('facebook.token') ? 'Пересконфигурировать' : 'Настроить Facebook'}
+                      {form.watch('facebook.pageId') ? 'Пересконфигурировать' : 'Настроить Facebook'}
                     </Button>
                   </div>
                 </div>

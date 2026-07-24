@@ -46,7 +46,29 @@ export function registerValidationRoutes(app: Express): void {
   // VK API Token validation
   app.post('/api/validate/vk', async (req: Request, res: Response) => {
     try {
-      const { token, groupId } = req.body;
+      let { token, groupId } = req.body;
+      const { campaignId } = req.body;
+
+      // Токены вырезаны из браузера (sanitizeOAuthSecrets) — при наличии campaignId
+      // берём токен из настроек кампании. Клиенту возвращается только валидность.
+      if (!token && campaignId) {
+        const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+        if (adminToken && process.env.DIRECTUS_URL) {
+          try {
+            const axios = (await import('axios')).default;
+            const resp = await axios.get(
+              `${process.env.DIRECTUS_URL}/items/user_campaigns/${campaignId}`,
+              { headers: { Authorization: `Bearer ${adminToken}` } }
+            );
+            const vk = resp.data.data?.social_media_settings?.vk || {};
+            token = vk.token;
+            groupId = groupId || vk.groupId;
+          } catch (e: any) {
+            log(`Валидация VK: не удалось прочитать токен кампании ${campaignId}: ${e.message}`, 'api-validation');
+          }
+        }
+      }
+
       if (!token) {
         return res.status(400).json({ success: false, message: 'Токен не указан' });
       }

@@ -721,7 +721,7 @@ const InstagramSetupWizardSimple: React.FC<InstagramSetupWizardProps> = ({ campa
               <Label htmlFor="accessToken">Access Token *</Label>
               <Input
                 id="accessToken"
-                type="text"
+                type="password"
                 value={formData.accessToken}
                 onChange={(e) => setFormData(prev => ({ ...prev, accessToken: e.target.value }))}
                 placeholder="Вставьте полученный токен"

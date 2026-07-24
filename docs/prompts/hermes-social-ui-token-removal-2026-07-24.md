@@ -40,6 +40,10 @@
 - `POST /campaigns/:id/facebook-settings` — token опционален (fallback fb.token → IG-токен); принимает camelCase и snake_case (ручной выбор страницы слал `page_id` → pageId сохранялся undefined — старый баг, починен);
 - `FacebookSetupWizard.tsx` — клиент больше не читает IG-токены, шлёт `{ campaignId }`; ручной ввод токена остаётся fallback'ом.
 
+## Дополнение (aa6ac665): единый резолвер токенов
+
+Дублирование резолва токенов (5 мест) устранено: `server/services/campaign-token-resolver.ts` — `pickPlatformToken` (чистый каскад), `getCampaignSocialSettings`, `resolvePlatformToken`. Все новые эндпоинты-fallback'и переведены на него; dynamic import в facebook-webhook-unified убран; 12 unit-кейсов на каскады. Новые токен-fallback'и делать ТОЛЬКО через этот сервис.
+
 ## Открытое / для Mavis
 
 - Регрессионных тестов на новые fallback'и нет (нарушение DoD §2, осознанно — owner просил быстро; кандидаты: PATCH vk-settings без token, discover без body-токена, /validate/vk по campaignId).

@@ -32,6 +32,8 @@ vi.mock('../services/global-api-keys', () => ({
 }));
 
 vi.mock('../middleware/user-auth', () => ({
+  requireSmmAdmin: (req: any, res: any, next: any) =>
+    req.user?.is_smm_admin === true ? next() : res.status(403).json({ error: 'forbidden' }),
   authenticateUser: (_req: any, _res: any, next: () => void) => {
     (_req as any).user = { id: 'user-1', token: 'token-1' };
     next();

@@ -40,6 +40,8 @@ vi.mock('../utils/logger', () => ({ log: vi.fn() }));
 // пользователя через Directus. Этот файл проверяет redaction, а не auth —
 // подменяем middleware пропуском запроса.
 vi.mock('../middleware/user-auth', () => ({
+  requireSmmAdmin: (req: any, res: any, next: any) =>
+    req.user?.is_smm_admin === true ? next() : res.status(403).json({ error: 'forbidden' }),
   authenticateUser: (req: any, res: any, next: any) => {
     const token = req.headers.authorization?.replace('Bearer ', '');
     if (!token) return res.status(401).json({ error: 'Unauthorized' });

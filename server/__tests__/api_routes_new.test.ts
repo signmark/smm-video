@@ -43,6 +43,8 @@ vi.mock('../services/ai-service', () => ({
 // is_smm_admin. В тесте это лишний сетевой вызов на 5+ секунд. Подменяем
 // middleware на no-op, который ставит фиктивного юзера и зовёт next().
 vi.mock('../middleware/user-auth', () => ({
+  requireSmmAdmin: (req: any, res: any, next: any) =>
+    req.user?.is_smm_admin === true ? next() : res.status(403).json({ error: 'forbidden' }),
   authenticateUser: (req: any, _res: any, next: any) => {
     req.user = {
       id: 'test-user-id',

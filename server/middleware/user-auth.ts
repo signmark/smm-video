@@ -44,6 +44,20 @@ async function fetchAdminStatus(userId: string): Promise<boolean> {
   }
 }
 
+/**
+ * Гейт для admin-only операций. Ставить ПОСЛЕ authenticateUser.
+ * Источник истины — req.user.is_smm_admin, который authenticateUser
+ * заполняет из Directus (fetchAdminStatus) или static-token пути.
+ */
+export const requireSmmAdmin = (req: Request, res: Response, next: NextFunction) => {
+  if (req.user?.is_smm_admin === true) {
+    return next();
+  }
+  return res.status(403).json({
+    error: 'Доступ запрещён: требуются права администратора',
+  });
+};
+
 export const authenticateUser = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const authHeader = req.headers.authorization;

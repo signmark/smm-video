@@ -39,6 +39,8 @@ vi.mock('../services/publish-scheduler', () => ({
 }));
 
 vi.mock('../middleware/user-auth', () => ({
+  requireSmmAdmin: (req: any, res: any, next: any) =>
+    req.user?.is_smm_admin === true ? next() : res.status(403).json({ error: 'forbidden' }),
   authenticateUser: (req: any, _res: any, next: any) => {
     req.user = { id: 'user-1', token: 'mock-token' };
     next();

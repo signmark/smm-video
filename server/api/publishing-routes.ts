@@ -2,7 +2,7 @@ import { Express, Request, Response } from 'express';
 import axios from 'axios';
 import { storage } from '../storage';
 import { socialPublishingService } from '../services/social/index';
-import { authenticateUser } from '../middleware/user-auth';
+import { authenticateUser, requireSmmAdmin } from '../middleware/user-auth';
 
 // Не используем старый сервис, заменив его на новый модульный
 import { getPublishScheduler } from '../services/publish-scheduler';
@@ -301,9 +301,12 @@ export function registerPublishingRoutes(app: Express): void {
   
   // Управление глобальным флагом отключения публикаций
   // Важно: этот маршрут должен быть определен ДО маршрута с параметром :contentId
-  app.all('/api/publish/toggle-publishing', authenticateUser, async (req: Request, res: Response) => {
+  // Security §2 (2026-07-24): admin-only + только POST (глобальный процесс-контроль,
+  // обычный пользователь мог останавливать публикации всех tenants; GET-мутации запрещены)
+  app.post('/api/publish/toggle-publishing', authenticateUser, requireSmmAdmin, async (req: Request, res: Response) => {
     try {
-      const enable = req.query.enable === 'true';
+      const rawEnable = req.body?.enable ?? req.query.enable;
+      const enable = rawEnable === true || rawEnable === 'true';
       const publishScheduler = getPublishScheduler();
       
       // Новый планировщик не имеет флага disablePublishing
@@ -400,7 +403,8 @@ export function registerPublishingRoutes(app: Express): void {
   
   // Очистка кэша обработанных ID контента
   // Важно: этот маршрут должен быть определен ДО маршрута с параметром :contentId
-  app.all('/api/publish/reset-processed-cache', authenticateUser, async (req: Request, res: Response) => {
+  // Security §2 (2026-07-24): admin-only + только POST (рестарт планировщика — process-global)
+  app.post('/api/publish/reset-processed-cache', authenticateUser, requireSmmAdmin, async (req: Request, res: Response) => {
     try {
       log('Запрос на очистку кэша обработанных ID контента', 'api');
       

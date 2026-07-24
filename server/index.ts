@@ -125,6 +125,13 @@ import instagramOAuthRouter from './routes/instagram-oauth';
 import threadsOAuthRouter from './routes/threads-oauth';
 import tiktokAuthRouter from './routes/tiktok-auth';
 
+// Body parser для POST/OPTIONS callback'ов — ОБЯЗАТЕЛЬНО ДО хендлеров, иначе
+// req.body = undefined и handler'ы с деструктуризацией (например VK token-webhook
+// делает `const { access_token } = req.body`) упадут в unhandled promise rejection →
+// crash loop. Полный express.json на /api/* стоит ниже (с лимитом 50mb), но нам
+// нужен свой здесь с 1mb — токены весят мало, и ставим ДО bypass-цикла.
+app.use('/api', express.json({ limit: '1mb' }));
+
 const PUBLIC_OAUTH_CALLBACKS: Array<{
   router: any;
   routerPath: string;

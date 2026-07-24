@@ -107,14 +107,15 @@ app.set('trust proxy', 1);
 // === Universal public OAuth callback bypass (security plan §N — fix 2026-07-24) ===
 // Внешние провайдеры (Google / VK / Instagram / Threads / TikTok) редиректят
 // пользователя обратно на /api/*/auth/callback БЕЗ Bearer-токена нашего приложения.
-// Также needanapp.ru (прокси для VK) стучит по /api/vk/callback для отправки токенов.
+// Также needanapp.ru (прокси для VK) стучит по /api/vk/callback и
+// /api/vk/token-webhook/:campaignId (POST с токенами) для отправки токенов.
 //
 // Эти пути публичные by design — handler валидирует state против серверного
 // хранилища (см. youtube-auth.ts:122, instagram-oauth.ts, threads-oauth.ts и т.д.).
 //
 // Чтобы обойти ЛЮБОЙ глобальный `app.use('/api', authMiddleware)` (в т.ч. чужой,
 // добавленный в Mimo'вой security-hardening сборке) — мы монтируем handler'ы
-// НАПРЯМУЮ через app.get В САМОМ НАЧАЛЕ, до всех остальных middleware.
+// НАПРЯМУЮ через app.{get,post,options} В САМОМ НАЧАЛЕ, до всех остальных middleware.
 // Express применяет обработчики в порядке регистрации, и app.get, зарегистрированный
 // раньше app.use('/api', X), сработает первым — X не получит шанса отбить запрос 401.
 // Не удалять без апдейта security-плана.
@@ -124,27 +125,39 @@ import instagramOAuthRouter from './routes/instagram-oauth';
 import threadsOAuthRouter from './routes/threads-oauth';
 import tiktokAuthRouter from './routes/tiktok-auth';
 
-const PUBLIC_OAUTH_CALLBACKS = [
-  { router: youtubeAuthRouter, routerPath: '/youtube/auth/callback', publicPath: '/api/youtube/auth/callback' },
-  { router: vkOAuthRouter, routerPath: '/vk/oauth2/callback', publicPath: '/api/vk/oauth2/callback' },
-  { router: vkOAuthRouter, routerPath: '/vk/callback', publicPath: '/api/vk/callback' },
-  { router: instagramOAuthRouter, routerPath: '/instagram/auth/callback', publicPath: '/api/instagram/auth/callback' },
-  { router: threadsOAuthRouter, routerPath: '/threads/auth/callback', publicPath: '/api/threads/auth/callback' },
-  { router: tiktokAuthRouter, routerPath: '/tiktok/auth/callback', publicPath: '/api/tiktok/auth/callback' },
+const PUBLIC_OAUTH_CALLBACKS: Array<{
+  router: any;
+  routerPath: string;
+  publicPath: string;
+  method: 'get' | 'post' | 'options';
+}> = [
+  // OAuth provider redirect callbacks (GET, redirect from Google/VK/IG/Threads/TikTok)
+  { router: youtubeAuthRouter, routerPath: '/youtube/auth/callback', publicPath: '/api/youtube/auth/callback', method: 'get' },
+  { router: vkOAuthRouter, routerPath: '/vk/oauth2/callback', publicPath: '/api/vk/oauth2/callback', method: 'get' },
+  { router: vkOAuthRouter, routerPath: '/vk/callback', publicPath: '/api/vk/callback', method: 'get' },
+  { router: instagramOAuthRouter, routerPath: '/instagram/auth/callback', publicPath: '/api/instagram/auth/callback', method: 'get' },
+  { router: threadsOAuthRouter, routerPath: '/threads/auth/callback', publicPath: '/api/threads/auth/callback', method: 'get' },
+  { router: tiktokAuthRouter, routerPath: '/tiktok/auth/callback', publicPath: '/api/tiktok/auth/callback', method: 'get' },
+  // needanapp.ru webhook для VK: POST с токенами (body: {access_token, refresh_token, device_id, client_id})
+  { router: vkOAuthRouter, routerPath: '/vk/token-webhook/:campaignId', publicPath: '/api/vk/token-webhook/:campaignId', method: 'post' },
+  // CORS preflight от needanapp (vk.needanapp.ru → smm.omemo.tech)
+  { router: vkOAuthRouter, routerPath: '/vk/token-webhook/:campaignId', publicPath: '/api/vk/token-webhook/:campaignId', method: 'options' },
 ];
 
-for (const { router, routerPath, publicPath } of PUBLIC_OAUTH_CALLBACKS) {
-  // Найти внутренний handler в router'е по path
+for (const { router, routerPath, publicPath, method } of PUBLIC_OAUTH_CALLBACKS) {
+  // Найти внутренний handler в router'е по path и method
   const layer = (router as any).stack.find(
-    (l: any) => l.route && l.route.path === routerPath
+    (l: any) => l.route && l.route.path === routerPath && l.route.methods[method]
   );
   if (!layer) {
-    console.warn(`[oauth-bypass] ⚠️ Не найден handler для ${publicPath} в роутере — пропускаю`);
+    console.warn(`[oauth-bypass] ⚠️ Не найден handler для ${method.toUpperCase()} ${publicPath} в роутере — пропускаю`);
     continue;
   }
   const innerHandler = layer.route.stack[0].handle;
-  app.get(publicPath, innerHandler);
-  console.log(`[oauth-bypass] ✅ ${publicPath} → смонтирован до всех middleware`);
+  if (method === 'get') app.get(publicPath, innerHandler);
+  else if (method === 'post') app.post(publicPath, innerHandler);
+  else if (method === 'options') app.options(publicPath, innerHandler);
+  console.log(`[oauth-bypass] ✅ ${method.toUpperCase()} ${publicPath} → смонтирован до всех middleware`);
 }
 
 // Security-заголовки. CSP/frameguard/CORP отключены намеренно: приложение работает

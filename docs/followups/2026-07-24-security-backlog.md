@@ -1,7 +1,7 @@
 # Security followup backlog — 2026-07-24
 
 **Источник:** `docs/PRIORITIZED_IMPROVEMENT_PLAN_2026-07-23.md` (15 пунктов, 5 волн)
-**Снимок:** на 2026-07-24, после закрытия incident §1
+**Снимок:** обновлён 2026-07-25 — закрыты §1, §2, §4, §5-low и OAuth callback 401 incident (root cause установлен)
 **Ответственный за трекинг:** owner (Dmitry), координация через Mavis
 
 ---
@@ -39,7 +39,7 @@
 - **Тесты:** `401/403` для non-admin на всех HTTP-методах, запрет GET-мутаций
 - **Effort:** **low**
 - **Ценность:** дешёво устраняет межтенантный DoS и опасную GET-мутацию
-- **Статус:** 🟡 open, рекомендую следующим
+- **Статус:** ✅ **CLOSED** — commit `e102578d`, `requireSmmAdmin` + POST-only, тесты `server/__tests__/scheduler-admin-gate.test.ts` (см. `docs/prompts/claude-security-2-4-5-2026-07-24.md`)
 
 #### §4 — Upload endpoint hardening
 - **Scope:** `app.post('/api/s3/upload-image', ...)` в `server/index.ts:344`
@@ -47,14 +47,14 @@
 - **Что делать (medium, опционально):** для крупных файлов — streaming upload или temp spool; снизить глобальный JSON/urlencoded limit до реально необходимого
 - **Тесты:** oversized и non-image запросы стабильно получают `413/415`; heap не зависит линейно от размера крупных загрузок
 - **Effort:** **low** (базовые защитные лимиты) / **medium** (streaming)
-- **Статус:** 🟡 open
+- **Статус:** ✅ **CLOSED (low)** — commit `34a8ebf4`, `server/api/upload-image-route.ts`: лимит 10 MB, MIME allowlist + magic bytes, S3 key на сервере, generic-ошибки. Streaming (medium) остаётся открытым
 
 #### §5 — WebSocket isolation
 - **Scope:** `/ws` — неаутентифицированный клиент получает публикационные события всех пользователей
 - **Что делать (low):** временно отключить `/ws` в production
 - **Что делать (medium):** валидировать Directus session при upgrade, проверять `Origin`, привязать socket к user/tenant ID, отправлять события только владельцу; лимиты размера и частоты сообщений
 - **Effort:** **low** (temp close) / **medium** (full)
-- **Статус:** 🟡 open
+- **Статус:** ✅ **CLOSED (low)** — commit `34a8ebf4`, `server/utils/ws-gate.ts`: `/ws` в production отклоняет upgrade, override `WS_PUBLIC_EVENTS_ENABLED=true`. 🟡 **§5-medium open** — session-validated user-scoped WS
 
 ### Protective layer (6–8)
 
@@ -129,10 +129,10 @@
 
 | Статус | Кол-во | Пункты |
 |---|---|---|
-| ✅ Закрыто | 1 | §1 |
-| 🟠 Mitigated, closure blocked | 1 | OAuth callback 401 incident |
+| ✅ Закрыто | 5 | §1, §2, §4, §5-low, OAuth callback 401 incident (root cause установлен 2026-07-25) |
 | ⛔ Deferred | 1 | §3 (до августа) |
-| 🟡 Открыто | 13 | §2, §4-§15 |
+| 🟡 Открыто | 10 | §5-medium, §6-§15 |
+| 🔵 Принятый долг | 1 | остаточные P1 инцидента: ранний parser на весь `/api`, callbacks в обход baseline middleware, VK webhook без подписи/tenant binding, нет тестов на wiring |
 
 ## Инцидент: OAuth callback блокировка (2026-07-24)
 
@@ -140,13 +140,23 @@
 24.07 владелец подтвердил 401 на YouTube OAuth callback. Для публичных callback'ов YouTube, VK, Instagram, Threads и TikTok, а также `/api/vk/token-webhook/:campaignId`, применён общий ранний bypass. После деплоя callback handlers снова достижимы, но точный blast radius и источник 401 по prod-артефакту не сохранены доказательствами.
 
 ### Корневая причина
-**Не подтверждена.** Commit `a3ba91133` от Replit Agent действительно добавил глобальный `requireActiveSubscription`, но уже в первой версии middleware:
+**УСТАНОВЛЕНА 2026-07-25.** Гипотеза owner'а («инцидент вызвал security-фикс, из-за которого API-ключи перестали попадать в UI и стали доступны только на бэке»), подтверждена по коду и истории.
 
-- GET/HEAD/OPTIONS всегда вызывают `next()`;
-- мутации без пользовательского токена также вызывают `next()`;
-- блокировка истёкшей подписки возвращает 403, не наблюдавшийся 401.
+Источник — `b97744ff` «fix(security): keep social credentials server-side» (2026-07-21 14:06 MSK, owner). Коммит уводил соц-ключи из UI на сервер и попутно добавил в социальные роутеры `router.use(authenticateUser)`.
 
-Поэтому `requireActiveSubscription` не объясняет GET-401 OAuth callback'ов и не может считаться root cause этого инцидента. Удаление `/api/auth/system-token` в `1473f4bf` также не имело runtime-вызовов из callback handlers. Требуется установить, какой именно prod build/middleware возвращал 401.
+Механизм 401:
+
+1. `server/routes/facebook-groups-discovery.ts:7` — `router.use(authenticateUser)` (добавлено `b97744ff`).
+2. `server/index.ts:402` — этот роутер смонтирован как `app.use('/api', facebookGroupsRouter)`, то есть на **весь** префикс `/api`.
+3. `server/index.ts:409` — YouTube auth router монтируется **после** него.
+4. Express выполняет `router.use(...)` примонтированного роутера для любого запроса с совпадающим префиксом — **до сопоставления маршрутов** и независимо от того, есть ли внутри роутера подходящий путь. Поэтому `GET /api/youtube/auth/callback` заходил в facebook-роутер и не выходил из него.
+5. У редиректа от Google нет ни заголовка `Authorization`, ни cookie-сессии → `server/middleware/user-auth.ts:75` возвращает `401` и обрывает цепочку. Обработчик callback'а не вызывался.
+
+Сходится всё, что не объяснял `requireActiveSubscription`: именно 401 (а не 403), именно на GET, именно с 21.07, и «ключи только на бэке» как причина.
+
+**Исключённые версии:** `a3ba91133` (`requireActiveSubscription`) — GET/HEAD/OPTIONS и мутации без пользовательского токена всегда вызывают `next()`, а истёкшая подписка даёт 403; GET-401 не объясняет. `1473f4bf` (удаление `/api/auth/system-token`) — runtime-вызовов из callback handlers не имел. Обе версии закрыты.
+
+**Урок (класс дефекта):** `router.use(middleware)` внутри роутера, примонтированного на широкий префикс (`/api`), работает как глобальный gate для всего префикса, а не только для маршрутов этого роутера. Аутентификацию вешать на конкретные маршруты либо монтировать роутер на узкий префикс (`/api/facebook`) — как уже сделано для `facebookPagesRouter` в `server/index.ts:386`.
 
 ### Timeline
 1. **25.06.2026** — `requireActiveSubscription` добавлен глобально (Replit Agent)
@@ -165,7 +175,7 @@ Read-only prod smoke 24.07 после pull `bcff975d`: YouTube без params →
 
 ### Блокеры закрытия
 
-1. **P0 — root cause/provenance не установлены.** Нет зафиксированного commit SHA или digest проблемного prod-артефакта и нет строки middleware, вернувшей 401. Нельзя назначать виновника по корреляции.
+1. ~~**P0 — root cause/provenance не установлены.**~~ **СНЯТ 2026-07-25:** root cause установлен (`b97744ff` + `router.use` на `/api`, см. раздел «Корневая причина»). Виновник назначен не по корреляции, а по механизму, воспроизводимому по коду.
 2. **P1 — ранний JSON parser затрагивает весь API.** Два одинаковых `app.use('/api', express.json({ limit: '1mb' }))` в `server/index.ts` выполняются до штатного parser с лимитом 50 MB. Любой JSON `/api/*` больше 1 MB теперь получит 413, хотя callback parser нужен только VK webhook.
 3. **P1 — callbacks обходят весь baseline-контур.** Ранние handlers завершают ответ до helmet, CORS, rate limiting, cache-control и HTTP logging, а не только до предполагаемого auth-gate.
 4. **P1 security — VK webhook/status доверяют одному `campaignId`.** Публичный POST использует admin token для записи social settings, а публичный GET — для чтения статуса, без подписи/одноразового state и без tenant ownership gate.
@@ -173,19 +183,32 @@ Read-only prod smoke 24.07 после pull `bcff975d`: YouTube без params →
 
 ### Эскалация по каноническому циклу
 
-1. **Hermes — исполнитель:** заменить emergency bypass на явный public-callback router после baseline middleware и до конкретного auth-gate; ограничить 1 MB parser только POST VK webhook; убрать дубль parser; добавить интеграционные негативные тесты (anonymous callback достигает handler, protected endpoint остаётся 401/403, malformed/oversized webhook, обычный `/api` JSON >1 MB не режется новым parser); отдельно закрыть подпись/state и tenant binding VK webhook/status.
-2. **Mavis — независимый ревьюер:** проверить каждый blocker по `review-verdict-template.md`, самостоятельно прогнать tests/build и подтвердить, что тест падает без исправления.
-3. **Mimo — deploy/prod provenance и второй reviewer:** зафиксировать SHA/digest реально работавшего prod build до mitigation, найти источник 401 по artifact/log diff, проверить Docker/deploy-часть и после owner gate задеплоить только подтверждённый main.
-4. **Owner (Dmitry) — gate:** решить merge/deploy после независимого verdict; security-critical push и ручные prod-hotfix'ы без зафиксированного делегирования не выполнять.
+**ОТМЕНЕНА 2026-07-25 решением owner'а:** «инцидент считаю исчерпанным после фиксов Фабом», «ФБ сейчас работает через токен ИГ, этого пока хватает», «я бы сейчас вообще не лез в стабилизированную Fable 5 ветку». Пункты для Hermes/Mavis/Mimo ниже **не выполнять** без нового поручения — они сохранены как описание того, что осталось не сделано, а не как активные задачи.
+
+1. ~~Hermes:~~ заменить emergency bypass на явный public-callback router после baseline middleware и до конкретного auth-gate; ограничить 1 MB parser только POST VK webhook; убрать дубль parser; добавить интеграционные негативные тесты; отдельно закрыть подпись/state и tenant binding VK webhook/status.
+2. ~~Mavis:~~ независимое ревью по `review-verdict-template.md`.
+3. ~~Mimo:~~ prod provenance по artifact/log diff — **более не требуется**, root cause установлен по коду.
+4. **Owner (Dmitry) — gate:** решение принято, см. выше.
+
+### Остаточный риск (принят, не устраняется сейчас)
+
+Фиксы лечат симптом: публичные callback'и смонтированы раньше всех middleware (`server/index.ts:117-143`). Сама ловушка жива — **любой новый публичный роут, зарегистрированный после `server/index.ts:402`, снова получит 401**, не имея ни строки собственного кода аутентификации.
+
+- **Как чинится:** сузить `app.use('/api', facebookGroupsRouter)` до `/api/facebook` (одна строка + регрессионный тест).
+- **Почему не чинится сейчас:** решение owner'а 2026-07-25 не трогать стабилизированную ветку; Facebook работает через IG-токен, потребности нет.
+- **Когда возвращаться:** при следующем добавлении публичного роута под `/api`, либо вместе с §14 (unified auth), либо при первом же повторе 401 на callback'е.
+- **Кому напомнить:** любому исполнителю, который будет монтировать публичный endpoint под `/api` — читать раздел «Урок» выше до написания кода.
 
 ### Статус
-🟠 **MITIGATED, CLOSURE BLOCKED** — live-доступность восстановлена, но root cause не доказан и blockers выше открыты.
+✅ **CLOSED 2026-07-25** (решение owner'а). Live-доступность восстановлена фиксами Fable 5, root cause установлен и задокументирован, остаточный риск принят осознанно и описан выше. P1-блокеры (ранний parser на весь `/api`, callbacks в обход baseline middleware, VK webhook без подписи/tenant binding, отсутствие тестов на wiring) закрытием инцидента **не устранены** — переносятся в общий беклог как долг, приоритет назначает owner.
 
 ---
 
 ## Рекомендуемый next-up
 
-**§2 — Admin-only scheduler** (low effort, закрывает межтенантный DoS, паттерн как у §1). После §2 — §4 (тоже low, защита upload'а), потом §5 (WS isolation, low для temp close).
+~~**§2 → §4 → §5-low**~~ — выполнено 2026-07-24 (`e102578d`, `34a8ebf4`).
+
+**Актуальный next-up: §7 — security regression suite в CI** (`docs/specs/spec-07-ci-regression.md`). `.github/workflows/` не существует, при этом тесты §1/§2/§4/§5 уже написаны — CI просто нечем их запускать, и следующий рефакторинг отломает их молча. Далее по `docs/context/state.json`: §6 fail-closed → §11 Docker → §10 health/logging.
 
 ## Связи
 
@@ -198,6 +221,9 @@ Read-only prod smoke 24.07 после pull `bcff975d`: YouTube без params →
 - `02b47f53` / `c0994899` — Mavis + owner merge: VK token-webhook POST/OPTIONS bypass
 - `156ec84b` / `e7c31890` / `6c5c9920` — parser fix после обнаруженного Mimo crash loop (в main попали два эквивалентных mount)
 - `f40fc6ec` — Hermes: VK token-webhook status bypass
+- `b97744ff` — **root cause инцидента**: `fix(security): keep social credentials server-side`, добавил `router.use(authenticateUser)` в facebook-роутер, смонтированный на весь `/api`
+- `e102578d` — §2 admin-only scheduler
+- `34a8ebf4` — §4 upload hardening + §5-low WS close
 - `a3ba91133` — Replit Agent: введение `requireActiveSubscription`; проверен и исключён как объяснение GET-401
 - `MEMORY.md` (Mavis agent) — урок про middleware ordering vs 404 catch-all
 - `c0ff1d4` (бывший `fde12ed`) — untrack `.env.example`

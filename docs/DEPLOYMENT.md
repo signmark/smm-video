@@ -33,24 +33,47 @@ docker inspect smm --format '{{index .Config.Labels "com.docker.compose.project.
 
 ## Окружение
 
-Единственный источник переменных для прода — **`/root/.env`**. Он подключается в
+Файлового источника ровно один — **`/root/.env`**, он подключается в
 `/root/docker-compose.yml` через `env_file: .env` (путь относительный, разрешается от каталога
-compose-файла, то есть от `/root`).
+compose-файла, то есть от `/root`). Но переменные в работающем контейнере складываются из
+**трёх** источников, в порядке применения:
 
-**Файла `/root/smm/.env` быть не должно.** Это не случайность и не недосмотр:
+| # | Источник | Что даёт |
+|---|---|---|
+| 1 | `env_file: .env` → `/root/.env` | инфраструктура и большинство ключей (44 переменные) |
+| 2 | `environment:` в compose | `NODE_ENV`, `PORT=5000`, `DIRECTUS_URL=http://directus:8055`, `VIDEO_APP_HOST` — перекрывают `.env` |
+| 3 | Directus, коллекция `global_api_keys` | подгружается на старте, [`server/services/load-env-from-directus.ts`](../server/services/load-env-from-directus.ts) |
+
+Третий источник легко упустить. При старте сервер тянет из Directus 16 ключей —
+`BEGET_S3_ACCESS_KEY/SECRET_KEY/BUCKET`, `GEMINI_API_KEY`, `VERTEX_AI_API_KEY`,
+`TELEGRAM_BOT_TOKEN`, `N8N_*`-вебхуки, `SCRAPER_ANALYTICS_API_KEY` и др. Обычно они
+проставляются только если в env пусто, но три из них —
+**`GEMINI_API_KEY`, `GEMINI_PROXY_URL`, `SCRAPER_ANALYTICS_API_KEY` — перекрывают env всегда**
+(список `ALWAYS_OVERRIDE_FROM_DIRECTUS`).
+
+Практический вывод: **если такого ключа нет в `/root/.env` — это не поломка.** Он, скорее
+всего, лежит в Directus. Правка `/root/.env` для этих трёх ключей вообще ни на что не влияет —
+менять надо в Directus. Загрузка не блокирующая: таймаут 12 с, при ошибке сервис стартует на
+том, что есть в env, с warn'ом `[load-env-directus]` в логе.
+
+### Почему `/root/smm/.env` быть не должно
 
 - в образе его нет — `.env` исключён в [`.dockerignore`](../.dockerignore);
 - на хосте он опасен: [`server/load-env.ts`](../server/load-env.ts) вызывает
   `dotenv.config({ override: true })` относительно `process.cwd()`, поэтому при запуске
   сервера из `/root/smm` такой файл **молча пересилит** переменные, пришедшие из окружения.
 
-Если `/root/smm/.env` появился — его создали по ошибке. Удалить. `load-env.ts` теперь
-ругается в лог, когда `.env` реально перекрыл уже заданные переменные при
-`NODE_ENV=production`.
+Если файл появился — его создали по ошибке. Удалить. `load-env.ts` теперь пишет warn, когда
+`.env` реально перекрыл уже заданные переменные при `NODE_ENV=production`.
 
-Шаблон переменных приложения — [`.env.sample`](../.env.sample). Инфраструктурные переменные
-(`POSTGRES_PASSWORD`, `SSL_EMAIL`, `DIRECTUS_*`, `N8N_*`) живут только в `/root/.env` и в
-`.env.sample` не дублируются.
+### Про шаблоны
+
+Полноценного шаблона переменных приложения в репозитории **нет**. Корневой
+[`.env.sample`](../.env.sample) на эту роль не годится: это чужой инфраструктурный шаблон
+(Budibase, MinIO, CouchDB, Appsmith), оставшийся от какого-то self-hosting-набора, и ни одной
+переменной SMM в нём не перечислено. Не ориентироваться на него.
+Фактический список — `grep -rhoE "process\.env\.[A-Z][A-Z0-9_]+" server/ shared/` (110 штук)
+плюс `KEYS_TO_LOAD` в `load-env-from-directus.ts`.
 
 ## Пересборка и раскатка
 

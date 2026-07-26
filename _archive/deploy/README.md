@@ -101,6 +101,14 @@ Replit) и с тех пор не менялось ни разу. Ни один �
 ## Что стоит забрать, а не выбросить
 
 `.env.example` — единственное место, где были перечислены `BEGET_S3_*`, `GEMINI_API_KEY`,
-`DIRECTUS_SECRET`, `N8N_ENCRYPTION_KEY`, `SMM_DB_NAME`. Части из них (`BEGET_S3_*`,
-`GEMINI_API_KEY`) нет и в корневом `.env.sample`, хотя приложение их читает. Это отдельный
-follow-up, не входящий в текущую уборку.
+`DIRECTUS_SECRET`, `N8N_ENCRYPTION_KEY`, `SMM_DB_NAME`.
+
+Важная оговорка: отсутствие `BEGET_S3_*` и `GEMINI_API_KEY` в `/root/.env` — **не пробел**.
+Эти ключи приложение подтягивает на старте из Directus (`global_api_keys`, см.
+`server/services/load-env-from-directus.ts`), а `GEMINI_API_KEY` и `GEMINI_PROXY_URL` вообще
+всегда перекрываются значением из Directus. Подробнее — в `docs/DEPLOYMENT.md`, раздел
+«Окружение».
+
+Реальный пробел в другом: полноценного шаблона переменных приложения в репозитории нет,
+а корневой `.env.sample` — чужой инфраструктурный шаблон (Budibase/MinIO/CouchDB) и на эту
+роль не годится. Отдельный follow-up, в уборку не входит.

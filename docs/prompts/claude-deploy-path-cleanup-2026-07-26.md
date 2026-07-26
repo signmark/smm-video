@@ -68,6 +68,54 @@ v1, а шим на Compose v5, так что команда бы отработ�
 
 `docs/prompts/*` не трогал — это датированные исторические артефакты.
 
+## Второй заход (после «продолжай»)
+
+**Контрольная зачистка.** `git ls-files | grep docker-compose` вне `_archive/` — **ноль
+файлов**. То есть `docker compose` без `-f`, запущенный из любого каталога репозитория,
+теперь просто не найдёт compose-файл. Из Dockerfile'ов вне архива остались только рабочие:
+корневой `Dockerfile` (прод-сервис `smm`) и `video-app/Dockerfile` (прод-сервис `video-app`,
+context `./smm/video-app`).
+
+10. **Корневой `Dockerfile-n8n` → `_archive/deploy/Dockerfile-n8n-root`.** Прод-n8n собран
+    из `image: n8nio/n8n:latest`, build не используется; ссылались на него только архивные
+    compose-файлы. В самом файле битая кодировка комментариев и захардкоженный
+    `N8N_ENCRYPTION_KEY=your_secret_key_here`.
+11. **`.dockerignore`: добавлен `_archive/`.** Архивные compose/Dockerfile не должны попадать
+    в build context и в builder-стадию через `COPY . .`. Проверено: никто из
+    `server/`/`client/`/`shared/`/`scripts/` из `_archive` не импортирует.
+
+### Найденная ошибка в моём же первом заходе
+
+В первой версии `docs/DEPLOYMENT.md` я написал «шаблон переменных приложения — `.env.sample`»
+и вынес в follow-up «`.env.sample` не покрывает `BEGET_S3_*` и `GEMINI_API_KEY`». **Оба
+утверждения неверны**, проверил при подготовке follow-up'а:
+
+- корневой `.env.sample` — вообще не про это приложение: чужой инфраструктурный шаблон
+  (Budibase, MinIO, CouchDB, Appsmith), ни одной переменной SMM в нём нет;
+- `BEGET_S3_*` и `GEMINI_API_KEY` отсутствуют в `/root/.env` **намеренно** — они приходят
+  на старте из Directus (`global_api_keys`).
+
+### Третий источник окружения — и он не был описан
+
+Задача формулировалась как «окружение — только `/root/.env`». Это верно для файлового
+источника, но в контейнере переменные складываются из трёх мест:
+
+1. `env_file: .env` → `/root/.env` (44 переменные);
+2. `environment:` в compose — `NODE_ENV`, `PORT`, `DIRECTUS_URL`, `VIDEO_APP_HOST`,
+   перекрывают `.env`;
+3. **Directus, коллекция `global_api_keys`** — `server/services/load-env-from-directus.ts`
+   тянет на старте 16 ключей (`BEGET_S3_*`, `GEMINI_API_KEY`, `VERTEX_AI_API_KEY`,
+   `TELEGRAM_BOT_TOKEN`, `N8N_*`-вебхуки, `SCRAPER_ANALYTICS_API_KEY`).
+
+Причём `GEMINI_API_KEY`, `GEMINI_PROXY_URL`, `SCRAPER_ANALYTICS_API_KEY` перекрывают env
+**всегда** (`ALWAYS_OVERRIDE_FROM_DIRECTUS`) — правка `/root/.env` по ним ни на что не влияет,
+менять надо в Directus. Загрузка не блокирующая: таймаут 12 с, при сбое старт продолжается на
+env-фоллбэках с warn'ом `[load-env-directus]`.
+
+Раздел «Окружение» в `docs/DEPLOYMENT.md` переписан под это, ложные утверждения убраны,
+follow-up в `_archive/deploy/README.md` исправлен. **Mimo: это ключевое место для сверки** —
+если моя реконструкция приоритетов расходится с тем, что ты видишь на проде, скажи.
+
 ## Верификация (мой прогон)
 
 - `npx vitest run`: **12 failed | 928 passed (940)**, 89 файлов, ~20с.
@@ -83,6 +131,9 @@ v1, а шим на Compose v5, так что команда бы отработ�
 - Сборка сервера: `npx esbuild server/index.ts --bundle ...` (та же команда, что в `npm run build`)
   → проходит, 3.5mb.
 - Фронт не менялся.
+- **Второй заход:** `docker build --target builder` с новым `.dockerignore` проходит
+  (builder-стадия — это как раз `COPY . .` + `npm run build`). Тестовый образ удалён,
+  `root-smm:latest` не тронут. Повторный `npx vitest run` — те же 12 failed | 928 passed.
 - Прод не трогал: ни одной команды, меняющей состояние Docker, не выполнялось. Провенанс
   подтверждён только чтением:
   `docker inspect smm --format '{{index .Config.Labels "com.docker.compose.project.config_files"}}'`
@@ -111,11 +162,16 @@ v1, а шим на Compose v5, так что команда бы отработ�
 - **Секреты в `_archive/deploy/FULL_DEPLOYMENT_GUIDE.md`, строки 62–64** — похожие на
   настоящие Access/Secret Key Beget S3 в «примерах». Файл переехал, но содержимое не менял:
   ротация утёкших в историю токенов — отложенное решение owner'а, не моя правка.
-- **`.env.sample` не покрывает `BEGET_S3_*` и `GEMINI_API_KEY`**, хотя приложение их читает;
-  единственным их перечнем был `deploy/.env.example`, теперь в архиве. Follow-up, в скоуп
-  уборки не входит.
-- **Корневой `Dockerfile-n8n`** — прод берёт готовый `n8nio/n8n:latest`, сборка не
-  используется. Не трогал: файл лежит в корне, а не в `deploy/`, и это отдельное решение.
+- **Шаблона переменных приложения в репозитории нет.** Корневой `.env.sample` на эту роль не
+  годится (см. выше). Сделать нормальный `.env.example` — отдельная задача: 110 переменных,
+  и по каждой надо решить, обязательная она, есть ли фоллбэк и не приходит ли она из Directus.
+  Делать наспех хуже, чем не делать: неверный шаблон в каноне дороже отсутствующего.
+- **Секреты в архиве** — см. выше, решение owner'а.
+- `docs/deployment/SERVER_STARTUP_ISSUES.md` — исторический постмортем 2025-04-04, оставлен.
+- `docs/` (2.6 МБ) по-прежнему попадает в build context и инвалидирует слой `COPY . .` при
+  любой правке доков. В образ не входит (из builder копируются только `dist`,
+  `client/public`, `smmniap_static`), так что это про скорость сборки, а не про размер.
+  Не добавлял в `.dockerignore`: менять поведение прод-сборки сверх необходимого не стал.
 - Изменения не пушились.
 
 ## Вопросы к ревьюеру / owner'у

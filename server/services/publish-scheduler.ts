@@ -868,8 +868,7 @@ export class PublishScheduler {
 
       if (result.success) {
         await save('threads', { status: 'published', postId: result.postId, postUrl: result.postUrl, publishedAt: new Date().toISOString() });
-        // Сбрасываем кеш после успешной публикации Threads
-        if (content.user_id) invalidateContentCache(content.user_id, content.campaign_id);
+        // Кеш сбрасывает сам mergeAndSavePlatformStatus — отдельный вызов здесь больше не нужен.
 
         log(`Threads публикация успешна для ${content.id}: ${result.postUrl}`, 'scheduler');
         console.error(`[THREADS-DIRECT] SUCCESS: ${result.postUrl}`);
@@ -1478,6 +1477,11 @@ ${text}
         await directusCrud.update('campaign_content', content.id, {
           social_platforms: { ...currentPlatforms, [platform]: { ...(currentPlatforms[platform] || {}), ...data } }
         }, { useAdminToken: true });
+        // Единственная точка записи статуса платформы в планировщике — отсюда и
+        // сбрасываем кеш. Раньше это делали вручную у отдельных платформ, и из 14
+        // вызовов save() инвалидация стояла у двух: остальные оставляли морде
+        // устаревшую карточку на всю CONTENT_CACHE_TTL после успешной публикации.
+        if (content.user_id) invalidateContentCache(content.user_id, content.campaign_id);
       });
     };
 

@@ -25,13 +25,30 @@ export function setToCache(key: string, data: any): void {
   contentCache.set(key, { data, expiresAt: Date.now() + CONTENT_CACHE_TTL });
 }
 
+/** campaign_id приезжает из Directus то строкой, то связью-объектом `{id}`. */
+type CampaignRef = string | { id?: string } | null | undefined;
+
+function normalizeCampaignId(campaignId: CampaignRef): string | undefined {
+  if (typeof campaignId === 'string') return campaignId || undefined;
+  if (campaignId && typeof campaignId === 'object' && typeof campaignId.id === 'string') {
+    return campaignId.id || undefined;
+  }
+  return undefined;
+}
+
 /**
  * Сбрасывает кеш для конкретной кампании пользователя.
- * Если campaignId не указан — сбрасывает весь кеш пользователя.
+ * Если campaignId не указан (или пришёл в непонятном виде) — сбрасывает весь кеш
+ * пользователя: лишний поход в Directus дешевле устаревшей карточки на экране.
+ *
+ * Нормализация здесь, а не у вызывающих: часть из них передаёт связь-объект, и
+ * раньше ключ получался `:[object Object]:` — инвалидация молча не делала ничего.
  */
-export function invalidateContentCache(userId: string, campaignId?: string): void {
+export function invalidateContentCache(userId: string, campaignId?: CampaignRef): void {
+  if (!userId) return;
+  const normalized = normalizeCampaignId(campaignId);
   for (const key of contentCache.keys()) {
-    if (key.startsWith(userId) && (!campaignId || key.includes(`:${campaignId}:`))) {
+    if (key.startsWith(`${userId}:`) && (!normalized || key.includes(`:${normalized}:`))) {
       contentCache.delete(key);
     }
   }

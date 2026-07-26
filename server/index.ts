@@ -302,6 +302,11 @@ app.use('/api', (req, res, next) => {
 import { requireActiveSubscription } from './middleware/require-active-subscription';
 app.use(requireActiveSubscription);
 
+// Любой успешный изменяющий запрос сбрасывает кеш контента этого пользователя.
+// Ставится ДО роутов: слушает res 'finish', поэтому userId уже проставлен авторизацией.
+import { invalidateContentCacheOnMutation } from './middleware/content-cache-invalidation';
+app.use('/api', invalidateContentCacheOnMutation);
+
 // Health check endpoint for deployment monitoring
 app.get('/health', (req, res) => {
   res.status(200).json({

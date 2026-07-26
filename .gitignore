@@ -19,6 +19,8 @@ dist/
 !.env.example
 .env.local
 .env.docker
+# Фиктивное тестовое окружение — намеренно закоммичено (см. server/__tests__/.env.test)
+!server/__tests__/.env.test
 
 # Security
 .secrets

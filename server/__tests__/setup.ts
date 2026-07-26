@@ -9,8 +9,12 @@ import path from 'path';
 import fs from 'fs';
 import dotenv from 'dotenv';
 
-// Загружаем переменные окружения из .env файла
-dotenv.config({ path: path.join(__dirname, '../../.env') });
+// Загружаем фиктивное тестовое окружение (закоммичено в репозиторий).
+// НЕ читаем реальный ../../.env: на прод-хосте его нет, а креды из него
+// заставляли бы часть тестов ходить в настоящий Directus/внешние API.
+// dotenv по умолчанию не перезаписывает уже заданные process.env —
+// поэтому переменные из CI/окружения по-прежнему имеют приоритет.
+dotenv.config({ path: path.join(__dirname, '.env.test') });
 // Для совместимости с Jest и Vitest
 const g = global as any;
 const vi = g.vi || g.jest;

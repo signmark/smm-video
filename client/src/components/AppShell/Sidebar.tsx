@@ -53,10 +53,23 @@ function SidebarContent({ location, onNavigate, onLogout, userIsAdmin, isCollaps
   const { t } = useTranslation();
   const userId = useAuthStore((state) => state.userId);
 
+  // Сайдбар живёт на КАЖДОЙ странице, поэтому цена этого запроса умножается на
+  // всё приложение. Без своего queryFn срабатывал дефолтный — он берёт URL из
+  // queryKey[0], то есть уходил голый GET /api/campaign-content: полная выдача
+  // пользователя со всеми текстами и картинками, ~5 МБ на 1417 записей. И всё
+  // это ради красного кружка с числом упавших публикаций. С summary=1 приезжают
+  // только id/статус/даты — 293 КБ вместо 5 МБ на тех же данных.
   const { data: failedContentData } = useQuery<{ data: any[] }>({
-    queryKey: ['/api/campaign-content', userId],
+    queryKey: ['/api/campaign-content', userId, 'summary'],
     enabled: !!userId,
     staleTime: 60000,
+    queryFn: async () => {
+      const response = await fetch('/api/campaign-content?summary=1', {
+        headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+      });
+      if (!response.ok) throw new Error('Не удалось загрузить сводку по контенту');
+      return response.json();
+    },
     select: (data) => ({
       data: (data as any)?.data?.filter?.((item: any) => item.status === 'failed') || []
     })

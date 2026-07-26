@@ -4,7 +4,8 @@
 **Обновлено:** 2026-07-26.
 
 Если какой-то скрипт, README или скилл описывает другой способ поднять прод — он устарел.
-Всё, что раньше лежало в `deploy/`, переехало в `_archive/deploy/` (см. [`_archive/deploy/README.md`](../_archive/deploy/README.md)).
+Прежние `deploy/`, `scripts/deploy/` и `docs/deployment/FULL_DEPLOYMENT_GUIDE.md` переехали
+в `_archive/deploy/` — разбор в [`_archive/deploy/README.md`](../_archive/deploy/README.md).
 
 ---
 

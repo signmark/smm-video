@@ -1624,6 +1624,25 @@ export default function ContentPage() {
     contentByDate[dateStr].push(content);
   });
 
+  // Какие группы раскрыты при входе на страницу.
+  //
+  // Раньше здесь стояло Object.keys(contentByDate) — раскрывались ВСЕ. Radix не
+  // монтирует содержимое закрытой группы, поэтому это означало построение DOM
+  // для каждого поста при каждом заходе: на кампании в 487 записей — сотни
+  // тяжёлых поддеревьев с картинками, бейджами и статусами платформ. Данные при
+  // этом лежали в кеше и приходили мгновенно, а страница всё равно ощущалась
+  // «загружающейся» — платили не за сеть, а за отрисовку.
+  //
+  // Маленькие кампании ведут себя как прежде: там раскрытие всего никому не
+  // мешало. Большие открывают только несколько последних дней, остальное — по
+  // клику, и клик стоит ровно одну группу.
+  const RENDER_ALL_THRESHOLD = 60;
+  const INITIALLY_OPEN_GROUPS = 3;
+  const allDateKeys = Object.keys(contentByDate);
+  const initiallyOpenDates = filteredContent.length <= RENDER_ALL_THRESHOLD
+    ? allDateKeys
+    : allDateKeys.slice(0, INITIALLY_OPEN_GROUPS);
+
   // Состояние для отслеживания, какие группы развернуты/свернуты
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
 
@@ -2081,7 +2100,7 @@ export default function ContentPage() {
                 </AlertDialog>
 
                 {/* Группировка по датам */}
-                <Accordion type="multiple" defaultValue={Object.keys(contentByDate)}>
+                <Accordion type="multiple" defaultValue={initiallyOpenDates}>
                   {Object.entries(contentByDate).map(([dateStr, contents]) => (
                     <AccordionItem key={dateStr} value={dateStr}>
                       <AccordionTrigger className="py-2 hover:bg-gray-50 dark:hover:bg-gray-800">

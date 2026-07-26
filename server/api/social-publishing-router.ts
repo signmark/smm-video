@@ -17,6 +17,7 @@ import { normalizePlatforms, createPendingStatuses, extractPlatformNames } from 
 import { getTempVideo, deleteTempVideo } from '../utils/temp-video-store';
 import { invalidateContentCache } from '../utils/content-cache';
 import { resolvePublishingToken } from '../services/publishing-token';
+import { authorizeCampaignAccess, CampaignAccessError } from '../services/campaign-access';
 import { resolvePublishFinalization } from '@shared/schedule-time';
 
 const router = express.Router();
@@ -28,6 +29,66 @@ const devOnly = (req: express.Request, res: express.Response, next: express.Next
   }
   next();
 };
+
+/**
+ * Проверяет, что контент принадлежит кампании запросившего.
+ *
+ * Публикующие ручки ходят в Directus сервисным токеном — он читает контент
+ * любого пользователя. Раньше границей арендатора служил сам токен: с
+ * пользовательским токеном чужой контент просто не читался. Токен стал
+ * сервисным (это правильно: публикация не должна зависеть от сессии владельца),
+ * поэтому владение проверяется здесь явно.
+ *
+ * Возвращает false и уже отправляет ответ, если доступа нет.
+ */
+async function assertContentBelongsToRequester(
+  contentId: string,
+  req: express.Request,
+  res: express.Response,
+): Promise<boolean> {
+  const notFound = () => {
+    // 404, а не 403: не подтверждаем существование чужого контента.
+    res.status(404).json({ success: false, error: 'Контент не найден' });
+    return false;
+  };
+
+  const directusUrl = process.env.DIRECTUS_URL;
+  const serviceToken = await resolvePublishingToken();
+  if (!directusUrl || !serviceToken) {
+    res.status(500).json({ success: false, error: 'Отсутствует доступ к Directus' });
+    return false;
+  }
+
+  let campaignRef: any;
+  try {
+    const resp = await axios.get(
+      `${directusUrl}/items/campaign_content/${encodeURIComponent(contentId)}?fields=campaign_id`,
+      { headers: { Authorization: `Bearer ${serviceToken}` } },
+    );
+    campaignRef = resp.data?.data?.campaign_id;
+  } catch {
+    return notFound();
+  }
+
+  const campaignId = typeof campaignRef === 'object' && campaignRef !== null ? campaignRef.id : campaignRef;
+  if (!campaignId) return notFound();
+
+  try {
+    await authorizeCampaignAccess(
+      String(campaignId),
+      (req as any).user?.id,
+      (req as any).user?.token || '',
+      (req as any).user?.is_smm_admin === true,
+    );
+    return true;
+  } catch (accessErr: any) {
+    if (accessErr instanceof CampaignAccessError && accessErr.status === 503) {
+      res.status(503).json({ success: false, error: 'Проверка доступа временно недоступна' });
+      return false;
+    }
+    return notFound();
+  }
+}
 
 // Публичный эндпоинт для временного видео (без auth — нужен Meta серверам для Threads)
 // Поддерживает HEAD + Range-запросы (Threads API требует byte-range support)
@@ -752,6 +813,10 @@ router.post('/publish/now', authMiddleware, async (req, res) => {
         error: 'Необходимо указать платформы для публикации'
       });
     }
+
+    // Публикация идёт сервисным токеном, который читает контент любого
+    // пользователя, поэтому владение проверяем явно и до всякой работы.
+    if (!(await assertContentBelongsToRequester(contentId, req, res))) return;
 
     // Поддерживаем два формата: объект {platformName: boolean} и массив строк ["platform1", "platform2"]
     log(`[Social Publishing] Проверка формата объекта platforms: ${JSON.stringify(platforms)}`);
@@ -2296,6 +2361,9 @@ router.post('/retry-platform', authMiddleware, async (req, res) => {
       headers: { Authorization: `Bearer ${adminToken}` }
     });
     const contentItem = contentResponse.data.data;
+
+    // Сервисный токен читает контент любого пользователя — владение проверяем явно.
+    if (!(await assertContentBelongsToRequester(contentId, req, res))) return;
 
     // Проверяем, что платформа находится в ретраябельном состоянии
     const platformStatus = contentItem.social_platforms?.[platform];

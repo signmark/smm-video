@@ -1970,17 +1970,58 @@ export default function ContentPage() {
                 <p className="text-xs mt-1">{t('ui.campaignSwitching.subtitle')}</p>
               </div>
             ) : !filteredContent.length ? (
-              <p className="text-center text-muted-foreground py-8">
-                Нет контента для этой кампании
-                {(dateRange.from || dateRange.to) && (
-                  <div className="text-center mt-2">
-                    <Button variant="outline" size="sm" onClick={resetDateFilter}>
-                      <XCircle className="h-4 w-4 mr-2" />
-                      Сбросить фильтр по датам
-                    </Button>
+              (() => {
+                const hasDateFilter = !!(dateRange.from || dateRange.to);
+                const hasTabFilter = activeTab !== "all";
+                const hasFilter = hasDateFilter || hasTabFilter;
+                return (
+                  <div
+                    className="text-center text-muted-foreground py-8"
+                    data-testid="content-empty-state"
+                  >
+                    <p>
+                      {hasFilter
+                        ? "Под выбранный фильтр ничего не подошло"
+                        : "Нет контента для этой кампании"}
+                    </p>
+                    {/* Фильтр применяется к уже загруженным записям. Если список
+                        обрезан лимитом, старые публикации просто не подгружены —
+                        не молчим об этом, а даём подгрузить и повторить фильтр. */}
+                    {hasFilter && isContentTruncated && (
+                      <p className="text-xs mt-2 text-amber-700 dark:text-amber-300">
+                        Показаны последние {campaignContent.length} из {contentTotal} —
+                        более старые публикации ещё не загружены.
+                      </p>
+                    )}
+                    <div className="flex flex-wrap items-center justify-center gap-2 mt-3">
+                      {hasFilter && isContentTruncated && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={isFetchingContent}
+                          data-testid="button-load-all-empty"
+                          onClick={() => setContentLimit(contentTotal ?? CONTENT_PAGE_SIZE)}
+                        >
+                          {isFetchingContent
+                            ? <><Loader2 className="mr-1.5 h-3 w-3 animate-spin" />Загружаем...</>
+                            : 'Загрузить все и повторить'}
+                        </Button>
+                      )}
+                      {hasDateFilter && (
+                        <Button variant="outline" size="sm" onClick={resetDateFilter}>
+                          <XCircle className="h-4 w-4 mr-2" />
+                          Сбросить фильтр по датам
+                        </Button>
+                      )}
+                      {hasTabFilter && (
+                        <Button variant="ghost" size="sm" onClick={() => setActiveTab("all")}>
+                          Показать все статусы
+                        </Button>
+                      )}
+                    </div>
                   </div>
-                )}
-              </p>
+                );
+              })()
             ) : (
               <div className="space-y-4">
                 {/* Bulk action toolbar */}

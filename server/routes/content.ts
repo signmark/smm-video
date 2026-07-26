@@ -183,7 +183,10 @@ export function registerContentRoutes(app: Express) {
             total: meta.filter_count ?? meta.total_count ?? contentItems.length,
             page,
             limit,
-            totalPages: limit > 0 ? Math.ceil((meta.total_count || contentItems.length) / limit) : 1
+            // totalPages тоже считаем от filter_count: total_count — размер всей
+            // коллекции без учёта фильтра (1781 против 487), иначе страниц выйдет
+            // втрое больше реальных.
+            totalPages: limit > 0 ? Math.ceil((meta.filter_count ?? meta.total_count ?? contentItems.length) / limit) : 1
           }
         };
 

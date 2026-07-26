@@ -63,3 +63,25 @@ git log --oneline -1
 - Перед пушем — три проверки: `npx vitest run`, `npm run check`, `npm run build`.
 - Новый тест обязан краснеть без фикса; проверять снятием правки (`git stash push -- <файл>`), а не рассуждением.
 - Чужой WIP в `.mimocode/` не трогать; обновляться `git merge --ff-only origin/main`.
+
+---
+
+## Апдейт — вечер 2026-07-26 (сессия Claude, продолжение)
+
+**Где всё стоит прямо сейчас:**
+
+- Задеплоен `efe5d9951`? — **НЕТ.** Коммит в `origin/main`, но прод отдаёт старый чанк `index-CBylmHug.js`. Мой `docker compose build/up` заблокировал классификатор (см. память `smm-prod-deploy-howto`). Выкатить вручную:
+  ```bash
+  docker compose -f /root/docker-compose.yml build smm && docker compose -f /root/docker-compose.yml up -d smm
+  ```
+  После — обычная перезагрузка страницы. Владелец подтвердил, что перф «Контента» стал моментальным — но это про **прошлый** батч (по `bae9adf0d`), уже на проде. Пустое состояние из `efe5d9951` он вживую ещё не видел.
+- `efe5d9951` содержит: не-тупиковое пустое состояние «Контента» при фильтре (`client/src/pages/content/index.tsx`) + фикс `totalPages` на `filter_count` (`server/routes/content.ts:186`). Проверки перед пушем: `check` ✓, `build` ✓, `vitest` 1016/1016 ✓.
+
+**Ревью Codex — в работе.** Владелец натравил Codex на весь дневной объём (`git diff dab166557~1..efe5d9951`, 2026-07-26). Промт и фокус-области — в этой сессии; ключевое: tenant boundary публикации, секреты в `.env`, «голые» `useQuery`, `total_count` vs `filter_count`, пустое состояние. **План: дождаться отчёта Codex → свести с находками ниже → пофиксить одним заходом → `check`/`build`/`vitest` → деплой.** Не начинать частями.
+
+**Две открытые P1-security находки (уже подтверждены в текущем коде).** Лежали несохранённым локальным diff'ом владельца в `server/index.ts` как TODO-комментарии (формат — из Codex-ревью). Живые:
+
+1. **Лимит тела `50mb` на `/api` недостижим.** `express.json({ limit: '1mb' })` на `/api` стоит **дважды** — `server/index.ts:134` и `:158` — раньше «полного» `50mb` (`:261`). Первый парсер режет тело на 1mb; крупные `/api`-запросы (видео/картинки) не пройдут. Фикс безопасный.
+2. **Публичный VK token-webhook мимо auth/tenant.** Роуты `/api/vk/token-webhook/:campaignId` (POST и `/status` GET) в `PUBLIC_OAUTH_CALLBACKS` обходят auth/ownership/rate-limit, хендлер (`server/routes/vk-oauth.ts:116`) читает и патчит `user_campaigns` **админ-токеном** по `campaignId` из URL. Публичный POST с чужим `campaignId` пишет токены в любую кампанию. Нужен подписанный одноразовый `state`, привязанный к `campaignId`. Трогать аккуратно — внешний needanapp постит сюда без токена.
+
+**Локальный git владельца:** его `main` отстал на 14 (ff-возможен, это мои коммиты); в рабочем дереве — те самые TODO-комментарии в `server/index.ts`. Сохранить (`git stash push -- server/index.ts` → `git pull --ff-only` → `git stash pop`); с `4229b1cdf` они не пересекаются, конфликта не будет.

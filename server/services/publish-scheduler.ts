@@ -8,6 +8,7 @@ import { getN8nUrl } from '../utils/n8n-utils';
 import { aiService } from './ai-service';
 import { getContentAggregateTimes, getContentPublicationStatus } from '@shared/schedule-time';
 import { invalidateContentCache } from '../utils/content-cache';
+import { resolvePublishingToken } from './publishing-token';
 import { stripMarkdown, markdownToTelegramHtml } from '../utils/strip-markdown';
 
 // Платформо-специфичные правила адаптации контента
@@ -757,35 +758,9 @@ export class PublishScheduler {
 
       const directusUrl = process.env.DIRECTUS_URL;
 
-      const { directusAuthManager } = await import('./directus-auth-manager');
-      let adminToken: string | null = null;
-
-      const userId = content.user_id;
-      if (userId) {
-        try {
-          adminToken = await directusAuthManager.getValidToken(userId);
-          if (adminToken) {
-            console.error(`[THREADS-DIRECT] Using user token for ${userId} (length=${adminToken.length})`);
-          }
-        } catch (e) {}
-      }
-
-      if (!adminToken) {
-        adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || null;
-      }
-
-      if (!adminToken) {
-        try {
-          const loginResp = await axios.post(`${directusUrl}/auth/login`, {
-            email: process.env.DIRECTUS_ADMIN_EMAIL,
-            password: process.env.DIRECTUS_ADMIN_PASSWORD,
-          });
-          adminToken = loginResp.data?.data?.access_token || null;
-          console.error(`[THREADS-DIRECT] Logged in to Directus, token obtained`);
-        } catch (loginErr: any) {
-          console.error(`[THREADS-DIRECT] Directus login failed: ${loginErr.message}`);
-        }
-      }
+      // Публикация ходит сервисным токеном: он даёт доступ к кампаниям всех
+      // пользователей и не зависит от живой сессии владельца.
+      const adminToken = await resolvePublishingToken();
 
       const rawCampaignId = content.campaign_id;
       const campaignId = typeof rawCampaignId === 'object' && rawCampaignId !== null
@@ -807,44 +782,11 @@ export class PublishScheduler {
         const status = httpErr.response?.status;
         const body = JSON.stringify(httpErr.response?.data || {});
         console.error(`[THREADS-DIRECT] Campaign fetch FAILED: HTTP ${status} for campaign ${campaignId}: ${body}`);
-        if (status === 401) {
-          console.error(`[THREADS-DIRECT] 401 - trying all token sources...`);
-          let freshToken: string | null = null;
-
-          if (userId) {
-            try {
-              freshToken = await directusAuthManager.getValidToken(userId);
-              if (freshToken) console.error(`[THREADS-DIRECT] Retry: got user token for ${userId}`);
-            } catch (e) {}
-          }
-
-          if (!freshToken) {
-            try {
-              const loginResp = await axios.post(`${directusUrl}/auth/login`, {
-                email: process.env.DIRECTUS_ADMIN_EMAIL,
-                password: process.env.DIRECTUS_ADMIN_PASSWORD,
-              });
-              freshToken = loginResp.data?.data?.access_token || null;
-              if (freshToken) console.error(`[THREADS-DIRECT] Retry: got admin login token`);
-            } catch (e) {}
-          }
-
-          if (freshToken) {
-            try {
-              campaignResponse = await axios.get(`${directusUrl}/items/user_campaigns/${campaignId}`, {
-                headers: { Authorization: `Bearer ${freshToken}` }
-              });
-              console.error(`[THREADS-DIRECT] Retry succeeded`);
-            } catch (retryErr: any) {
-              console.error(`[THREADS-DIRECT] Retry request also failed: ${retryErr.message}`);
-              throw new Error(`Ошибка загрузки кампании ${campaignId}: HTTP ${status} (retry failed)`);
-            }
-          } else {
-            throw new Error(`Ошибка загрузки кампании ${campaignId}: HTTP 401, все токены недоступны`);
-          }
-        } else {
-          throw new Error(`Ошибка загрузки кампании ${campaignId}: HTTP ${status}`);
-        }
+        // Лесенка перебора токенов убрана вместе с пользовательским токеном: она
+        // срабатывала только на 401 и не спасала от 403, который этот же
+        // пользовательский токен и вызывал. Сервисный токен либо работает, либо
+        // сломан по-настоящему — и тогда об этом надо знать, а не ретраить.
+        throw new Error(`Ошибка загрузки кампании ${campaignId}: HTTP ${status}`);
       }
 
       const threadsSettings = campaignResponse.data.data.social_media_settings?.threads;
@@ -904,16 +846,8 @@ export class PublishScheduler {
       log(`Планировщик: Прямая публикация в Facebook для контента ${content.id}`, 'scheduler');
 
       const directusUrl = process.env.DIRECTUS_URL;
-      const { directusAuthManager } = await import('./directus-auth-manager');
-      let adminToken: string | null = null;
-
-      const userId = content.user_id;
-      if (userId) {
-        try { adminToken = await directusAuthManager.getValidToken(userId); } catch (e) {}
-      }
-      if (!adminToken) {
-        adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || null;
-      }
+      // Публикация — сервисным токеном, см. publishing-token.ts
+      const adminToken = await resolvePublishingToken();
 
       const rawCampaignId = content.campaign_id;
       const campaignId = typeof rawCampaignId === 'object' && rawCampaignId !== null ? rawCampaignId.id : rawCampaignId;
@@ -971,10 +905,8 @@ export class PublishScheduler {
       const campaignId = typeof content.campaign_id === 'object' ? content.campaign_id?.id : content.campaign_id;
       if (!campaignId) throw new Error('Не указан campaign_id');
 
-      const { directusAuthManager } = await import('./directus-auth-manager');
-      let adminToken: string | null = null;
-      try { adminToken = await directusAuthManager.getValidToken(content.user_id); } catch {}
-      if (!adminToken) adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || null;
+      // Публикация — сервисным токеном, см. publishing-token.ts
+      const adminToken = await resolvePublishingToken();
 
       const campaignRes = await axios.get(`${process.env.DIRECTUS_URL}/items/user_campaigns/${campaignId}`, {
         headers: { Authorization: `Bearer ${adminToken}` }
@@ -1018,10 +950,8 @@ export class PublishScheduler {
       const campaignId = typeof content.campaign_id === 'object' ? content.campaign_id?.id : content.campaign_id;
       if (!campaignId) throw new Error('Не указан campaign_id');
 
-      const { directusAuthManager } = await import('./directus-auth-manager');
-      let adminToken: string | null = null;
-      try { adminToken = await directusAuthManager.getValidToken(content.user_id); } catch {}
-      if (!adminToken) adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || null;
+      // Публикация — сервисным токеном, см. publishing-token.ts
+      const adminToken = await resolvePublishingToken();
 
       const campaignRes = await axios.get(`${process.env.DIRECTUS_URL}/items/user_campaigns/${campaignId}`, {
         headers: { Authorization: `Bearer ${adminToken}` }
@@ -1123,10 +1053,8 @@ export class PublishScheduler {
       const campaignId = typeof content.campaign_id === 'object' ? content.campaign_id?.id : content.campaign_id;
       if (!campaignId) throw new Error('Не указан campaign_id');
 
-      const { directusAuthManager } = await import('./directus-auth-manager');
-      let adminToken: string | null = null;
-      try { adminToken = await directusAuthManager.getValidToken(content.user_id); } catch {}
-      if (!adminToken) adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || null;
+      // Публикация — сервисным токеном, см. publishing-token.ts
+      const adminToken = await resolvePublishingToken();
 
       const campaignRes = await axios.get(`${process.env.DIRECTUS_URL}/items/user_campaigns/${campaignId}`, {
         headers: { Authorization: `Bearer ${adminToken}` }
@@ -1328,7 +1256,7 @@ export class PublishScheduler {
   private async publishToVkStoriesDirect(content: any, save: (p: string, d: Record<string, any>) => Promise<void> = async () => {}): Promise<{ platform: string; success: boolean; error?: string }> {
     try {
       log(`Планировщик: Прямая публикация VK Story для контента ${content.id}`, 'scheduler');
-      const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || undefined;
+      const adminToken = (await resolvePublishingToken()) ?? undefined;
       const { vkStoriesService } = await import('./social-platforms/vk-stories-service');
       const result = await vkStoriesService.publishStory(content.id, adminToken, content);
       if (result.success) {
@@ -1353,7 +1281,7 @@ export class PublishScheduler {
     try {
       log(`Планировщик: Прямая публикация VK Clip для контента ${content.id}`, 'scheduler');
       if (!content.video_url) throw new Error('VK Clips: контент не содержит video_url');
-      const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || undefined;
+      const adminToken = (await resolvePublishingToken()) ?? undefined;
       const { vkClipsService } = await import('./social-platforms/vk-clips-service');
       const result = await vkClipsService.publishClip(content.id, adminToken);
       if (result.success) {
@@ -1378,7 +1306,7 @@ export class PublishScheduler {
     try {
       log(`Планировщик: Прямая публикация Instagram Reels для контента ${content.id}`, 'scheduler');
       if (!content.video_url) throw new Error('Instagram Reels: контент не содержит video_url');
-      const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || undefined;
+      const adminToken = (await resolvePublishingToken()) ?? undefined;
       const { instagramReelsService } = await import('./social-platforms/instagram-reels-service');
       const result = await instagramReelsService.publishReels(content.id, adminToken);
       if (result.success) {
@@ -1599,7 +1527,7 @@ ${text}
             await this.publishToInstagramDirect(publishContent, mergeAndSavePlatformStatus);
           }
         } else if (platform === 'youtube') {
-          const authToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || '';
+          const authToken = (await resolvePublishingToken()) || '';
           await this.publishToYouTubeDirect(publishContent, authToken, mergeAndSavePlatformStatus);
         } else if (platform === 'tiktok') {
           log(`TikTok публикация отключена для ${content.id} — платформа временно недоступна`, 'scheduler');

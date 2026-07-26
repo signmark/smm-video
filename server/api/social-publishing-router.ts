@@ -16,6 +16,7 @@ import { vkStoriesService } from '../services/social-platforms/vk-stories-servic
 import { normalizePlatforms, createPendingStatuses, extractPlatformNames } from '../utils/platforms-helper';
 import { getTempVideo, deleteTempVideo } from '../utils/temp-video-store';
 import { invalidateContentCache } from '../utils/content-cache';
+import { resolvePublishingToken } from '../services/publishing-token';
 import { resolvePublishFinalization } from '@shared/schedule-time';
 
 const router = express.Router();
@@ -800,42 +801,17 @@ router.post('/publish/now', authMiddleware, async (req, res) => {
 
     log(`[Social Publishing] Выбранные платформы: ${selectedPlatforms.join(', ')}`);
 
-    // Используем постоянный DIRECTUS_TOKEN для публикации (с fallback на другие токены)
-    let adminToken = process.env.DIRECTUS_TOKEN || process.env.DIRECTUS_SERVICE_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
-
-    // ПРИНУДИТЕЛЬНО: Пробуем получить свежий токен через менеджер, если есть userId
-    try {
-      const { directusAuthManager } = await import('../services/directus-auth-manager');
-      const userId = (req as any).user?.id;
-      if (userId) {
-        const validToken = await directusAuthManager.getValidToken(userId);
-        if (validToken) {
-          adminToken = validToken;
-          log(`[Social Publishing] Using refreshed user token for publication: ${userId}`);
-        }
-      }
-
-      // Если токен пользователя не получен, пробуем получить гарантированный админский токен
-      if (!adminToken || adminToken === process.env.DIRECTUS_TOKEN) {
-        const validAdminToken = await directusAuthManager.getAdminAuthToken();
-        if (validAdminToken) {
-          adminToken = validAdminToken;
-          log(`[Social Publishing] Using guaranteed admin token for publication`);
-        }
-      }
-    } catch (e) {
-      log(`[Social Publishing] Failed to refresh token via manager: ${e}`);
-    }
+    // Публикация ходит сервисным токеном, а не токеном инициатора: он даёт доступ
+    // к кампаниям всех пользователей и не зависит от их сессий. См. publishing-token.ts.
+    const adminToken = await resolvePublishingToken();
 
     if (!adminToken) {
-      log(`[Social Publishing] DIRECTUS_TOKEN не найден в переменных окружения`);
+      log(`[Social Publishing] Сервисный токен Directus не найден в переменных окружения`);
       return res.status(500).json({
         success: false,
         error: 'Отсутствует токен для публикации'
       });
     }
-
-    log(`[Social Publishing] Используем DIRECTUS_TOKEN для публикации: ${adminToken.substring(0, 20)}...`);
 
     // Захватываем локи для ВСЕХ платформ ДО обновления статуса на 'scheduled'.
     // Это предотвращает гонку с планировщиком: если поставить статус 'pending' раньше
@@ -2308,22 +2284,9 @@ router.post('/retry-platform', authMiddleware, async (req, res) => {
   const directusUrl = process.env.DIRECTUS_URL;
   if (!directusUrl) return res.status(500).json({ success: false, error: 'DIRECTUS_URL не задан' });
 
-  // Получаем admin токен
-  let adminToken = process.env.DIRECTUS_TOKEN || process.env.DIRECTUS_SERVICE_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
-  try {
-    const { directusAuthManager } = await import('../services/directus-auth-manager');
-    const userId = (req as any).user?.id;
-    if (userId) {
-      const validToken = await directusAuthManager.getValidToken(userId);
-      if (validToken) adminToken = validToken;
-    }
-    if (!adminToken || adminToken === process.env.DIRECTUS_TOKEN) {
-      const validAdminToken = await directusAuthManager.getAdminAuthToken();
-      if (validAdminToken) adminToken = validAdminToken;
-    }
-  } catch (e) {
-    log(`[Retry] Не удалось обновить токен: ${e}`);
-  }
+  // Повторная публикация — такая же публикация: ходим сервисным токеном, а не
+  // токеном нажавшего кнопку. См. publishing-token.ts.
+  const adminToken = await resolvePublishingToken();
 
   if (!adminToken) return res.status(500).json({ success: false, error: 'Отсутствует токен Directus' });
 

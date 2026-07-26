@@ -11,6 +11,7 @@ import { getCanonicalScheduledAt } from '@shared/schedule-time';
 type SocialPlatform = 'instagram' | 'facebook' | 'telegram' | 'vk' | 'youtube';
 import { log } from '../utils/logger';
 import { invalidateContentCache } from '../utils/content-cache';
+import { resolvePublishingToken } from '../services/publishing-token';
 import { directusApiManager } from '../directus';
 import { directusStorageAdapter } from '../services/directus';
 import { generateStoriesImageServer } from '../services/stories-image-generator';
@@ -603,15 +604,18 @@ export function registerPublishingRoutes(app: Express): void {
       let hasSuccess = false;
       
       // Получаем гарантированный системный токен для обновлений
+      // Сама публикация и запись результатов — сервисным токеном (см. publishing-token.ts).
+      // activeToken пользователя ниже остаётся только фолбэком: он же служит границей
+      // арендатора при загрузке контента выше, и подменять его сервисным нельзя —
+      // иначе любой авторизованный сможет опубликовать чужой contentId.
       let updateToken = systemToken;
       try {
-        const { directusAuthManager } = await import('../services/directus-auth-manager');
-        const guaranteedAdminToken = await directusAuthManager.getAdminAuthToken();
-        if (guaranteedAdminToken) {
-          updateToken = guaranteedAdminToken;
+        const servicePublishToken = await resolvePublishingToken();
+        if (servicePublishToken) {
+          updateToken = servicePublishToken;
         }
       } catch (e) {
-        log(`[handlePublishContent] Failed to get guaranteed admin token: ${e}`, 'api');
+        log(`[handlePublishContent] Failed to get service publishing token: ${e}`, 'api');
       }
 
       // Сбрасываем успешный результат для повторных попыток

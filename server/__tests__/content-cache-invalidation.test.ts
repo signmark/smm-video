@@ -76,6 +76,45 @@ describe('invalidateContentCache', () => {
   });
 });
 
+describe('buildCacheKey — вариант выдачи', () => {
+  beforeEach(() => clearContentCache());
+
+  it('сводка и полная выдача не делят одну запись кеша', () => {
+    // Тела ответов разные: перепутав их, отдадим дашборду полный список или,
+    // хуже, странице контента — сводку без текстов.
+    const full = buildCacheKey(USER, CAMPAIGN, 1, 500, 'full');
+    const summary = buildCacheKey(USER, CAMPAIGN, 1, 500, 'summary');
+    expect(full).not.toBe(summary);
+
+    setToCache(full, { data: ['полная'] });
+    setToCache(summary, { data: ['сводка'] });
+    expect(getFromCache(full)).toEqual({ data: ['полная'] });
+    expect(getFromCache(summary)).toEqual({ data: ['сводка'] });
+  });
+
+  it('по умолчанию вариант — полная выдача', () => {
+    expect(buildCacheKey(USER, CAMPAIGN, 1, 500)).toBe(buildCacheKey(USER, CAMPAIGN, 1, 500, 'full'));
+  });
+
+  it('инвалидация чистит оба варианта — вариант в конце ключа', () => {
+    const full = buildCacheKey(USER, CAMPAIGN, 1, 500, 'full');
+    const summary = buildCacheKey(USER, CAMPAIGN, 1, 500, 'summary');
+    setToCache(full, { data: [1] });
+    setToCache(summary, { data: [2] });
+    invalidateContentCache(USER, CAMPAIGN);
+    expect(getFromCache(full)).toBeNull();
+    expect(getFromCache(summary)).toBeNull();
+  });
+
+  it('сводка без кампании тоже вычищается при сбросе всего пользователя', () => {
+    // Дашборд ходит без campaignId — его ключ не должен пережить инвалидацию.
+    const dashboard = buildCacheKey(USER, '', 1, -1, 'summary');
+    setToCache(dashboard, { data: [1] });
+    invalidateContentCache(USER);
+    expect(getFromCache(dashboard)).toBeNull();
+  });
+});
+
 describe('invalidateContentCacheOnMutation (middleware)', () => {
   beforeEach(() => clearContentCache());
 

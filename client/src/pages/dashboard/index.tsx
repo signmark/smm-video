@@ -85,11 +85,23 @@ export default function Dashboard() {
   });
 
   // Получаем контент для подсчета публикаций
+  // Дашборду нужны только статусы и даты для счётчиков и графика. Без queryFn
+  // сработал бы дефолтный, который берёт URL из queryKey[0] — то есть тянул бы
+  // ПОЛНУЮ выдачу пользователя со всеми текстами и картинками: ~5 МБ JSON,
+  // мимо серверного кеша (его ключ требует campaignId/page/limit). Этот запрос
+  // ещё и конкурировал за соединения со страницей контента при переходе на неё.
   const { data: contentResponse, isLoading: contentLoading, isError: contentError } = useQuery<ContentResponse>({
-    queryKey: ["/api/campaign-content", userId],
+    queryKey: ["/api/campaign-content", userId, "summary"],
     enabled: !!userId,
     retry: 2,
     retryDelay: 1000,
+    queryFn: async () => {
+      const response = await fetch('/api/campaign-content?summary=1', {
+        headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+      });
+      if (!response.ok) throw new Error('Не удалось загрузить сводку по контенту');
+      return response.json();
+    },
   });
 
   // Используем первую кампанию если нет selectedCampaignId

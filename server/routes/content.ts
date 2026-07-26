@@ -77,6 +77,12 @@ export function registerContentRoutes(app: Express) {
       const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : -1;
       const offset = limit === -1 ? 0 : (page - 1) * limit;
       const noCache = req.query.nocache === '1';
+      // Режим сводки: только поля, нужные для счётчиков и графиков.
+      // Полная выдача по этой коллекции — около 5 МБ JSON на пользователя, потому
+      // что тянет тексты, картинки и social_platforms. Дашборду из этого нужны
+      // ровно три скалярных поля. Не generic ?fields=: он ломает маппинг ниже и
+      // открывает выбор произвольных колонок, а нужен один фиксированный набор.
+      const summary = req.query.summary === '1';
 
       const userId = req.user?.id;
       const token = req.user?.token;
@@ -84,7 +90,7 @@ export function registerContentRoutes(app: Express) {
       if (!userId || !token) return res.status(401).json({ error: "Unauthorized" });
 
       // ── Кеш ──────────────────────────────────────────────────
-      const key = buildCacheKey(userId, campaignId, page, limit);
+      const key = buildCacheKey(userId, campaignId, page, limit, summary ? 'summary' : 'full');
       if (!noCache) {
         const cached = getFromCache(key);
         if (cached) {
@@ -103,7 +109,8 @@ export function registerContentRoutes(app: Express) {
         sort: ['-created_at', '-id'],
         meta: 'total_count,filter_count',
         limit: limit,
-        offset: offset
+        offset: offset,
+        ...(summary ? { fields: ['id', 'status', 'scheduled_at', 'published_at', 'created_at', 'campaign_id'] } : {})
       };
 
       try {
@@ -125,7 +132,16 @@ export function registerContentRoutes(app: Express) {
         }
 
         console.log(`[API] Mapping ${responseData.length} items...`);
-        const contentItems = responseData.map((item: any) => {
+        const contentItems = summary
+          ? responseData.map((item: any) => ({
+              id: item.id,
+              campaignId: item.campaign_id,
+              status: item.status,
+              createdAt: item.created_at,
+              scheduledAt: item.scheduled_at,
+              publishedAt: item.published_at,
+            }))
+          : responseData.map((item: any) => {
           try {
             return {
               id: item.id,

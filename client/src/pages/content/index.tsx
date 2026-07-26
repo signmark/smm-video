@@ -545,9 +545,11 @@ export default function ContentPage() {
   useEffect(() => {
     if (selectedCampaignId && selectedCampaignId !== 'loading' && selectedCampaignId !== 'empty' &&
         (location === '/content' || location === '/content/new')) {
-      // refetchQueries форсирует запрос независимо от staleTime
+      // refetchQueries форсирует запрос независимо от staleTime.
+      // Раньше здесь было два вызова — со вторым ключом `selectedCampaignId || ""`.
+      // Внутри этого if selectedCampaignId заведомо непустой, поэтому ключи
+      // совпадали и один и тот же запрос на ~2 МБ уходил дважды подряд.
       queryClient.refetchQueries({ queryKey: ["/api/campaign-content", selectedCampaignId] });
-      queryClient.refetchQueries({ queryKey: ["/api/campaign-content", selectedCampaignId || ""] });
       queryClient.invalidateQueries({ queryKey: ["/api/keywords", selectedCampaignId] });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -719,7 +721,10 @@ export default function ContentPage() {
 
       return data.data || [];
     },
-    refetchOnMount: true,
+    // refetchOnMount выключен намеренно: эффект выше уже делает принудительный
+    // refetch при монтировании и при смене кампании/маршрута. С включённым
+    // флагом оба срабатывали на один переход и тянули ~2 МБ дважды.
+    refetchOnMount: false,
     refetchOnWindowFocus: true,
     staleTime: 10 * 1000,
     gcTime: 1000 * 60 * 30,

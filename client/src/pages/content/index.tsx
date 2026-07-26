@@ -76,6 +76,7 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion";
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
+import { getConnectedPlatformsMap } from "@/lib/platform-connection";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
 
 // Создаем формат даты
@@ -610,29 +611,9 @@ export default function ContentPage() {
       campaignData?.socialMediaSettings ||
       campaignData?.social_settings;
 
-    // Directus может отдать JSON как строку — парсим
-    let settings: any;
-    try {
-      settings = typeof settingsRaw === 'string' ? JSON.parse(settingsRaw) : settingsRaw;
-    } catch {
-      settings = settingsRaw;
-    }
-
-    if (!settings || typeof settings !== 'object') {
-      return null;
-    }
-
-    // Настройки загружены — проверяем что реально подключено
-    const result: Record<string, boolean> = {
-      instagram: !!(settings.instagram?.accessToken || settings.instagram?.token),
-      telegram: !!(settings.telegram?.token || settings.telegram?.chatId),
-      vk: !!(settings.vk?.token || settings.vk?.groupId),
-      facebook: !!(settings.facebook?.accessToken || settings.facebook?.pageId || settings.facebook?.token),
-      youtube: !!(settings.youtube?.accessToken || settings.youtube?.refreshToken),
-      threads: !!(settings.threads?.accessToken && settings.threads?.threadsUserId),
-    };
-
-    return result;
+    // Статус — только по несекретным полям: токены вырезаются сервером и в браузер
+    // не приходят. Логика общая с настройками кампании, см. lib/platform-connection.
+    return getConnectedPlatformsMap(settingsRaw);
   };
 
   const connectedPlatforms = getConnectedPlatforms();

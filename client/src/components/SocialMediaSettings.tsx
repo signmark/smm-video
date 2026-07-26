@@ -39,6 +39,7 @@ import { YouTubeSetupWizard } from "./YouTubeSetupWizard";
 import InstagramSetupWizardSimple from "./InstagramSetupWizardSimple";
 import VkSetupWizard from "./VkSetupWizard";
 import FacebookSetupWizard from "./FacebookSetupWizard";
+import { isPlatformConnected } from "@/lib/platform-connection";
 import type { SocialMediaSettings } from "@shared/schema";
 
 const socialMediaSettingsSchema = z.object({
@@ -229,32 +230,28 @@ export function SocialMediaSettings({
   // true после «Отмена» или таймаута — блокирует авто-рестарт поллинга из useEffect
   const vkPollCancelledRef = useRef(false);
 
-  // Функция проверки статуса настройки платформ
+  // Функция проверки статуса настройки платформ.
+  // Правила «что считается подключённым» живут в lib/platform-connection — тем же
+  // хелпером пользуется панель публикации. Здесь поверх них только серверное
+  // состояние, которого нет в форме (instagramSettings, vkSettings).
   const isConfigured = (platform: 'instagram' | 'youtube' | 'facebook' | 'vk' | 'telegram' | 'threads' | 'tiktok') => {
     const settings = form.getValues();
-    
+
     switch (platform) {
       case 'instagram': {
-        // Используем серверные настройки (instagramSettings) если доступны,
-        // иначе fallback на форму. Токены НЕ хранятся в браузере — проверяем businessAccountId
+        // Серверные настройки приоритетнее формы: OAuth-визард пишет их мимо неё.
         const igSettings = (instagramSettings as any) || {};
-        const igForm = settings.instagram || {};
-        const hasBusinessAccountId = !!(igSettings.businessAccountId || igSettings.instagramId || igForm.businessAccountId);
-        // Серверный флаг configured или наличие businessAccountId означает подключение
-        return !!(igSettings.configured || hasBusinessAccountId);
+        return isPlatformConnected({ instagram: igSettings }, 'instagram')
+          || isPlatformConnected(settings as any, 'instagram');
       }
-      // Токены вырезаются сервером (sanitizeOAuthSecrets) и в браузер не приходят —
-      // статус определяем по несекретным полям, которые сохраняются вместе с токеном.
-      case 'youtube':
-        return !!settings.youtube?.channelId;
-      case 'facebook':
-        return !!settings.facebook?.pageId;
       case 'vk':
-        return !!(settings.vk?.groupId || (vkSettings as any)?.groupId);
+        return isPlatformConnected(settings as any, 'vk')
+          || isPlatformConnected({ vk: (vkSettings as any) || {} }, 'vk');
+      case 'youtube':
+      case 'facebook':
       case 'telegram':
-        return !!settings.telegram?.chatId;
       case 'threads':
-        return !!(settings as any).threads?.threadsUserId;
+        return isPlatformConnected(settings as any, platform);
       case 'tiktok':
         return false;
       default:

@@ -2,6 +2,8 @@ postgres/
 node_modules/
 dist/
 .git/
+# Архив старых compose/Dockerfile/скриптов — в build context ему делать нечего
+_archive/
 *.sql
 *.tar.gz
 .env

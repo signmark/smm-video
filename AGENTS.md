@@ -1,10 +1,16 @@
 # smm-video — project memory for AI agents
 
-**Снимок:** 2026-07-24 (v3 — Claude в приоритете)
+**Снимок:** 2026-07-26 (v4 — состав приведён в соответствие с реальностью)
 **Для кого:** любая модель, открывшая проект впервые или после паузы.
-**Активный состав (с 2026-07-24, v3):** Гермес (Hermes), Мавис (Mavis/MiniMax), Мимо (Mimo), **Клод (Claude Fable 5 — HIGH priority, owner 2026-07-24: «в приоритете, если будет бабло оплатить в Pro/Max»)**. Codex и Kimi выбыли. Персональные инструкции — в `docs/agents/<имя>.md`. **Каждый агент обязан прочитать свой профиль перед первой задачей сессии.** Ориентация в коде — `docs/agents/codebase-map.md` (топология, слои роутов, поток публикации, метод диагностики).
 
-**Замечание про v2→v3:** v2 (от 2026-07-24 утро) числил Claude в выбывших вместе с Codex/Kimi по результатам handoff `docs/prompts/claude-roster-handoff-2026-07-24.md`. v3 (от 2026-07-24 вечер) — owner вернул Claude в роуминг после успешного цикла security §2/§4/§5 + co-author'инга social/FB блока. v2 сохраняется как исторический артефакт в `docs/captains-log/`.
+**Активный состав (с 2026-07-26, v4) — двое:**
+
+- **Claude** — пишет код **и сам его деплоит**. Полный цикл: правка → тесты → коммит → push в `origin/main` → пересборка образа → выкатка на прод → проверки на живом.
+- **Codex** — ревью.
+
+**Hermes, Mavis, Mimo и Kimi во флоу не участвуют.** До v4 этот файл описывал состав из четырёх агентов с распределением «исполнитель Hermes, ревьюер Mavis, деплой Mimo». Такого состава нет и не было в работе: 2026-07-26 владелец поправил дважды за одну сессию — «Никого Мависа во флоу пока нет, ты пока работаешь один, а Кодекс только ревьюит», «код ты пишешь ты и деплоишь». До этой правки готовый проверенный фикс был отложен «на вердикт Mavis», то есть в никуда. **Не адресуй задачи и вердикты этим именам.** Файлы `docs/agents/hermes.md`, `mavis.md`, `mimo.md` сохранены как исторические.
+
+Ориентация в коде — `docs/agents/codebase-map.md` (топология, слои роутов, поток публикации, метод диагностики). Деплой — `docs/DEPLOYMENT.md`.
 
 ---
 
@@ -19,49 +25,38 @@ SMM Manager — автоматизация публикации и аналит�
 - React 18 + TanStack Query + Vite
 - Vitest, Playwright (smoke)
 - Telegram Bot API, VK API, Instagram Graph API, YouTube Data API, FAL AI (image gen), Vertex AI
-- Replit → Codex → Claude → Mimo → Mavis → (2026-07-24) состав сокращён до тройки: Hermes / Mavis / Mimo
+- Replit → Codex → Claude → Mimo → Mavis → (2026-07-26) состав сокращён до двоих: Claude (код + деплой) / Codex (ревью)
 
 ## Текущее состояние
 
-- **Repo:** `G:\Projects\smm-video`, ветка `main`
-- **Свежие коммиты (2026-07-24):** `33b258c6` (fix vk: блок «Группа для публикации»), `89be723f` (fix fb: подключение через IG-токен из базы), `05eb8aef`/`15b649d8` (**соцсети без токенов в браузере**, задеплоено на prod — контракт: `.agents/memory/oauth-sanitizer-contract.md`), `f217c01c` (спеки §6-§15), `34a8ebf4`/`e102578d` (**§2, §4, §5-low DONE**), `1473f4bf` (**§1 DONE** — remove public /api/auth/system-token)
-- **Working tree:** clean для моих файлов. `?? docs/PRIORITIZED_IMPROVEMENT_PLAN_2026-07-23.md`, `?? project_snapshot.txt`, `?? webbridge-req-kb*.json`, `?? zoo_analysis.md` — **не мои**, не трогаю.
-- **Tests:** 69/69 файлов, ~717 тестов зелёных (см. `docs/session-2026-07-20.md`, актуальный счёт — последний замер был 717, обновлять после security-фиксов).
-- **Production:** под управлением Mimo (следующий день после пуша).
-- **Текущий приоритетный план:** `docs/PRIORITIZED_IMPROVEMENT_PLAN_2026-07-23.md` — 15 пунктов, security-first (incident wave: 1-5, защитный контур: 6-8, engineering gates: 9-11, масштабирование: 12-14, performance: 15). **Снимок прогресса на 2026-07-24:** `docs/followups/2026-07-24-security-backlog.md` (§1 closed, §3 deferred, §2/§4-§15 open). **Это НЕ моя (Mavis) зона** — я не лезу в `server/api/`, `server/__tests__/`, `client/`, `shared/`. Только `docs/`, `AGENTS.md`, коммиты готового WIP, мониторинг.
+- **Repo:** `/root/smm` на прод-хосте, ветка `main`. Он же build context для контейнера `smm`.
+- **Свежие коммиты (2026-07-26):** `1e1bdf60` (панель публикации не врёт про неподключённые платформы — правила в `client/src/lib/platform-connection.ts`), `78603a70` (**публикация ходит сервисным токеном во всех путях** — `server/services/publishing-token.ts`), `4229b1cd` (инвалидация кеша контента после любого изменения состояния), `cb43908e9` (состояние «токен сохранён» в настройках Telegram), `21ff4590` (тестовое окружение `.env.test`, вычистка записи токенов на диск, разбор параллельных deploy-путей + `docs/DEPLOYMENT.md`).
+- **Working tree:** в нём постоянно висит чужой WIP — `.mimocode/.cron-lock` (живой lock крона) и `.mimocode/plans/*`. Не трогать, не коммитить. Из-за него `git pull` падает (`pull.rebase=true`) — обновляться через `git merge --ff-only origin/main`.
+- **Tests:** 93/93 файлов, 1001/1001 тестов зелёных (замер 2026-07-26). Окружение тестов — фиктивный `server/__tests__/.env.test`, реальный `.env` в корне репозитория не нужен и не должен появляться.
+- **Production:** деплоит Claude, сразу после пуша. Команды — `docs/DEPLOYMENT.md`. Окружение контейнера приходит только из `/root/.env` через `env_file` в `/root/docker-compose.yml`.
+- **Текущий приоритетный план:** `docs/PRIORITIZED_IMPROVEMENT_PLAN_2026-07-23.md` — 15 пунктов, security-first. **Снимок прогресса:** `docs/followups/2026-07-24-security-backlog.md` (§1 closed, §3 deferred, §2/§4-§15 open).
+- **Известные долги:** семь прямых запросов к `items/user_campaigns` в `publish-scheduler.ts` не переведены на `campaign-token-resolver` (токен теперь единый, но дублирование осталось); `connectedPlatforms` в `EditScheduledPublication.tsx` захардкожен как «все подключены».
 
-## Канонический цикл multi-model review
+## Рабочий цикл (v4)
 
-Цикл 2026-07-22 (Codex/Claude/Kimi) адаптирован 2026-07-24 под квартет по поручению owner'а (см. `docs/prompts/claude-roster-handoff-2026-07-24.md` + v3-обновление 2026-07-24 вечер о возврате Claude). **Этот цикл — канон, любое отклонение требует явного комментария в handoff:**
-
-1. **Исполнитель — Hermes** готовит результат: код + тесты + `docs/prompts/hermes-<задача>-<дата>.md` handoff (шаблон: `docs/agents/templates/handoff-template.md`). Перед началом и перед сдачей проходит `docs/agents/templates/session-checklist.md` — это обязательная часть Definition of Done, не рекомендация.
-2. **Автоматические тесты** — `npx vitest run` (cross-verify, не верь чужому «зелёное»).
-3. **Независимый ревьюер — Mavis** даёт verdict в `docs/prompts/mavis-<verdict>-<дата>.md` по шаблону `docs/agents/templates/review-verdict-template.md`, с собственным прогоном тестов. Если критично — блокирующий. Если minor — отдельным follow-up. Для изменений в Docker / CI / deploy-скриптах вторым ревьюером подключается **Mimo**.
-4. **Опциональный Claude-ревью** — для security-критичных и multi-file задач Claude может дать **плотный handoff-план** (например, `8315d342` security fixes plan §2/§4/§5 → 7 фиксов в main). В таком случае Claude работает либо как reviewer (verdict), либо как co-author (trailer `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`). **Исполнитель ≠ ревьюер** правило в любом случае сохраняется.
-5. **Исполнитель** исправляет подтверждённые замечания. Каждый блокер / P1 = отдельный коммит. Минорные followups = 1-2 `chore` коммита.
-6. **Owner (Dmitry)** — gate: решает «фиксим / не фиксим / пушим». Единственная точка решения о merge в main. **Push в `origin/main` — за владельцем**, если в `docs/prompts/*` явно не зафиксировано делегирование.
-7. **Hermes** — merge в main + регрессия на main + Playwright-смоки на живом стенде (ex-зона Codex).
-8. **Mimo** — деплоит в production на следующий день (`.mimocode/skills/commit-and-rebuild`). Владелец делает smoke в prod.
-
-**Ротация при недоступности:** если Hermes недоступен, исполнителем становится Mavis (запрет на прод-код снят условно, см. `docs/agents/mavis.md`), ревьюером — Mimo. Правило неизменно: **исполнитель ≠ ревьюер, всегда две разные модели.**
+1. **Claude** делает правку: код + тесты. Для многофайловых и security-критичных задач — сначала `docs/prompts/claude-<задача>-<дата>.md` (шаблон: `docs/agents/templates/handoff-template.md`), потом код.
+2. **Проверки перед пушем, все три:** `npx vitest run`, `npm run check` (tsc), `npm run build`. Для правок в `client/` фронт-билд обязателен — `tsconfig.critical.json` клиент не покрывает.
+3. **Новый тест должен краснеть без фикса.** Проверять снятием правки (`git stash push -- <файл>`), а не на глаз. Без этого тест ничего не стережёт.
+4. **Claude** коммитит, пушит в `origin/main`, пересобирает образ и выкатывает на прод — см. `docs/DEPLOYMENT.md`.
+5. **Проверки после выкатки:** контейнер поднялся, Directus health, публичный URL отдаёт 200, и грепом по бандлу — что новый код реально уехал, а не остался в кеше слоёв. Кириллицу грепать бесполезно: esbuild экранирует не-ASCII в `\uXXXX`, ищи ASCII-маркеры.
+6. **Codex** — ревью, по желанию владельца. Вердикт не блокирует выкатку: откат делается `git revert` + пересборка.
+7. **Owner (Dmitry)** — приоритеты и решения по спорным местам. Деплой руками у него не запрашивается: это зона Claude.
 
 **Single-writer (правило):** для одного участка кода или документа одновременно существует один ответственный исполнитель. Остальные могут ревьюить, но не конкурировать за запись.
 
-## Зоны ответственности (2026-07-24, v3)
+## Зоны ответственности (2026-07-26, v4)
 
 | Агент | Зона |
 |---|---|
-| Hermes | **исполнитель**: server/, client/, shared/, security-план (§2, §4-§15), merge в main, регрессия, Playwright-смоки. SSH к prod — только read-only диагностика; деплой остаётся за Mimo. Профиль: `docs/agents/hermes.md` |
-| Mavis | **независимый ревьюер** (ex-зона Claude/Kimi) + docs/, AGENTS.md, мониторинг, cross-verify, коммиты готового WIP, captain's log, follow-ups, context engine. Fallback-исполнитель при недоступности Hermes. Push — только если явно делегировано в `docs/prompts/*`. Профиль: `docs/agents/mavis.md` |
-| Mimo | **production deploy** (следующий день после push) + второй ревьюер для Docker/CI/deploy-изменений + prod-мониторинг после деплоя. Профиль: `docs/agents/mimo.md` |
-| **Claude (Fable 5)** | **HIGH priority, owner-оплата желательна в Pro/Max**. Архитектурное ревью, плотные планы по security/multi-file, **co-author** в UI/social ветках. Не штатный ревьюер кода (это Mavis), а **опциональный второй глаз** для security-критичных и многофайловых задач. Профиль: `docs/agents/claude.md` |
+| **Claude** | Всё: `server/`, `client/`, `shared/`, тесты, docs, merge в `main`, push, production deploy, проверки на живом проде. Профиль: `docs/agents/claude.md` |
+| **Codex** | Ревью. |
 
-| Выбывшие (2026-07-24) | Бывшая зона → кому перешла |
-|---|---|
-| Codex | исполнитель, merge, смоки → **Hermes** |
-| Kimi | аналитический review, fallback executor → **Mavis** (review), ротация исполнителя — см. выше |
-
-**Примечание:** Claude числился в выбывших v2 (2026-07-24 утро), но в v3 (2026-07-24 вечер) возвращён в активный состав. Если в твоей сессии Claude недоступен — cycle ведётся без него, Mavis справляется.
+**Исторические профили** (`docs/agents/hermes.md`, `mavis.md`, `mimo.md`) оставлены как артефакты — распределения ролей из них не действуют.
 
 ## Анти-форензик правила (для sheet-операций)
 
@@ -72,39 +67,42 @@ SMM Manager — автоматизация публикации и аналит�
 
 ## Push policy (текущее состояние)
 
-- **Делегирование Mavis'у зафиксировано 2026-07-20** в `docs/prompts/kimi-push-manifest-2026-07-20.md` п.4: «Пуш делает Mavis (делегировано владельцем 2026-07-20)».
-- Это **доковая фиксация**, не «общая политика». Перед push всё равно проверить: (1) owner не отозвал; (2) cycle не security-critical (system-token / credentials rotation — пушит только владелец); (3) `git status --short` чист от чужого WIP.
-- **docs-only коммиты** — push по умолчанию разрешён (low risk, откатываемо).
+- **Push в `origin/main` и деплой на прод — зона Claude** (владелец 2026-07-26: «код ты пишешь ты и деплоишь»). Разрешения на каждый заход спрашивать не нужно.
+- Перед push всё равно проверить: (1) все три проверки зелёные — vitest, tsc, build; (2) `git status --short` чист от чужого WIP в `.mimocode/`; (3) не коммитить незакоммиченное чужое — docker собирает из рабочего дерева, а не из HEAD, поэтому в образ уедет всё, что лежит в нём.
+- Отдельно: **ротация утёкших кредов** (§3 беклога) — по-прежнему решение владельца, самому не инициировать.
 
 ## Open questions / known issues
 
 - **Security incident partial closure** (см. `docs/followups/2026-07-24-security-backlog.md`): §1 (public Directus admin token) **CLOSED** в `1473f4bf`. §3 (credentials rotation) **DEFERRED** до августа 2026 owner'ом. Остальное (scheduler, upload, WS, fail-closed, CSP, tsc, etc.) — см. беклог.
 - **Captain's Log отсутствует** (до 2026-07-23). Создан в этом цикле (`docs/captains-log/`).
 - **Context Engine в zookeeper есть, в smm-video — нет** (до этого цикла). Создан в этом цикле (`docs/context/state.json`).
-- **AGENTS.md** — этот файл. Создан 2026-07-23, v2 (смена состава) — 2026-07-24, v3 (Claude в приоритете) — 2026-07-24 вечер.
-- **Смена состава 2026-07-24:** v2 (утро) — Codex/Claude/Kimi недоступны. v3 (вечер) — Claude возвращён в активный состав как **HIGH priority** агент (опциональный архитектурный ревью + co-author). Роли перераспределены (см. таблицу зон), персональные инструкции в `docs/agents/`, процесс-компенсация слабостей моделей — в `docs/agents/templates/`. Handoff: `docs/prompts/claude-roster-handoff-2026-07-24.md`.
+- **AGENTS.md** — этот файл. Создан 2026-07-23; v2 и v3 (2026-07-24) описывали состав Hermes/Mavis/Mimo/Claude; v4 (2026-07-26) приведён в соответствие с реальным составом из двоих.
+- **Урок v4:** описанный в этом файле состав год расходился с фактическим и активно вредил — по нему планировалась работа и откладывались готовые фиксы «на вердикт» несуществующему агенту. Если состав снова изменится, правь **здесь в тот же день**, иначе следующая сессия будет работать по вымыслу.
+- **Контракт OAuth-санитайзера** (`.agents/memory/oauth-sanitizer-contract.md`) ломали **трижды**. Любую новую проверку «платформа подключена» писать только в `client/src/lib/platform-connection.ts`.
 
 ## Полезные команды
 
-```powershell
-# === Repo ===
-cd "G:\Projects\smm-video"
-git log --oneline -5
+```bash
+# === Repo (прод-хост) ===
+cd /root/smm
+git merge --ff-only origin/main      # не git pull: падает на чужом WIP в .mimocode/
 git status --short
-npx vitest run                       # 69/69 файлов, ~717 тестов
-npm run build
 
-# === Sheet operations (Python с Service Account) ===
-# python -c "from google.oauth2 import service_account; ..."
+# === Проверки перед пушем — все три ===
+npx vitest run                       # 93/93 файлов, 1001/1001 тестов
+npm run check                        # tsc -p tsconfig.critical.json (клиент НЕ покрывает)
+npm run build                        # обязателен, если менялся client/
 
-# === Sheet operations (read-only) ===
-# curl с API key в query string
+# === Деплой === (подробности — docs/DEPLOYMENT.md)
+docker compose -f /root/docker-compose.yml build smm
+docker compose -f /root/docker-compose.yml up -d smm
+docker logs smm --since 3m | grep -E "SERVER SUCCESSFULLY|Directus Health"
+curl -s -o /dev/null -w "%{http_code}\n" https://smm.omemo.tech/
 ```
 
 ## Как обновлять этот файл
 
-- При новом коммите в `main` → дополнить «Свежие коммиты».
-- При смене push-policy → обновить «Push policy» + создать `docs/prompts/*-push-manifest-*.md` (по конвенции 2026-07-20).
-- При изменении зон ответственности → обновить таблицу.
-- При добавлении канонической практики → дополнить «Канонический цикл».
-- Стиль: кратко, только то, что НЕ выведешь из `git log` или `pm2 ls`. Снимок состояния, не changelog.
+- При смене состава или ролей → править **в тот же день**, см. «Урок v4».
+- При новом деплое → дополнить «Свежие коммиты».
+- При изменении push-policy или процедуры деплоя → обновить соответствующий раздел (команды деплоя — канон в `docs/DEPLOYMENT.md`, здесь только выжимка).
+- Стиль: кратко, только то, что НЕ выведешь из `git log`. Снимок состояния, не changelog.

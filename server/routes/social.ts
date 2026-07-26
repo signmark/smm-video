@@ -4,15 +4,9 @@ import { directusApi } from '../directus';
 import { socialPublishingService } from '../services/social-publishing';
 import { log } from '../utils/logger';
 import { getPublishScheduler } from '../services/publish-scheduler';
-import { 
-  validateTelegramToken,
-  validateVkToken,
-  validateInstagramToken,
-  validateFacebookToken, 
-  validateYoutubeApiKey
-} from '../services/social-api-validator';
 import { threadsService } from '../services/social-platforms/threads-service';
 import { getCampaignSocialSettings, pickPlatformToken } from '../services/campaign-token-resolver';
+import { CampaignAccessError } from '../services/campaign-access';
 import { normalizeInstagramUrl } from '../utils/social-helpers';
 import axios from 'axios';
 
@@ -74,52 +68,29 @@ export function registerSocialRoutes(app: Express) {
     }
   });
 
-  // Эндпоинты проверки API ключей
-  app.post("/api/validate/telegram", authenticateUser, async (req, res) => {
-    const result = await validateTelegramToken(req.body.token);
-    res.json({ success: result.isValid, message: result.message });
-  });
-
-  app.post("/api/validate/vk", authenticateUser, async (req, res) => {
-    const result = await validateVkToken(req.body.token, req.body.groupId);
-    // Если токен невалиден и передан campaignId — помечаем authExpired
-    if (!result.isValid && req.body.campaignId) {
-      try {
-        const { markVkAuthExpired } = await import('../services/vk-token-refresh');
-        await markVkAuthExpired(req.body.campaignId);
-      } catch (e: any) {
-        console.error('[validate/vk] Ошибка при выставлении authExpired:', e.message);
-      }
-    }
-    res.json({ success: result.isValid, message: result.message });
-  });
-
-  app.post("/api/validate/instagram", authenticateUser, async (req, res) => {
-    const result = await validateInstagramToken(req.body.token);
-    res.json({ success: result.isValid, message: result.message });
-  });
-
-  app.post("/api/validate/facebook", authenticateUser, async (req, res) => {
-    const result = await validateFacebookToken(req.body.token, req.body.pageId);
-    res.json({ success: result.isValid, message: result.message });
-  });
-
-  app.post("/api/validate/youtube", authenticateUser, async (req, res) => {
-    const result = await validateYoutubeApiKey(req.body.apiKey, req.body.channelId);
-    res.json({ success: result.isValid, message: result.message });
-  });
+  // Эндпоинты проверки API ключей telegram/vk/instagram/facebook/youtube жили
+  // здесь дубликатами тех, что регистрирует registerValidationRoutes (routes.ts
+  // вызывает её раньше). Побеждал всегда первый совпавший handler, поэтому
+  // здешние версии никогда не выполнялись. Единственный дом — validation-routes.ts.
+  // Ниже остаётся только threads: дубликата у него нет.
 
   app.post("/api/validate/threads", authenticateUser, async (req, res) => {
     let { accessToken, threadsUserId } = req.body;
 
     // Токены вырезаны из браузера (sanitizeOAuthSecrets) — при наличии campaignId
     // берём accessToken из настроек кампании. Клиенту возвращается только валидность.
+    // { user } обязателен: authenticateUser подтверждает личность, но не владение
+    // кампанией — без него чужой campaignId дал бы cross-tenant lookup.
     if (!accessToken && req.body.campaignId) {
       try {
-        const sms = await getCampaignSocialSettings(req.body.campaignId);
+        const sms = await getCampaignSocialSettings(req.body.campaignId, { user: req.user });
         accessToken = pickPlatformToken(sms, 'threads');
         threadsUserId = threadsUserId || sms.threads?.threadsUserId;
-      } catch {}
+      } catch (e: any) {
+        if (e instanceof CampaignAccessError) {
+          return res.status(e.status).json({ success: false, message: e.code });
+        }
+      }
     }
 
     const result = await threadsService.validateToken({ accessToken, threadsUserId });

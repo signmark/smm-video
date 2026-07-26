@@ -13,14 +13,57 @@ import {
 } from '../services/social-api-validator';
 import { log } from '../utils/logger';
 import { getCampaignSocialSettings, pickPlatformToken } from '../services/campaign-token-resolver';
+import { authenticateUser } from '../middleware/user-auth';
+import { CampaignAccessError } from '../services/campaign-access';
 
 /**
- * Регистрирует все маршруты валидации API ключей
+ * VK API отдаёт ошибки структурно, в теле ответа: `{ error: { error_code } }`.
+ * Постоянными считаем только семейство «…authorization failed» — они означают,
+ * что учётные данные мертвы и сами не починятся:
+ *   5  — User authorization failed
+ *   27 — Group authorization failed
+ *   28 — Application authorization failed
+ *
+ * 15 (Access denied) намеренно НЕ включён, хотя `publish-scheduler.isAuthError`
+ * его учитывает: там классификация по свободному тексту нужна для решения
+ * «ретраить ли публикацию», а цена ошибки — лишний ретрай. Здесь цена ошибки
+ * другая — `authExpired` на исправной кампании, ложное письмо владельцу и
+ * выпадение из refresh cron. Access denied означает отказ по конкретному
+ * объекту и смерть токена не доказывает.
+ */
+const VK_PERMANENT_AUTH_ERROR_CODES = new Set([5, 27, 28]);
+
+/**
+ * Доказана ли постоянная auth-ошибка VK — только по структурному error_code.
+ *
+ * `validateVkToken` возвращает `isValid: false` для четырёх разных ситуаций, и
+ * лишь одна из них означает мёртвый токен:
+ *   - сеть/таймаут: `details` пустой (у axios-ошибки нет `response`) → false;
+ *   - провал проверки группы: есть `details.groupError`, при этом `users.get`
+ *     прошёл — токен как раз рабочий → false;
+ *   - прочие ответы, где токен успешно отдал пользователя (`details.user`) → false;
+ *   - VK вернул `error.error_code` из списка постоянных → true.
+ */
+function isPermanentVkAuthFailure(details: any): boolean {
+  if (!details || typeof details !== 'object') return false;
+  if (details.groupError !== undefined) return false;
+  if (details.user !== undefined) return false;
+  const code = details.error?.error_code;
+  return typeof code === 'number' && VK_PERMANENT_AUTH_ERROR_CODES.has(code);
+}
+
+/**
+ * Единственный дом маршрутов `/api/validate/*` (кроме threads — он в
+ * routes/social.ts, дубликата у него нет). Раньше те же пути регистрировались
+ * второй раз в registerSocialRoutes: Express завершает запрос в первом
+ * совпавшем handler, поэтому побеждали здешние — без `authenticateUser`, —
+ * а authenticated-версии вместе с `markVkAuthExpired` были недостижимы.
+ *
  * @param app Express приложение
  */
 export function registerValidationRoutes(app: Express): void {
   // Telegram API Token validation
-  app.post('/api/validate/telegram', async (req: Request, res: Response) => {
+  app.post('/api/validate/telegram', authenticateUser, async (req: Request, res: Response) => {
     try {
       const { token } = req.body;
       if (!token) {
@@ -45,19 +88,34 @@ export function registerValidationRoutes(app: Express): void {
   });
 
   // VK API Token validation
-  app.post('/api/validate/vk', async (req: Request, res: Response) => {
+  app.post('/api/validate/vk', authenticateUser, async (req: Request, res: Response) => {
     try {
       let { token, groupId } = req.body;
       const { campaignId } = req.body;
 
-      // Токены вырезаны из браузера (sanitizeOAuthSecrets) — при наличии campaignId
-      // берём токен из настроек кампании. Клиенту возвращается только валидность.
-      if (!token && campaignId) {
+      // Источник проверяемого токена определяет, можно ли по итогам проверки
+      // трогать состояние кампании: произвольный токен из body ничего не
+      // доказывает про сохранённое подключение.
+      let tokenSource: 'body' | 'campaign' = 'body';
+
+      // campaignId проверяется на владение всегда, а не только когда из кампании
+      // берётся токен: ниже по нему пишется authExpired, и запись в чужую
+      // кампанию недопустима. authorizeCampaignAccess внутри резолвера отдаёт
+      // 404 и на несуществующую, и на чужую — чтобы нельзя было перебирать id.
+      if (campaignId) {
         try {
-          const sms = await getCampaignSocialSettings(campaignId);
-          token = pickPlatformToken(sms, 'vk');
-          groupId = groupId || sms.vk?.groupId;
+          const sms = await getCampaignSocialSettings(campaignId, { user: req.user });
+          // Токены вырезаны из браузера (sanitizeOAuthSecrets) — если клиент их
+          // не прислал, берём из настроек кампании. Клиенту уходит только вердикт.
+          if (!token) {
+            token = pickPlatformToken(sms, 'vk');
+            groupId = groupId || sms.vk?.groupId;
+            if (token) tokenSource = 'campaign';
+          }
         } catch (e: any) {
+          if (e instanceof CampaignAccessError) {
+            return res.status(e.status).json({ success: false, message: e.code });
+          }
           log(`Валидация VK: не удалось прочитать токен кампании ${campaignId}: ${e.message}`, 'api-validation');
         }
       }
@@ -65,10 +123,29 @@ export function registerValidationRoutes(app: Express): void {
       if (!token) {
         return res.status(400).json({ success: false, message: 'Токен не указан' });
       }
-      
+
       log(`Валидация токена VK: ${token.substring(0, 5)}...${groupId ? ` для группы ${groupId}` : ''}`, 'api-validation');
       const result = await validateVkToken(token, groupId);
-      
+
+      // authExpired = «сохранённое подключение мертво, нужно переподключение».
+      // Флаг стоит дорого: он шлёт владельцу письмо и выключает кампанию из
+      // refresh cron (vk-token-refresh.ts:227). Поэтому три условия сразу:
+      // проверяли именно сохранённый токен кампании, доступ к ней подтверждён
+      // выше, и VK структурно подтвердил постоянную auth-ошибку. Невалидный
+      // токен из body, сеть, таймаут и провал проверки группы состояние
+      // кампании не трогают.
+      if (!result.isValid
+        && campaignId
+        && tokenSource === 'campaign'
+        && isPermanentVkAuthFailure(result.details)) {
+        try {
+          const { markVkAuthExpired } = await import('../services/vk-token-refresh');
+          await markVkAuthExpired(campaignId);
+        } catch (e: any) {
+          console.error('[validate/vk] Ошибка при выставлении authExpired:', e.message);
+        }
+      }
+
       return res.json({
         success: result.isValid,
         message: result.message,
@@ -84,7 +161,7 @@ export function registerValidationRoutes(app: Express): void {
   });
 
   // Instagram API Token validation
-  app.post('/api/validate/instagram', async (req: Request, res: Response) => {
+  app.post('/api/validate/instagram', authenticateUser, async (req: Request, res: Response) => {
     try {
       const { token } = req.body;
       if (!token) {
@@ -109,7 +186,7 @@ export function registerValidationRoutes(app: Express): void {
   });
 
   // Facebook API Token validation
-  app.post('/api/validate/facebook', async (req: Request, res: Response) => {
+  app.post('/api/validate/facebook', authenticateUser, async (req: Request, res: Response) => {
     try {
       const { token, pageId } = req.body;
       if (!token) {
@@ -134,7 +211,7 @@ export function registerValidationRoutes(app: Express): void {
   });
 
   // YouTube API Key validation
-  app.post('/api/validate/youtube', async (req: Request, res: Response) => {
+  app.post('/api/validate/youtube', authenticateUser, async (req: Request, res: Response) => {
     try {
       const { apiKey, channelId } = req.body;
       if (!apiKey) {

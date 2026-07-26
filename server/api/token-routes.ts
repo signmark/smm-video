@@ -4,8 +4,6 @@
 
 import { Express, Request, Response } from 'express';
 import axios from 'axios';
-import fs from 'fs';
-import path from 'path';
 import { log } from '../utils/logger';
 import { directusApiManager } from '../directus';
 import { directusAuthManager } from '../services/directus-auth-manager';
@@ -14,8 +12,6 @@ import { directusAuthManager } from '../services/directus-auth-manager';
 const DIRECTUS_URL = process.env.DIRECTUS_URL;
 // ID администратора из env
 const ADMIN_USER_ID = process.env.DIRECTUS_ADMIN_USER_ID || '53921f16-f51d-4591-80b9-8caa4fde4d13';
-// Путь к файлу .env
-const ENV_PATH = path.resolve(process.cwd(), '.env');
 
 /**
  * Регистрация маршрутов для работы с админским токеном
@@ -62,55 +58,19 @@ export function registerTokenRoutes(app: Express) {
         
         // Используем временный токен как статический
         const staticToken = temporaryToken;
-        
-        // Сохраняем токен в .env файл
-        if (fs.existsSync(ENV_PATH)) {
-          let envContent = fs.readFileSync(ENV_PATH, 'utf8');
-          
-          // Регулярное выражение для поиска строки с DIRECTUS_ADMIN_TOKEN
-          const tokenRegex = /DIRECTUS_ADMIN_TOKEN=".*"/;
-          
-          if (envContent.match(tokenRegex)) {
-            // Заменяем существующий токен
-            envContent = envContent.replace(tokenRegex, `DIRECTUS_ADMIN_TOKEN="${staticToken}"`);
-          } else {
-            // Добавляем новую переменную
-            envContent += `\nDIRECTUS_ADMIN_TOKEN="${staticToken}"\n`;
+
+        // Токен хранится только во внутреннем кэше, в файлы не пишется
+        directusApiManager.cacheAuthToken(userId, staticToken, 365 * 24 * 60 * 60); // 1 год
+
+        return res.status(200).json({
+          success: true,
+          message: 'Токен успешно создан и сохранен в кэше',
+          tokenInfo: {
+            userId,
+            name: tokenName,
+            expires: 'never'
           }
-          
-          // Записываем обновленное содержимое в файл
-          fs.writeFileSync(ENV_PATH, envContent);
-          
-          // Кэшируем токен для администратора
-          directusApiManager.cacheAuthToken(userId, staticToken, 365 * 24 * 60 * 60); // 1 год
-          
-          return res.status(200).json({
-            success: true,
-            token: staticToken,
-            message: 'Токен успешно создан и сохранен в .env файл',
-            tokenInfo: {
-              userId,
-              name: tokenName,
-              expires: 'never'
-            }
-          });
-        } else {
-          log('Файл .env не найден', 'token-routes');
-          
-          // Кэшируем токен для администратора даже если не удалось сохранить в .env
-          directusApiManager.cacheAuthToken(userId, staticToken, 365 * 24 * 60 * 60); // 1 год
-          
-          return res.status(200).json({
-            success: true,
-            token: staticToken,
-            message: 'Токен успешно создан, но не сохранен в .env файл (файл не найден)',
-            tokenInfo: {
-              userId,
-              name: tokenName,
-              expires: 'never'
-            }
-          });
-        }
+        });
       } catch (tokenError: any) {
         log(`Ошибка при создании статического токена: ${tokenError.message}`, 'token-routes');
         
@@ -133,112 +93,6 @@ export function registerTokenRoutes(app: Express) {
     }
   });
   
-  // Маршрут для сохранения кэшированного токена в .env
-  app.post('/api/admin/token/save-cached', async (req: Request, res: Response) => {
-    try {
-      const userId = req.body.userId || ADMIN_USER_ID;
-      
-      // Проверяем, есть ли у нас кэшированный токен для пользователя
-      const cachedToken = directusApiManager.getCachedToken(userId);
-      
-      if (!cachedToken || !cachedToken.token) {
-        return res.status(404).json({
-          success: false,
-          error: `Кэшированный токен для пользователя ${userId} не найден`,
-          message: 'Для получения токена необходимо сначала авторизоваться в системе'
-        });
-      }
-      
-      // Проверяем существование файла .env
-      if (!fs.existsSync(ENV_PATH)) {
-        return res.status(500).json({
-          success: false,
-          error: 'Файл .env не найден',
-          message: 'Невозможно сохранить токен в файл .env, т.к. файл не существует'
-        });
-      }
-      
-      // Читаем текущее содержимое .env файла
-      let envContent = fs.readFileSync(ENV_PATH, 'utf8');
-      
-      // Проверяем, существует ли переменная DIRECTUS_ADMIN_TOKEN
-      if (envContent.includes('DIRECTUS_ADMIN_TOKEN=')) {
-        // Заменяем существующую переменную новым значением
-        envContent = envContent.replace(
-          /DIRECTUS_ADMIN_TOKEN=".*"/g,
-          `DIRECTUS_ADMIN_TOKEN="${cachedToken.token}"`
-        );
-      } else {
-        // Добавляем новую переменную в конец файла
-        envContent += `\nDIRECTUS_ADMIN_TOKEN="${cachedToken.token}"\n`;
-      }
-      
-      // Записываем обновленное содержимое в .env файл
-      fs.writeFileSync(ENV_PATH, envContent);
-      
-      // Пробуем проверить работоспособность токена
-      try {
-        // Декодируем токен напрямую
-        const tokenParts = cachedToken.token.split('.');
-        if (tokenParts.length !== 3) {
-          throw new Error('Invalid token format');
-        }
-        
-        const payload = JSON.parse(Buffer.from(tokenParts[1], 'base64').toString());
-        const checkResponse = { 
-          data: { 
-            data: { 
-              id: payload.id, 
-              email: payload.email || 'unknown@email.com' 
-            } 
-          } 
-        };
-        
-        if (checkResponse.data?.data?.id) {
-          return res.status(200).json({
-            success: true,
-            token: cachedToken.token,
-            message: 'Токен успешно сохранен в .env файл',
-            expiresAt: new Date(cachedToken.expiresAt).toISOString(),
-            user: {
-              id: checkResponse.data.data.id,
-              email: checkResponse.data.data.email,
-              firstName: checkResponse.data.data.first_name,
-              lastName: checkResponse.data.data.last_name
-            }
-          });
-        } else {
-          return res.status(200).json({
-            success: true,
-            token: cachedToken.token,
-            message: 'Токен сохранен, но не удалось проверить его работоспособность',
-            expiresAt: new Date(cachedToken.expiresAt).toISOString()
-          });
-        }
-      } catch (checkError: any) {
-        log(`Ошибка при проверке токена: ${checkError.message}`, 'token-routes');
-        
-        return res.status(200).json({
-          success: true,
-          warning: true,
-          token: cachedToken.token,
-          message: 'Токен сохранен в .env файл, но при проверке возникла ошибка',
-          expiresAt: new Date(cachedToken.expiresAt).toISOString(),
-          error: checkError.message,
-          errorStatus: checkError.response?.status
-        });
-      }
-    } catch (error: any) {
-      log(`Ошибка при сохранении кэшированного токена: ${error.message}`, 'token-routes');
-      
-      return res.status(500).json({
-        success: false,
-        error: 'Ошибка при сохранении кэшированного токена',
-        details: error.message
-      });
-    }
-  });
-  
   // Маршрут для проверки работоспособности администраторского токена
   app.get('/api/admin/token/check', async (req: Request, res: Response) => {
     try {
@@ -249,7 +103,7 @@ export function registerTokenRoutes(app: Express) {
         return res.status(404).json({
           success: false,
           error: 'Токен администратора не найден в переменных окружения',
-          message: 'Необходимо добавить DIRECTUS_ADMIN_TOKEN в файл .env'
+          message: 'Необходимо задать DIRECTUS_ADMIN_TOKEN в переменных окружения'
         });
       }
       

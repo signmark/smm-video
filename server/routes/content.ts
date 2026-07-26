@@ -177,7 +177,10 @@ export function registerContentRoutes(app: Express) {
         const responseBody = {
           data: contentItems,
           meta: {
-            total: meta.total_count || contentItems.length,
+            // filter_count, а не total_count: второй считает всю коллекцию целиком,
+            // игнорируя фильтр по кампании и пользователю. На проде это 1781 против
+            // 487 реальных — клиенту нельзя показывать такое число.
+            total: meta.filter_count ?? meta.total_count ?? contentItems.length,
             page,
             limit,
             totalPages: limit > 0 ? Math.ceil((meta.total_count || contentItems.length) / limit) : 1

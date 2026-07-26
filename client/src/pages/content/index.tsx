@@ -207,6 +207,11 @@ export default function ContentPage() {
   const { selectedCampaign } = useCampaignStore();
   const [location, navigate] = useLocation();
   const [selectedCampaignId, setSelectedCampaignId] = useState<string>(selectedCampaign?.id || "");
+  // Сколько записей тянем за раз. 500 — исторический потолок; кампании, доросшие
+  // до него, теряли старый контент из интерфейса молча. Кнопка в баннере
+  // поднимает лимит по требованию, пока не сделана подгрузка по скроллу.
+  const CONTENT_PAGE_SIZE = 500;
+  const [contentLimit, setContentLimit] = useState<number>(CONTENT_PAGE_SIZE);
 
   // Bulk selection state (declared early so useEffect can reference it)
   const [bulkSelectedIds, setBulkSelectedIds] = useState<Set<string>>(new Set());
@@ -551,6 +556,9 @@ export default function ContentPage() {
       // совпадали и один и тот же запрос на ~2 МБ уходил дважды подряд.
       queryClient.refetchQueries({ queryKey: ["/api/campaign-content", selectedCampaignId] });
       queryClient.invalidateQueries({ queryKey: ["/api/keywords", selectedCampaignId] });
+      // Поднятый лимит не тащим в другую кампанию: там он мог бы вытянуть
+      // всё разом без спроса. Каждая кампания начинает с обычной порции.
+      setContentLimit(CONTENT_PAGE_SIZE);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCampaignId, location]); // location нужен чтобы перечитывать при навигации на страницу
@@ -711,11 +719,11 @@ export default function ContentPage() {
     error: contentError,
     refetch: refetchContent,
   } = useQuery<CampaignContent[]>({
-    queryKey: ["/api/campaign-content", selectedCampaignId || ""],
+    queryKey: ["/api/campaign-content", selectedCampaignId || "", contentLimit],
     queryFn: async () => {
       if (!selectedCampaignId) return [];
 
-      const data = await apiRequest(`/api/campaign-content?campaignId=${selectedCampaignId}&page=1&limit=500`, {
+      const data = await apiRequest(`/api/campaign-content?campaignId=${selectedCampaignId}&page=1&limit=${contentLimit}`, {
         method: 'GET'
       });
 
@@ -730,6 +738,26 @@ export default function ContentPage() {
     gcTime: 1000 * 60 * 30,
     refetchInterval: isActionActive || isAiGenerating || isBulkProcessing ? 3000 : false,
   });
+
+  // Сколько записей в кампании ВСЕГО. Отдельным лёгким запросом: сводка с limit=1
+  // возвращает одну строку и filter_count в meta — это байты, а не мегабайты.
+  // Нужно, чтобы отличить «показано всё» от «показаны первые N из M»: без этого
+  // список молча обрывается на лимите, и старый контент исчезает без следа.
+  const { data: contentTotal } = useQuery<number>({
+    queryKey: ["/api/campaign-content", selectedCampaignId || "", "total"],
+    enabled: !!selectedCampaignId,
+    staleTime: 30 * 1000,
+    queryFn: async () => {
+      const data = await apiRequest(
+        `/api/campaign-content?campaignId=${selectedCampaignId}&summary=1&page=1&limit=1`,
+        { method: 'GET' },
+      );
+      return Number(data?.meta?.total ?? 0);
+    },
+  });
+
+  // Список обрезан лимитом — часть контента не показана.
+  const isContentTruncated = typeof contentTotal === 'number' && contentTotal > campaignContent.length;
 
   // Запрос ключевых слов кампании
   const { data: campaignKeywords = [], isLoading: isLoadingKeywords } = useQuery<any[]>({
@@ -1989,6 +2017,28 @@ export default function ContentPage() {
                         </Button>
                       </>
                     )}
+                  </div>
+                )}
+
+                {/* Список обрезан лимитом — говорим об этом прямо, а не молчим */}
+                {isContentTruncated && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 p-3 rounded-md border border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20">
+                    <div className="text-xs text-amber-800 dark:text-amber-200">
+                      Показаны последние <strong>{campaignContent.length}</strong> публикаций из <strong>{contentTotal}</strong>.
+                      Более старые пока не загружены.
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs shrink-0"
+                      data-testid="button-load-all-content"
+                      disabled={isFetchingContent}
+                      onClick={() => setContentLimit(contentTotal ?? CONTENT_PAGE_SIZE)}
+                    >
+                      {isFetchingContent
+                        ? <><Loader2 className="mr-1.5 h-3 w-3 animate-spin" />Загружаем...</>
+                        : 'Загрузить все'}
+                    </Button>
                   </div>
                 )}
 

@@ -144,6 +144,8 @@ export function SocialMediaSettings({
   const [threadsShowSetup, setThreadsShowSetup] = useState(false);
   const [loadingThreadsSettings, setLoadingThreadsSettings] = useState(false);
   const [showThreadsOAuthForm, setShowThreadsOAuthForm] = useState(false);
+  // Показ поля ввода Bot Token, когда Telegram уже настроен (замена токена)
+  const [telegramShowTokenInput, setTelegramShowTokenInput] = useState(false);
 
   // Статусы валидации для каждой соцсети
   const [telegramStatus, setTelegramStatus] = useState<ValidationStatus>({ isLoading: false });
@@ -259,6 +261,11 @@ export function SocialMediaSettings({
         return false;
     }
   };
+
+  // Факт наличия сохранённого Bot Token. Сам токен в браузер не приходит
+  // (sanitizeOAuthSecrets), наружу отдаётся только boolean hasToken. По chatId судить
+  // нельзя: он сохраняется отдельно, и «chatId без токена» — достижимое состояние.
+  const telegramHasSavedToken = !!(initialSettings?.telegram as any)?.hasToken;
 
   // Функция парсинга VK URL для извлечения API ключа
   const parseVkUrl = (url: string) => {
@@ -1601,6 +1608,13 @@ export function SocialMediaSettings({
       // Это гарантирует, что кэш обновится с новыми данными
       onSettingsUpdated?.();
 
+      // Новый токен уехал на сервер — убираем его из формы и сворачиваем поле обратно
+      // в состояние «сохранён», чтобы браузер не держал секрет дольше нужного.
+      if (data.telegram?.token) {
+        form.setValue('telegram.token', '');
+        setTelegramShowTokenInput(false);
+      }
+
       toast({
         title: "Успешно!",
         description: "Настройки соцсетей обновлены"
@@ -1679,6 +1693,9 @@ export function SocialMediaSettings({
               </div>
             </AccordionTrigger>
             <AccordionContent className="space-y-4 pt-2">
+              {/* Инструкция по получению токена нужна только при первой настройке
+                  или при явной замене токена — не мозолит глаза подключённому каналу. */}
+              {(!telegramHasSavedToken || telegramShowTokenInput) && (
               <div className="p-3 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-sm text-blue-800 dark:text-blue-200">
                 <p className="font-medium mb-2">Что такое Bot Token и зачем он нужен?</p>
                 <p className="text-blue-700 dark:text-blue-300 mb-2">
@@ -1696,6 +1713,35 @@ export function SocialMediaSettings({
                   Подробная видеоинструкция доступна в разделе «Обучение».
                 </p>
               </div>
+              )}
+
+              {/* Токен сохранён на сервере и в браузер не приходит (sanitizeOAuthSecrets).
+                  Пустое поле выглядело бы как «ничего не сохранено» — показываем состояние
+                  явно, а ввод нового токена прячем за кнопкой «Заменить токен».
+                  Плейсхолдеры в поле токена запрещены контрактом (откат 40417eb5). */}
+              {telegramHasSavedToken && !telegramShowTokenInput ? (
+                <div className="flex items-center justify-between gap-3 p-3 rounded-lg border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-900/20">
+                  <div className="text-sm text-green-800 dark:text-green-200">
+                    <span className="font-medium">Bot Token:</span> сохранён
+                    <div className="text-xs text-green-700 dark:text-green-300 mt-0.5">
+                      Хранится на сервере и в браузер не передаётся.
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => {
+                      setTelegramShowTokenInput(true);
+                      setTelegramStatus({ isLoading: false });
+                    }}
+                    data-testid="button-telegram-change-token"
+                  >
+                    🔄 Заменить токен
+                  </Button>
+                </div>
+              ) : (
               <FormField
                 control={form.control}
                 name="telegram.token"
@@ -1704,30 +1750,54 @@ export function SocialMediaSettings({
                     <FormLabel>Bot Token</FormLabel>
                     <div className="flex space-x-2">
                       <FormControl>
-                        <Input 
-                          type="password" 
-                          placeholder="Введите токен бота" 
-                          {...field} 
-                          value={field.value || ''} 
+                        <Input
+                          type="password"
+                          placeholder="Введите токен бота"
+                          {...field}
+                          value={field.value || ''}
                         />
                       </FormControl>
-                      <Button 
-                        type="button" 
-                        variant="outline" 
+                      <Button
+                        type="button"
+                        variant="outline"
                         size="sm"
                         onClick={validateTelegramToken}
                         disabled={telegramStatus.isLoading}
                       >
-                        {telegramStatus.isLoading ? 
-                          <Loader2 className="h-4 w-4 animate-spin" /> : 
+                        {telegramStatus.isLoading ?
+                          <Loader2 className="h-4 w-4 animate-spin" /> :
                           <AlertCircle className="h-4 w-4" />
                         }
                       </Button>
+                      {telegramHasSavedToken && (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="shrink-0"
+                          onClick={() => {
+                            // Пустая строка, а не undefined: mergeOAuthSettings трактует ''
+                            // как «не трогать» и сохраняет прежний токен на сервере.
+                            form.setValue('telegram.token', '');
+                            setTelegramShowTokenInput(false);
+                            setTelegramStatus({ isLoading: false });
+                          }}
+                          data-testid="button-telegram-cancel-token"
+                        >
+                          Отмена
+                        </Button>
+                      )}
                     </div>
+                    {telegramHasSavedToken && (
+                      <div className="text-xs text-muted-foreground">
+                        Оставьте поле пустым, чтобы сохранить текущий токен.
+                      </div>
+                    )}
                     <FormMessage />
                   </FormItem>
                 )}
               />
+              )}
               <FormField
                 control={form.control}
                 name="telegram.chatId"

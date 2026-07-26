@@ -11,8 +11,20 @@ After every fix, follow this sequence. The user explicitly requires it: "Always 
 
 ### 1. Verify the fix
 
-- Run the relevant test(s) first: `smm-test` command.
-- If the fix is frontend-only, verify the build compiles: `cd /root/smm && npm run build 2>&1 | tail -3`.
+Run the relevant test(s) first:
+
+```
+cd /root/smm && npx vitest run <path/to/test>
+```
+
+If the fix is frontend-only, verify the build compiles:
+
+```
+cd /root/smm && npm run build 2>&1 | tail -3
+```
+
+Note: 12 tests fail on prod because `/root/smm/.env` is intentionally absent. That's
+background noise, not a regression — see `docs/DEPLOYMENT.md`.
 
 ### 2. Check git status
 
@@ -44,9 +56,23 @@ cd /root/smm && git push
 
 ### 6. Rebuild Docker container
 
-Use the `smm-rebuild` command. Choose the right variant:
-- **Standard rebuild** for code-only changes (no new exports)
-- **No-cache rebuild** if you added new exports, imports, or changed package.json
+The prod compose file lives at `/root/docker-compose.yml`, **outside** the repo. Always pass
+`-f` and always name the `smm` service — see `docs/DEPLOYMENT.md` for the full picture.
+
+Standard rebuild (code-only changes):
+
+```
+docker compose -f /root/docker-compose.yml build smm && docker compose -f /root/docker-compose.yml up -d smm
+```
+
+No-cache rebuild (new exports/imports, changed `package.json`):
+
+```
+docker compose -f /root/docker-compose.yml build --no-cache smm && docker compose -f /root/docker-compose.yml up -d smm
+```
+
+Do **not** run `docker compose ... down` or `docker system prune` as part of a deploy —
+the file holds the whole host stack (traefik, postgres, directus, n8n, video-app).
 
 ### 7. Verify deployment
 
@@ -54,9 +80,13 @@ Use the `smm-rebuild` command. Choose the right variant:
 docker ps --format "table {{.Names}}\t{{.Status}}" | grep smm
 ```
 
+```
+curl -s -o /dev/null -w "%{http_code}\n" https://smm.omemo.tech/health
+```
+
 Optionally verify the compiled bundle contains the fix:
 ```
-docker exec smm grep -c "YOUR_FIX_PATTERN" /app/dist/server/index.mjs
+docker exec smm grep -c "YOUR_FIX_PATTERN" /app/dist/server/index.js
 ```
 
 ## When to use
@@ -69,5 +99,7 @@ docker exec smm grep -c "YOUR_FIX_PATTERN" /app/dist/server/index.mjs
 ## Notes
 
 - The user says: "Да, закоммить и пересобери обязательно. После любого фикса. Гит же можно откатить в случае чего."
-- Container name: `smm` (not `root-smm-1`)
+- Container name: `smm` (not `root-smm-1`), image `root-smm`, compose project `root`
 - Browser cache is never the issue — user always does Ctrl+Shift+R
+- There are no `smm-rebuild` / `smm-test` host commands. Earlier revisions of this skill
+  referenced them; the working equivalents are the commands above.

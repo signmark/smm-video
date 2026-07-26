@@ -24,7 +24,8 @@ export function detectEnvironment(): EnvironmentConfig {
   const environment = envVariable === 'development' ? 'development' : 'production';
 
   // URL Directus в зависимости от окружения
-  // Поддерживаем оба имени переменной: DIRECTUS_URL (основное) и DIRECTUS_INTERNAL_URL (deploy/docker-compose.yml)
+  // Поддерживаем оба имени переменной: DIRECTUS_URL (его задаёт прод — /root/docker-compose.yml)
+  // и DIRECTUS_INTERNAL_URL (legacy-имя из архивных compose-файлов, см. docs/DEPLOYMENT.md)
   const directusUrl = process.env.DIRECTUS_URL ||
     process.env.DIRECTUS_INTERNAL_URL ||
     (environment === 'development' ? 'http://localhost:8055' : 'https://directus.nplanner.ru');

@@ -201,20 +201,12 @@ smm:
     dockerfile: Dockerfile
 ```
 
-`context: ./smm` подразумевает каталог `smm/` с `package.json`, `client/`, `server/`, `vite.config.ts` и т.д. Если структура другая, используйте корректный контекст, например:
+Это и есть действующая конфигурация: compose лежит в `/root/`, поэтому `context: ./smm` — это
+`/root/smm` (корень репозитория с `package.json`, `client/`, `server/`, `vite.config.ts`), а
+`dockerfile: Dockerfile` — корневой `Dockerfile` репозитория.
 
-```yaml
-smm:
-  build:
-    context: ..         # корень проекта
-    dockerfile: deploy/smm/Dockerfile
-```
-
-В `deploy/docker-compose.yml` задано:
-
-```yaml
-context: ..
-dockerfile: deploy/smm/Dockerfile
-```
-
-В этом случае `./smm` должен содержать полный проект (часто через копирование или монтирование при деплое).
+Раньше здесь же описывался альтернативный вариант с `context: ..` и
+`dockerfile: deploy/smm/Dockerfile` из `deploy/docker-compose.yml`. Тот путь деплоя не
+действовал и архивирован 2026-07-26 — см. [`docs/DEPLOYMENT.md`](DEPLOYMENT.md) и
+[`_archive/deploy/README.md`](../_archive/deploy/README.md). Если видите ссылку на
+`deploy/smm/Dockerfile` — вы смотрите в устаревший документ.

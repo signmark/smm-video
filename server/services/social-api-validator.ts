@@ -105,6 +105,21 @@ export async function validateVkToken(token: string, groupId?: string): Promise<
               }
             };
           }
+
+          // VK отдаёт ошибки метода в теле с HTTP 200 — promise не rejected и
+          // catch ниже не сработает. Без этой ветки управление проваливалось к
+          // общему `isValid: true`, и провал проверки группы выглядел успехом.
+          // Форма ответа та же, что в catch: успешный users.get выше доказывает,
+          // что credential жив, поэтому это group failure, а не auth failure —
+          // `isPermanentVkAuthFailure` такой details намеренно не помечает.
+          return {
+            isValid: false,
+            message: `Токен валиден, но ошибка при проверке группы: ${groupResponse.data?.error?.error_msg || 'некорректный ответ VK API'}`,
+            details: {
+              user: userInfo,
+              groupError: groupResponse.data
+            }
+          };
         } catch (groupError: any) {
           return {
             isValid: false,

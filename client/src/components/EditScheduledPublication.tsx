@@ -31,7 +31,8 @@ import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { getConnectedPlatformsMap } from '@/lib/platform-connection';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
@@ -73,6 +74,27 @@ export default function EditScheduledPublication({
 }: EditScheduledPublicationProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // Раньше сюда передавался захардкоженный список «все подключены», и планировать
+  // публикацию можно было в платформу, которой у кампании нет — падало уже при
+  // публикации. Тянем настройки кампании и считаем статус тем же хелпером, что и
+  // остальная морда. Пока настройки не загрузились — null, и PlatformSelector
+  // никого не блокирует: соврать «не подключено» на время загрузки хуже.
+  const campaignId = (content as any)?.campaignId || (content as any)?.campaign_id;
+  const { data: campaignEnvelope } = useQuery({
+    queryKey: ['campaign-social-settings', campaignId],
+    enabled: !!campaignId,
+    queryFn: async () => {
+      const response = await fetch(`/api/campaigns/${campaignId}`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+      });
+      if (!response.ok) throw new Error('Не удалось загрузить настройки кампании');
+      return response.json();
+    },
+  });
+  const connectedPlatforms = getConnectedPlatformsMap(
+    campaignEnvelope?.data?.social_media_settings ?? campaignEnvelope?.data?.socialMediaSettings,
+  );
 
   // Устанавливаем начальное состояние для выбранных платформ
   const getInitialPlatforms = () => {
@@ -318,7 +340,7 @@ export default function EditScheduledPublication({
               additionalImages: content.additionalImages ?? undefined,
               additionalVideos: content.additionalVideos ?? undefined
             }}
-            connectedPlatforms={{ instagram: true, telegram: true, vk: true, facebook: true, youtube: true, threads: true }}
+            connectedPlatforms={connectedPlatforms}
           />
         </div>
 

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import request from 'supertest';
 import express from 'express';
 import { registerRoutes } from '../routes';
@@ -44,6 +44,32 @@ const createMockToken = (payload: object) => {
 describe('Auth Flow Integration Tests', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+
+    // Флак «expected 503 to be 200» (2 падения из 10 полных прогонов, 1 из 7
+    // изолированных). Причина: createMockToken выводит exp из
+    // Math.floor(Date.now()/1000), поэтому два токена совпадают побайтово
+    // только внутри одной секунды. validateDirectusSession кэширует результат
+    // по sha256(token) на 30 с, и раньше единственным местом со стабом fetch
+    // был тест профиля — остальные session-зависимые тесты просто попадали в
+    // его кэш. Стоило прогону пересечь границу секунды, как ключ переставал
+    // совпадать, шёл реальный fetch в Directus, и авторизация отдавала
+    // 'unavailable' → 503. Сколько тестов упадёт, зависело от того, где
+    // легла граница: в наблюдавшихся прогонах 3 и 1.
+    //
+    // Дефолтный стаб убирает зависимость от кэша и часов: сессия валидна
+    // всегда, каждый тест самодостаточен. Тестам, которым нужен специфичный
+    // ответ (профиль), стаб переопределяют локально.
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ data: { id: 'test-user-id', is_smm_admin: false } }),
+      text: async () => '',
+      clone() { return this; },
+    }));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   describe('GET /api/user/profile', () => {
@@ -82,8 +108,6 @@ describe('Auth Flow Integration Tests', () => {
       const response = await request(app)
         .get('/api/user/profile')
         .set('Authorization', `Bearer ${mockToken}`);
-
-      vi.unstubAllGlobals();
 
       expect(response.status).toBe(200);
       expect(response.body).toMatchObject({

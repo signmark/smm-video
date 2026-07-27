@@ -85,6 +85,22 @@ const formatDate = (date: string | Date) => {
   return formatDistanceToNow(new Date(date), { addSuffix: true, locale: ru });
 };
 
+// Типы контента, поддерживаемые системой (совпадают с опциями дропдауна ниже).
+// Генератор иногда сохранял «чужие» значения (напр. "video-text"), которых нет в
+// списке — тогда «Тип контента» в диалоге редактирования пустой. Приводим к валидному.
+const SYSTEM_CONTENT_TYPES = ['text', 'text-image', 'image', 'video', 'clip', 'story'];
+const normalizeContentType = (raw: any): string => {
+  const v = String(raw ?? '').trim().toLowerCase().replace(/_/g, '-');
+  if (SYSTEM_CONTENT_TYPES.includes(v)) return v;
+  if (v === 'video-text' || v === 'text-video') return 'video';
+  if (v === 'image-text') return 'text-image';
+  if (v.includes('clip') || v.includes('reel') || v.includes('short')) return 'clip';
+  if (v.includes('stor')) return 'story';
+  if (v.includes('video')) return 'video';
+  if (v.includes('image') || v.includes('photo') || v.includes('картин')) return 'text-image';
+  return 'text';
+};
+
 // Функция для преобразования Markdown-подобного синтаксиса в HTML
 const processMarkdownSyntax = (content: string): string => {
   if (!content) return "";
@@ -346,7 +362,10 @@ export default function ContentPage() {
 
       const safeContent = {
         ...content,
-        keywords: processedKeywords
+        keywords: processedKeywords,
+        // Приводим тип к валидному системному — иначе «чужой» тип (напр. "video-text")
+        // не совпадёт ни с одной опцией и дропдаун будет пустым.
+        contentType: normalizeContentType((content as any).contentType),
       };
 
 
@@ -3174,7 +3193,7 @@ export default function ContentPage() {
               <div className="space-y-2">
                 <Label htmlFor="contentType">Тип контента</Label>
                 <Select
-                  value={currentContent.contentType || 'text'}
+                  value={normalizeContentType(currentContent.contentType)}
                   onValueChange={(value) => {
                     console.log('Changing content type from', currentContent.contentType, 'to', value);
                     const updatedContent = { ...currentContent, contentType: value };

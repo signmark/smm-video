@@ -207,6 +207,34 @@ async function callGemini(prompt: string, userId: string, userToken?: string): P
   return result.content;
 }
 
+// Типы контента, реально поддерживаемые системой (совпадают с опциями UI:
+// text, text-image, image, video, clip, story). Модель иногда выдумывает свои
+// (напр. "video-text"), которых нет в дропдауне — тогда тип поста в UI пустой.
+const SYSTEM_CONTENT_TYPES = ['text', 'text-image', 'image', 'video', 'clip', 'story'] as const;
+
+/** Приводит тип, вернувшийся от модели, к валидному системному. */
+function normalizeContentType(raw: any): string {
+  const v = String(raw ?? '').trim().toLowerCase().replace(/_/g, '-');
+  if ((SYSTEM_CONTENT_TYPES as readonly string[]).includes(v)) return v;
+  if (v === 'video-text' || v === 'text-video') return 'video';
+  if (v === 'image-text') return 'text-image';
+  if (v.includes('clip') || v.includes('reel') || v.includes('short')) return 'clip';
+  if (v.includes('stor')) return 'story';
+  if (v.includes('video')) return 'video';
+  if (v.includes('image') || v.includes('photo') || v.includes('картин')) return 'text-image';
+  return 'text';
+}
+
+/** Список типов, разрешённых к генерации, исходя из настроек кампании/выбора. */
+function allowedContentTypes(settings: ContentPlanSettings): string[] {
+  const allowed = ['text'];
+  if (settings.includeImages) allowed.push('text-image', 'image');
+  if (settings.includeVideos) allowed.push('video');
+  if (settings.includeClips) allowed.push('clip');
+  if (settings.includeStories) allowed.push('story');
+  return Array.from(new Set(allowed));
+}
+
 export async function generateContentPlan(params: GeneratePlanParams): Promise<{ success: boolean; data?: { contentPlan: any[] }; error?: string }> {
   const {
     campaignId, userId, settings,
@@ -347,6 +375,8 @@ export async function generateContentPlan(params: GeneratePlanParams): Promise<{
     ? `\nПодпись в конце каждого поста (дословно, не изменять):\n${autonomousSettings.signature}`
     : '';
 
+  const allowedTypes = allowedContentTypes(settings);
+
   const baseTemplate = `Создай детальный контент-план для социальных сетей.
 ${businessInfo}
 ${autonomousPromptBlock}
@@ -359,11 +389,11 @@ ${autonomousSignatureBlock}
 Верни JSON-массив постов. Каждый пост:
 - title: короткий заголовок 3–6 слов (конкретный, без вводных слов типа "Как", "О том", "Все о"; максимум 60 символов)
 - content: HTML-форматированный текст
-- contentType: text | text-image | video | video-text
+- contentType: строго одно из значений: ${allowedTypes.join(' | ')} (другие значения запрещены)
 - scheduledAt: ISO-дата публикации
 - hashtags: массив хештегов (5-7 шт)
 - keywords: массив ключевых слов (3-5 шт)
-- prompt: промпт для генерации изображения на английском (только если contentType содержит image)
+- prompt: промпт для генерации изображения на английском (только если contentType — text-image или image)
 
 Используй тренды и ключевые слова чтобы сделать контент актуальным.`;
 
@@ -403,6 +433,7 @@ ${autonomousSignatureBlock}
         const byWords = words.length > 7 ? words.slice(0, 7).join(' ') : p.title.trim();
         p.title = byWords.length > 60 ? byWords.slice(0, 60).trimEnd() : byWords;
       }
+      p.contentType = normalizeContentType(p.contentType);
       return p;
     });
 
@@ -474,6 +505,7 @@ ${autonomousSignatureBlock}
       const byWords = words.length > 7 ? words.slice(0, 7).join(' ') : p.title.trim();
       p.title = byWords.length > 60 ? byWords.slice(0, 60).trimEnd() : byWords;
     }
+    p.contentType = normalizeContentType(p.contentType);
     return p;
   });
 

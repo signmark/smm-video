@@ -5,6 +5,7 @@
  */
 
 import axios from 'axios';
+import { resolveSizeParams } from './fal-size-params';
 
 export interface DirectGenerateOptions {
   prompt: string;
@@ -121,8 +122,7 @@ export class FalAiDirectClient {
       requestData = {
         prompt: options.prompt,
         negative_prompt: options.negative_prompt || '',
-        width: width,
-        height: height,
+        ...resolveSizeParams(options.model, width, height),
         num_images: numImages
       };
       
@@ -148,8 +148,7 @@ export class FalAiDirectClient {
       requestData = {
         prompt: options.prompt,
         negative_prompt: options.negative_prompt || '',
-        width: width,
-        height: height,
+        ...resolveSizeParams(options.model, width, height),
         num_images: numImages
       };
       
@@ -222,8 +221,7 @@ export class FalAiDirectClient {
       requestData = {
         prompt: cleanPrompt,
         negative_prompt: options.negative_prompt || '',
-        width: width,
-        height: height,
+        ...resolveSizeParams(options.model, width, height),
         num_images: numImages
       };
     } else if (options.model.startsWith('flux/')) {
@@ -254,8 +252,7 @@ export class FalAiDirectClient {
         model_name: modelName,
         prompt: cleanPrompt,
         negative_prompt: options.negative_prompt || '',
-        image_width: width,
-        image_height: height,
+        ...resolveSizeParams(options.model, width, height),
         num_images: numImages
       };
     } else {
@@ -285,8 +282,7 @@ export class FalAiDirectClient {
         model_name: options.model,
         prompt: cleanPrompt,
         negative_prompt: options.negative_prompt || '',
-        width: width,
-        height: height,
+        ...resolveSizeParams(options.model, width, height),
         num_images: numImages
       };
     }

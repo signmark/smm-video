@@ -4,7 +4,8 @@
  */
 
 import { fal } from '@fal-ai/client';
-import { apiKeyService } from './api-keys'; 
+import { apiKeyService } from './api-keys';
+import { resolveSizeParams } from './fal-size-params';
 
 export interface GenerateImageOptions {
   prompt: string;
@@ -224,41 +225,36 @@ export class FalAiOfficialClient {
       const schnellParams = {
         prompt: baseParams.prompt,
         negative_prompt: baseParams.negative_prompt,
-        image_size: {
-          width: options.width || 1024,
-          height: options.height || 1024
-        },
+        ...resolveSizeParams(options.model, options.width, options.height),
         num_inference_steps: 4, // Значение по умолчанию из документации
         num_images: numImages
       };
-      
+
       return schnellParams;
     } else if (options.model === 'fast-sdxl' || options.model === 'fal-ai/fast-sdxl') {
       const sdxlParams = {
         ...baseParams,
-        width: options.width || 1024,
-        height: options.height || 1024,
+        ...resolveSizeParams(options.model, options.width, options.height),
         num_images: numImages
       };
-      
+
       return sdxlParams;
-    
+
     } else if (options.model === 'fooocus' || options.model === 'fal-ai/fooocus') {
       const fooocusParams = {
         ...baseParams,
-        width: options.width || 1024,
-        height: options.height || 1024,
+        ...resolveSizeParams(options.model, options.width, options.height),
         num_images: numImages
       };
-      
+
       return fooocusParams;
-    } 
+    }
     // Обработка NanoBanana Pro (Gemini 3 Pro Image через FAL)
     else if (options.model === 'nano-banana-pro' || options.model === 'fal-ai/nano-banana-pro') {
       const nanoBananaProParams = {
         prompt: baseParams.prompt,
         negative_prompt: baseParams.negative_prompt,
-        image_size: this.getImageSizeFormat(options.width || 1024, options.height || 1024),
+        ...resolveSizeParams(options.model, options.width, options.height),
         num_images: numImages
       };
       console.log(`[fal-ai-official] Параметры для NanoBanana Pro: ${JSON.stringify(nanoBananaProParams)}`);
@@ -300,19 +296,17 @@ export class FalAiOfficialClient {
     else if (options.model.includes('rundiffusion-fal/juggernaut-flux')) {
       const juggernautParams = {
         ...baseParams,
-        image_width: options.width || 1024,
-        image_height: options.height || 1024,
+        ...resolveSizeParams(options.model, options.width, options.height),
         num_images: numImages
       };
-      
+
       return juggernautParams;
     }
     // Обработка моделей flux/
     else if (options.model.includes('flux/') || options.model.includes('fal-ai/flux')) {
       return {
         ...baseParams,
-        image_width: options.width || 1024,
-        image_height: options.height || 1024,
+        ...resolveSizeParams(options.model, options.width, options.height),
         num_images: numImages
       };
     }
@@ -320,8 +314,7 @@ export class FalAiOfficialClient {
     // Для неизвестных моделей используем стандартные параметры
     return {
       ...baseParams,
-      width: options.width || 1024,
-      height: options.height || 1024,
+      ...resolveSizeParams(options.model, options.width, options.height),
       num_images: numImages
     };
   }

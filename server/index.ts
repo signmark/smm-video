@@ -125,14 +125,13 @@ import vkOAuthRouter from './routes/vk-oauth';
 import instagramOAuthRouter from './routes/instagram-oauth';
 import threadsOAuthRouter from './routes/threads-oauth';
 import tiktokAuthRouter from './routes/tiktok-auth';
+import { registerPublicOAuthBypass } from './middleware/public-oauth-bypass';
 
-// Body parser для POST/OPTIONS callback'ов — ОБЯЗАТЕЛЬНО ДО хендлеров, иначе
-// req.body = undefined и handler'ы с деструктуризацией (например VK token-webhook
-// делает `const { access_token } = req.body`) упадут в unhandled promise rejection →
-// crash loop. Полный express.json на /api/* стоит ниже (с лимитом 50mb), но нам
-// нужен свой здесь с 1mb — токены весят мало, и ставим ДО bypass-цикла.
-app.use('/api', express.json({ limit: '1mb' }));
-
+// Тело публичных callback'ов парсится ТОЧЕЧНО внутри registerPublicOAuthBypass
+// (1mb на каждый POST-callback). НЕ вешаем express.json на весь /api: раньше два
+// `app.use('/api', express.json({ limit: '1mb' }))` перехватывали ВСЕ /api-запросы
+// раньше глобального 50mb-парсера, из-за чего обычные API-запросы 1–50mb были
+// недостижимы. Обычные /api теперь доходят до express.json({ limit: '50mb' }) ниже.
 const PUBLIC_OAUTH_CALLBACKS: Array<{
   router: any;
   routerPath: string;
@@ -154,24 +153,7 @@ const PUBLIC_OAUTH_CALLBACKS: Array<{
   { router: vkOAuthRouter, routerPath: '/vk/token-webhook/:campaignId/status', publicPath: '/api/vk/token-webhook/:campaignId/status', method: 'get' },
 ];
 
-// Body parser для POST/OPTIONS callback'ов — нужен ДО хендлеров, иначе req.body = undefined
-app.use('/api', express.json({ limit: '1mb' }));
-
-for (const { router, routerPath, publicPath, method } of PUBLIC_OAUTH_CALLBACKS) {
-  // Найти внутренний handler в router'е по path и method
-  const layer = (router as any).stack.find(
-    (l: any) => l.route && l.route.path === routerPath && l.route.methods[method]
-  );
-  if (!layer) {
-    console.warn(`[oauth-bypass] ⚠️ Не найден handler для ${method.toUpperCase()} ${publicPath} в роутере — пропускаю`);
-    continue;
-  }
-  const innerHandler = layer.route.stack[0].handle;
-  if (method === 'get') app.get(publicPath, innerHandler);
-  else if (method === 'post') app.post(publicPath, innerHandler);
-  else if (method === 'options') app.options(publicPath, innerHandler);
-  console.log(`[oauth-bypass] ✅ ${method.toUpperCase()} ${publicPath} → смонтирован до всех middleware`);
-}
+registerPublicOAuthBypass(app, PUBLIC_OAUTH_CALLBACKS);
 
 // Security-заголовки. CSP/frameguard/CORP отключены намеренно: приложение работает
 // как Telegram Mini App внутри iframe (web.telegram.org) и грузит ассеты с S3.

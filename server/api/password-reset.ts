@@ -1,12 +1,34 @@
 import { Express, Request, Response } from 'express';
 import crypto from 'crypto';
 import { sendEmail } from '../services/email';
+import {
+  rememberResetToken,
+  consumeResetToken,
+  invalidateUserResetTokens,
+} from '../utils/password-reset-tokens';
 
 const RESET_TOKEN_TTL_SEC = 3600; // 1 час
 
+/**
+ * Без фолбэка на публичную строку: ключ подписи, лежащий в репозитории, знает
+ * кто угодно, и подделать ссылку сброса становится тривиально. Лучше явная
+ * ошибка конфигурации, чем тихая подпись общеизвестным секретом.
+ */
 function makeResetToken(userId: string, ts: number): string {
-  const secret = process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN || 'smm-reset-secret';
+  const secret = process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
+  if (!secret) {
+    throw new Error('Не настроен секрет для подписи ссылок сброса пароля');
+  }
   return crypto.createHmac('sha256', secret).update(`${userId}:${ts}`).digest('hex').slice(0, 40);
+}
+
+/** Сравнение подписей за постоянное время: обычный !== течёт по префиксу. */
+function tokensMatch(provided: string, expected: string): boolean {
+  const providedBuf = Buffer.from(String(provided), 'utf8');
+  const expectedBuf = Buffer.from(expected, 'utf8');
+  // timingSafeEqual бросает на разной длине, поэтому длину проверяем отдельно.
+  if (providedBuf.length !== expectedBuf.length) return false;
+  return crypto.timingSafeEqual(providedBuf, expectedBuf);
 }
 
 function getBaseUrl(req: Request): string {
@@ -48,6 +70,9 @@ export function registerPasswordResetRoutes(app: Express) {
 
       const ts = Math.floor(Date.now() / 1000);
       const token = makeResetToken(user.id, ts);
+      // Регистрируем ссылку как действующую; прежние ссылки этого пользователя
+      // гасятся, чтобы рабочей оставалась только последняя запрошенная.
+      rememberResetToken(token, user.id, RESET_TOKEN_TTL_SEC);
       const baseUrl = getBaseUrl(req);
       const resetUrl = `${baseUrl}/auth/reset-password?userId=${user.id}&ts=${ts}&token=${token}`;
       const firstName = user.first_name || 'пользователь';
@@ -93,9 +118,25 @@ export function registerPasswordResetRoutes(app: Express) {
       return res.status(400).json({ error: 'Срок действия ссылки истёк. Запросите сброс заново.' });
     }
 
-    const expected = makeResetToken(userId, tsNum);
-    if (token !== expected) {
+    let expected: string;
+    try {
+      expected = makeResetToken(userId, tsNum);
+    } catch (configErr: any) {
+      console.error('[password-reset/confirm]', configErr?.message);
+      return res.status(500).json({ error: 'Ошибка конфигурации сервера' });
+    }
+
+    if (!tokensMatch(token, expected)) {
       return res.status(400).json({ error: 'Недействительная ссылка для сброса пароля.' });
+    }
+
+    // Подпись верна — но этого мало: она не знает, использовали ссылку или нет.
+    // Гасим токен ДО смены пароля, поэтому повторный переход по той же ссылке
+    // сюда уже не дойдёт.
+    if (!consumeResetToken(token, userId)) {
+      return res.status(400).json({
+        error: 'Ссылка уже использована или недействительна. Запросите сброс заново.',
+      });
     }
 
     try {
@@ -113,6 +154,39 @@ export function registerPasswordResetRoutes(app: Express) {
         const errText = await updateResp.text();
         console.error('[password-reset/confirm] Directus error:', errText);
         return res.status(500).json({ error: 'Не удалось обновить пароль' });
+      }
+
+      // Пароль сменился — гасим все остальные выданные ссылки пользователя.
+      invalidateUserResetTokens(userId);
+
+      // Уведомление о смене пароля: если сброс запросил не владелец аккаунта,
+      // письмо — единственный сигнал, по которому он это заметит.
+      // Отправка не должна ломать уже успешную смену пароля.
+      try {
+        const notifyResp = await fetch(
+          `${directusUrl}/users/${userId}?fields=email,first_name`,
+          { headers: { Authorization: `Bearer ${adminToken}` } },
+        );
+        if (notifyResp.ok) {
+          const notifyData = await notifyResp.json();
+          const changedUser = notifyData.data;
+          if (changedUser?.email) {
+            await sendEmail({
+              to: changedUser.email,
+              subject: 'Пароль изменён — SMM Manager',
+              html: `
+                <div style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto;padding:32px 16px">
+                  <h2 style="margin:0 0 16px;color:#111">Пароль изменён</h2>
+                  <p style="color:#444;line-height:1.6">Здравствуйте, <b>${changedUser.first_name || 'пользователь'}</b>!</p>
+                  <p style="color:#444;line-height:1.6">Пароль от вашего аккаунта SMM Manager был только что изменён через восстановление доступа. Ссылка, по которой это сделали, больше не действует.</p>
+                  <p style="color:#444;line-height:1.6">Если это были <b>не вы</b> — сразу запросите сброс пароля повторно и сообщите нам.</p>
+                </div>
+              `,
+            });
+          }
+        }
+      } catch (notifyErr: any) {
+        console.error('[password-reset/confirm] Не удалось отправить уведомление:', notifyErr?.message);
       }
 
       return res.json({ success: true });

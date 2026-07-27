@@ -2,6 +2,7 @@ import { Express, Request, Response } from 'express';
 import { detectEnvironment } from '../utils/environment-detector';
 import { authenticateUser } from '../middleware/user-auth';
 import { getEffectivePlan } from '../services/plan-limits';
+import { invalidateUserResetTokens } from '../utils/password-reset-tokens';
 
 export function registerUserRoutes(app: Express) {
   app.get('/api/user/profile', authenticateUser, async (req: Request, res: Response) => {
@@ -115,6 +116,12 @@ export function registerUserRoutes(app: Express) {
         } else {
           throw userErr;
         }
+      }
+
+      // Пароль сменили из профиля — ранее отправленные ссылки сброса обязаны
+      // умереть, иначе старое письмо остаётся рабочим ключом к аккаунту.
+      if (directusUpdateData.password) {
+        invalidateUserResetTokens(userId);
       }
 
       const updatedProfile = {

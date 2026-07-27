@@ -471,10 +471,15 @@ export default function Trends() {
   });
   const keywords = keywordsResponse?.data || [];
 
-  const { data: trends = [], isLoading: isLoadingTrends, isError: isTrendsError, error: trendsError } = useQuery({
-    queryKey: ["trends", selectedPeriod, selectedCampaignId],
-    staleTime: 0, // Принудительно загружаем свежие данные
-    gcTime: 0, // Не кэшируем данные
+  const { data: rawTrends = [], isLoading: isLoadingTrends, isError: isTrendsError, error: trendsError } = useQuery({
+    // Ключ БЕЗ периода: сервер /api/campaign-trends всё равно отдаёт все тренды
+    // кампании (period игнорирует). Раньше период был в ключе при staleTime/gcTime=0,
+    // поэтому каждое переключение периода рефетчило весь датасет заново — отсюда
+    // «подвисания». Теперь тянем один раз на кампанию и кэшируем; период применяем
+    // клиентски мемо-срезом `trends` ниже (без сети).
+    queryKey: ["trends", selectedCampaignId],
+    staleTime: 60 * 1000,      // минуту считаем свежими — переключения не рефетчат
+    gcTime: 5 * 60 * 1000,     // держим в кэше, чтобы не тянуть большой payload повторно
     queryFn: async () => {
       if (!selectedCampaignId) return [];
 
@@ -484,7 +489,7 @@ export default function Trends() {
       }
 
       // Используем наш собственный API эндпоинт вместо прямого обращения к Directus
-      const response = await fetch(`/api/campaign-trends?campaignId=${selectedCampaignId}&period=${selectedPeriod}`, {
+      const response = await fetch(`/api/campaign-trends?campaignId=${selectedCampaignId}`, {
         headers: {
           'Authorization': `Bearer ${authToken}`
         }
@@ -514,44 +519,36 @@ export default function Trends() {
         };
       });
 
-      // Для периода "all" возвращаем все данные без дополнительной фильтрации
-      if (selectedPeriod === 'all') {
-        return processedTrends;
-      }
-
-      // Фильтруем тренды по выбранному периоду на клиентской стороне
-      const now = new Date();
-      const filterDate = new Date();
-
-      switch (selectedPeriod) {
-        case '3days':
-          filterDate.setDate(now.getDate() - 3);
-          break;
-        case '7days':
-          filterDate.setDate(now.getDate() - 7);
-          break;
-        case '14days':
-          filterDate.setDate(now.getDate() - 14);
-          break;
-        case '30days':
-          filterDate.setDate(now.getDate() - 30);
-          break;
-        default:
-          return processedTrends; // Для неизвестных периодов возвращаем все данные
-      }
-
-      // Фильтруем тренды по дате
-      const filteredTrends = processedTrends.filter((trend: any) => {
-        if (!trend.created_at && !trend.createdAt) return true; // Показываем тренды без даты
-
-        const trendDate = new Date(trend.created_at || trend.createdAt);
-        return trendDate >= filterDate;
-      });
-
-      return filteredTrends;
+      // Период НЕ фильтруем здесь — это делает клиентский filteredTrends, чтобы
+      // переключение периода не требовало нового запроса к серверу.
+      return processedTrends;
     },
     enabled: !!selectedCampaignId
   });
+
+  // Граница даты для выбранного периода (null = «all», без фильтра). Вынесено из
+  // queryFn, чтобы период применялся клиентски без рефетча.
+  const periodFilterDate = useMemo(() => {
+    const days: Record<string, number> = { '3days': 3, '7days': 7, '14days': 14, '30days': 30 };
+    const n = days[selectedPeriod as string];
+    if (!n) return null;
+    const d = new Date();
+    d.setDate(d.getDate() - n);
+    return d;
+  }, [selectedPeriod]);
+
+  // Период применяем ОДИН раз здесь, поверх кэшированного rawTrends. Все потребители
+  // `trends` (список, статистика по источникам, тональность, filteredTrends) получают
+  // данные уже в рамках периода — как раньше делал queryFn, но без сетевого рефетча.
+  const trends = useMemo(() => {
+    if (!periodFilterDate) return rawTrends;
+    return rawTrends.filter((t: any) => {
+      const raw = t.created_at || t.createdAt;
+      if (!raw) return true; // тренды без даты показываем всегда
+      const d = new Date(raw);
+      return isNaN(d.getTime()) || d >= periodFilterDate;
+    });
+  }, [rawTrends, periodFilterDate]);
 
 
   // Состояния для сворачивания/разворачивания секций
@@ -813,7 +810,7 @@ export default function Trends() {
       }
 
       // Обновляем данные трендов для получения новой аналитики
-      queryClient.invalidateQueries({ queryKey: ["trends", selectedPeriod, selectedCampaignId] });
+      queryClient.invalidateQueries({ queryKey: ["trends", selectedCampaignId] });
     },
     onError: (error: any) => {
       console.error('Ошибка анализа комментариев:', error);
@@ -1312,7 +1309,7 @@ export default function Trends() {
         }
       }
 
-      queryClient.invalidateQueries({ queryKey: ["trends", selectedPeriod, selectedCampaignId] });
+      queryClient.invalidateQueries({ queryKey: ["trends", selectedCampaignId] });
       return trendData;
     },
     onSuccess: (data, { platforms, collectSources, collectComments }) => {
@@ -1324,7 +1321,7 @@ export default function Trends() {
       });
 
       // Refresh the trend topics list и источники (делаем это только один раз)
-      queryClient.invalidateQueries({ queryKey: ["trends", selectedPeriod, selectedCampaignId] });
+      queryClient.invalidateQueries({ queryKey: ["trends", selectedCampaignId] });
       if (collectSources) {
         queryClient.invalidateQueries({ queryKey: ["campaign_content_sources"] });
         queryClient.invalidateQueries({ queryKey: ["/api/proxy/sources", selectedCampaignId] });
@@ -1430,7 +1427,7 @@ export default function Trends() {
 
       // Обновляем данные в кеше
       queryClient.setQueryData(
-        ["trends", selectedPeriod, selectedCampaignId],
+        ["trends", selectedCampaignId],
         (old: TrendTopic[] | undefined) => {
           if (!old) return [];
           return old.map(topic =>
@@ -2508,8 +2505,8 @@ export default function Trends() {
 
                                   const detectedPlatform = detectPlatform();
 
-                                  // Фильтр по периоду времени - сервер уже отфильтровал данные по периоду
-                                  // Показываем ВСЕ полученные от сервера записи
+                                  // Период уже применён в мемо `trends` (срез поверх кэша),
+                                  // поэтому здесь фильтровать не нужно.
                                   const withinPeriod = true;
 
                                   // Фильтр по поисковому запросу
@@ -3101,7 +3098,7 @@ export default function Trends() {
                                               });
                                               // Обновляем данные после анализа настроения (без интервалов)
                                               console.log('✅ Анализ настроения завершен, данные обновлены локально');
-                                              queryClient.invalidateQueries({ queryKey: ["trends", selectedPeriod, selectedCampaignId] });
+                                              queryClient.invalidateQueries({ queryKey: ["trends", selectedCampaignId] });
 
                                               // Обновляем локальные данные тренда, чтобы анализ сохранился
                                               if (selectedTrendTopic) {

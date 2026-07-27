@@ -521,6 +521,13 @@
     "updateError": "Failed to update profile",
     "validationError": "Name and email are required",
     "passwordLengthError": "Password must be at least 6 characters",
+    "currentPassword": "Current password",
+    "currentPasswordPlaceholder": "Enter your current password",
+    "currentPasswordHint": "Changing the password requires confirmation with your current password.",
+    "currentPasswordHintEmail": "Changing the email requires confirmation with your current password. The new address only takes effect after you follow the link in the email.",
+    "currentPasswordRequired": "Enter your current password",
+    "emailConfirmTitle": "Confirm your new address",
+    "emailConfirmSent": "A confirmation link was sent to {{email}}. Until you confirm it, sign-in keeps using the old address.",
     "loading": "Loading..."
   },
   "sources": {

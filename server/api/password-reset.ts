@@ -1,6 +1,8 @@
 import { Express, Request, Response } from 'express';
 import crypto from 'crypto';
 import { sendEmail } from '../services/email';
+import { escapeHtml } from '../utils/html-escape';
+import { getAppBaseUrl } from '../utils/app-base-url';
 import {
   rememberResetToken,
   consumeResetToken,
@@ -29,13 +31,6 @@ function tokensMatch(provided: string, expected: string): boolean {
   // timingSafeEqual бросает на разной длине, поэтому длину проверяем отдельно.
   if (providedBuf.length !== expectedBuf.length) return false;
   return crypto.timingSafeEqual(providedBuf, expectedBuf);
-}
-
-function getBaseUrl(req: Request): string {
-  const host = req.get('host') || '';
-  if (host.includes('replit.dev')) return `https://${host}`;
-  if (host.includes('roboflow.space')) return 'https://smm.roboflow.space';
-  return 'https://smm.omemo.tech';
 }
 
 export function registerPasswordResetRoutes(app: Express) {
@@ -73,9 +68,16 @@ export function registerPasswordResetRoutes(app: Express) {
       // Регистрируем ссылку как действующую; прежние ссылки этого пользователя
       // гасятся, чтобы рабочей оставалась только последняя запрошенная.
       rememberResetToken(token, user.id, RESET_TOKEN_TTL_SEC);
-      const baseUrl = getBaseUrl(req);
+      const baseUrl = getAppBaseUrl(req);
       const resetUrl = `${baseUrl}/auth/reset-password?userId=${user.id}&ts=${ts}&token=${token}`;
-      const firstName = user.first_name || 'пользователь';
+      // Все подстановки экранируются: имя приходит из профиля пользователя,
+      // а это интерполяция в разметку письма.
+      const safeName = escapeHtml(user.first_name || 'пользователь');
+      const safeAccount = escapeHtml(user.email || email);
+      // Чужой сброс — реальный сценарий, поэтому в письме должно быть видно,
+      // ДЛЯ КАКОГО аккаунта и КОГДА запрошен сброс: без этого получатель не
+      // может понять, его это действие или нет.
+      const requestedAt = escapeHtml(new Date().toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' }));
 
       await sendEmail({
         to: email,
@@ -83,12 +85,14 @@ export function registerPasswordResetRoutes(app: Express) {
         html: `
           <div style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto;padding:32px 16px">
             <h2 style="margin:0 0 16px;color:#111">Сброс пароля</h2>
-            <p style="color:#444;line-height:1.6">Здравствуйте, <b>${firstName}</b>!</p>
-            <p style="color:#444;line-height:1.6">Мы получили запрос на сброс пароля для вашего аккаунта SMM Manager. Нажмите на кнопку ниже, чтобы задать новый пароль:</p>
+            <p style="color:#444;line-height:1.6">Здравствуйте, <b>${safeName}</b>!</p>
+            <p style="color:#444;line-height:1.6">Мы получили запрос на сброс пароля для аккаунта SMM Manager <b>${safeAccount}</b>.</p>
+            <p style="color:#444;line-height:1.6">Запрос сделан: <b>${requestedAt}</b> (МСК).</p>
+            <p style="color:#444;line-height:1.6">Нажмите на кнопку ниже, чтобы задать новый пароль:</p>
             <p style="margin:24px 0">
               <a href="${resetUrl}" style="display:inline-block;padding:12px 28px;background:#2563eb;color:#fff;text-decoration:none;border-radius:8px;font-weight:600;font-size:15px">Сбросить пароль</a>
             </p>
-            <p style="color:#888;font-size:13px;line-height:1.5">Ссылка действительна <b>1 час</b>. Если вы не запрашивали сброс пароля — просто проигнорируйте это письмо.</p>
+            <p style="color:#888;font-size:13px;line-height:1.5">Ссылка действительна <b>1 час</b>. Если вы не запрашивали сброс пароля — просто проигнорируйте это письмо, пароль останется прежним.</p>
           </div>
         `,
       });
@@ -177,8 +181,8 @@ export function registerPasswordResetRoutes(app: Express) {
               html: `
                 <div style="font-family:system-ui,sans-serif;max-width:480px;margin:0 auto;padding:32px 16px">
                   <h2 style="margin:0 0 16px;color:#111">Пароль изменён</h2>
-                  <p style="color:#444;line-height:1.6">Здравствуйте, <b>${changedUser.first_name || 'пользователь'}</b>!</p>
-                  <p style="color:#444;line-height:1.6">Пароль от вашего аккаунта SMM Manager был только что изменён через восстановление доступа. Ссылка, по которой это сделали, больше не действует.</p>
+                  <p style="color:#444;line-height:1.6">Здравствуйте, <b>${escapeHtml(changedUser.first_name || 'пользователь')}</b>!</p>
+                  <p style="color:#444;line-height:1.6">Пароль от аккаунта SMM Manager <b>${escapeHtml(changedUser.email)}</b> был только что изменён через восстановление доступа (${escapeHtml(new Date().toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' }))} МСК). Ссылка, по которой это сделали, больше не действует.</p>
                   <p style="color:#444;line-height:1.6">Если это были <b>не вы</b> — сразу запросите сброс пароля повторно и сообщите нам.</p>
                 </div>
               `,

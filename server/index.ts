@@ -301,6 +301,7 @@ const globalApiLimiter = rateLimit({
 app.use('/api/auth/login', sensitiveLimiter);
 app.use('/api/auth/register', sensitiveLimiter);
 app.use('/api/auth/password-reset', sensitiveLimiter);
+app.use('/api/auth/email-change', sensitiveLimiter);
 app.use('/api/payments/create', sensitiveLimiter);
 app.use('/api', globalApiLimiter);
 
@@ -341,6 +342,8 @@ import { registerAuthRoutes } from './api/auth-routes';
 registerAuthRoutes(app);
 import { registerPasswordResetRoutes } from './api/password-reset';
 registerPasswordResetRoutes(app);
+import { registerEmailChangeRoutes } from './api/email-change';
+registerEmailChangeRoutes(app);
 log('Auth routes registered early to avoid 404');
 
 // Регистрация Trends Routes максимально рано
@@ -1200,7 +1203,9 @@ async function checkVkTokensStatus() {
     const { default: axiosInst } = await import('axios');
     const resp = await axiosInst.get(`${directusUrl}/items/user_campaigns`, {
       headers: { Authorization: `Bearer ${adminToken}` },
-      params: { limit: -1, fields: 'id,title,social_media_settings' }
+      // Поле названия — name. Поля title у user_campaigns нет, и Directus отвергал
+      // весь запрос с 403, из-за чего VK-мониторинг не проверял вообще ничего.
+      params: { limit: -1, fields: 'id,name,social_media_settings' }
     });
 
     const campaigns: any[] = resp.data?.data || [];
@@ -1211,7 +1216,7 @@ async function checkVkTokensStatus() {
       if (!vk?.accessToken && !vk?.token) { noToken++; continue; }
       if (vk.authExpired) {
         expired++;
-        log(`[VK-CHECK] Кампания ${campaign.id} (${campaign.title || ''}): authExpired=true, требует переподключения`, 'vk-cron', 'warn');
+        log(`[VK-CHECK] Кампания ${campaign.id} (${campaign.name || ''}): authExpired=true, требует переподключения`, 'vk-cron', 'warn');
         continue;
       }
       const expiresAt = vk.tokenExpiresAt ? new Date(vk.tokenExpiresAt).getTime() : 0;

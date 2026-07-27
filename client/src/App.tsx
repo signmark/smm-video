@@ -36,6 +36,7 @@ const Login = lazy(() => import("@/pages/auth/login"));
 const Register = lazy(() => import("@/pages/auth/register"));
 const ForgotPassword = lazy(() => import("@/pages/auth/forgot-password"));
 const ResetPassword = lazy(() => import("@/pages/auth/reset-password"));
+const ConfirmEmail = lazy(() => import("@/pages/auth/confirm-email"));
 const GlobalApiKeysPage = lazy(() => import("@/pages/admin/global-api-keys"));
 const UserManagement = lazy(() => import("@/pages/admin/UserManagement"));
 const TelegramChannelsAdmin = lazy(() => import("@/pages/admin/telegram-channels"));
@@ -174,6 +175,7 @@ function Router() {
       <Route path="/auth/register" component={Register} />
       <Route path="/auth/forgot-password" component={ForgotPassword} />
       <Route path="/auth/reset-password" component={ResetPassword} />
+      <Route path="/auth/confirm-email" component={ConfirmEmail} />
       <Route path="/login" component={Login} />
       <Route path="/pricing" component={PricingPage} />
       <Route path="/payment/success" component={PaymentSuccessPage} />

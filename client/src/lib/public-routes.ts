@@ -4,6 +4,9 @@ export const PUBLIC_ROUTES = [
   '/auth/register',
   '/auth/forgot-password',
   '/auth/reset-password',
+  // Ссылка из письма открывается в любом браузере, не обязательно
+  // залогиненном — иначе AuthGuard увёл бы её на /auth/login.
+  '/auth/confirm-email',
   '/payment/success',
   '/payment/cancel',
   '/help',

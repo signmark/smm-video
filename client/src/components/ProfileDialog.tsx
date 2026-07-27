@@ -36,7 +36,8 @@ export function ProfileDialog({ isOpen, onClose }: ProfileDialogProps) {
     first_name: "",
     last_name: "",
     email: "",
-    new_password: ""
+    new_password: "",
+    current_password: ""
   });
 
   // Загружаем профиль пользователя — enabled только когда диалог открыт и есть токен
@@ -66,6 +67,15 @@ export function ProfileDialog({ isOpen, onClose }: ProfileDialogProps) {
     }
   }, [userProfile]);
 
+  // Смена пароля и смена почты требуют подтверждения текущим паролем.
+  // Поле показываем только когда оно действительно нужно, чтобы правка
+  // одного лишь имени не спрашивала пароль.
+  const emailChanged =
+    !!userProfile &&
+    formData.email.trim().toLowerCase() !== (userProfile.email || "").toLowerCase();
+  const passwordChanged = formData.new_password.trim().length > 0;
+  const requiresCurrentPassword = emailChanged || passwordChanged;
+
   // Мутация для обновления профиля
   const updateProfileMutation = useMutation({
     mutationFn: async (data: any) => {
@@ -74,11 +84,21 @@ export function ProfileDialog({ isOpen, onClose }: ProfileDialogProps) {
         data
       });
     },
-    onSuccess: () => {
-      toast({
-        title: `✅ ${t('profile.updated')}`,
-        description: t('profile.updateSuccess')
-      });
+    onSuccess: (result: any) => {
+      // Почта меняется не сразу: сервер лишь отправил письмо со ссылкой.
+      // Говорим об этом прямо, иначе пользователь решит, что адрес уже сменён.
+      if (result?.email_change_pending) {
+        toast({
+          title: `📧 ${t('profile.emailConfirmTitle')}`,
+          description: t('profile.emailConfirmSent', { email: result.pending_email })
+        });
+      } else {
+        toast({
+          title: `✅ ${t('profile.updated')}`,
+          description: t('profile.updateSuccess')
+        });
+      }
+      setFormData(prev => ({ ...prev, new_password: "", current_password: "" }));
       // Инвалидируем кеш профиля с правильным ключом
       queryClient.invalidateQueries({ queryKey: ['/api/user/profile'] });
       onClose();
@@ -119,6 +139,20 @@ export function ProfileDialog({ isOpen, onClose }: ProfileDialogProps) {
         return;
       }
       updateData.new_password = formData.new_password;
+    }
+
+    // Текущий пароль отправляем только когда сервер его потребует —
+    // при смене пароля или почты.
+    if (requiresCurrentPassword) {
+      if (!formData.current_password.trim()) {
+        toast({
+          title: `❌ ${t('common.error')}`,
+          description: t('profile.currentPasswordRequired'),
+          variant: "destructive"
+        });
+        return;
+      }
+      updateData.current_password = formData.current_password;
     }
 
     updateProfileMutation.mutate(updateData);
@@ -207,6 +241,24 @@ export function ProfileDialog({ isOpen, onClose }: ProfileDialogProps) {
               placeholder={t('profile.passwordPlaceholder')}
             />
           </div>
+
+          {requiresCurrentPassword && (
+            <div className="space-y-2 rounded-md border border-amber-300 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/30">
+              <Label htmlFor="current_password">{t('profile.currentPassword')}</Label>
+              <Input
+                id="current_password"
+                data-testid="input-current-password"
+                type="password"
+                autoComplete="current-password"
+                value={formData.current_password}
+                onChange={(e) => handleInputChange('current_password', e.target.value)}
+                placeholder={t('profile.currentPasswordPlaceholder')}
+              />
+              <p className="text-xs text-muted-foreground">
+                {emailChanged ? t('profile.currentPasswordHintEmail') : t('profile.currentPasswordHint')}
+              </p>
+            </div>
+          )}
         </div>
 
         <DialogFooter className="gap-2">

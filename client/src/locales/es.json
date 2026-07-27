@@ -522,6 +522,13 @@
     "updateError": "No se pudo actualizar el perfil",
     "validationError": "El nombre y el email son obligatorios",
     "passwordLengthError": "La contraseña debe tener al menos 6 caracteres",
+    "currentPassword": "Contraseña actual",
+    "currentPasswordPlaceholder": "Introduce tu contraseña actual",
+    "currentPasswordHint": "Cambiar la contraseña requiere confirmación con tu contraseña actual.",
+    "currentPasswordHintEmail": "Cambiar el email requiere confirmación con tu contraseña actual. La nueva dirección solo se aplica tras seguir el enlace del correo.",
+    "currentPasswordRequired": "Introduce tu contraseña actual",
+    "emailConfirmTitle": "Confirma tu nueva dirección",
+    "emailConfirmSent": "Se envió un enlace de confirmación a {{email}}. Hasta que lo confirmes, el inicio de sesión sigue usando la dirección anterior.",
     "loading": "Cargando..."
   },
   "sources": {

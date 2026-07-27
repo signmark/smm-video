@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import axios from 'axios';
 import crypto from 'crypto';
 import { sendSubscriptionRequestEmail } from '../services/email';
-import { globalApiKeysService } from '../services/global-api-keys';
+import { resolvePlanPrice } from '../services/plan-pricing';
 
 // ─── Реестр обработанных заявок (in-memory, TTL 72ч) ───────────────────────
 // Ключ — userId. Предотвращает повторное одобрение после отклонения и наоборот.
@@ -37,19 +37,11 @@ export const PLAN_DURATIONS: Record<string, number> = {
 // Directus global key → env → дефолт. Иначе метка в письме рассинхронизируется
 // с ценой на сайте (см. баг с «100 ₽/мес» в письме при 670 ₽ на странице).
 export async function resolvePlanPriceLabel(plan: string): Promise<string> {
-  const getNum = async (directusKey: string, envKey: string, fallback: number): Promise<number> => {
-    try {
-      const val = await globalApiKeysService.getGlobalApiKey(directusKey);
-      if (val) return Number(val);
-    } catch {}
-    return Number(process.env[envKey] ?? process.env[`VITE_${envKey}`] ?? fallback);
-  };
-
   switch (plan) {
     case 'Профессиональный':
-      return `${await getNum('PLAN_PRICE_PRO', 'PLAN_PRICE_PRO', 670)} ₽/мес`;
+      return `${(await resolvePlanPrice('pro')).price} ₽/мес`;
     case 'Базовый':
-      return `${await getNum('PLAN_PRICE_BASIC', 'PLAN_PRICE_BASIC', 390)} ₽/мес`;
+      return `${(await resolvePlanPrice('basic')).price} ₽/мес`;
     case 'Корпоративный':
       return process.env.PLAN_PRICE_ENTERPRISE_LABEL ?? 'По договорённости';
     default:

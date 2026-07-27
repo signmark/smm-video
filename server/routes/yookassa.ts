@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { sendPurchasePostback } from '../services/partner-postback';
+import { resolvePlanPrice, PlanPriceKey } from '../services/plan-pricing';
 
 const router = Router();
 
@@ -11,12 +12,10 @@ const ADMIN_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_AD
 
 const YOOKASSA_API = 'https://api.yookassa.ru/v3/payments';
 
-const PLAN_AMOUNTS: Record<string, string> = {
-  'Базовый': '390.00',
-  'Профессиональный': '670.00',
-};
-
-const PLAN_KEYS: Record<string, string> = {
+// Русское название тарифа → ключ для резолвера цены (pro/basic).
+// Сумма платежа больше НЕ хардкодится здесь: базовую цену берём из resolvePlanPrice
+// (Directus global_api_keys → env → fallback), чтобы списание совпадало с витриной.
+const PLAN_KEYS: Record<string, PlanPriceKey> = {
   'Базовый': 'basic',
   'Профессиональный': 'pro',
 };
@@ -117,7 +116,7 @@ router.post('/payments/create', async (req: Request, res: Response) => {
   const userToken = authHeader.substring(7);
 
   const { plan, amount: clientAmount } = req.body as { plan: string; amount?: number };
-  if (!plan || !PLAN_AMOUNTS[plan]) {
+  if (!plan || !PLAN_KEYS[plan]) {
     return res.status(400).json({ error: 'Неверный тариф' });
   }
 
@@ -149,8 +148,9 @@ router.post('/payments/create', async (req: Request, res: Response) => {
       }
     } catch (_) {}
 
-    // Используем сумму с фронта (с учётом промокода), иначе базовую цену тарифа
-    const baseAmount = parseFloat(PLAN_AMOUNTS[plan]);
+    // Базовая (фактическая) цена тарифа — из общего резолвера, как на витрине.
+    // Сумму с фронта (с учётом промокода) берём, только если она не больше базовой.
+    const baseAmount = (await resolvePlanPrice(PLAN_KEYS[plan])).price;
     const finalAmount = (clientAmount && clientAmount > 0 && clientAmount <= baseAmount)
       ? clientAmount
       : baseAmount;

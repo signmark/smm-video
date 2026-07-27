@@ -1,5 +1,5 @@
 import { Express } from "express";
-import { globalApiKeysService } from './services/global-api-keys';
+import { resolvePlanPrice } from './services/plan-pricing';
 
 // Роутеры, регистрируемые здесь. Остальные (auth, video, stories, analytics и т.д.)
 // монтируются в server/index.ts — порядок монтирования там критичен.
@@ -85,25 +85,11 @@ export function registerRoutes(app: Express): void {
   // Публичный эндпоинт цен тарифов
   // Приоритет: Directus global_api_keys → env vars → дефолты
   app.get('/api/config/pricing', async (_req, res) => {
-    const getNum = async (directusKey: string, envKey: string, fallback: number): Promise<number> => {
-      try {
-        const val = await globalApiKeysService.getGlobalApiKey(directusKey);
-        if (val) return Number(val);
-      } catch {}
-      return Number(process.env[envKey] ?? process.env[`VITE_${envKey}`] ?? fallback);
-    };
-
-    const [proPrice, proOriginal, basicPrice, basicOriginal] = await Promise.all([
-      getNum('PLAN_PRICE_PRO',          'PLAN_PRICE_PRO',          670),
-      getNum('PLAN_PRICE_PRO_ORIGINAL', 'PLAN_PRICE_PRO_ORIGINAL', 1990),
-      getNum('PLAN_PRICE_BASIC',        'PLAN_PRICE_BASIC',        390),
-      getNum('PLAN_PRICE_BASIC_ORIGINAL','PLAN_PRICE_BASIC_ORIGINAL',990),
+    const [pro, basic] = await Promise.all([
+      resolvePlanPrice('pro'),
+      resolvePlanPrice('basic'),
     ]);
-
-    res.json({
-      pro:   { price: proPrice,   original: proOriginal   },
-      basic: { price: basicPrice, original: basicOriginal },
-    });
+    res.json({ pro, basic });
   });
 
   // Запускаем сервис проверки статусов публикаций

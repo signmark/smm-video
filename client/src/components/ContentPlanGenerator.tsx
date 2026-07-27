@@ -10,10 +10,11 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Loader2, Calendar, CheckCircle2, Clock, FileText, Image, Video, CheckSquare, XCircle, Smartphone, Layers, Brain, Sparkles, Database } from "lucide-react";
+import { Loader2, Calendar, CheckCircle2, Clock, FileText, Image, Video, CheckSquare, XCircle, Smartphone, Layers, Brain, Sparkles, Database, Bot } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuthStore } from "@/lib/store";
+import { AutonomousLaunchDialog } from "@/components/AutonomousLaunchDialog";
 import { format } from "date-fns";
 import { ru } from "date-fns/locale";
 
@@ -65,6 +66,9 @@ export function ContentPlanGenerator({
   const [selectedTopicIds, setSelectedTopicIds] = useState<Set<string>>(new Set());
   const [contentCount, setContentCount] = useState(5);
   const [aiDecidesCount, setAiDecidesCount] = useState(false); // ИИ сам решает кол-во постов и расписание
+  const [showAgentDialog, setShowAgentDialog] = useState(false); // вход в автономного агента из КП
+  const agentUserId = useAuthStore((s) => s.userId);
+  const agentToken = useAuthStore((s) => s.token);
   const [selectedType, setSelectedType] = useState<string>("mixed");
   const [includeBusiness, setIncludeBusiness] = useState(true);
   const [includeGeneratedImage, setIncludeGeneratedImage] = useState(true);
@@ -817,11 +821,32 @@ export function ContentPlanGenerator({
         </TabsContent>
       </Tabs>
       
+      {/* Намёк на полный функционал: разовый КП можно не собирать вручную, а
+          доверить автономному агенту (тот же диалог запуска, что и робот в топбаре). */}
+      {activeTab !== "preview" && (
+        <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-primary/20 bg-primary/5 px-3 py-2">
+          <div className="text-xs text-muted-foreground">
+            Не хотите собирать вручную? Доверьте контент-план и публикацию автономному агенту — он сам всё сгенерит и запланирует.
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="shrink-0 gap-1"
+            onClick={() => setShowAgentDialog(true)}
+            disabled={!campaignId}
+          >
+            <Bot className="h-4 w-4" />
+            Доверить агенту
+          </Button>
+        </div>
+      )}
+
       <DialogFooter className="mt-4">
         <Button variant="outline" onClick={onClose}>
           Отмена
         </Button>
-        
+
         {activeTab === "preview" && showPreview ? (
           <Button 
             onClick={() => {
@@ -887,6 +912,18 @@ export function ContentPlanGenerator({
           </Button>
         )}
       </DialogFooter>
+
+      <AutonomousLaunchDialog
+        open={showAgentDialog}
+        onOpenChange={setShowAgentDialog}
+        campaignId={campaignId}
+        userId={agentUserId}
+        token={agentToken}
+        onStarted={() => {
+          toast({ title: "Агент запущен", description: "Автономный ассистент начал работу над кампанией." });
+          onClose();
+        }}
+      />
     </>
   );
 }

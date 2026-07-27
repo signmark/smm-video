@@ -251,7 +251,9 @@ export class AnalyticsService {
    * Ищет публичные каналы кампании и использует доступные агрегаты скрейпера
    * за выбранный период.
    */
-  private static async supplementFromScraper(
+  // Публичный: переиспользуется генератором отчётов (report-generator.ts),
+  // чтобы PDF/Excel накладывали те же скрапер-метрики, что и страница аналитики.
+  static async supplementFromScraper(
     campaignId: string,
     fromDate: Date,
     toDate: Date,

@@ -4,7 +4,7 @@ import { createDirectus, rest, readItem, readItems } from '@directus/sdk';
 import { format } from 'date-fns';
 import { ru, enUS, es, type Locale } from 'date-fns/locale';
 import { getTranslations } from '../locales/reports';
-import { flattenPublishedPlatformRows } from './analytics-aggregation';
+import { flattenPublishedPlatformRows, aggregatePublishedPlatformAnalytics } from './analytics-aggregation';
 
 const locales: Record<string, Locale> = { ru, en: enUS, es };
 
@@ -15,6 +15,10 @@ interface ReportData {
   comments: any[];
   period: { from: Date; to: Date };
   locale: string;
+  // Агрегат по платформам, идентичный странице аналитики (со скрапер-оверлеем).
+  // Если задан — headline-метрики и разбивка по платформам берутся отсюда,
+  // иначе (fallback) считаются из posts.
+  supplementedPlatforms?: Map<string, { name: string; posts: number; views: number; likes: number; shares: number; comments: number }>;
 }
 
 interface ReportStats {
@@ -82,6 +86,32 @@ function calculateStats(data: ReportData): ReportStats {
 
   // Рост аудитории (берем из аналитики)
   const audienceGrowth = analytics.reduce((sum, a) => sum + (a.followers_growth || 0), 0);
+
+  // Если есть агрегат со страницы аналитики (со скрапер-оверлеем) — headline-метрики
+  // и разбивку по платформам берём ИЗ НЕГО, чтобы цифры в отчёте совпадали с сайтом
+  // (иначе reach/engagement = 0, т.к. JSON analytics.views пуст, а скрапер не наложен).
+  // topPosts/тональность/рост аудитории оставляем из posts/comments.
+  if (data.supplementedPlatforms && data.supplementedPlatforms.size > 0) {
+    let tPosts = 0, tReach = 0, tEngagement = 0;
+    const platformStatsFromMap: Record<string, any> = {};
+    for (const s of data.supplementedPlatforms.values()) {
+      const engagement = (s.likes || 0) + (s.comments || 0) + (s.shares || 0);
+      tPosts += s.posts || 0;
+      tReach += s.views || 0;
+      tEngagement += engagement;
+      platformStatsFromMap[s.name] = { posts: s.posts || 0, reach: s.views || 0, engagement };
+    }
+    return {
+      totalPosts: tPosts,
+      totalReach: tReach,
+      totalEngagement: tEngagement,
+      avgEngagementRate: tReach > 0 ? parseFloat(((tEngagement / tReach) * 100).toFixed(2)) : 0,
+      audienceGrowth,
+      topPosts,
+      platformStats: platformStatsFromMap,
+      sentimentAnalysis,
+    };
+  }
 
   return {
     totalPosts,
@@ -361,6 +391,21 @@ export async function generateCampaignReport(
 
   const posts = flattenPublishedPlatformRows(rawPosts, fromDate, toDate);
 
+  // Считаем агрегат ТЕМ ЖЕ путём, что страница аналитики: базовая агрегация
+  // по social_platforms + скрапер-оверлей просмотров/лайков (VK/Telegram).
+  // Без этого отчёт показывал 0 просмотров при живых цифрах на сайте.
+  let supplementedPlatforms: ReportData['supplementedPlatforms'];
+  try {
+    const { AnalyticsService } = await import('./analytics-service');
+    const aggregated = aggregatePublishedPlatformAnalytics(rawPosts, fromDate, toDate);
+    await AnalyticsService.supplementFromScraper(
+      campaignId, fromDate, toDate, rawPosts, aggregated.platformStatsMap, campaign,
+    );
+    supplementedPlatforms = aggregated.platformStatsMap;
+  } catch (err: any) {
+    console.warn('⚠️ [REPORT] Scraper supplement failed (non-critical):', err?.message);
+  }
+
   // Получаем комментарии (опционально, если нет прав - пустой массив)
   let comments: any[] = [];
   try {
@@ -393,7 +438,8 @@ export async function generateCampaignReport(
     posts,
     comments,
     period: { from: fromDate, to: toDate },
-    locale
+    locale,
+    supplementedPlatforms
   };
 
   if (format === 'pdf') {

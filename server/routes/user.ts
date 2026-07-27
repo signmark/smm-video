@@ -1,6 +1,7 @@
 import { Express, Request, Response } from 'express';
 import { detectEnvironment } from '../utils/environment-detector';
 import { authenticateUser } from '../middleware/user-auth';
+import { getEffectivePlan } from '../services/plan-limits';
 
 export function registerUserRoutes(app: Express) {
   app.get('/api/user/profile', authenticateUser, async (req: Request, res: Response) => {
@@ -50,7 +51,10 @@ export function registerUserRoutes(app: Express) {
         first_name: userData.first_name || '',
         last_name: userData.last_name || '',
         is_smm_admin: userData.is_smm_admin || userData.is_smm_super || false,
-        plan: userData.plan || 'basic',
+        // Просроченная подписка → эффективный тариф free; админам оставляем как есть.
+        plan: (userData.is_smm_admin || userData.is_smm_super)
+          ? (userData.plan || 'basic')
+          : getEffectivePlan(userData.plan, userData.expire_date),
         expire_date: userData.expire_date || null,
       };
 

@@ -522,6 +522,7 @@
       "editTitle": "Edit User",
       "plan": "Plan",
       "plans": {
+        "free": "Expired",
         "basic": "Basic",
         "pro": "Professional",
         "enterprise": "Enterprise",

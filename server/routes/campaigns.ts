@@ -9,7 +9,7 @@ import { extractFullSiteContent } from '../utils/ai-helpers';
 import { aiService } from '../services/ai-service';
 import { adminTokenManager } from '../services/admin-token-manager';
 import axios from 'axios';
-import { getPlanLimits } from '../services/plan-limits';
+import { getPlanLimits, getEffectivePlan } from '../services/plan-limits';
 import { directusCrud } from '../services/directus-crud';
 import { authorizeCampaignAccess, CampaignAccessError } from '../services/campaign-access';
 import { mergeOAuthSettings, sanitizeOAuthSecrets } from '../services/oauth-response-sanitizer';
@@ -59,12 +59,20 @@ export function registerCampaignRoutes(app: Express) {
       if (!name) return res.status(400).json({ error: "Название кампании обязательно" });
       if (!userId || !token) return res.status(401).json({ error: "Не авторизован" });
 
-      // Проверяем лимит кампаний по тарифу
+      // Проверяем лимит кампаний по тарифу.
+      // Читаем через admin-токен: пользовательский токен Directus может отдавать
+      // пустые кастомные поля (plan, expire_date) из-за политики доступа роли.
       try {
-        const meResp = await directusApi.get('/users/me?fields=plan', {
-          headers: { 'Authorization': `Bearer ${token}` },
+        const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
+        const meResp = await directusApi.get(`/users/${userId}`, {
+          headers: { 'Authorization': `Bearer ${adminToken}` },
+          params: { fields: 'plan,expire_date,is_smm_admin,is_smm_super' },
         });
-        const userPlan = meResp.data?.data?.plan || 'basic';
+        const me = meResp.data?.data;
+        // Просроченная подписка → эффективный тариф free (лимит 0), админы всегда pro
+        const userPlan = (me?.is_smm_admin || me?.is_smm_super)
+          ? 'pro'
+          : getEffectivePlan(me?.plan, me?.expire_date);
         const limits = getPlanLimits(userPlan);
         if (limits.maxCampaigns !== null) {
           const countResp = await directusApi.get('/items/user_campaigns', {

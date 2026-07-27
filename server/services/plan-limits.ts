@@ -79,6 +79,22 @@ export const PLAN_LABELS: Record<PlanType, string> = {
   enterprise: 'Корпоративный',
 };
 
+/**
+ * Возвращает «эффективный» тариф с учётом даты окончания подписки.
+ * plan в Directus хранится постоянно и не переписывается при истечении —
+ * поэтому просроченного пользователя нужно повсеместно трактовать как free.
+ * Если expire_date не задана — считаем подписку бессрочной (не истёкшей).
+ */
+export function getEffectivePlan(
+  plan: string | null | undefined,
+  expireDate: string | Date | null | undefined,
+): PlanType {
+  const p = (plan || 'basic') as PlanType;
+  if (!expireDate) return p;
+  const isExpired = new Date(expireDate).getTime() < Date.now();
+  return isExpired ? 'free' : p;
+}
+
 export function getPlanLimits(plan: string | null | undefined): PlanLimits {
   const p = (plan || 'free') as PlanType;
   return PLAN_LIMITS[p] ?? PLAN_LIMITS.free;

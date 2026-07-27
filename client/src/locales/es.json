@@ -522,6 +522,7 @@
       "editTitle": "Editar Usuario",
       "plan": "Plan de Tarifa",
       "plans": {
+        "free": "Expirado",
         "basic": "Básico",
         "pro": "Profesional",
         "enterprise": "Empresarial",

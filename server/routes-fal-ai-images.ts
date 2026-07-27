@@ -3,6 +3,7 @@ import { falAiUniversalService, FalAiGenerateOptions } from './services/fal-ai-u
 import { falAiJuggernautService } from './services/fal-ai-juggernaut';
 import { directusApi } from './lib/directus';
 import { getUsage, incrementUsage, canGenerate } from './services/image-gen-tracker';
+import { getEffectivePlan } from './services/plan-limits';
 
 const BASIC_PLAN_LIMIT = 30;
 const TRIAL_PLAN_LIMIT = 10;
@@ -26,10 +27,7 @@ async function getUserPlanInfo(req: express.Request): Promise<{ userId: string |
       params: { fields: 'plan,expire_date' }
     });
     const userData = resp.data?.data;
-    const plan = userData?.plan || 'basic';
-    const expireDate = userData?.expire_date;
-    const isExpired = expireDate ? new Date(expireDate) < new Date() : false;
-    return { userId, plan: isExpired ? 'free' : plan };
+    return { userId, plan: getEffectivePlan(userData?.plan, userData?.expire_date) };
   } catch {
     return { userId: null, plan: 'free' };
   }

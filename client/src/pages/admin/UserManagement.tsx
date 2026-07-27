@@ -10,6 +10,7 @@ import { Users, Calendar, Settings, AlertTriangle, Zap } from 'lucide-react';
 import { apiRequest } from '@/lib/queryClient';
 
 const PLAN_BADGE_CLASS: Record<string, string> = {
+  free: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
   basic: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
   pro: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300',
   enterprise: 'bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300',
@@ -208,6 +209,8 @@ export default function UserManagement() {
           <div className="space-y-4">
             {users.map((user) => {
               const status = getUserStatus(user);
+              // Просроченная подписка → эффективный тариф free (тариф в Directus не сбрасывается)
+              const effectivePlan = isExpiredDate(user.expire_date) ? 'free' : (user.plan || 'basic');
               return (
                 <div key={user.id} className="flex items-center justify-between p-4 border rounded-lg">
                   <div className="flex-1">
@@ -220,12 +223,12 @@ export default function UserManagement() {
                       <Badge variant={status.variant}>{status.label}</Badge>
                       <span
                         className={`inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full ${
-                          PLAN_BADGE_CLASS[user.plan || 'basic']
+                          PLAN_BADGE_CLASS[effectivePlan]
                         }`}
                         data-testid={`badge-plan-${user.id}`}
                       >
                         <Zap className="h-2.5 w-2.5" />
-                        {um(`plans.${user.plan || 'basic'}`)}
+                        {um(`plans.${effectivePlan}`)}
                       </span>
                     </div>
                     <p className="text-sm text-muted-foreground">{user.email}</p>

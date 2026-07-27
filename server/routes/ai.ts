@@ -18,6 +18,7 @@ import * as crypto from 'crypto';
 import { cleanupText } from '../utils/text';
 import { cleanGeneratedSocialContent, getGeneratedSocialContentRules } from '../utils/generated-social-content';
 import { getUsage, incrementUsage, canGenerate } from '../services/image-gen-tracker';
+import { getEffectivePlan } from '../services/plan-limits';
 import { 
   getCachedResults, 
   getCachedKeywordsByUrl, 
@@ -43,10 +44,7 @@ async function getUserPlanFromDirectus(userId: string): Promise<string> {
     const userData = resp.data?.data;
     // Суперадмин/SMM-админ всегда получает полный доступ
     if (userData?.is_smm_admin || userData?.is_smm_super) return 'pro';
-    const plan = userData?.plan || 'basic';
-    const expireDate = userData?.expire_date;
-    const isExpired = expireDate ? new Date(expireDate) < new Date() : false;
-    return isExpired ? 'free' : plan;
+    return getEffectivePlan(userData?.plan, userData?.expire_date);
   } catch {
     return 'basic';
   }

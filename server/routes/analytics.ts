@@ -50,6 +50,35 @@ function extractPostDate(rawSourceData: any): string | null {
   return null;
 }
 
+/** Периоды, которые реально шлёт клиент (страница трендов и виджет дашборда). */
+const TREND_PERIOD_DAYS: Record<string, number> = {
+  '3days': 3,
+  '7days': 7,
+  '14days': 14,
+  '30days': 30,
+};
+
+/** Сколько трендов отдаём, если клиент не попросил иного. */
+const DEFAULT_TRENDS_LIMIT = 500;
+/** Верхняя граница для явного числового limit (защита от «отдай всё» окольным путём). */
+const MAX_TRENDS_LIMIT = 5000;
+
+/**
+ * Время публикации тренда в мс: сначала postDate (из raw_source_data), затем
+ * created_at (момент вставки в Directus). Такой же порядок, как в клиентском
+ * getPostTimeMs — иначе серверный и клиентский фильтры периода расходятся.
+ */
+function trendTimeMs(trend: any): number | null {
+  const raw = trend?.postDate ?? trend?.post_date ?? trend?.created_at ?? trend?.createdAt ?? null;
+  if (raw == null) return null;
+  if (typeof raw === 'number') {
+    const ms = raw < 1e12 ? raw * 1000 : raw;
+    return Number.isFinite(ms) ? ms : null;
+  }
+  const t = new Date(raw).getTime();
+  return Number.isNaN(t) ? null : t;
+}
+
 export function registerAnalyticsRoutes(app: Express) {
   /**
    * Admin-only: принудительный refresh метрик через scraper.
@@ -258,7 +287,7 @@ export function registerAnalyticsRoutes(app: Express) {
    */
   app.get("/api/campaign-trends", authenticateUser, async (req: Request, res: Response) => {
     try {
-      const { campaignId } = req.query;
+      const { campaignId, period, limit } = req.query;
       const token = req.user?.token;
       const userId = req.user?.id;
 
@@ -267,29 +296,56 @@ export function registerAnalyticsRoutes(app: Express) {
         return res.status(400).json({ success: false, error: "campaignId is required" });
       }
 
-      log(`[Analytics Route] Запрос трендов для кампании ${campaignId} от пользователя ${userId}`, 'info');
+      // limit: число (по умолчанию 500). Отдать всё можно только явным опт-ином
+      // limit=all / limit=-1 — этим пользуется страница трендов, которой нужен
+      // весь датасет для клиентских фильтров.
+      const limitRaw = typeof limit === 'string' ? limit.trim().toLowerCase() : '';
+      const unlimited = limitRaw === 'all' || limitRaw === '-1';
+      let effectiveLimit = DEFAULT_TRENDS_LIMIT;
+      if (!unlimited && limitRaw) {
+        const parsed = Number(limitRaw);
+        if (Number.isFinite(parsed) && parsed > 0) {
+          effectiveLimit = Math.min(Math.floor(parsed), MAX_TRENDS_LIMIT);
+        }
+      }
+
+      const periodRaw = typeof period === 'string' ? period.trim().toLowerCase() : '';
+      const periodDays = TREND_PERIOD_DAYS[periodRaw];
+      const cutoffMs = periodDays ? Date.now() - periodDays * 24 * 60 * 60 * 1000 : null;
+
+      log(`[Analytics Route] Запрос трендов кампании ${campaignId} (user ${userId}, period=${periodRaw || 'all'}, limit=${unlimited ? 'all' : effectiveLimit})`, 'info');
 
       const adminToken = await directusCrud.getAdminTokenPublic();
       const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
 
+      const baseParams: Record<string, any> = {
+        'filter[campaign_id][_eq]': campaignId,
+        limit: unlimited ? -1 : effectiveLimit,
+        fields: '*'
+      };
+      if (cutoffMs !== null) {
+        // По дате публикации в Directus не отфильтруешь — она внутри JSON raw_source_data.
+        // Но пост не может быть опубликован позже, чем запись о нём попала в базу,
+        // поэтому created_at >= границы периода — безопасное надмножество; точный
+        // отбор по postDate делаем ниже, уже после маппинга.
+        baseParams['filter[created_at][_gte]'] = new Date(cutoffMs).toISOString();
+      }
+
       let response;
       try {
         response = await axios.get(`${directusUrl}/items/campaign_trend_topics`, {
-          params: {
-            'filter[campaign_id][_eq]': campaignId,
-            sort: '-created_at',
-            limit: -1,
-            fields: '*'
-          },
+          params: { ...baseParams, sort: '-created_at' },
           headers: { Authorization: `Bearer ${adminToken}` },
           timeout: 30000
         });
       } catch (e: any) {
         log(`[Analytics Route] ⚠️ Ошибка при запросе с сортировкой: ${e.message}. Пробуем без сортировки.`, 'warn');
+        // Запасной запрос без sort и без предфильтра по created_at: если ошибку вызвал
+        // именно он, деградируем к простой выборке — период всё равно применится ниже.
         response = await axios.get(`${directusUrl}/items/campaign_trend_topics`, {
           params: {
             'filter[campaign_id][_eq]': campaignId,
-            limit: -1,
+            limit: unlimited ? -1 : effectiveLimit,
             fields: '*'
           },
           headers: { Authorization: `Bearer ${adminToken}` },
@@ -308,13 +364,24 @@ export function registerAnalyticsRoutes(app: Express) {
         return postDate ? { ...trend, postDate } : trend;
       });
 
-      if (trendsData.length > 0) {
-        const sample = trendsData[0];
-        log(`[Analytics Route] Sample trend fields: ${Object.keys(sample).join(', ')}`, 'info');
-        log(`[Analytics Route] Sample source_id value: ${JSON.stringify(sample.source_id)} (type: ${typeof sample.source_id})`, 'info');
-        log(`[Analytics Route] Sample sourceType: ${sample.sourceType}, source_type: ${sample.source_type}, source_name: ${sample.source_name}`, 'info');
+      // Отбор по периоду — по дате поста, тем же правилом, что и на клиенте:
+      // записи без даты не выкидываем (иначе тренды из старых сборов, у которых
+      // raw_source_data без даты, молча исчезли бы из выдачи).
+      const filteredTrends = cutoffMs === null
+        ? trendsData
+        : trendsData.filter((trend: any) => {
+            const ms = trendTimeMs(trend);
+            return ms === null ? true : ms >= cutoffMs;
+          });
+
+      const resultTrends = unlimited ? filteredTrends : filteredTrends.slice(0, effectiveLimit);
+
+      if (resultTrends.length > 0) {
+        const sample = resultTrends[0];
+        log.debug(`[Analytics Route] Sample trend fields: ${Object.keys(sample).join(', ')}`, 'analytics');
       }
-      res.json({ success: true, data: trendsData });
+      log(`[Analytics Route] Отдаём ${resultTrends.length} трендов (получено из Directus: ${rawTrends.length})`, 'info');
+      res.json({ success: true, data: resultTrends });
     } catch (error: any) {
       const errorDetail = error.response?.data || error.message;
       console.error(`🚨 [Analytics Route] Ошибка при получении трендов:`, JSON.stringify(errorDetail, null, 2));

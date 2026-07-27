@@ -425,8 +425,8 @@ export default function Trends() {
   const keywords = keywordsResponse?.data || [];
 
   const { data: rawTrends = [], isLoading: isLoadingTrends, isError: isTrendsError, error: trendsError } = useQuery({
-    // Ключ БЕЗ периода: сервер /api/campaign-trends всё равно отдаёт все тренды
-    // кампании (period игнорирует). Раньше период был в ключе при staleTime/gcTime=0,
+    // Ключ БЕЗ периода: запрашиваем весь датасет кампании один раз (limit=all —
+    // явный опт-ин, по умолчанию сервер режет выдачу). Раньше период был в ключе при staleTime/gcTime=0,
     // поэтому каждое переключение периода рефетчило весь датасет заново — отсюда
     // «подвисания». Теперь тянем один раз на кампанию и кэшируем; период применяем
     // клиентски мемо-срезом `trends` ниже (без сети).
@@ -442,7 +442,7 @@ export default function Trends() {
       }
 
       // Используем наш собственный API эндпоинт вместо прямого обращения к Directus
-      const response = await fetch(`/api/campaign-trends?campaignId=${selectedCampaignId}`, {
+      const response = await fetch(`/api/campaign-trends?campaignId=${selectedCampaignId}&limit=all`, {
         headers: {
           'Authorization': `Bearer ${authToken}`
         }

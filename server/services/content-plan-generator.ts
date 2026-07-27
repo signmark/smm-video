@@ -240,6 +240,10 @@ function allowedContentTypes(settings: ContentPlanSettings): string[] {
   if (settings.includeVideos) allowed.push('video');
   if (settings.includeClips) allowed.push('clip');
   if (settings.includeStories) allowed.push('story');
+  // Явно выбранный конкретный тип разрешён всегда — иначе при выключенных
+  // флагах (напр. contentType='text-image' без includeImages) промпт противоречит
+  // сам себе: «используй text-image» vs «строго одно из: text».
+  if (mode && (SYSTEM_CONTENT_TYPES as readonly string[]).includes(mode)) allowed.push(mode);
   return Array.from(new Set(allowed));
 }
 
@@ -427,15 +431,30 @@ ${autonomousSignatureBlock}
 
   // --- Смарт-режим: ИИ сам решает количество постов и расписание (без потолка) ---
   if (settings.aiDecidesCount) {
-    const trendsText = trends.length > 0
-      ? `\nВыбранные тренды:\n${trendsData.map(t => t.text).join('\n')}`
-      : '\nТренды: не выбраны.';
     const endDate = new Date(now);
     endDate.setDate(endDate.getDate() + settings.period);
     const hoursHint = topHours || '9:00, 13:00, 19:00, 21:00';
     const lo = Math.max(4, Math.round(settings.period / 2));
     const hi = Math.min(20, settings.period + Math.round(settings.period / 2));
     const scheduleText = `\nКОЛИЧЕСТВО И РАСПИСАНИЕ: САМ реши, сколько постов нужно для качественного ${settings.period}-дневного контент-плана — столько, сколько уместно для темы и аудитории (не ограничивай себя искусственно, но без спама; ориентир — примерно ${lo}–${hi} постов). Каждому посту проставь scheduledAt (ISO) в интервале с ${now.toISOString()} по ${endDate.toISOString()}. Можно несколько постов в один день, если это уместно. Удачные часы публикации: ${hoursHint}.`;
+
+    // Смарт-режим — один запрос без чанкинга, поэтому тренды добираем в промпт
+    // до бюджета MAX_CHARS_PER_CHUNK; излишек отбрасываем (иначе на большом
+    // выборе трендов промпт превысит лимит запроса).
+    const trendsBudget = MAX_CHARS_PER_CHUNK - baseTemplate.length - keywordsText.length - scheduleText.length;
+    const trendLines: string[] = [];
+    let usedChars = 0;
+    for (const td of trendsData) {
+      if (usedChars + td.text.length > trendsBudget) break;
+      trendLines.push(td.text);
+      usedChars += td.text.length + 1;
+    }
+    if (trendLines.length < trendsData.length) {
+      log(`[ContentPlan] Смарт-режим: в промпт вошло ${trendLines.length} из ${trendsData.length} трендов (бюджет ${trendsBudget} символов)`, 'warn');
+    }
+    const trendsText = trendLines.length > 0
+      ? `\nВыбранные тренды:\n${trendLines.join('\n')}`
+      : '\nТренды: не выбраны.';
 
     const prompt = `${baseTemplate}${keywordsText}${trendsText}${scheduleText}`;
 

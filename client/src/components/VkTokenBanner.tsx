@@ -22,6 +22,7 @@ export function VkTokenBanner() {
   const userId = useAuthStore((state) => state.userId);
   const [dismissed, setDismissed] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
+  const [urlCopied, setUrlCopied] = useState(false);
   const listenerRef = useRef<((e: MessageEvent) => void) | null>(null);
   const checkClosedRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -63,8 +64,21 @@ export function VkTokenBanner() {
     setIsReconnecting(false);
   };
 
-  const startReconnect = () => {
+  const startReconnect = async () => {
     if (!selectedCampaignId) return;
+
+    // Свежий одноразовый state: старый сохранённый в needanapp URL без state
+    // будет отклонён. Готовим новый URL и кладём его в буфер обмена.
+    try {
+      const prep = await fetch(`/api/vk/token-webhook/${selectedCampaignId}/prepare`, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (prep.ok) {
+        const { webhookUrl } = await prep.json();
+        try { await navigator.clipboard.writeText(webhookUrl); setUrlCopied(true); } catch {}
+      }
+    } catch {}
 
     // Открываем needanapp в новой вкладке
     window.open('https://vk.needanapp.ru', '_blank');
@@ -73,7 +87,9 @@ export function VkTokenBanner() {
     // Запускаем polling webhook status
     checkClosedRef.current = setInterval(async () => {
       try {
-        const resp = await fetch(`/api/vk/token-webhook/${selectedCampaignId}/status`);
+        const resp = await fetch(`/api/vk/token-webhook/${selectedCampaignId}/status`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
         const data = await resp.json();
         if (data.ready) {
           cleanup();
@@ -121,6 +137,9 @@ export function VkTokenBanner() {
               : <><RefreshCw className="h-3 w-3" /> Переподключить VK</>
             }
           </button>
+          {isReconnecting && urlCopied && (
+            <span className="ml-2 text-xs">Новый webhook URL скопирован — вставьте его в needanapp (старый уже не подойдёт).</span>
+          )}
         </p>
         <button
           onClick={handleDismiss}

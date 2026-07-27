@@ -37,7 +37,34 @@ const VkSetupWizard: React.FC<VkSetupWizardProps> = ({ campaignId, onComplete, o
   const oauth2PopupRef = useRef<Window | null>(null);
   const oauth2ListenerRef = useRef<((e: MessageEvent) => void) | null>(null);
 
-  const webhookUrl = `${window.location.origin}/api/vk/token-webhook/${campaignId}`;
+  // URL с одноразовым state выдаёт сервер (prepare). Именно его пользователь
+  // вставляет в needanapp — без валидного state публичный callback отклоняется.
+  const [webhookUrl, setWebhookUrl] = useState('');
+  const [preparingWebhook, setPreparingWebhook] = useState(false);
+
+  const prepareWebhook = async () => {
+    setPreparingWebhook(true);
+    try {
+      const resp = await fetch(`/api/vk/token-webhook/${campaignId}/prepare`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+      });
+      if (!resp.ok) throw new Error('prepare failed');
+      const data = await resp.json();
+      setWebhookUrl(data.webhookUrl);
+      return data.webhookUrl as string;
+    } finally {
+      setPreparingWebhook(false);
+    }
+  };
+
+  // Готовим свежий URL при входе в webhook-режим.
+  useEffect(() => {
+    if (mode === 'webhook' && campaignId) {
+      prepareWebhook().catch(() => {});
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, campaignId]);
 
   const steps = [
     { title: 'Подключение VK', description: mode === 'webhook' ? 'Получение токена через внешний сервис' : 'OAuth2 авторизация VK' },
@@ -53,7 +80,10 @@ const VkSetupWizard: React.FC<VkSetupWizardProps> = ({ campaignId, onComplete, o
   }, []);
 
   const copyWebhook = async () => {
-    await navigator.clipboard.writeText(webhookUrl);
+    // Гарантируем свежий state на момент копирования.
+    const url = webhookUrl || (await prepareWebhook().catch(() => ''));
+    if (!url) return;
+    await navigator.clipboard.writeText(url);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -62,7 +92,9 @@ const VkSetupWizard: React.FC<VkSetupWizardProps> = ({ campaignId, onComplete, o
     setIsPolling(true);
     pollRef.current = setInterval(async () => {
       try {
-        const resp = await fetch(`/api/vk/token-webhook/${campaignId}/status`);
+        const resp = await fetch(`/api/vk/token-webhook/${campaignId}/status`, {
+          headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+        });
         const data = await resp.json();
         if (data.ready) {
           clearInterval(pollRef.current!);
@@ -216,7 +248,7 @@ const VkSetupWizard: React.FC<VkSetupWizardProps> = ({ campaignId, onComplete, o
         <CardContent className="space-y-2">
           <div className="flex items-center gap-2">
             <code className="flex-1 text-xs bg-gray-100 border rounded px-2 py-2 break-all font-mono">
-              {webhookUrl}
+              {webhookUrl || (preparingWebhook ? 'Генерируем защищённый URL…' : '—')}
             </code>
             <Button variant="outline" size="sm" onClick={copyWebhook} className="shrink-0" data-testid="button-copy-webhook">
               {copied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}

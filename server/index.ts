@@ -127,6 +127,17 @@ import threadsOAuthRouter from './routes/threads-oauth';
 import tiktokAuthRouter from './routes/tiktok-auth';
 import { registerPublicOAuthBypass } from './middleware/public-oauth-bypass';
 
+// Отдельный лимитер для публичного VK token-webhook: он мимо globalApiLimiter
+// (смонтирован в байпасе до общей цепочки), поэтому ограничиваем перебор state
+// точечно. 60 запросов за 15 минут на IP — легитимный needanapp постит однократно.
+const vkWebhookLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Слишком много запросов к VK webhook' },
+});
+
 // Тело публичных callback'ов парсится ТОЧЕЧНО внутри registerPublicOAuthBypass
 // (1mb на каждый POST-callback). НЕ вешаем express.json на весь /api: раньше два
 // `app.use('/api', express.json({ limit: '1mb' }))` перехватывали ВСЕ /api-запросы
@@ -145,12 +156,14 @@ const PUBLIC_OAUTH_CALLBACKS: Array<{
   { router: instagramOAuthRouter, routerPath: '/instagram/auth/callback', publicPath: '/api/instagram/auth/callback', method: 'get' },
   { router: threadsOAuthRouter, routerPath: '/threads/auth/callback', publicPath: '/api/threads/auth/callback', method: 'get' },
   { router: tiktokAuthRouter, routerPath: '/tiktok/auth/callback', publicPath: '/api/tiktok/auth/callback', method: 'get' },
-  // needanapp.ru webhook для VK: POST с токенами (body: {access_token, refresh_token, device_id, client_id})
-  { router: vkOAuthRouter, routerPath: '/vk/token-webhook/:campaignId', publicPath: '/api/vk/token-webhook/:campaignId', method: 'post' },
+  // needanapp.ru webhook для VK: POST с токенами (body: {access_token, refresh_token, device_id, client_id}).
+  // Публичный (needanapp без Bearer), но защищён одноразовым state (?state=…) —
+  // проверяется в хендлере до admin GET/PATCH. Плюс отдельный rate limiter.
+  { router: vkOAuthRouter, routerPath: '/vk/token-webhook/:campaignId', publicPath: '/api/vk/token-webhook/:campaignId', method: 'post', middleware: [vkWebhookLimiter] },
   // CORS preflight от needanapp (vk.needanapp.ru → smm.omemo.tech)
   { router: vkOAuthRouter, routerPath: '/vk/token-webhook/:campaignId', publicPath: '/api/vk/token-webhook/:campaignId', method: 'options' },
-  // VK polling status — UI pollит этот эндпоинт без токена, чтобы узнать пришёл ли токен от needanapp
-  { router: vkOAuthRouter, routerPath: '/vk/token-webhook/:campaignId/status', publicPath: '/api/vk/token-webhook/:campaignId/status', method: 'get' },
+  // Статус-polling НЕ в байпасе: теперь требует сессию (authenticateUser +
+  // authorizeCampaignAccess внутри роута) и обслуживается обычным mount'ом vkOAuthRouter.
 ];
 
 registerPublicOAuthBypass(app, PUBLIC_OAUTH_CALLBACKS);

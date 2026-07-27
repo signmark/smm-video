@@ -217,6 +217,10 @@ export function SocialMediaSettings({
   const [loadingVkGroups, setLoadingVkGroups] = useState(false);
   const [vkPolling, setVkPolling] = useState(false);
   const [vkWebhookCopied, setVkWebhookCopied] = useState(false);
+  // URL с одноразовым state выдаёт сервер (prepare). Без валидного state
+  // публичный VK-webhook отклоняется, поэтому статичный URL больше не годится.
+  const [vkWebhookUrl, setVkWebhookUrl] = useState('');
+  const [vkWebhookPreparing, setVkWebhookPreparing] = useState(false);
   const [vkShowManual, setVkShowManual] = useState(false);
   const vkPollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const vkPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -579,11 +583,47 @@ export function SocialMediaSettings({
     }
   };
 
+  // Готовит свежий webhook URL с одноразовым state (сервер привязывает его к
+  // кампании и пользователю). Возвращает URL или '' при ошибке.
+  const prepareVkWebhook = async (): Promise<string> => {
+    setVkWebhookPreparing(true);
+    try {
+      const resp = await fetch(`/api/vk/token-webhook/${campaignId}/prepare`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+      });
+      if (!resp.ok) return '';
+      const data = await resp.json();
+      setVkWebhookUrl(data.webhookUrl);
+      return data.webhookUrl as string;
+    } catch {
+      return '';
+    } finally {
+      setVkWebhookPreparing(false);
+    }
+  };
+
+  // Готовим URL, когда видна инструкция needanapp (VK не настроен / токен невалиден).
+  useEffect(() => {
+    const needWebhook = !isConfigured('vk') || vkStatus.isValid === false || vkSettings?.authExpired;
+    if (campaignId && needWebhook && !vkWebhookUrl && !vkWebhookPreparing) {
+      prepareVkWebhook();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campaignId, vkStatus.isValid, vkSettings?.authExpired]);
+
   // Переподключение VK через needanapp (webhook polling)
   const startVkReconnect = async () => {
+    // Свежий state обязателен: needanapp постит на URL, который мы дали. Старый
+    // сохранённый в needanapp URL без state будет отклонён — просим вставить новый.
+    const freshUrl = await prepareVkWebhook();
+
     // Ставим флаг reconnecting чтобы polling не срабатывал на старом токене
     try {
-      await fetch(`/api/vk/token-webhook/${campaignId}/reconnecting`, { method: 'PATCH' });
+      await fetch(`/api/vk/token-webhook/${campaignId}/reconnecting`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+      });
     } catch {}
 
     // Открываем needanapp в новой вкладке
@@ -592,13 +632,17 @@ export function SocialMediaSettings({
 
     toast({
       title: "Переподключение VK",
-      description: "Откройте vk.needanapp.ru, получите токен и вставьте webhook URL. Ожидаем токен..."
+      description: freshUrl
+        ? "Скопируйте НОВЫЙ webhook URL ниже и вставьте его в needanapp — старый уже не подойдёт. Ожидаем токен..."
+        : "Откройте vk.needanapp.ru, получите токен и вставьте webhook URL. Ожидаем токен..."
     });
 
     // Запускаем polling webhook status
     vkReconnectCheckRef.current = setInterval(async () => {
       try {
-        const resp = await fetch(`/api/vk/token-webhook/${campaignId}/status`);
+        const resp = await fetch(`/api/vk/token-webhook/${campaignId}/status`, {
+          headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+        });
         const data = await resp.json();
         if (data.ready) {
           cleanupVkReconnect();
@@ -650,7 +694,9 @@ export function SocialMediaSettings({
     setVkPolling(true);
     vkPollRef.current = setInterval(async () => {
       try {
-        const resp = await fetch(`/api/vk/token-webhook/${campaignId}/status`);
+        const resp = await fetch(`/api/vk/token-webhook/${campaignId}/status`, {
+          headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+        });
         const data = await resp.json();
         if (data.ready) {
           clearInterval(vkPollRef.current!);
@@ -1887,7 +1933,7 @@ export function SocialMediaSettings({
                   <p className="text-xs font-medium text-blue-800 dark:text-blue-200">Ваш webhook URL:</p>
                   <div className="flex items-center gap-2">
                     <code className="flex-1 text-xs bg-white dark:bg-gray-900 border rounded px-2 py-1.5 break-all font-mono text-blue-900 dark:text-blue-100">
-                      {`${window.location.origin}/api/vk/token-webhook/${campaignId}`}
+                      {vkWebhookUrl || (vkWebhookPreparing ? 'Генерируем защищённый URL…' : '—')}
                     </code>
                     <Button
                       type="button"
@@ -1895,7 +1941,10 @@ export function SocialMediaSettings({
                       size="sm"
                       className="shrink-0"
                       onClick={async () => {
-                        await navigator.clipboard.writeText(`${window.location.origin}/api/vk/token-webhook/${campaignId}`);
+                        // Гарантируем свежий state на момент копирования.
+                        const url = vkWebhookUrl || (await prepareVkWebhook());
+                        if (!url) return;
+                        await navigator.clipboard.writeText(url);
                         setVkWebhookCopied(true);
                         setTimeout(() => setVkWebhookCopied(false), 2000);
                       }}

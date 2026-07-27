@@ -2,8 +2,38 @@ import express from 'express';
 import axios from 'axios';
 import crypto from 'crypto';
 import { log } from '../utils/logger';
+import { authenticateUser } from '../middleware/user-auth';
+import { authorizeCampaignAccess, CampaignAccessError } from '../services/campaign-access';
+import { createVkWebhookState, consumeVkWebhookState } from '../services/vk-webhook-state';
 
 const router = express.Router();
+
+/**
+ * Проверка доступа к кампании для authenticated VK-ручек. Сам пишет ответ и
+ * возвращает false при отказе (404 — не раскрываем существование; 503 — Directus).
+ */
+async function ensureCampaignAccess(
+  req: express.Request,
+  res: express.Response,
+  campaignId: string,
+): Promise<boolean> {
+  try {
+    await authorizeCampaignAccess(
+      campaignId,
+      (req as any).user?.id,
+      (req as any).user?.token || '',
+      (req as any).user?.is_smm_admin === true,
+    );
+    return true;
+  } catch (e: any) {
+    if (e instanceof CampaignAccessError && e.status === 503) {
+      res.status(503).json({ error: 'Проверка доступа временно недоступна' });
+    } else {
+      res.status(404).json({ error: 'Кампания не найдена' });
+    }
+    return false;
+  }
+}
 
 const VK_APP_ID = process.env.VK_APP_ID || '6121396';
 const VK_CLIENT_SECRET = process.env.VK_CLIENT_SECRET || '';
@@ -229,6 +259,22 @@ function setCorsHeaders(req: express.Request, res: express.Response) {
   res.setHeader('Access-Control-Max-Age', '86400');
 }
 
+/**
+ * POST /api/vk/token-webhook/:campaignId/prepare  (authenticated)
+ * Инициация подключения: авторизованный владелец кампании получает одноразовый
+ * state и готовый webhook URL с ним. Именно этот URL пользователь вставляет в
+ * needanapp. Публичный callback без валидного state будет отклонён.
+ */
+router.post('/vk/token-webhook/:campaignId/prepare', authenticateUser, async (req, res) => {
+  const { campaignId } = req.params;
+  if (!(await ensureCampaignAccess(req, res, campaignId))) return;
+
+  const state = createVkWebhookState(campaignId, (req as any).user.id);
+  const webhookUrl = `${getAppBaseUrl(req)}/api/vk/token-webhook/${encodeURIComponent(campaignId)}?state=${state}`;
+  // state в логи не пишем.
+  res.json({ webhookUrl, state });
+});
+
 // Preflight для браузерных CORS-запросов от needanapp
 router.options('/vk/token-webhook/:campaignId', (req, res) => {
   setCorsHeaders(req, res);
@@ -250,6 +296,18 @@ router.post('/vk/token-webhook/:campaignId', async (req, res) => {
   // CORS-заголовки ставим сразу — даже при ошибках ответ будет читаем браузером
   setCorsHeaders(req, res);
   const { campaignId } = req.params;
+
+  // Проверяем одноразовый state ДО любых admin GET/PATCH. Без валидного state,
+  // привязанного к этой кампании, публичный callback не читает и не патчит ничего.
+  const stateNonce = (req.query.state as string) || (req.body?.state as string) || null;
+  const consumed = consumeVkWebhookState(stateNonce, campaignId);
+  if (!consumed.ok) {
+    // state в лог не пишем — только причину отказа.
+    log(`[VK-WEBHOOK] Callback для ${campaignId} отклонён: state ${consumed.reason}`, 'vk-oauth', 'warn');
+    // missing → 401 (нет удостоверения), остальное → 403 (есть, но невалидно).
+    return res.status(consumed.reason === 'missing' ? 401 : 403).json({ error: 'invalid or missing state' });
+  }
+
   const {
     access_token, refresh_token, device_id, client_id,
     // поддерживаем и camelCase вариант на случай разных клиентов
@@ -362,8 +420,9 @@ router.post('/vk/token-webhook/:campaignId', async (req, res) => {
  * PATCH /api/vk/token-webhook/:campaignId/reconnecting
  * Устанавливает флаг reconnecting при начале переподключения
  */
-router.patch('/vk/token-webhook/:campaignId/reconnecting', async (req, res) => {
+router.patch('/vk/token-webhook/:campaignId/reconnecting', authenticateUser, async (req, res) => {
   const { campaignId } = req.params;
+  if (!(await ensureCampaignAccess(req, res, campaignId))) return;
   try {
     const adminAuthToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
     const directusUrl = process.env.DIRECTUS_URL;
@@ -390,8 +449,9 @@ router.patch('/vk/token-webhook/:campaignId/reconnecting', async (req, res) => {
  * GET /api/vk/token-webhook/:campaignId/status
  * Проверяет, пришли ли токены (для polling из визарда)
  */
-router.get('/vk/token-webhook/:campaignId/status', async (req, res) => {
+router.get('/vk/token-webhook/:campaignId/status', authenticateUser, async (req, res) => {
   const { campaignId } = req.params;
+  if (!(await ensureCampaignAccess(req, res, campaignId))) return;
   try {
     const adminAuthToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
     const directusUrl = process.env.DIRECTUS_URL;

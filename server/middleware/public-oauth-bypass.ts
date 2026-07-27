@@ -22,6 +22,8 @@ export interface PublicOAuthCallback {
   routerPath: string;
   publicPath: string;
   method: 'get' | 'post' | 'options';
+  /** Доп. middleware перед хендлером (например rate limiter для публичного POST). */
+  middleware?: express.RequestHandler[];
 }
 
 type BypassLogger = { warn: (m: string) => void; info: (m: string) => void };
@@ -34,7 +36,7 @@ export function registerPublicOAuthBypass(
   // Один парсер на все POST-callback'и: маленький лимит, тело нужно до хендлера.
   const callbackJson = express.json({ limit: PUBLIC_CALLBACK_BODY_LIMIT });
 
-  for (const { router, routerPath, publicPath, method } of callbacks) {
+  for (const { router, routerPath, publicPath, method, middleware = [] } of callbacks) {
     // Находим внутренний handler в router'е по path и method.
     const layer = (router as any).stack.find(
       (l: any) => l.route && l.route.path === routerPath && l.route.methods[method],
@@ -45,9 +47,9 @@ export function registerPublicOAuthBypass(
     }
     const innerHandler = layer.route.stack[0].handle;
     // 1mb-парсер вешаем только на POST: GET-редиректы и OPTIONS-preflight тела не несут.
-    if (method === 'get') app.get(publicPath, innerHandler);
-    else if (method === 'post') app.post(publicPath, callbackJson, innerHandler);
-    else if (method === 'options') app.options(publicPath, innerHandler);
+    if (method === 'get') app.get(publicPath, ...middleware, innerHandler);
+    else if (method === 'post') app.post(publicPath, ...middleware, callbackJson, innerHandler);
+    else if (method === 'options') app.options(publicPath, ...middleware, innerHandler);
     logger.info(`[oauth-bypass] ✅ ${method.toUpperCase()} ${publicPath} → смонтирован до всех middleware (body limit ${PUBLIC_CALLBACK_BODY_LIMIT} для POST)`);
   }
 }

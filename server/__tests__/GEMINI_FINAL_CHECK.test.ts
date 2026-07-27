@@ -4,6 +4,7 @@ import express from 'express';
 import axios from 'axios';
 import { aiService } from '../services/ai-service';
 import { registerRoutes } from '../routes';
+import { registerProxyImageRoute } from '../routes/proxy-image';
 import { globalApiKeysService } from '../services/global-api-keys';
 
 // Mock axios
@@ -73,6 +74,8 @@ const app = express();
 app.use(express.json());
 // @ts-ignore
 registerRoutes(app);
+// proxy-image вынесен из registerRoutes в отдельный публичный маунт (index.ts).
+registerProxyImageRoute(app);
 
 describe('GEMINI_FINAL_CHECK', () => {
   beforeEach(() => {

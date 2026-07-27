@@ -516,40 +516,9 @@ export function registerAiRoutes(app: Express) {
   });
 
   // Прокси для картинок
-  app.get("/api/proxy-image", async (req, res) => {
-    const { url } = req.query;
-    if (!url) return res.status(400).send('URL is required');
-    
-    try {
-      const imageUrl = decodeURIComponent(url as string);
-      console.log("[PROXY] Fetching URL:", imageUrl);
-      console.log("PROXY_TARGET_RAW:", url);
-      console.log("PROXY_TARGET_DECODED:", imageUrl);
-      log(`[ProxyImage] Запрос изображения: ${imageUrl}`, 'info');
-
-      const response = await axios.get(imageUrl, { 
-        responseType: 'arraybuffer',
-        timeout: 15000,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        }
-      });
-
-      const contentType = response.headers['content-type'] || 'image/jpeg';
-      console.log("PROXY_RESPONSE_TYPE:", contentType);
-      console.log("PROXY_RESPONSE_LENGTH:", response.data.length);
-
-      res.setHeader('Content-Type', contentType);
-      res.send(Buffer.from(response.data));
-    } catch (e: any) {
-      log(`[ProxyImage] Критическая ошибка проксирования: ${e.message}`, 'error');
-      console.error("PROXY_ERROR:", e.message);
-      if (e.response) {
-        console.error("PROXY_ERROR_STATUS:", e.response.status);
-      }
-      res.status(500).send('Error proxying image: ' + e.message);
-    }
-  });
+  // Прокси картинок вынесен в server/routes/proxy-image.ts и регистрируется РАНО
+  // в index.ts (registerProxyImageRoute) как ПУБЛИЧНЫЙ — иначе <img> без Bearer
+  // ловил 401 от гейта facebookGroupsRouter и превью картинок были пустыми.
 
   const aiAssistantHandler = async (req: Request, res: Response) => {
     try {

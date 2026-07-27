@@ -344,6 +344,13 @@ app.get('/api/status-check', (req, res) => {
 import { featureFlagsRouter } from './routes/feature-flags';
 app.use('/api', featureFlagsRouter);
 
+// Публичный прокси картинок (<img src="/api/proxy-image?url=...">). Регистрируем
+// РАНО — до роутеров вроде facebookGroupsRouter, у которых верхнеуровневый
+// router.use(authenticateUser) де-факто гейтит все последующие /api. Браузер не
+// шлёт Bearer к <img>, поэтому эндпоинт обязан быть публичным (иначе превью 401).
+import { registerProxyImageRoute } from './routes/proxy-image';
+registerProxyImageRoute(app);
+
 // Регистрируем прямые маршруты аутентификации до инициализации Vite
 import { registerSimpleAnalyticsAPI } from './simple-analytics-api';
 

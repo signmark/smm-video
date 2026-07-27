@@ -120,7 +120,8 @@ export function ContentPlanGenerator({
       
       try {
         const response = await apiRequest(`/api/keywords?campaignId=${campaignId}`);
-        return response.data || [];
+        // Бэкенд отдаёт массив напрямую; старую обёртку { data: [...] } тоже поддерживаем.
+        return Array.isArray(response) ? response : (response?.data || []);
       } catch (error) {
         console.error("Ошибка при загрузке ключевых слов:", error);
         throw error;
@@ -299,8 +300,9 @@ export function ContentPlanGenerator({
       },
       selectedTrendTopics: Array.from(selectedTopicIds),
       keywords: keywords
-        .filter((kw: any) => kw.keyword && kw.keyword.trim() !== ''
-          && ((kw.trend_score && kw.trend_score > 0) || (kw.trendScore && kw.trendScore > 0)))
+        // Берём все непустые ключевые слова кампании; trendScore опционален (0 по умолчанию).
+        // Раньше фильтр требовал trend_score > 0 и молча отбрасывал ручные слова без оценки.
+        .filter((kw: any) => kw.keyword && kw.keyword.trim() !== '')
         .map((kw: any) => ({ keyword: kw.keyword, trendScore: kw.trend_score || kw.trendScore || 0 })),
       businessData: includeBusiness && businessData ? {
         companyName: businessData.companyName,

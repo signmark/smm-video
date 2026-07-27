@@ -452,6 +452,25 @@ export default function Trends() {
 
   const sources = sourcesResponse?.data || [];
 
+  // Ключевые слова кампании. Раньше переменная `keywords` использовалась ниже
+  // (сбор трендов, поиск источников), но её запрос был потерян при рефакторинге —
+  // ссылки на `keywords` висели неопределёнными (ReferenceError в рантайме, сбор
+  // трендов падал с «добавьте ключевые слова», даже когда они есть).
+  const { data: keywordsResponse } = useQuery<{ data: any[] }>({
+    queryKey: ["/api/proxy/keywords", selectedCampaignId],
+    queryFn: async () => {
+      if (!selectedCampaignId) return { data: [] };
+      try {
+        return await api.keywords.list(selectedCampaignId);
+      } catch (error) {
+        console.error("Error fetching keywords:", error);
+        return { data: [] };
+      }
+    },
+    enabled: !!selectedCampaignId,
+  });
+  const keywords = keywordsResponse?.data || [];
+
   const { data: trends = [], isLoading: isLoadingTrends, isError: isTrendsError, error: trendsError } = useQuery({
     queryKey: ["trends", selectedPeriod, selectedCampaignId],
     staleTime: 0, // Принудительно загружаем свежие данные

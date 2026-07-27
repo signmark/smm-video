@@ -236,6 +236,15 @@ export default function ContentPage() {
   const [isBulkProcessing, setIsBulkProcessing] = useState(false);
   const [bulkProgressText, setBulkProgressText] = useState('');
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+  const [showBulkEditorConfirm, setShowBulkEditorConfirm] = useState(false);
+  const [showBulkAdaptConfirm, setShowBulkAdaptConfirm] = useState(false);
+  // Флаг «остановить после текущего поста»: массовые операции идут по одному
+  // элементу и AI-редактура на сотне постов — это десятки минут. Без этого
+  // запущенный прогон нельзя было прервать ничем, кроме перезагрузки страницы.
+  // Ref читает цикл (состояние в его замыкании было бы устаревшим), state —
+  // кнопка «Стоп», чтобы её можно было погасить после нажатия.
+  const bulkCancelRef = useRef(false);
+  const [isBulkCancelRequested, setIsBulkCancelRequested] = useState(false);
 
   // Обновляем локальный ID кампании когда меняется глобальный выбор
   useEffect(() => {
@@ -1020,63 +1029,90 @@ export default function ContentPage() {
 
   const clearBulkSelection = () => setBulkSelectedIds(new Set());
 
-  const bulkDelete = async () => {
-    setIsBulkProcessing(true);
+  const cancelBulkOperation = () => {
+    bulkCancelRef.current = true;
+    setIsBulkCancelRequested(true);
+    setBulkProgressText('Останавливаем после текущего поста...');
+  };
+
+  /**
+   * Общий прогон массовой операции: по одному элементу, с остановкой по кнопке
+   * «Стоп». Обработанные посты снимаются с выбора, необработанные остаются
+   * выбранными — после остановки прогон можно продолжить с того же места.
+   * handler возвращает false, если пост пропущен (тогда он не попадает в «ок»).
+   */
+  const runBulkOperation = async (
+    label: string,
+    handler: (id: string) => Promise<boolean | void>,
+  ) => {
     const ids = Array.from(bulkSelectedIds);
-    let done = 0;
+    bulkCancelRef.current = false;
+    setIsBulkCancelRequested(false);
+    setIsBulkProcessing(true);
+    let done = 0; let ok = 0; let cancelled = false;
     for (const id of ids) {
-      setBulkProgressText(`Удаление ${++done} из ${ids.length}...`);
-      try { await apiRequest(`/api/content/${id}`, { method: 'DELETE' }); } catch (_) {}
+      if (bulkCancelRef.current) { cancelled = true; break; }
+      setBulkProgressText(`${label} ${done + 1} из ${ids.length}...`);
+      try {
+        const result = await handler(id);
+        if (result !== false) ok++;
+      } catch (_) {}
+      done++;
     }
-    setBulkSelectedIds(new Set());
-    setShowBulkDeleteConfirm(false);
+    const processed = new Set(ids.slice(0, done));
+    setBulkSelectedIds(prev => new Set(Array.from(prev).filter(id => !processed.has(id))));
     setIsBulkProcessing(false);
     setBulkProgressText('');
+    bulkCancelRef.current = false;
+    setIsBulkCancelRequested(false);
     queryClient.invalidateQueries({ queryKey: ["/api/campaign-content", selectedCampaignId] });
-    toast({ description: `Удалено ${ids.length} постов` });
+    return { done, ok, total: ids.length, cancelled };
+  };
+
+  const bulkDelete = async () => {
+    setShowBulkDeleteConfirm(false);
+    const { ok, total, cancelled } = await runBulkOperation('Удаление', async (id) => {
+      await apiRequest(`/api/content/${id}`, { method: 'DELETE' });
+    });
+    toast({
+      description: cancelled
+        ? `Удаление остановлено: удалено ${ok} из ${total} постов, остальные остались выбранными`
+        : `Удалено ${ok} из ${total} постов`,
+    });
   };
 
   const bulkEditorPass = async () => {
-    setIsBulkProcessing(true);
-    const ids = Array.from(bulkSelectedIds);
-    let done = 0; let ok = 0;
-    for (const id of ids) {
-      setBulkProgressText(`Редактура ${++done} из ${ids.length}...`);
-      try { await apiRequest(`/api/content/${id}/editor-pass`, { method: 'POST' }); ok++; } catch (_) {}
-    }
-    setBulkSelectedIds(new Set());
-    setIsBulkProcessing(false);
-    setBulkProgressText('');
-    queryClient.invalidateQueries({ queryKey: ["/api/campaign-content", selectedCampaignId] });
-    toast({ description: `Редактура завершена: ${ok} из ${ids.length} постов` });
+    setShowBulkEditorConfirm(false);
+    const { ok, total, cancelled } = await runBulkOperation('Редактура', async (id) => {
+      await apiRequest(`/api/content/${id}/editor-pass`, { method: 'POST' });
+    });
+    toast({
+      description: cancelled
+        ? `Редактура остановлена: переписано ${ok} из ${total} постов, остальные остались выбранными`
+        : `Редактура завершена: ${ok} из ${total} постов`,
+    });
   };
 
   const bulkAdapt = async () => {
-    setIsBulkProcessing(true);
-    const ids = Array.from(bulkSelectedIds);
+    setShowBulkAdaptConfirm(false);
     const platforms = ['telegram', 'vk', 'instagram', 'facebook', 'youtube', 'threads'];
-    let done = 0; let ok = 0;
-    for (const id of ids) {
-      setBulkProgressText(`Адаптация ${++done} из ${ids.length}...`);
-      try {
-        const c = (filteredContent as any[]).find((x: any) => x.id === id);
-        const text: string = c?.content || '';
-        if (!text.trim()) continue;
-        const socialPlatforms: Record<string, any> = {};
-        platforms.forEach(platform => {
-          let adapted = text;
-          if (platform === 'instagram' && text.length > 1800) adapted = text.substring(0, 1800) + '...';
-          socialPlatforms[platform] = { caption: adapted, status: 'pending', publishedAt: null, postId: null, postUrl: null, error: null };
-        });
-        await apiRequest(`/api/campaign-content/${id}`, { method: 'PATCH', data: { social_platforms: socialPlatforms } });
-        ok++;
-      } catch (_) {}
-    }
-    setBulkSelectedIds(new Set());
-    setIsBulkProcessing(false);
-    setBulkProgressText('');
-    queryClient.invalidateQueries({ queryKey: ["/api/campaign-content", selectedCampaignId] });
-    toast({ description: `Адаптация завершена: ${ok} из ${ids.length} постов` });
+    const { ok, total, cancelled } = await runBulkOperation('Адаптация', async (id) => {
+      const c = (filteredContent as any[]).find((x: any) => x.id === id);
+      const text: string = c?.content || '';
+      if (!text.trim()) return false;
+      const socialPlatforms: Record<string, any> = {};
+      platforms.forEach(platform => {
+        let adapted = text;
+        if (platform === 'instagram' && text.length > 1800) adapted = text.substring(0, 1800) + '...';
+        socialPlatforms[platform] = { caption: adapted, status: 'pending', publishedAt: null, postId: null, postUrl: null, error: null };
+      });
+      await apiRequest(`/api/campaign-content/${id}`, { method: 'PATCH', data: { social_platforms: socialPlatforms } });
+    });
+    toast({
+      description: cancelled
+        ? `Адаптация остановлена: обработано ${ok} из ${total} постов, остальные остались выбранными`
+        : `Адаптация завершена: ${ok} из ${total} постов`,
+    });
   };
   // ─────────────────────────────────────────────────────────────────────────
 
@@ -2034,7 +2070,21 @@ export default function ContentPage() {
                     )}
                     <div className="flex-1" />
                     {isBulkProcessing ? (
-                      <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-7 text-xs gap-1"
+                          data-testid="button-bulk-cancel"
+                          disabled={isBulkCancelRequested}
+                          onClick={cancelBulkOperation}
+                          title="Остановить после текущего поста. Уже обработанные посты останутся изменёнными."
+                        >
+                          <Ban className="h-3.5 w-3.5" />
+                          Стоп
+                        </Button>
+                      </>
                     ) : (
                       <>
                         <Button
@@ -2042,7 +2092,8 @@ export default function ContentPage() {
                           size="sm"
                           className="h-7 text-xs gap-1"
                           data-testid="button-bulk-editor-pass"
-                          onClick={bulkEditorPass}
+                          onClick={() => setShowBulkEditorConfirm(true)}
+                          title="ИИ перепишет текст выбранных постов: зацепка, структура, эмодзи, хэштеги, призыв в конце. Прежний текст заменяется."
                         >
                           <Wand2 className="h-3.5 w-3.5" />
                           Редактура
@@ -2052,7 +2103,8 @@ export default function ContentPage() {
                           size="sm"
                           className="h-7 text-xs gap-1"
                           data-testid="button-bulk-adapt"
-                          onClick={bulkAdapt}
+                          onClick={() => setShowBulkAdaptConfirm(true)}
+                          title="Скопировать текст поста в версии для соцсетей (для Instagram — с обрезкой до 1800 символов)."
                         >
                           <Share className="h-3.5 w-3.5" />
                           Адаптация
@@ -2109,6 +2161,74 @@ export default function ContentPage() {
                     </Button>
                   </div>
                 )}
+
+                {/* Bulk editor pass confirm dialog */}
+                <AlertDialog open={showBulkEditorConfirm} onOpenChange={setShowBulkEditorConfirm}>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Прогнать редактуру для {bulkSelectedIds.size} постов?</AlertDialogTitle>
+                      <AlertDialogDescription asChild>
+                        <div className="space-y-2">
+                          <p>
+                            ИИ перепишет текст каждого выбранного поста: зацепка в начале, структура,
+                            эмодзи, выделения, хэштеги и призыв к действию в конце. Учитываются стиль
+                            и подпись из настроек кампании.
+                          </p>
+                          <p>
+                            <strong>Прежний текст заменяется без возможности вернуть</strong> — черновики
+                            и опубликованные посты правятся одинаково.
+                          </p>
+                          <p>
+                            Посты обрабатываются по одному, на каждый уходит несколько секунд.
+                            Прогон можно прервать кнопкой «Стоп»: необработанные посты останутся
+                            выбранными, чтобы продолжить позже.
+                          </p>
+                        </div>
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Отмена</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={bulkEditorPass}
+                        data-testid="button-bulk-editor-pass-confirm"
+                      >
+                        Запустить редактуру
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+
+                {/* Bulk adapt confirm dialog */}
+                <AlertDialog open={showBulkAdaptConfirm} onOpenChange={setShowBulkAdaptConfirm}>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Адаптировать {bulkSelectedIds.size} постов под соцсети?</AlertDialogTitle>
+                      <AlertDialogDescription asChild>
+                        <div className="space-y-2">
+                          <p>
+                            Текст поста будет скопирован в версии для Telegram, VK, Instagram, Facebook,
+                            YouTube и Threads (для Instagram — с обрезкой до 1800 символов). ИИ здесь
+                            не участвует.
+                          </p>
+                          <p>
+                            <strong>Существующие версии для соцсетей перезапишутся</strong>, а их статусы
+                            публикации сбросятся в «ожидает».
+                          </p>
+                          <p>Прогон можно прервать кнопкой «Стоп».</p>
+                        </div>
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Отмена</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={bulkAdapt}
+                        data-testid="button-bulk-adapt-confirm"
+                      >
+                        Адаптировать
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
 
                 {/* Bulk delete confirm dialog */}
                 <AlertDialog open={showBulkDeleteConfirm} onOpenChange={setShowBulkDeleteConfirm}>

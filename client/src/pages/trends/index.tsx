@@ -264,7 +264,9 @@ const isValidPeriod = (period: string): period is Period => {
 
 export default function Trends() {
   const { t, i18n } = useTranslation();
-  const [selectedPeriod, setSelectedPeriod] = useState<Period>("all");
+  // Дефолт «3 дня»: меньше карточек на первом рендере → быстрее загрузка страницы;
+  // пользователь при желании расширяет период до недели/месяца/всего.
+  const [selectedPeriod, setSelectedPeriod] = useState<Period>("3days");
   const [searchQuery, setSearchQuery] = useState("");
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isSearchingNewSources, setIsSearchingNewSources] = useState(false);

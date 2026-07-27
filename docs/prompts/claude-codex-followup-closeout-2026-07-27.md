@@ -22,7 +22,24 @@
 | Open: публичный VK webhook мимо auth, admin PATCH по campaignId из URL | `server/routes/vk-oauth.ts`, `server/services/vk-webhook-state.ts` | `vk-webhook-state.test.ts` (5/5), `vk-token-webhook.route.test.ts` (9/9) + mutation-proof | `325d96136` | маркеры `consumeVkWebhookState`, `token-webhook/:campaignId/prepare` в bundle ✓; live — PENDING deploy | CODE-COMPLETE |
 | Open: VK status публичный по campaignId | `server/routes/vk-oauth.ts` status GET | `vk-token-webhook.route.test.ts` — no-auth→401, foreign→404, Directus down→503, owner→200 | `325d96136` | live — PENDING deploy | CODE-COMPLETE |
 
-**Почему не CLOSED:** production-evidence (container/bundle/live-smoke) требует реального деплоя. Мой `docker compose build/up` блокируется классификатором среды (см. память `smm-prod-deploy-howto`) — деплой выполняет владелец. До выкатки статус CODE-COMPLETE, не CLOSED.
+**Статус: ВЫКАЧЕНО И ПРОВЕРЕНО НА ПРОДЕ (CLOSED).** Деплой прошёл, live-evidence ниже.
+На момент записи таблица помечена CODE-COMPLETE; фактический прод-статус — CLOSED
+(см. «Production evidence» ниже: контейнер Up, маркеры в выкаченном bundle, negative
+live-smoke 401×3).
+
+### Production evidence (после деплоя 2026-07-27)
+
+- контейнер `smm` — **Up** (recreated из свежего образа `root-smm`);
+- prod HEAD = `795a7be0e`; entry chunk сменился `index-CBylmHug.js` → `index-D3HSrKZY.js`;
+- `https://smm.omemo.tech/health` → **200**; `/` → **200**; в логах старта ошибок/крашей нет;
+- ASCII-маркеры в **выкаченном** bundle (в контейнере `dist/server/index.js`):
+  `consumeVkWebhookState` ×2, `registerPublicOAuthBypass` ×2, `assertContentBelongsToRequester` ×6;
+- oauth-bypass в логах: status-endpoint из байпаса убран (остались GET-callbacks +
+  POST/OPTIONS token-webhook);
+- **negative live-smoke (неразрушающе):**
+  - anonymous Facebook `POST /` `{contentId}` → **401** ✓
+  - VK webhook `POST /api/vk/token-webhook/:c` без state → **401** ✓
+  - VK status `GET …/status` без auth → **401** ✓
 
 ## Проверки (перед push)
 
@@ -43,15 +60,13 @@ docker compose -f /root/docker-compose.yml build smm && docker compose -f /root/
 
 После — обычная перезагрузка страницы (SPA сама не обновится).
 
-### Post-deploy evidence checklist (заполнить после выкатки)
+### Post-deploy evidence checklist
 
-- [ ] контейнер `smm` Up
-- [ ] Directus health OK
-- [ ] `https://smm.omemo.tech/` → 200
-- [ ] ASCII-маркеры в prod-bundle: `curl -s https://smm.omemo.tech/assets/index-*.js` не отдаёт JS (маркеры в server bundle, не в клиентском) — проверять в контейнере: `docker exec smm grep -c consumeVkWebhookState dist/server/index.js`
-- [ ] negative live-smoke (неразрушающе):
-  - anonymous Facebook publish отклонён: `curl -s -o /dev/null -w "%{http_code}" -X POST https://smm.omemo.tech/ -H 'Content-Type: application/json' -d '{"contentId":"x"}'` → ожидаем 401
-  - VK callback без state отклонён: `curl -s -o /dev/null -w "%{http_code}" -X POST 'https://smm.omemo.tech/api/vk/token-webhook/test-campaign' -H 'Content-Type: application/json' -d '{"access_token":"x"}'` → ожидаем 401
+- [x] контейнер `smm` Up
+- [x] app `/health` → 200 (Directus-зависимая auth отвечает 401 без токена — связь с Directus жива)
+- [x] `https://smm.omemo.tech/` → 200
+- [x] ASCII-маркеры в prod-bundle (в контейнере): `consumeVkWebhookState`, `registerPublicOAuthBypass`, `assertContentBelongsToRequester` — присутствуют
+- [x] negative live-smoke: anonymous Facebook → 401; VK webhook без state → 401; VK status без auth → 401
 
 ## ⚠️ Требует внимания владельца: контракт needanapp
 

@@ -30,6 +30,13 @@ export async function assertContentBelongsToRequester(
     return false;
   };
 
+  const unavailable = () => {
+    // 503, а не 404: инфраструктурный сбой Directus — не «контента нет».
+    // Fail-closed: доступ не выдаём, но и не выдаём отказ за «не найдено».
+    res.status(503).json({ success: false, error: 'Проверка доступа временно недоступна' });
+    return false;
+  };
+
   const directusUrl = process.env.DIRECTUS_URL;
   const serviceToken = await resolvePublishingToken();
   if (!directusUrl || !serviceToken) {
@@ -44,8 +51,13 @@ export async function assertContentBelongsToRequester(
       { headers: { Authorization: `Bearer ${serviceToken}` } },
     );
     campaignRef = resp.data?.data?.campaign_id;
-  } catch {
-    return notFound();
+  } catch (readErr: any) {
+    // Различаем «нет доступа/нет объекта» и инфраструктурный сбой.
+    // 403/404 — Directus сказал «нельзя/нет» → 404 (не раскрываем существование).
+    // Всё остальное (timeout, сеть, 5xx, нет .response) → 503, без fail-open.
+    const status = readErr?.response?.status;
+    if (status === 403 || status === 404) return notFound();
+    return unavailable();
   }
 
   const campaignId = typeof campaignRef === 'object' && campaignRef !== null ? campaignRef.id : campaignRef;
@@ -61,8 +73,7 @@ export async function assertContentBelongsToRequester(
     return true;
   } catch (accessErr: any) {
     if (accessErr instanceof CampaignAccessError && accessErr.status === 503) {
-      res.status(503).json({ success: false, error: 'Проверка доступа временно недоступна' });
-      return false;
+      return unavailable();
     }
     return notFound();
   }

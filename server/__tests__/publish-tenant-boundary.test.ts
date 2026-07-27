@@ -126,10 +126,28 @@ describe('Граница арендатора при публикации', () =
     expect(result.ok).toBe(false);
   });
 
-  it('несуществующий контент — 404', async () => {
-    axiosGet.mockRejectedValue(new Error('404'));
+  it('несуществующий контент (Directus 404) — 404', async () => {
+    axiosGet.mockRejectedValue({ response: { status: 404 } });
     const result = await run('нет-такого', { id: OWNER, token: 't' });
     expect(result).toEqual({ ok: false, status: 404 });
+  });
+
+  it('нет доступа к контенту (Directus 403) — 404, не раскрываем существование', async () => {
+    axiosGet.mockRejectedValue({ response: { status: 403 } });
+    const result = await run(CONTENT_ID, { id: OWNER, token: 't' });
+    expect(result).toEqual({ ok: false, status: 404 });
+  });
+
+  it('сбой Directus на чтении контента (500) — 503, не 404', async () => {
+    axiosGet.mockRejectedValue({ response: { status: 500 } });
+    const result = await run(CONTENT_ID, { id: OWNER, token: 't' });
+    expect(result).toEqual({ ok: false, status: 503 });
+  });
+
+  it('сетевой сбой/таймаут на чтении контента — 503 (fail-closed, не fail-open)', async () => {
+    axiosGet.mockRejectedValue(new Error('ETIMEDOUT'));
+    const result = await run(CONTENT_ID, { id: OWNER, token: 't' });
+    expect(result).toEqual({ ok: false, status: 503 });
   });
 
   it('контент без кампании доступа не даёт', async () => {

@@ -353,37 +353,22 @@ export function registerPublishingRoutes(app: Express): void {
         });
       }
       
-      // Обновляем статус на published без фактической публикации
-      await storage.updateCampaignContent(contentId, {
-        status: 'published'
-      });
-      
-      // Устанавливаем publishedAt через прямой запрос к API
-      try {
-        // Получаем системный токен
-        const directusAuthManager = await import('../services/directus-auth-manager').then(m => m.directusAuthManager);
-        const directusUrl = process.env.DIRECTUS_URL;
-        
-        // Пробуем получить токен из активных сессий
-        const sessions = directusAuthManager.getAllActiveSessions();
-        let token = null;
-        
-        if (sessions.length > 0) {
-          token = sessions[0].token;
-        }
-        
-        if (token) {
-          await axios.patch(
-            `${directusUrl}/items/campaign_content/${contentId}`,
-            { published_at: new Date().toISOString() },
-            { headers: { 'Authorization': `Bearer ${token}` } }
-          );
-          log(`Установлено поле published_at для контента ${contentId}`, 'api');
-        }
-      } catch (error: any) {
-        log(`Ошибка при установке published_at: ${error.message}`, 'api');
-      }
-      
+      // Статус и дата публикации пишутся ОДНИМ запросом. Раньше published_at
+      // ставился отдельным axios-патчем под токеном случайной активной сессии:
+      // если сессий не было (token === null) или патч падал, ошибка гасилась,
+      // и контент оставался published с пустым published_at.
+      // Уже проставленную дату не перетираем — повторная пометка не должна
+      // сдвигать реальное время публикации.
+      await storage.updateCampaignContent(
+        contentId,
+        {
+          status: 'published',
+          publishedAt: content.publishedAt ?? new Date(),
+        },
+        req.user?.token,
+      );
+      log(`Установлено поле published_at для контента ${contentId}`, 'api');
+
       // Новый планировщик автоматически обрабатывает статусы контента
       // поэтому нет необходимости в ручном добавлении в список обработанных
       log(`Контент ${contentId} помечен как опубликованный`, 'api');

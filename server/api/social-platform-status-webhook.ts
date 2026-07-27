@@ -117,7 +117,10 @@ async function updateContentStatus(contentId: string, updates: any, token: strin
         try {
           await axios.patch(
             `${DIRECTUS_URL}/items/campaign_content/${contentId}`,
-            { status: 'published', publishedAt: new Date() },
+            // published_at, а не publishedAt: это прямой PATCH в Directus, где
+            // колонка называется по-snake_case. С camelCase Directus отбивал
+            // весь запрос, и подстраховочное обновление статуса не срабатывало.
+            { status: 'published', published_at: new Date().toISOString() },
             {
               headers: {
                 Authorization: `Bearer ${token}`

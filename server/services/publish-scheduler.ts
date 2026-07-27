@@ -6,7 +6,7 @@ import { publicationLockManager } from './publication-lock-manager';
 import { publicationTracker } from './publication-tracking';
 import { getN8nUrl } from '../utils/n8n-utils';
 import { aiService } from './ai-service';
-import { getContentAggregateTimes, getContentPublicationStatus } from '@shared/schedule-time';
+import { getContentAggregateTimes, resolvePublishFinalization } from '@shared/schedule-time';
 import { invalidateContentCache } from '../utils/content-cache';
 import { resolvePublishingToken } from './publishing-token';
 import { stripMarkdown, markdownToTelegramHtml } from '../utils/strip-markdown';
@@ -1786,7 +1786,20 @@ ${text}
         platforms = JSON.parse(platforms);
       }
 
-      const newStatus = getContentPublicationStatus(platforms, freshContent.status);
+      // Статус и published_at обязаны решаться одним и тем же способом, что и в
+      // publish-now: платформа считается опубликованной по postId/postUrl даже без
+      // publishedAt (isConfirmedPublishedPlatform), а getContentAggregateTimes
+      // собирает дату только из publishedAt. На этой развилке контент получал
+      // status='published' с пустым published_at и молча выпадал из всех разрезов
+      // по времени. resolvePublishFinalization закрывает её фолбэком на now.
+      const finalization = resolvePublishFinalization(platforms, freshContent.status, {
+        scheduledAt: freshContent.scheduled_at,
+        publishedAt: freshContent.published_at,
+      });
+      const newStatus = finalization.status;
+      const resolvedPublishedAt = finalization.publishedAt
+        ? finalization.publishedAt.toISOString()
+        : null;
 
       const summaryTimes = getContentAggregateTimes(platforms, newStatus, {
         scheduledAt: freshContent.scheduled_at,
@@ -1803,8 +1816,8 @@ ${text}
         return Number.isFinite(leftTime) && Number.isFinite(rightTime) && leftTime === rightTime;
       };
 
-      if (!sameInstant(summaryTimes.publishedAt, freshContent.published_at)) {
-        updateData.published_at = summaryTimes.publishedAt;
+      if (!sameInstant(resolvedPublishedAt, freshContent.published_at)) {
+        updateData.published_at = resolvedPublishedAt;
       }
       if (!sameInstant(summaryTimes.scheduledAt, freshContent.scheduled_at)) {
         updateData.scheduled_at = summaryTimes.scheduledAt;

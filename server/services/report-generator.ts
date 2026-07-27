@@ -4,6 +4,7 @@ import { createDirectus, rest, readItem, readItems } from '@directus/sdk';
 import { format } from 'date-fns';
 import { ru, enUS, es, type Locale } from 'date-fns/locale';
 import { getTranslations } from '../locales/reports';
+import { flattenPublishedPlatformRows } from './analytics-aggregation';
 
 const locales: Record<string, Locale> = { ru, en: enUS, es };
 
@@ -345,18 +346,20 @@ export async function generateCampaignReport(
     throw new Error('Campaign not found');
   }
 
-  // Получаем посты за период
-  const posts = await directusCrud.list('campaign_content', {
+  // Получаем контент кампании. Фильтр по периоду и метрики берём НЕ из
+  // top-level колонок (published_at/reach/likes обычно пустые), а из JSON
+  // social_platforms — тем же способом, что и страница аналитики. Иначе отчёт
+  // выгружается пустым, хотя на странице посты есть.
+  const rawPosts = await directusCrud.list('campaign_content', {
     authToken: accessToken,
     filter: {
       campaign_id: { _eq: campaignId },
-      published_at: {
-        _between: [fromDate.toISOString(), toDate.toISOString()]
-      },
-      status: { _eq: 'published' }
+      status: { _in: ['published', 'partially_published', 'partial'] }
     },
     limit: -1
   });
+
+  const posts = flattenPublishedPlatformRows(rawPosts, fromDate, toDate);
 
   // Получаем комментарии (опционально, если нет прав - пустой массив)
   let comments: any[] = [];
@@ -380,16 +383,9 @@ export async function generateCampaignReport(
     }
   }
 
-  // Рассчитываем аналитику из постов (вместо запроса к коллекции analytics)
-  const analytics = posts.map((post: any) => ({
-    campaign_id: post.campaign_id,
-    date: post.published_at,
-    platform: post.platform,
-    views: post.views || 0,
-    likes: post.likes || 0,
-    comments: post.comments_count || 0,
-    shares: post.shares || 0
-  }));
+  // Рост аудитории по коллекции analytics здесь не считаем (followers_growth в
+  // потоке публикаций отсутствует) — оставляем пустым, метрики уже в posts.
+  const analytics: any[] = [];
 
   const reportData: ReportData = {
     campaign,

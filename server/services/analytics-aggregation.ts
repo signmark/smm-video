@@ -94,6 +94,64 @@ export function matchesPublishedPlatformPostId(expectedIds: Set<string>, value: 
   return postIdCandidates(value).some((candidate) => expectedIds.has(candidate));
 }
 
+export interface PublishedPlatformRow {
+  title: string;
+  content: string;
+  platform: string;
+  published_at: string;
+  reach: number;
+  likes: number;
+  comments: number;
+  shares: number;
+}
+
+/**
+ * Flattens content items into one row per confirmed platform publication in the
+ * selected period, reading the timestamp and metrics from the same
+ * `social_platforms` JSON the analytics page uses. Report generation must consume
+ * this instead of the top-level `published_at`/`reach`/`likes` columns (which are
+ * usually empty), otherwise the exported PDF/Excel comes out blank while the page
+ * shows data.
+ */
+export function flattenPublishedPlatformRows(
+  posts: any[],
+  dateFrom: Date,
+  dateTo: Date,
+): PublishedPlatformRow[] {
+  const rows: PublishedPlatformRow[] = [];
+  const fromTime = dateFrom.getTime();
+  const toTime = dateTo.getTime();
+
+  for (const post of posts) {
+    let platforms = post?.social_platforms ?? post?.socialPlatforms;
+    if (typeof platforms === 'string') {
+      try { platforms = JSON.parse(platforms); } catch { continue; }
+    }
+    if (!platforms || typeof platforms !== 'object' || Array.isArray(platforms)) continue;
+
+    for (const [platformKey, platformData] of Object.entries(platforms) as [string, any][]) {
+      if (!platformData || platformData.status !== 'published') continue;
+
+      const publishedTime = publicationTime(post, platformData);
+      if (publishedTime === null || publishedTime < fromTime || publishedTime > toTime) continue;
+
+      const analytics = platformData.analytics || {};
+      rows.push({
+        title: post.title || post.name || '',
+        content: post.content || post.text || post.body || '',
+        platform: String(platformData.platform || platformKey).toLowerCase(),
+        published_at: new Date(publishedTime).toISOString(),
+        reach: metric(analytics.views),
+        likes: metric(analytics.likes),
+        comments: metric(analytics.comments),
+        shares: metric(analytics.shares),
+      });
+    }
+  }
+
+  return rows;
+}
+
 /**
  * Counts one post per confirmed platform publication in the selected period.
  * Content-level status and scheduled_at are deliberately not used as filters:

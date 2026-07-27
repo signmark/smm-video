@@ -268,6 +268,7 @@ export default function Dashboard() {
   // Обработчики навигации
   const handleNavigateToCampaigns = () => navigate('/campaigns');
   const handleNavigateToPublish = () => navigate('/content');
+  const handleNavigateToPosts = () => navigate('/posts');
   const handleNavigateToTrends = () => navigate('/trends');
   const handleNavigateToAnalytics = () => navigate('/analytics');
   const handleNavigateToKeywords = () => navigate('/keywords');
@@ -354,7 +355,7 @@ export default function Dashboard() {
         </Card>
 
         {/* Публикации сегодня */}
-        <Card data-testid="card-publications-today" className="cursor-pointer hover:bg-muted/50 transition-colors" onClick={handleNavigateToPublish}>
+        <Card data-testid="card-publications-today" className="cursor-pointer hover:bg-muted/50 transition-colors" onClick={handleNavigateToPosts}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">{t('dashboard.publicationsToday')}</CardTitle>
             <div className="flex items-center gap-2">

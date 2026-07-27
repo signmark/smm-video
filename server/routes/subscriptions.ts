@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import axios from 'axios';
 import crypto from 'crypto';
 import { sendSubscriptionRequestEmail } from '../services/email';
+import { globalApiKeysService } from '../services/global-api-keys';
 
 // ─── Реестр обработанных заявок (in-memory, TTL 72ч) ───────────────────────
 // Ключ — userId. Предотвращает повторное одобрение после отклонения и наоборот.
@@ -31,11 +32,30 @@ export const PLAN_DURATIONS: Record<string, number> = {
   'Корпоративный': 365,
 };
 
-export const PLAN_PRICES: Record<string, string> = {
-  'Базовый':         process.env.PLAN_PRICE_BASIC_LABEL      ?? '990 ₽/мес',
-  'Профессиональный': process.env.PLAN_PRICE_PRO_LABEL       ?? '4990 ₽/мес',
-  'Корпоративный':   process.env.PLAN_PRICE_ENTERPRISE_LABEL ?? 'По договорённости',
-};
+// Метка цены для писем/уведомлений о заявке.
+// Берём из того же источника, что и страница тарифов (/api/config/pricing):
+// Directus global key → env → дефолт. Иначе метка в письме рассинхронизируется
+// с ценой на сайте (см. баг с «100 ₽/мес» в письме при 670 ₽ на странице).
+export async function resolvePlanPriceLabel(plan: string): Promise<string> {
+  const getNum = async (directusKey: string, envKey: string, fallback: number): Promise<number> => {
+    try {
+      const val = await globalApiKeysService.getGlobalApiKey(directusKey);
+      if (val) return Number(val);
+    } catch {}
+    return Number(process.env[envKey] ?? process.env[`VITE_${envKey}`] ?? fallback);
+  };
+
+  switch (plan) {
+    case 'Профессиональный':
+      return `${await getNum('PLAN_PRICE_PRO', 'PLAN_PRICE_PRO', 670)} ₽/мес`;
+    case 'Базовый':
+      return `${await getNum('PLAN_PRICE_BASIC', 'PLAN_PRICE_BASIC', 390)} ₽/мес`;
+    case 'Корпоративный':
+      return process.env.PLAN_PRICE_ENTERPRISE_LABEL ?? 'По договорённости';
+    default:
+      return plan;
+  }
+}
 
 const PLAN_CODES: Record<string, string> = {
   'Базовый': 'b',
@@ -76,7 +96,7 @@ export async function sendSubscriptionNotification(
     return;
   }
 
-  const price = PLAN_PRICES[plan] || plan;
+  const price = await resolvePlanPriceLabel(plan);
   const days = PLAN_DURATIONS[plan] || 30;
   const planCode = PLAN_CODES[plan] || 'b';
   const now = new Date().toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' });
@@ -270,7 +290,7 @@ router.post('/subscriptions/request', async (req: Request, res: Response) => {
 
     const userName = [user.first_name, user.last_name].filter(Boolean).join(' ') || user.email;
     const days = PLAN_DURATIONS[plan] || 30;
-    const price = PLAN_PRICES[plan] || plan;
+    const price = await resolvePlanPriceLabel(plan);
     const actionToken = makeActionToken(user.id, plan, days);
     const baseUrl = getBaseUrl(req);
 

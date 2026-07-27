@@ -8,10 +8,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Globe } from "lucide-react";
 
+// Короткий код (badge) вместо флаг-эмодзи: Windows рисует 🇬🇧 как «GB»,
+// а для английского нужен «EN». Текстовый код одинаково выглядит на всех ОС.
 const languages = [
-  { code: 'ru', name: 'Русский', flag: '🇷🇺' },
-  { code: 'en', name: 'English', flag: '🇬🇧' },
-  { code: 'es', name: 'Español', flag: '🇪🇸' }
+  { code: 'ru', name: 'Русский', short: 'RU' },
+  { code: 'en', name: 'English', short: 'EN' },
+  { code: 'es', name: 'Español', short: 'ES' }
 ];
 
 export function LanguageSwitcher() {
@@ -47,7 +49,9 @@ export function LanguageSwitcher() {
             }`}
             data-testid={`lang-${language.code}`}
           >
-            <span className="text-lg">{language.flag}</span>
+            <span className="inline-flex h-5 min-w-[1.75rem] items-center justify-center rounded bg-muted px-1 text-xs font-semibold text-muted-foreground">
+              {language.short}
+            </span>
             <span className="text-sm">{language.name}</span>
           </DropdownMenuItem>
         ))}

@@ -262,9 +262,10 @@ export function ExportReportDialog({ campaignId, disabled }: ExportReportDialogP
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  const today = new Date();
-                  setToDate(today);
-                  setFromDate(new Date(today.setDate(today.getDate() - 7)));
+                  const from = new Date();
+                  from.setDate(from.getDate() - 7);
+                  setFromDate(from);
+                  setToDate(new Date());
                 }}
                 data-testid="button-period-7days"
               >
@@ -274,9 +275,10 @@ export function ExportReportDialog({ campaignId, disabled }: ExportReportDialogP
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  const today = new Date();
-                  setToDate(today);
-                  setFromDate(new Date(today.setDate(today.getDate() - 30)));
+                  const from = new Date();
+                  from.setDate(from.getDate() - 30);
+                  setFromDate(from);
+                  setToDate(new Date());
                 }}
                 data-testid="button-period-30days"
               >
@@ -286,9 +288,10 @@ export function ExportReportDialog({ campaignId, disabled }: ExportReportDialogP
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  const today = new Date();
-                  setToDate(today);
-                  setFromDate(new Date(today.setDate(today.getDate() - 90)));
+                  const from = new Date();
+                  from.setDate(from.getDate() - 90);
+                  setFromDate(from);
+                  setToDate(new Date());
                 }}
                 data-testid="button-period-90days"
               >

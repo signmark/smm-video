@@ -145,19 +145,42 @@ interface CampaignRow {
   social_media_settings?: unknown;
 }
 
-/** Загружает кампании, у которых есть привязанный канал аналитики. */
+/**
+ * Загружает кампании с заполненными настройками соцсетей.
+ *
+ * Постранично по 100, как в refreshAllExpiringVkTokens: `limit: -1` этот Directus
+ * отдаёт пустым списком, из-за чего первые прод-циклы видели ноль кампаний.
+ */
 async function loadCampaigns(): Promise<CampaignRow[]> {
   const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
   const directusUrl = process.env.DIRECTUS_URL;
-  if (!adminToken || !directusUrl) return [];
+  if (!adminToken || !directusUrl) {
+    log('[ENGAGEMENT] Нет DIRECTUS_URL или админ-токена — цикл пропущен', 'engagement', 'warn');
+    return [];
+  }
 
   const axios = (await import('axios')).default;
-  const response = await axios.get(`${directusUrl}/items/user_campaigns`, {
-    headers: { Authorization: `Bearer ${adminToken}` },
-    params: { fields: 'id,title,name,user_id,social_media_settings', limit: -1 },
-    timeout: 20000,
-  });
-  return response.data?.data || [];
+  const PAGE_SIZE = 100;
+  const rows: CampaignRow[] = [];
+
+  for (let page = 1; page <= 100; page++) {
+    const response = await axios.get(`${directusUrl}/items/user_campaigns`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+      params: {
+        fields: 'id,title,name,user_id,social_media_settings',
+        limit: PAGE_SIZE,
+        page,
+        filter: { social_media_settings: { _nnull: true } },
+      },
+      timeout: 20000,
+    });
+
+    const batch: CampaignRow[] = response.data?.data || [];
+    rows.push(...batch);
+    if (batch.length < PAGE_SIZE) break;
+  }
+
+  return rows;
 }
 
 /** Один проход по всем кампаниям. Экспортируется, чтобы можно было дёрнуть вручную. */

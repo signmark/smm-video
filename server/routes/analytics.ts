@@ -8,7 +8,7 @@ import { directusAuthManager } from '../services/directus-auth-manager';
 import { geminiDirect } from '../services/gemini-direct';
 import { AnalyticsService } from '../services/analytics-service';
 import axios from 'axios';
-import { authorizeCampaignAccess, CampaignAccessError } from '../services/campaign-access';
+import { authorizeCampaignAccess, listAccessibleCampaignIds, CampaignAccessError } from '../services/campaign-access';
 import { sanitizeOAuthSecrets } from '../services/oauth-response-sanitizer';
 
 /**
@@ -191,6 +191,10 @@ export function registerAnalyticsRoutes(app: Express) {
     try {
       const { campaignId } = req.query;
       const token = req.user?.token;
+      const userId = req.user?.id;
+      const isAdmin = req.user?.is_smm_admin === true;
+
+      if (!userId || !token) return res.status(401).json({ error: "Не авторизован" });
 
       const params: any = {
         sort: ['-created_at'],
@@ -198,8 +202,21 @@ export function registerAnalyticsRoutes(app: Express) {
       };
 
       if (campaignId) {
+        // Чужая кампания маскируется под 404, как у соседних роутов.
+        await authorizeCampaignAccess(String(campaignId), userId, token, isAdmin);
         params.filter = {
           campaign_id: { _eq: campaignId }
+        };
+      } else if (!isAdmin) {
+        // Без campaignId раньше уходил запрос вообще без фильтра по арендатору —
+        // роль в Directus читает коллекцию целиком, поэтому выдача содержала
+        // источники всех пользователей вместе с их campaign_id. Ограничиваем
+        // кампаниями пользователя (своей колонки user_id у строк нет — она не
+        // заполняется ни одним путём создания).
+        const campaignIds = await listAccessibleCampaignIds(userId, token);
+        if (campaignIds.length === 0) return res.json({ success: true, data: [] });
+        params.filter = {
+          campaign_id: { _in: campaignIds }
         };
       }
 
@@ -210,6 +227,9 @@ export function registerAnalyticsRoutes(app: Express) {
 
       res.json({ success: true, data: response.data.data });
     } catch (error: any) {
+      if (error instanceof CampaignAccessError) {
+        return res.status(error.status).json({ error: "Кампания не найдена", code: error.code });
+      }
       console.error("Error fetching sources:", error.response?.data || error.message);
       res.status(500).json({ error: "Не удалось загрузить источники" });
     }
@@ -218,7 +238,19 @@ export function registerAnalyticsRoutes(app: Express) {
   app.post("/api/sources", authenticateUser, async (req, res) => {
     try {
       const token = req.user?.token;
+      const userId = req.user?.id;
       const { name, url, type, campaignId, isActive } = req.body;
+
+      if (!userId || !token) return res.status(401).json({ error: "Не авторизован" });
+      if (!campaignId) return res.status(400).json({ error: "campaignId обязателен" });
+
+      // Без этой проверки источник создавался в любой кампании по её id.
+      await authorizeCampaignAccess(
+        String(campaignId),
+        userId,
+        token,
+        req.user?.is_smm_admin === true,
+      );
 
       // Преобразуем camelCase в snake_case для Directus
       const directusData = {
@@ -234,6 +266,9 @@ export function registerAnalyticsRoutes(app: Express) {
       });
       res.status(201).json({ success: true, data: response.data.data });
     } catch (error: any) {
+      if (error instanceof CampaignAccessError) {
+        return res.status(error.status).json({ error: "Кампания не найдена", code: error.code });
+      }
       console.error("Error creating source:", error.response?.data || error.message);
       res.status(500).json({ error: "Не удалось создать источник" });
     }
@@ -244,6 +279,10 @@ export function registerAnalyticsRoutes(app: Express) {
     try {
       const { campaignId } = req.query;
       const token = req.user?.token;
+      const userId = req.user?.id;
+      const isAdmin = req.user?.is_smm_admin === true;
+
+      if (!userId || !token) return res.status(401).json({ error: "Не авторизован" });
 
       console.log(`[HTTP] GET /api/trends called for campaignId: ${campaignId}`);
       log(`[Analytics Route] GET /api/trends called for campaignId: ${campaignId}`, 'info');
@@ -254,8 +293,17 @@ export function registerAnalyticsRoutes(app: Express) {
       };
 
       if (campaignId) {
+        await authorizeCampaignAccess(String(campaignId), userId, token, isAdmin);
         params.filter = {
           campaign_id: { _eq: campaignId }
+        };
+      } else if (!isAdmin) {
+        // Та же дыра, что была в /api/sources: без campaignId выборка уходила
+        // без фильтра по арендатору и отдавала тренды всех кампаний.
+        const campaignIds = await listAccessibleCampaignIds(userId, token);
+        if (campaignIds.length === 0) return res.json({ success: true, data: [] });
+        params.filter = {
+          campaign_id: { _in: campaignIds }
         };
       }
 
@@ -274,6 +322,9 @@ export function registerAnalyticsRoutes(app: Express) {
       console.log(`[Analytics Route] Successfully fetched ${response.data.data.length} trends`);
       res.json({ success: true, data: response.data.data });
     } catch (error: any) {
+      if (error instanceof CampaignAccessError) {
+        return res.status(error.status).json({ error: "Кампания не найдена", code: error.code });
+      }
       console.error(`[Analytics Route] Error fetching trends: ${error.message}`);
       if (error.response) {
         console.error(`[Analytics Route] Directus error details: ${JSON.stringify(error.response.data)}`);
@@ -295,6 +346,16 @@ export function registerAnalyticsRoutes(app: Express) {
         log(`[Analytics Route] ❌ Ошибка: campaignId отсутствует в запросе`, 'error');
         return res.status(400).json({ success: false, error: "campaignId is required" });
       }
+
+      // Роут ходит в Directus АДМИНСКИМ токеном (см. getAdminTokenPublic ниже),
+      // поэтому права пользователя в Directus не участвуют вообще — единственная
+      // граница арендатора здесь это проверка в коде.
+      await authorizeCampaignAccess(
+        String(campaignId),
+        userId,
+        token || '',
+        req.user?.is_smm_admin === true,
+      );
 
       // limit: число (по умолчанию 500). Отдать всё можно только явным опт-ином
       // limit=all / limit=-1 — этим пользуется страница трендов, которой нужен
@@ -383,6 +444,9 @@ export function registerAnalyticsRoutes(app: Express) {
       log(`[Analytics Route] Отдаём ${resultTrends.length} трендов (получено из Directus: ${rawTrends.length})`, 'info');
       res.json({ success: true, data: resultTrends });
     } catch (error: any) {
+      if (error instanceof CampaignAccessError) {
+        return res.status(error.status).json({ success: false, error: "Кампания не найдена", code: error.code });
+      }
       const errorDetail = error.response?.data || error.message;
       console.error(`🚨 [Analytics Route] Ошибка при получении трендов:`, JSON.stringify(errorDetail, null, 2));
       log(`[Analytics Route] Ошибка при получении трендов: ${JSON.stringify(errorDetail)}`, 'error');

@@ -9,6 +9,52 @@ export class CampaignAccessError extends Error {
   }
 }
 
+function resolveServiceToken(userToken: string): string {
+  return process.env.DIRECTUS_STATIC_TOKEN
+    || process.env.DIRECTUS_ADMIN_TOKEN
+    || process.env.DIRECTUS_TOKEN
+    || userToken;
+}
+
+/**
+ * ID всех кампаний, к которым у пользователя есть доступ (владелец или создатель).
+ *
+ * Нужен там, где коллекция привязана к арендатору ТОЛЬКО через campaign_id и
+ * своей колонки user_id у неё либо нет (campaign_keywords), либо она не
+ * заполняется при создании (campaign_content_sources — ни один из путей записи
+ * её не пишет). Фильтровать такие выборки по user_id нельзя: у живых строк там
+ * NULL, и список у владельца опустеет. Поэтому принадлежность считаем через
+ * user_campaigns.
+ *
+ * Fail-closed: при недоступном Directus бросаем 503, а не отдаём выборку без
+ * фильтра — иначе ошибка в БД превращается в утечку.
+ */
+export async function listAccessibleCampaignIds(
+  userId: string | undefined,
+  userToken: string,
+): Promise<string[]> {
+  if (!userId) return [];
+
+  try {
+    const response = await directusApi.get('/items/user_campaigns', {
+      headers: { Authorization: `Bearer ${resolveServiceToken(userToken)}` },
+      params: {
+        filter: JSON.stringify({
+          _or: [{ user_id: { _eq: userId } }, { user_created: { _eq: userId } }],
+        }),
+        fields: ['id'],
+        limit: -1,
+      },
+    });
+
+    const items = response.data?.data;
+    if (!Array.isArray(items)) return [];
+    return items.map((item: any) => item?.id).filter((id: any) => typeof id === 'string' && id);
+  } catch (error: any) {
+    throw new CampaignAccessError(503, 'CAMPAIGN_ACCESS_UNAVAILABLE');
+  }
+}
+
 export async function authorizeCampaignAccess(
   campaignId: string,
   userId: string | undefined,
@@ -17,10 +63,7 @@ export async function authorizeCampaignAccess(
 ): Promise<any> {
   if (!userId) throw new CampaignAccessError(404, 'CAMPAIGN_NOT_FOUND');
 
-  const serviceToken = process.env.DIRECTUS_STATIC_TOKEN
-    || process.env.DIRECTUS_ADMIN_TOKEN
-    || process.env.DIRECTUS_TOKEN
-    || userToken;
+  const serviceToken = resolveServiceToken(userToken);
 
   try {
     const response = await directusApi.get(`/items/user_campaigns/${encodeURIComponent(campaignId)}`, {

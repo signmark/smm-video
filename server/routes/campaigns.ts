@@ -345,7 +345,17 @@ export function registerCampaignRoutes(app: Express) {
       const { campaignId } = req.query;
       const token = req.user?.token;
       if (!campaignId) return res.status(400).json({ error: "campaignId обязателен" });
-      
+
+      // Роль в Directus читает campaign_keywords целиком, без построчного
+      // ограничения, поэтому без этой проверки отдавались ключевые слова любой
+      // кампании по её id. Чужая кампания маскируется под 404.
+      await authorizeCampaignAccess(
+        String(campaignId),
+        req.user?.id,
+        token || '',
+        req.user?.is_smm_admin === true,
+      );
+
       try {
         const response = await directusApi.get('/items/campaign_keywords', {
           params: {
@@ -363,6 +373,9 @@ export function registerCampaignRoutes(app: Express) {
         throw directusError;
       }
     } catch (error: any) {
+      if (error instanceof CampaignAccessError) {
+        return res.status(error.status).json({ error: "Кампания не найдена", code: error.code });
+      }
       console.error('Error fetching keywords:', error);
       res.status(500).json({ error: "Не удалось загрузить ключевые слова" });
     }
@@ -372,7 +385,14 @@ export function registerCampaignRoutes(app: Express) {
     try {
       const { campaignId } = req.params;
       const token = req.user?.token;
-      
+
+      await authorizeCampaignAccess(
+        String(campaignId),
+        req.user?.id,
+        token || '',
+        req.user?.is_smm_admin === true,
+      );
+
       try {
         const response = await directusApi.get('/items/campaign_keywords', {
           params: {
@@ -390,6 +410,9 @@ export function registerCampaignRoutes(app: Express) {
         throw directusError;
       }
     } catch (error: any) {
+      if (error instanceof CampaignAccessError) {
+        return res.status(error.status).json({ error: "Кампания не найдена", code: error.code });
+      }
       console.error('Error fetching keywords:', error);
       res.status(500).json({ error: "Не удалось загрузить ключевые слова" });
     }
@@ -399,13 +422,52 @@ export function registerCampaignRoutes(app: Express) {
     try {
       const { id } = req.params;
       const token = req.user?.token;
-      
+
+      // Удаление шло по голому id: роль в Directus разрешает delete по всей
+      // коллекции, поэтому чужое ключевое слово удалялось без единой проверки.
+      // Кампанию слова читаем сервисным токеном, дальше — обычная проверка доступа.
+      const serviceToken = process.env.DIRECTUS_STATIC_TOKEN
+        || process.env.DIRECTUS_ADMIN_TOKEN
+        || process.env.DIRECTUS_TOKEN
+        || token;
+
+      let keyword: any;
+      try {
+        const lookup = await directusApi.get(`/items/campaign_keywords/${encodeURIComponent(id)}`, {
+          headers: { Authorization: `Bearer ${serviceToken}` },
+          params: { fields: ['id', 'campaign_id'] }
+        });
+        keyword = lookup.data?.data;
+      } catch (lookupError: any) {
+        if (lookupError?.response?.status === 404 || lookupError?.response?.status === 403) {
+          return res.status(404).json({ error: "Ключевое слово не найдено" });
+        }
+        throw lookupError;
+      }
+
+      if (!keyword) return res.status(404).json({ error: "Ключевое слово не найдено" });
+
+      const keywordCampaignId = typeof keyword.campaign_id === 'object'
+        ? keyword.campaign_id?.id
+        : keyword.campaign_id;
+      if (!keywordCampaignId) return res.status(404).json({ error: "Ключевое слово не найдено" });
+
+      await authorizeCampaignAccess(
+        String(keywordCampaignId),
+        req.user?.id,
+        token || '',
+        req.user?.is_smm_admin === true,
+      );
+
       await directusApi.delete(`/items/campaign_keywords/${id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      
+
       res.status(204).end();
     } catch (error: any) {
+      if (error instanceof CampaignAccessError) {
+        return res.status(error.status).json({ error: "Ключевое слово не найдено", code: error.code });
+      }
       res.status(500).json({ error: "Не удалось удалить ключевое слово" });
     }
   });
@@ -419,12 +481,23 @@ export function registerCampaignRoutes(app: Express) {
 
       if (!url) return res.status(400).json({ error: "URL обязателен" });
 
+      // Подбор пишет ключевые слова в кампанию — без проверки они уезжали в чужую.
+      await authorizeCampaignAccess(
+        String(campaignId),
+        req.user?.id,
+        token || '',
+        req.user?.is_smm_admin === true,
+      );
+
       console.log(`[KEYWORDS_POST_DIRECT] Analyzing website for campaign ${campaignId}`);
-      
+
       const keywords = await aiService.analyzeWebsiteKeywords(url, campaignId, token);
 
       res.json({ success: true, data: keywords });
     } catch (error: any) {
+      if (error instanceof CampaignAccessError) {
+        return res.status(error.status).json({ error: "Кампания не найдена", code: error.code });
+      }
       console.error("[KEYWORDS_POST_DIRECT] Error:", error.message);
       res.status(500).json({ error: `Не удалось запустить подбор ключевых слов: ${error.message}` });
     }

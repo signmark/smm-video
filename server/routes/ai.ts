@@ -13,6 +13,7 @@ import { falAiUniversalService, FalAiModelName } from '../services/fal-ai-univer
 import { generateWithGptImage } from '../services/openai-image';
 import { QwenService } from '../services/qwen';
 import { aiAssistantService } from '../services/ai-assistant';
+import { authorizeCampaignAccess, CampaignAccessError } from '../services/campaign-access';
 import axios from 'axios';
 import * as crypto from 'crypto';
 import { cleanupText } from '../utils/text';
@@ -488,10 +489,25 @@ export function registerAiRoutes(app: Express) {
       const token = req.user?.token;
       if (!url) return res.status(400).json({ error: locale === 'en' ? 'URL is required' : locale === 'es' ? 'URL es obligatoria' : 'URL не указан' });
 
+      // При переданном campaignId результат СОХРАНЯЕТСЯ в campaign_keywords, причём
+      // админским токеном (ai-service.analyzeWebsiteKeywords) — права Directus тут
+      // не работают, и без проверки слова писались в любую чужую кампанию.
+      if (campaignId) {
+        await authorizeCampaignAccess(
+          String(campaignId),
+          req.user?.id,
+          token || '',
+          req.user?.is_smm_admin === true,
+        );
+      }
+
       const keywords = await aiService.analyzeWebsiteKeywords(url, campaignId, token);
 
       return res.json({ success: true, data: { keywords } });
     } catch (error: any) {
+      if (error instanceof CampaignAccessError) {
+        return res.status(error.status).json({ success: false, error: 'Кампания не найдена', code: error.code });
+      }
       console.error("[KEYWORDS_ANALYZE] Critical Error:", error.message);
       const locale = req.headers['x-locale'] as string || 'ru';
       const localizedMsg = locale === 'en'

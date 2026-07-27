@@ -5,12 +5,13 @@
  * с пользовательского токена на сервисный (правильно — фоновая публикация не
  * должна зависеть от сессии владельца). Но пользовательский токен заодно служил
  * ЕДИНСТВЕННОЙ проверкой владения: чужой контент просто не читался. Сервисный
- * читает контент всех, и на несколько часов `POST /api/retry-platform` и
- * `POST /api/publish/now` позволяли опубликовать чужой contentId.
+ * читает контент всех, и на несколько часов `POST /api/retry-platform` и др.
+ * позволяли опубликовать чужой contentId.
  *
- * Вывод, который стоит помнить: если доступ держится на том, ЧЬИМ токеном идёт
- * запрос, смена токена ломает авторизацию молча — тестами это не ловилось,
- * потому что тестов на чужой contentId не было.
+ * ВАЖНО: тест гоняет РЕАЛЬНУЮ `assertContentBelongsToRequester` из
+ * services/content-access (а не свою копию). Раньше здесь жила копия логики, и
+ * удаление настоящего guard'а из роутеров оставляло тест зелёным. Теперь единый
+ * источник: сломай проверку в проде — покраснеет здесь.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -20,8 +21,12 @@ const STRANGER = 'user-stranger';
 const CONTENT_ID = 'content-1';
 const CAMPAIGN_ID = 'campaign-1';
 
+process.env.DIRECTUS_URL = 'http://directus.test';
+
 // vi.mock поднимается выше объявлений модуля, поэтому класс и шпион создаём
 // через vi.hoisted — иначе фабрика мока обращается к ним до инициализации.
+// Тот же экземпляр CampaignAccessError видят и тест, и тестируемая функция —
+// иначе `instanceof` в content-access.ts не сработал бы.
 const { authorizeCampaignAccess, CampaignAccessError } = vi.hoisted(() => {
   class CampaignAccessError extends Error {
     constructor(public readonly status: 404 | 503, public readonly code: string) {
@@ -52,37 +57,27 @@ vi.mock('axios', () => ({
 
 vi.mock('../utils/logger', () => ({ log: vi.fn() }));
 
-import { authorizeCampaignAccess as realAuthorize } from '../services/campaign-access';
+// Настоящая проверка из прода.
+import { assertContentBelongsToRequester } from '../services/content-access';
 
-/**
- * Повторяет проверку из social-publishing-router: контент читается сервисным
- * токеном, владение — через authorizeCampaignAccess по кампании контента.
- */
-async function assertContentBelongsToRequester(
+/** Гоняет реальный guard с фейковыми req/res и возвращает исход. */
+async function run(
   contentId: string,
   user: { id?: string; token?: string; is_smm_admin?: boolean } | undefined,
 ): Promise<{ ok: boolean; status?: number }> {
-  let campaignRef: any;
-  try {
-    const resp: any = await axiosGet(
-      `http://directus.test/items/campaign_content/${encodeURIComponent(contentId)}?fields=campaign_id`,
-      { headers: { Authorization: 'Bearer service-token' } },
-    );
-    campaignRef = resp.data?.data?.campaign_id;
-  } catch {
-    return { ok: false, status: 404 };
-  }
-
-  const campaignId = typeof campaignRef === 'object' && campaignRef !== null ? campaignRef.id : campaignRef;
-  if (!campaignId) return { ok: false, status: 404 };
-
-  try {
-    await realAuthorize(String(campaignId), user?.id, user?.token || '', user?.is_smm_admin === true);
-    return { ok: true };
-  } catch (err: any) {
-    if (err instanceof CampaignAccessError && err.status === 503) return { ok: false, status: 503 };
-    return { ok: false, status: 404 };
-  }
+  const req: any = { user };
+  let status: number | undefined;
+  const res: any = {
+    status(code: number) {
+      status = code;
+      return res;
+    },
+    json() {
+      return res;
+    },
+  };
+  const ok = await assertContentBelongsToRequester(contentId, req, res);
+  return { ok, status };
 }
 
 beforeEach(() => {
@@ -96,63 +91,63 @@ beforeEach(() => {
 
 describe('Граница арендатора при публикации', () => {
   it('владелец получает доступ к своему контенту', async () => {
-    const result = await assertContentBelongsToRequester(CONTENT_ID, { id: OWNER, token: 't' });
+    const result = await run(CONTENT_ID, { id: OWNER, token: 't' });
     expect(result.ok).toBe(true);
   });
 
   it('чужой пользователь НЕ получает доступ', async () => {
-    const result = await assertContentBelongsToRequester(CONTENT_ID, { id: STRANGER, token: 't' });
+    const result = await run(CONTENT_ID, { id: STRANGER, token: 't' });
     expect(result.ok).toBe(false);
   });
 
   it('чужому отвечаем 404, а не 403 — не подтверждаем существование контента', async () => {
-    const result = await assertContentBelongsToRequester(CONTENT_ID, { id: STRANGER, token: 't' });
+    const result = await run(CONTENT_ID, { id: STRANGER, token: 't' });
     expect(result.status).toBe(404);
   });
 
   it('владение проверяется по кампании контента, а не по переданным данным', async () => {
-    await assertContentBelongsToRequester(CONTENT_ID, { id: OWNER, token: 't' });
+    await run(CONTENT_ID, { id: OWNER, token: 't' });
     expect(authorizeCampaignAccess).toHaveBeenCalledWith(CAMPAIGN_ID, OWNER, 't', false);
   });
 
   it('контент читается сервисным токеном — иначе публикация зависела бы от сессии', async () => {
-    await assertContentBelongsToRequester(CONTENT_ID, { id: OWNER, token: 't' });
+    await run(CONTENT_ID, { id: OWNER, token: 't' });
     const [, config] = axiosGet.mock.calls[0];
     expect(config.headers.Authorization).toBe('Bearer service-token');
   });
 
   it('админ проходит проверку', async () => {
-    const result = await assertContentBelongsToRequester(CONTENT_ID, { id: STRANGER, token: 't', is_smm_admin: true });
+    const result = await run(CONTENT_ID, { id: STRANGER, token: 't', is_smm_admin: true });
     expect(result.ok).toBe(true);
   });
 
   it('без пользователя доступа нет', async () => {
-    const result = await assertContentBelongsToRequester(CONTENT_ID, undefined);
+    const result = await run(CONTENT_ID, undefined);
     expect(result.ok).toBe(false);
   });
 
   it('несуществующий контент — 404', async () => {
     axiosGet.mockRejectedValue(new Error('404'));
-    const result = await assertContentBelongsToRequester('нет-такого', { id: OWNER, token: 't' });
+    const result = await run('нет-такого', { id: OWNER, token: 't' });
     expect(result).toEqual({ ok: false, status: 404 });
   });
 
   it('контент без кампании доступа не даёт', async () => {
     axiosGet.mockResolvedValue({ data: { data: { campaign_id: null } } });
-    const result = await assertContentBelongsToRequester(CONTENT_ID, { id: OWNER, token: 't' });
+    const result = await run(CONTENT_ID, { id: OWNER, token: 't' });
     expect(result).toEqual({ ok: false, status: 404 });
   });
 
   it('campaign_id связью-объектом разбирается корректно', async () => {
     axiosGet.mockResolvedValue({ data: { data: { campaign_id: { id: CAMPAIGN_ID } } } });
-    const result = await assertContentBelongsToRequester(CONTENT_ID, { id: OWNER, token: 't' });
+    const result = await run(CONTENT_ID, { id: OWNER, token: 't' });
     expect(result.ok).toBe(true);
     expect(authorizeCampaignAccess).toHaveBeenCalledWith(CAMPAIGN_ID, OWNER, 't', false);
   });
 
   it('недоступный Directus — 503, а не «нет доступа»', async () => {
     authorizeCampaignAccess.mockRejectedValue(new CampaignAccessError(503, 'CAMPAIGN_ACCESS_UNAVAILABLE'));
-    const result = await assertContentBelongsToRequester(CONTENT_ID, { id: OWNER, token: 't' });
+    const result = await run(CONTENT_ID, { id: OWNER, token: 't' });
     expect(result).toEqual({ ok: false, status: 503 });
   });
 });

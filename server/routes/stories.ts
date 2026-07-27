@@ -2,6 +2,8 @@ import express from 'express';
 import axios from 'axios';
 import { authenticateUser } from '../middleware/user-auth';
 import { directusApi } from '../directus';
+import { authorizeCampaignAccess, CampaignAccessError } from '../services/campaign-access';
+import { assertContentBelongsToRequester } from '../services/content-access';
 import { realVideoConverter } from '../services/real-video-converter';
 import { vkStoriesService } from '../services/social-platforms/vk-stories-service';
 import { vkClipsService } from '../services/social-platforms/vk-clips-service';
@@ -616,6 +618,19 @@ router.post('/convert-and-publish', authenticateUser, async (req, res) => {
       });
     }
 
+    // Владение кампанией проверяем ЯВНО: ниже контент создаётся и публикуется в
+    // переданный campaignId (при отказе user-токена — админским). Без проверки
+    // пользователь мог создать и опубликовать контент в чужой кампании через её
+    // Instagram-настройки.
+    try {
+      await authorizeCampaignAccess(campaignId, userId, req.user?.token || '', req.user?.is_smm_admin === true);
+    } catch (accessErr: any) {
+      if (accessErr instanceof CampaignAccessError && accessErr.status === 503) {
+        return res.status(503).json({ error: 'Проверка доступа временно недоступна' });
+      }
+      // 404, а не 403 — не подтверждаем существование чужой кампании.
+      return res.status(404).json({ error: 'Кампания не найдена' });
+    }
 
     // STEP 1: Convert video using real video converter
 
@@ -732,8 +747,12 @@ router.post('/publish-video/:id', authenticateUser, async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
+    // Владение проверяем ДО чтения с admin-fallback: ниже контент читается,
+    // конвертируется и публикуется админ-токеном, а прежняя проверка
+    // `story.user_id !== userId` имела пустое тело — то есть отсутствовала.
+    if (!(await assertContentBelongsToRequester(id, req, res))) return;
 
-    // Get story content с fallback на admin токен
+    // Get story content (владение уже подтверждено guard'ом выше)
     let story;
     try {
       const response = await directusApi.get(`/items/campaign_content/${id}`, {
@@ -753,11 +772,6 @@ router.post('/publish-video/:id', authenticateUser, async (req, res) => {
 
     if (!story) {
       return res.status(404).json({ error: 'Story not found' });
-    }
-
-    // Проверяем владельца только если не админ
-    if (story.user_id !== userId) {
-      // Здесь можно добавить проверку админ статуса, пока разрешаем
     }
 
     if (!story.video_url) {

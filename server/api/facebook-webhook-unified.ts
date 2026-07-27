@@ -9,25 +9,32 @@ import log from '../utils/logger';
 import { facebookService } from '../services/social-platforms/facebook-service';
 import { authenticateUser } from '../middleware/user-auth';
 import { authorizeCampaignAccess } from '../services/campaign-access';
+import { assertContentBelongsToRequester } from '../services/content-access';
 import { resolvePlatformToken } from '../services/campaign-token-resolver';
 
 const router = Router();
 
-// Основной маршрут для публикации контента в Facebook
-router.post('/', async (req, res) => {
+// Основной маршрут для публикации контента в Facebook.
+// authenticateUser + проверка владения ОБЯЗАТЕЛЬНЫ: роут смонтирован в корень
+// (POST /) и публикует переданный contentId сервисным/админ-токеном. Без guard
+// анонимный запрос {contentId} публиковал бы чужой контент на чужую страницу.
+router.post('/', authenticateUser, async (req, res) => {
   let postUrl = '';
   let postId = '';
-  
+
   try {
     const { contentId } = req.body;
-    
+
     if (!contentId) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        error: 'Не указан ID контента для публикации в Facebook' 
+        error: 'Не указан ID контента для публикации в Facebook'
       });
     }
-    
+
+    // Владение проверяем до чтения контента админ-токеном.
+    if (!(await assertContentBelongsToRequester(contentId, req, res))) return;
+
     log.info(`[Facebook] Начало публикации контента ${contentId} в Facebook`);
     
     // Получаем данные контента из Directus

@@ -92,33 +92,15 @@ async function createStaticToken(email, password) {
     console.log(`✅ Статический токен успешно создан`);
     
     // Обновляем .env файл
-    console.log(`\nШаг 3/3: Сохранение токена в .env файл...`);
-    
-    // Читаем текущее содержимое .env файла
-    let envContent = fs.readFileSync(ENV_FILE, 'utf8');
-    
-    // Регулярное выражение для поиска строки с DIRECTUS_ADMIN_TOKEN
-    const tokenRegex = /DIRECTUS_ADMIN_TOKEN=".*"/;
-    
-    if (envContent.match(tokenRegex)) {
-      // Заменяем существующий токен
-      envContent = envContent.replace(tokenRegex, `DIRECTUS_ADMIN_TOKEN="${staticToken}"`);
-    } else {
-      // Добавляем новую переменную
-      envContent += `\nDIRECTUS_ADMIN_TOKEN="${staticToken}"\n`;
-    }
-    
-    // Записываем обновленное содержимое в файл
-    fs.writeFileSync(ENV_FILE, envContent);
-    
-    console.log(`✅ Токен сохранен в .env файл`);
-    
-    console.log(`\n🎉 Процесс успешно завершен!`);
-    console.log(`\nСтатический токен администратора:`);
+    // ВАЖНО: токен НЕ пишется на диск (.env). Бессрочный админ-токен на ФС —
+    // это утечка при доступе к файлам/бэкапам. Оператор сам кладёт его в
+    // секрет-менеджер / переменные окружения деплоя.
+    console.log(`\n🎉 Токен создан.`);
+    console.log(`\nСтатический токен администратора (скопируйте в секреты деплоя, НЕ коммитьте):`);
     console.log(`\nDIRECTUS_ADMIN_TOKEN="${staticToken}"`);
-    console.log(`\nЭтот токен не имеет срока действия и будет работать постоянно.`);
-    console.log(`\nПерезапустите приложение, чтобы токен вступил в силу.`);
-    
+    console.log(`\nТокен не имеет срока действия. Он НЕ сохранён на диск — задайте`);
+    console.log(`переменную окружения вручную и перезапустите приложение.`);
+
     return staticToken;
   } catch (error) {
     console.error('\n❌ Ошибка при создании токена:', error.message);

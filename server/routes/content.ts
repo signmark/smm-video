@@ -177,16 +177,16 @@ export function registerContentRoutes(app: Express) {
         const responseBody = {
           data: contentItems,
           meta: {
-            // filter_count, а не total_count: второй считает всю коллекцию целиком,
-            // игнорируя фильтр по кампании и пользователю. На проде это 1781 против
-            // 487 реальных — клиенту нельзя показывать такое число.
-            total: meta.filter_count ?? meta.total_count ?? contentItems.length,
+            // Только filter_count: total_count считает всю коллекцию целиком,
+            // игнорируя фильтр по кампании и пользователю (на проде 1781 против
+            // 487 реальных). Если filter_count не пришёл — падаем на длину выборки,
+            // но НИКОГДА на total_count, иначе UI покажет 1781 и «Загрузить все»
+            // запросит столько же чужих строк.
+            total: meta.filter_count ?? contentItems.length,
             page,
             limit,
-            // totalPages тоже считаем от filter_count: total_count — размер всей
-            // коллекции без учёта фильтра (1781 против 487), иначе страниц выйдет
-            // втрое больше реальных.
-            totalPages: limit > 0 ? Math.ceil((meta.filter_count ?? meta.total_count ?? contentItems.length) / limit) : 1
+            // totalPages — по тому же числу, что и total.
+            totalPages: limit > 0 ? Math.ceil((meta.filter_count ?? contentItems.length) / limit) : 1
           }
         };
 

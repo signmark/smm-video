@@ -7,6 +7,7 @@ import { getPublishScheduler } from '../services/publish-scheduler';
 import { threadsService } from '../services/social-platforms/threads-service';
 import { getCampaignSocialSettings, pickPlatformToken } from '../services/campaign-token-resolver';
 import { CampaignAccessError } from '../services/campaign-access';
+import { assertContentBelongsToRequester } from '../services/content-access';
 import { normalizeInstagramUrl } from '../utils/social-helpers';
 import axios from 'axios';
 
@@ -113,7 +114,12 @@ export function registerSocialRoutes(app: Express) {
       if (!req.user?.is_smm_admin && req.user?.expire_date && new Date(req.user.expire_date) <= new Date()) {
         return res.status(403).json({ error: 'Подписка истекла', message: 'Выберите тариф для продолжения работы.', subscriptionExpired: true });
       }
-      
+
+      // Владение проверяем ЯВНО: ниже при отсутствии сессии хендлер падает на
+      // admin-токен и патчит переданный id. Без guard пользователь без записи в
+      // session cache мог перевести чужой контент в scheduled и отдать его шедулеру.
+      if (!(await assertContentBelongsToRequester(id, req, res))) return;
+
       console.log(`[CONTENT_PUBLISH] Updating content ${id} for publication. Status: ${status}, User: ${userId}`);
       
       // ПРИНУДИТЕЛЬНО: Если токен в кэше менеджера помечен как истекший или его нет,

@@ -415,7 +415,7 @@ export default function Dashboard() {
         )}
 
         {/* Общая активность */}
-        <Card data-testid="card-total-activity" className="cursor-pointer hover:bg-muted/50 transition-colors" onClick={handleNavigateToPublish}>
+        <Card data-testid="card-total-activity" className="cursor-pointer hover:bg-muted/50 transition-colors" onClick={handleNavigateToPosts}>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">{t('dashboard.totalPublications')}</CardTitle>
             <div className="flex items-center gap-2">

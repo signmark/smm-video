@@ -463,7 +463,7 @@ export default function Dashboard() {
                 {contentResponse.data.slice(0, 3).map((content) => (
                   <div key={content.id} className="border-l-2 border-muted pl-3" data-testid={`content-${content.id}`}>
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-medium">{content.title}</span>
+                      <span className="text-xs font-medium">{content.title || 'Без названия'}</span>
                       <Badge 
                         variant={content.status === 'published' ? "default" : content.status === 'scheduled' ? "secondary" : "outline"}
                         data-testid={`content-status-${content.id}`}

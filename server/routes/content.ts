@@ -110,7 +110,7 @@ export function registerContentRoutes(app: Express) {
         meta: 'total_count,filter_count',
         limit: limit,
         offset: offset,
-        ...(summary ? { fields: ['id', 'status', 'scheduled_at', 'published_at', 'created_at', 'campaign_id'] } : {})
+        ...(summary ? { fields: ['id', 'title', 'status', 'scheduled_at', 'published_at', 'created_at', 'campaign_id'] } : {})
       };
 
       try {
@@ -136,6 +136,7 @@ export function registerContentRoutes(app: Express) {
           ? responseData.map((item: any) => ({
               id: item.id,
               campaignId: item.campaign_id,
+              title: item.title,
               status: item.status,
               createdAt: item.created_at,
               scheduledAt: item.scheduled_at,

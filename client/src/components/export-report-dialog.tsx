@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import {
@@ -29,20 +29,45 @@ const locales: Record<string, Locale> = {
 interface ExportReportDialogProps {
   campaignId: string;
   disabled?: boolean;
+  /** Период, выбранный в фильтре страницы аналитики: '7days' | '30days' | 'thisMonth'. */
+  period?: string;
 }
 
 type ReportFormat = 'pdf' | 'excel';
 
-export function ExportReportDialog({ campaignId, disabled }: ExportReportDialogProps) {
+// Приводит период фильтра страницы к диапазону дат — тем же способом, что и
+// сервер (AnalyticsService.getCampaignAnalytics), чтобы экспорт покрывал ровно
+// то, что показано на странице.
+function periodToRange(period?: string): { from: Date; to: Date } {
+  const to = new Date();
+  if (period === 'thisMonth') {
+    return { from: new Date(to.getFullYear(), to.getMonth(), 1), to };
+  }
+  const days = period === '30days' ? 30 : 7;
+  const from = new Date();
+  from.setDate(from.getDate() - days);
+  return { from, to };
+}
+
+export function ExportReportDialog({ campaignId, disabled, period }: ExportReportDialogProps) {
   const { t, i18n } = useTranslation();
   const { toast } = useToast();
   const [open, setOpen] = useState(false);
   const [reportFormat, setReportFormat] = useState<ReportFormat>('pdf');
-  const [fromDate, setFromDate] = useState<Date | undefined>(
-    new Date(new Date().setDate(new Date().getDate() - 30))
-  );
-  const [toDate, setToDate] = useState<Date | undefined>(new Date());
+  const initialRange = periodToRange(period);
+  const [fromDate, setFromDate] = useState<Date | undefined>(initialRange.from);
+  const [toDate, setToDate] = useState<Date | undefined>(initialRange.to);
   const [isExporting, setIsExporting] = useState(false);
+
+  // При каждом открытии диалога (и при смене периода на странице) подставляем
+  // диапазон из фильтра страницы. Пользователь всё ещё может скорректировать
+  // даты вручную или кнопками быстрого выбора.
+  useEffect(() => {
+    if (!open) return;
+    const range = periodToRange(period);
+    setFromDate(range.from);
+    setToDate(range.to);
+  }, [open, period]);
 
   const locale = locales[i18n.language] || ru;
 

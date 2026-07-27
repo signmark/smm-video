@@ -307,9 +307,10 @@ export default function AnalyticsPage() {
                 </SelectContent>
               </Select>
               
-              <ExportReportDialog 
+              <ExportReportDialog
                 campaignId={selectedCampaign}
                 disabled={!selectedCampaign || isLoading}
+                period={selectedPeriod}
               />
             </div>
           </div>

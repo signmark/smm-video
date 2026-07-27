@@ -17,36 +17,16 @@ export interface TrendLike {
 export type Platform = "instagram" | "vk" | "telegram" | "facebook" | "unknown";
 
 /**
- * Формирует URL для прокси-картинки. ВАЖНО: вызывать ТОЛЬКО внутри useMemo,
- * привязанного к topic — иначе Date.now() будет менять src на каждый рендер и
- * браузер начнёт перекачивать все превью на любое действие (был источник фризов).
+ * Формирует URL для прокси-картинки. Без cache-buster'а: сервер отдаёт
+ * Cache-Control: public, max-age=86400, и стабильный URL позволяет браузеру
+ * не перекачивать превью на каждый заход на страницу. Прежние параметры
+ * _t/forceType/itemId роут /api/proxy-image игнорирует — не шлём их вовсе
+ * (ретрай после ошибки добавляет &_retry=true, чтобы обойти закэшированный сбой).
+ * itemId в сигнатуре оставлен для совместимости вызовов.
  */
-export function createProxyImageUrl(imageUrl: string, itemId: string): string {
+export function createProxyImageUrl(imageUrl: string, _itemId?: string): string {
   if (!imageUrl) return "";
-
-  const timestamp = Date.now();
-
-  const isInstagram =
-    imageUrl.includes("instagram.") ||
-    imageUrl.includes("fbcdn.net") ||
-    imageUrl.includes("cdninstagram.com");
-  const isVk =
-    imageUrl.includes("vk.com") ||
-    imageUrl.includes("vk.me") ||
-    imageUrl.includes("userapi.com");
-  const isTelegram = imageUrl.includes("tgcnt.ru") || imageUrl.includes("t.me");
-
-  const forcedType = isInstagram
-    ? "instagram"
-    : isVk
-    ? "vk"
-    : isTelegram
-    ? "telegram"
-    : null;
-
-  return `/api/proxy-image?url=${encodeURIComponent(imageUrl)}&_t=${timestamp}${
-    forcedType ? "&forceType=" + forcedType : ""
-  }&itemId=${itemId}`;
+  return `/api/proxy-image?url=${encodeURIComponent(imageUrl)}`;
 }
 
 /** Определяет платформу по полю sourceType (только по нему — как в списке трендов). */
@@ -84,13 +64,17 @@ export function getPostTimeMs(topic: TrendLike): number | null {
     null;
   if (raw == null) return null;
 
+  // Floor 2000-01-01: мусорные значения (напр. «5» секунд) дают 1970 год и
+  // прячут пост во всех окнах периода — такое считаем «даты нет».
+  const MIN_SANE_MS = 946684800000;
+
   if (typeof raw === "number") {
     // unix seconds vs ms
     const ms = raw < 1e12 ? raw * 1000 : raw;
-    return Number.isFinite(ms) ? ms : null;
+    return Number.isFinite(ms) && ms >= MIN_SANE_MS ? ms : null;
   }
   const t = new Date(raw).getTime();
-  return Number.isNaN(t) ? null : t;
+  return Number.isNaN(t) || t < MIN_SANE_MS ? null : t;
 }
 
 /** Первое изображение из media_links (JSON-строка или уже распарсенный объект). */

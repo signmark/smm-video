@@ -83,4 +83,14 @@ describe('OAuth response sanitizer', () => {
     );
     expect(merged).toEqual({ telegram: { token: 'server-secret', chatId: 'new' } });
   });
+
+  it('does not let a client replace the server-managed VK webhook secret', () => {
+    const merged = mergeOAuthSettings(
+      { vk: { webhookSecret: 'server-generated', groupId: 'old' } },
+      { vk: { webhookSecret: 'weak-client-value', groupId: 'new' } },
+    );
+    expect(merged).toEqual({
+      vk: { webhookSecret: 'server-generated', groupId: 'new' },
+    });
+  });
 });

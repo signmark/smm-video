@@ -4,7 +4,11 @@ import crypto from 'crypto';
 import { log } from '../utils/logger';
 import { authenticateUser } from '../middleware/user-auth';
 import { authorizeCampaignAccess, CampaignAccessError } from '../services/campaign-access';
-import { generateVkWebhookSecret, vkWebhookSecretMatches } from '../services/vk-webhook-secret';
+import {
+  generateVkWebhookSecret,
+  vkWebhookSecretMatches,
+  withVkWebhookCampaignLock,
+} from '../services/vk-webhook-secret';
 
 const router = express.Router();
 
@@ -259,6 +263,73 @@ function setCorsHeaders(req: express.Request, res: express.Response) {
   res.setHeader('Access-Control-Max-Age', '86400');
 }
 
+function isTransientDirectusError(error: any): boolean {
+  if (!error?.response) return true;
+  const status = Number(error.response.status);
+  return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
+function webhookUrlFor(req: express.Request, campaignId: string, secret: string): string {
+  return `${getAppBaseUrl(req)}/api/vk/token-webhook/${encodeURIComponent(campaignId)}/submit/${secret}`;
+}
+
+async function updateVkWebhookSecret(
+  campaignId: string,
+  mode: 'ensure' | 'rotate' | 'revoke',
+): Promise<string | null> {
+  return withVkWebhookCampaignLock(campaignId, async () => {
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+    const directusUrl = process.env.DIRECTUS_URL;
+    const campaignResp = await axios.get(`${directusUrl}/items/user_campaigns/${campaignId}`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    const existingSettings = campaignResp.data.data?.social_media_settings || {};
+    const existingVk = existingSettings.vk || {};
+
+    if (mode === 'ensure' && existingVk.webhookSecret) {
+      return existingVk.webhookSecret;
+    }
+
+    const nextVk = { ...existingVk };
+    let secret: string | null = null;
+    if (mode === 'revoke') {
+      delete nextVk.webhookSecret;
+    } else {
+      secret = generateVkWebhookSecret();
+      nextVk.webhookSecret = secret;
+    }
+
+    await axios.patch(`${directusUrl}/items/user_campaigns/${campaignId}`, {
+      social_media_settings: { ...existingSettings, vk: nextVk },
+    }, { headers: { Authorization: `Bearer ${adminToken}` } });
+
+    return secret;
+  });
+}
+
+async function patchVkSettingsPreservingWebhookSecret(
+  campaignId: string,
+  vkChanges: Record<string, any>,
+): Promise<void> {
+  await withVkWebhookCampaignLock(campaignId, async () => {
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+    const directusUrl = process.env.DIRECTUS_URL;
+    const campaignResp = await axios.get(`${directusUrl}/items/user_campaigns/${campaignId}`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    const currentSettings = campaignResp.data.data?.social_media_settings || {};
+    const currentVk = currentSettings.vk || {};
+    const { webhookSecret: _staleSecret, ...safeChanges } = vkChanges;
+
+    await axios.patch(`${directusUrl}/items/user_campaigns/${campaignId}`, {
+      social_media_settings: {
+        ...currentSettings,
+        vk: { ...currentVk, ...safeChanges },
+      },
+    }, { headers: { Authorization: `Bearer ${adminToken}` } });
+  });
+}
+
 /**
  * POST /api/vk/token-webhook/:campaignId/prepare  (authenticated)
  * Инициация подключения: авторизованный владелец кампании получает стабильный
@@ -272,32 +343,65 @@ router.post('/vk/token-webhook/:campaignId/prepare', authenticateUser, async (re
   if (!(await ensureCampaignAccess(req, res, campaignId))) return;
 
   try {
-    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
-    const directusUrl = process.env.DIRECTUS_URL;
-
-    const campaignResp = await axios.get(`${directusUrl}/items/user_campaigns/${campaignId}`, {
-      headers: { Authorization: `Bearer ${adminToken}` }
-    });
-    const existingSettings = campaignResp.data.data?.social_media_settings || {};
-    const existingVk = existingSettings.vk || {};
-
     // Секрет генерируем один раз и переиспользуем — URL остаётся стабильным.
-    let secret: string = existingVk.webhookSecret;
-    if (!secret) {
-      secret = generateVkWebhookSecret();
-      await axios.patch(`${directusUrl}/items/user_campaigns/${campaignId}`, {
-        social_media_settings: { ...existingSettings, vk: { ...existingVk, webhookSecret: secret } }
-      }, { headers: { Authorization: `Bearer ${adminToken}` } });
-      log(`[VK-WEBHOOK] Сгенерирован постоянный webhook-секрет для кампании ${campaignId}`, 'vk-oauth');
-    }
+    // Process-local lock не хранит секрет и удаляется после операции; сам секрет
+    // остаётся в Directus и переживает рестарты.
+    const secret = await updateVkWebhookSecret(campaignId, 'ensure');
+    if (!secret) throw new Error('VK webhook secret initialization failed');
 
     // Секрет — в сегменте пути (needanapp не может срезать его как query-параметр).
-    const webhookUrl = `${getAppBaseUrl(req)}/api/vk/token-webhook/${encodeURIComponent(campaignId)}/submit/${secret}`;
+    const webhookUrl = webhookUrlFor(req, campaignId, secret);
     // Секрет/URL целиком в логи не пишем.
     res.json({ webhookUrl });
   } catch (err: any) {
     log(`[VK-WEBHOOK] prepare error для ${campaignId}: ${err.message}`, 'vk-oauth', 'error');
-    res.status(500).json({ error: 'Не удалось подготовить webhook URL' });
+    const status = isTransientDirectusError(err) ? 503 : 500;
+    res.status(status).json({
+      error: status === 503 ? 'temporarily unavailable' : 'Не удалось подготовить webhook URL',
+    });
+  }
+});
+
+/**
+ * POST /api/vk/token-webhook/:campaignId/rotate  (authenticated)
+ * Explicitly invalidates the old needanapp URL and returns a new stable URL.
+ */
+router.post('/vk/token-webhook/:campaignId/rotate', authenticateUser, async (req, res) => {
+  const { campaignId } = req.params;
+  if (!(await ensureCampaignAccess(req, res, campaignId))) return;
+
+  try {
+    const secret = await updateVkWebhookSecret(campaignId, 'rotate');
+    if (!secret) throw new Error('VK webhook secret rotation failed');
+    log(`[VK-WEBHOOK] Webhook-секрет ротирован для кампании ${campaignId}`, 'vk-oauth');
+    res.json({ webhookUrl: webhookUrlFor(req, campaignId, secret), rotated: true });
+  } catch (err: any) {
+    log(`[VK-WEBHOOK] rotate error для ${campaignId}: ${err.message}`, 'vk-oauth', 'error');
+    const status = isTransientDirectusError(err) ? 503 : 500;
+    res.status(status).json({
+      error: status === 503 ? 'temporarily unavailable' : 'Не удалось ротировать webhook URL',
+    });
+  }
+});
+
+/**
+ * DELETE /api/vk/token-webhook/:campaignId/secret  (authenticated)
+ * Revokes the public capability without deleting the already stored VK token.
+ */
+router.delete('/vk/token-webhook/:campaignId/secret', authenticateUser, async (req, res) => {
+  const { campaignId } = req.params;
+  if (!(await ensureCampaignAccess(req, res, campaignId))) return;
+
+  try {
+    await updateVkWebhookSecret(campaignId, 'revoke');
+    log(`[VK-WEBHOOK] Webhook-секрет отозван для кампании ${campaignId}`, 'vk-oauth');
+    res.json({ success: true, revoked: true });
+  } catch (err: any) {
+    log(`[VK-WEBHOOK] revoke error для ${campaignId}: ${err.message}`, 'vk-oauth', 'error');
+    const status = isTransientDirectusError(err) ? 503 : 500;
+    res.status(status).json({
+      error: status === 503 ? 'temporarily unavailable' : 'Не удалось отозвать webhook URL',
+    });
   }
 });
 
@@ -320,11 +424,12 @@ router.options('/vk/token-webhook/:campaignId/submit/:secret', (req, res) => {
  * URL стабилен — needanapp постит на него при каждом реконнекте. Поддерживает
  * прямые CORS-запросы из браузера (vk.needanapp.ru) — без N8N.
  */
-router.post('/vk/token-webhook/:campaignId/submit/:secret', async (req, res) => {
-  // CORS-заголовки ставим сразу — даже при ошибках ответ будет читаем браузером
-  setCorsHeaders(req, res);
-  const { campaignId, secret } = req.params;
-
+async function processVkTokenWebhookSubmission(
+  req: express.Request,
+  res: express.Response,
+  campaignId: string,
+  secret: string,
+): Promise<void> {
   const adminAuthToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
   const directusUrl = process.env.DIRECTUS_URL;
 
@@ -341,7 +446,7 @@ router.post('/vk/token-webhook/:campaignId/submit/:secret', async (req, res) => 
   } catch (err: any) {
     // Directus недоступен (нет ответа) → 503, чтобы needanapp повторил.
     // Кампания не найдена / прочая ошибка ответа → 403 (не раскрываем существование).
-    if (!err.response) {
+    if (isTransientDirectusError(err)) {
       log(`[VK-WEBHOOK] Directus недоступен при проверке секрета для ${campaignId}: ${err.message}`, 'vk-oauth', 'error');
       return res.status(503).json({ error: 'temporarily unavailable' });
     }
@@ -433,16 +538,12 @@ router.post('/vk/token-webhook/:campaignId/submit/:secret', async (req, res) => 
               ...(refreshed.expiresIn && { tokenExpiresAt: new Date(Date.now() + refreshed.expiresIn * 1000).toISOString() }),
               serverRefreshedAt: new Date().toISOString(), // маркер: рефреш с сервера завершён
             };
-            await axios.patch(`${directusUrl}/items/user_campaigns/${campaignId}`,
-              { social_media_settings: { ...existingSettings, vk: refreshedVk } },
-              { headers: { Authorization: `Bearer ${adminAuthToken}` } });
+            await patchVkSettingsPreservingWebhookSecret(campaignId, refreshedVk);
             log(`[VK-WEBHOOK] Server-side refresh OK для ${campaignId}. Токен привязан к IP сервера.`, 'vk-oauth');
           } else {
             // Рефреш не удался — ставим маркер чтобы polling не ждал вечно
             const fallbackVk = { ...vkUpdate, serverRefreshedAt: new Date().toISOString() };
-            await axios.patch(`${directusUrl}/items/user_campaigns/${campaignId}`,
-              { social_media_settings: { ...existingSettings, vk: fallbackVk } },
-              { headers: { Authorization: `Bearer ${adminAuthToken}` } });
+            await patchVkSettingsPreservingWebhookSecret(campaignId, fallbackVk);
             log(`[VK-WEBHOOK] Server-side refresh вернул null — используется исходный токен`, 'vk-oauth', 'warn');
           }
         } catch (e: any) {
@@ -453,7 +554,31 @@ router.post('/vk/token-webhook/:campaignId/submit/:secret', async (req, res) => 
 
   } catch (err: any) {
     log(`[VK-WEBHOOK] Ошибка для кампании ${campaignId}: ${err.message}`, 'vk-oauth', 'error');
-    res.status(500).json({ error: err.message });
+    const status = isTransientDirectusError(err) ? 503 : 500;
+    res.status(status).json({
+      error: status === 503 ? 'temporarily unavailable' : 'Не удалось сохранить VK credentials',
+    });
+  }
+}
+
+router.post('/vk/token-webhook/:campaignId/submit/:secret', async (req, res) => {
+  // CORS-заголовки ставим сразу — даже при ошибках ответ будет читаем браузером
+  setCorsHeaders(req, res);
+  const { campaignId, secret } = req.params;
+
+  try {
+    await withVkWebhookCampaignLock(
+      campaignId,
+      () => processVkTokenWebhookSubmission(req, res, campaignId, secret),
+    );
+  } catch (err: any) {
+    log(`[VK-WEBHOOK] Необработанная ошибка callback для кампании ${campaignId}: ${err.message}`, 'vk-oauth', 'error');
+    if (!res.headersSent) {
+      const status = isTransientDirectusError(err) ? 503 : 500;
+      res.status(status).json({
+        error: status === 503 ? 'temporarily unavailable' : 'Не удалось обработать VK callback',
+      });
+    }
   }
 });
 
@@ -465,24 +590,29 @@ router.patch('/vk/token-webhook/:campaignId/reconnecting', authenticateUser, asy
   const { campaignId } = req.params;
   if (!(await ensureCampaignAccess(req, res, campaignId))) return;
   try {
-    const adminAuthToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
-    const directusUrl = process.env.DIRECTUS_URL;
-    const campaignResp = await axios.get(`${directusUrl}/items/user_campaigns/${campaignId}`, {
-      headers: { Authorization: `Bearer ${adminAuthToken}` }
-    });
-    const existingSettings = campaignResp.data.data?.social_media_settings || {};
-    const existingVk = existingSettings.vk || {};
+    await withVkWebhookCampaignLock(campaignId, async () => {
+      const adminAuthToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+      const directusUrl = process.env.DIRECTUS_URL;
+      const campaignResp = await axios.get(`${directusUrl}/items/user_campaigns/${campaignId}`, {
+        headers: { Authorization: `Bearer ${adminAuthToken}` },
+      });
+      const existingSettings = campaignResp.data.data?.social_media_settings || {};
+      const existingVk = existingSettings.vk || {};
 
-    await axios.patch(`${directusUrl}/items/user_campaigns/${campaignId}`, {
-      social_media_settings: {
-        ...existingSettings,
-        vk: { ...existingVk, reconnecting: true }
-      }
-    }, { headers: { Authorization: `Bearer ${adminAuthToken}` } });
+      await axios.patch(`${directusUrl}/items/user_campaigns/${campaignId}`, {
+        social_media_settings: {
+          ...existingSettings,
+          vk: { ...existingVk, reconnecting: true },
+        },
+      }, { headers: { Authorization: `Bearer ${adminAuthToken}` } });
+    });
 
     res.json({ success: true });
   } catch (err: any) {
-    res.status(500).json({ error: err.message });
+    const status = isTransientDirectusError(err) ? 503 : 500;
+    res.status(status).json({
+      error: status === 503 ? 'temporarily unavailable' : 'Не удалось обновить VK reconnecting state',
+    });
   }
 });
 
@@ -527,7 +657,11 @@ router.get('/vk/token-webhook/:campaignId/status', authenticateUser, async (req,
       tokenReceivedAt: vk.tokenReceivedAt || null
     });
   } catch (err: any) {
-    res.status(500).json({ ready: false, error: err.message });
+    const status = isTransientDirectusError(err) ? 503 : 500;
+    res.status(status).json({
+      ready: false,
+      error: status === 503 ? 'temporarily unavailable' : 'Не удалось проверить VK token status',
+    });
   }
 });
 

@@ -4,6 +4,10 @@ import { AlertTriangle, X, RefreshCw, Loader2 } from "lucide-react";
 import { useCampaignStore } from "@/lib/campaignStore";
 import { useAuthStore } from "@/lib/store";
 import { queryClient } from "@/lib/queryClient";
+import {
+  getVkTokenWebhookStatus,
+  prepareVkTokenWebhook,
+} from "@/lib/vk-token-webhook";
 
 const DISMISSED_KEY = "vk_token_banner_dismissed_";
 
@@ -70,13 +74,12 @@ export function VkTokenBanner() {
     // Стабильный webhook URL (постоянный секрет): уже сохранённый в needanapp URL
     // продолжит работать. Кладём URL в буфер обмена на случай первой настройки.
     try {
-      const prep = await fetch(`/api/vk/token-webhook/${selectedCampaignId}/prepare`, {
-        method: 'POST',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      if (prep.ok) {
-        const { webhookUrl } = await prep.json();
-        try { await navigator.clipboard.writeText(webhookUrl); setUrlCopied(true); } catch {}
+      const webhookUrl = await prepareVkTokenWebhook(selectedCampaignId);
+      if (webhookUrl) {
+        try {
+          await navigator.clipboard.writeText(webhookUrl);
+          setUrlCopied(true);
+        } catch {}
       }
     } catch {}
 
@@ -87,11 +90,8 @@ export function VkTokenBanner() {
     // Запускаем polling webhook status
     checkClosedRef.current = setInterval(async () => {
       try {
-        const resp = await fetch(`/api/vk/token-webhook/${selectedCampaignId}/status`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        const data = await resp.json();
-        if (data.ready) {
+        const status = await getVkTokenWebhookStatus(selectedCampaignId);
+        if (status?.ready) {
           cleanup();
           setDismissed(false);
           localStorage.removeItem(dismissedKey);

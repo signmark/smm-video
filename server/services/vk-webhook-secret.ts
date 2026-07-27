@@ -20,9 +20,37 @@
 
 import crypto from 'crypto';
 
+const campaignOperationTails = new Map<string, Promise<void>>();
+
 /** Криптослучайный секрет для webhook URL (url-safe, ~43 симв.). */
 export function generateVkWebhookSecret(): string {
   return crypto.randomBytes(32).toString('base64url');
+}
+
+/**
+ * Serializes secret initialization/rotation for one campaign in the current process.
+ *
+ * Production currently runs one Node process, so this closes the first-prepare race
+ * without reintroducing the old TTL/state store. Entries exist only while work is
+ * queued and are removed after the last operation, so the map cannot grow with the
+ * number of campaigns over time. The secret itself remains persisted in Directus.
+ */
+export async function withVkWebhookCampaignLock<T>(
+  campaignId: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  const previous = campaignOperationTails.get(campaignId) ?? Promise.resolve();
+  const run = previous.catch(() => undefined).then(operation);
+  const tail = run.then(() => undefined, () => undefined);
+  campaignOperationTails.set(campaignId, tail);
+
+  try {
+    return await run;
+  } finally {
+    if (campaignOperationTails.get(campaignId) === tail) {
+      campaignOperationTails.delete(campaignId);
+    }
+  }
 }
 
 /**

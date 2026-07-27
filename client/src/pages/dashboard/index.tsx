@@ -38,8 +38,23 @@ interface ContentItem {
   campaignId: string;
 }
 
-interface ContentResponse {
-  data: ContentItem[];
+/**
+ * Агрегаты по контенту пользователя. `recent` — только строки за окно графика
+ * (по умолчанию 31 день), а не вся таблица: счётчики приходят уже посчитанными.
+ */
+interface ContentStatsResponse {
+  data: {
+    total: number;
+    byStatus: Record<string, number>;
+    published: number;
+    scheduled: number;
+    failed: number;
+    draft: number;
+    windowDays: number;
+    /** Последние записи для карточки «Недавний контент». */
+    latest: Array<Pick<ContentItem, 'id' | 'title' | 'status' | 'createdAt'>>;
+    recent: Array<Pick<ContentItem, 'id' | 'status' | 'scheduledAt' | 'publishedAt'>>;
+  };
 }
 
 interface TrendItem {
@@ -84,19 +99,22 @@ export default function Dashboard() {
     enabled: !!userId,
   });
 
-  // Получаем контент для подсчета публикаций
-  // Дашборду нужны только статусы и даты для счётчиков и графика. Без queryFn
-  // сработал бы дефолтный, который берёт URL из queryKey[0] — то есть тянул бы
-  // ПОЛНУЮ выдачу пользователя со всеми текстами и картинками: ~5 МБ JSON,
-  // мимо серверного кеша (его ключ требует campaignId/page/limit). Этот запрос
-  // ещё и конкурировал за соединения со страницей контента при переходе на неё.
-  const { data: contentResponse, isLoading: contentLoading, isError: contentError } = useQuery<ContentResponse>({
-    queryKey: ["/api/campaign-content", userId, "summary"],
+  // Агрегаты по контенту для плиток и графика.
+  // История вопроса: сначала здесь был useQuery без queryFn — дефолтный берёт URL
+  // из queryKey[0] и тянул ПОЛНУЮ выдачу пользователя со всеми текстами и
+  // картинками (~5 МБ). Потом это заменили на `?summary=1`, но и он отдавал всю
+  // таблицу целиком, просто урезанную по полям: 1422 объекта, 354 КБ, и объём рос
+  // линейно с числом постов. Дашборду же нужны три числа и гистограмма по дням —
+  // теперь их считает Directus, а сюда едут агрегаты и окно дат.
+  // Свой queryFn здесь обязателен: ключ не совпадает с URL.
+  const { data: contentStats, isLoading: contentLoading, isError: contentError } = useQuery<ContentStatsResponse>({
+    queryKey: ["/api/campaign-content/stats", userId],
     enabled: !!userId,
     retry: 2,
     retryDelay: 1000,
+    staleTime: 60000,
     queryFn: async () => {
-      const response = await fetch('/api/campaign-content?summary=1', {
+      const response = await fetch('/api/campaign-content/stats', {
         headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
       });
       if (!response.ok) throw new Error('Не удалось загрузить сводку по контенту');
@@ -104,14 +122,30 @@ export default function Dashboard() {
     },
   });
 
+  // Строки за окно графика. Для «сегодня»/«на этой неделе»/гистограммы этого
+  // достаточно, а «всего/опубликовано/запланировано» приходят агрегатами.
+  const recentContent = contentStats?.data?.recent ?? [];
+  // Последние записи для карточки «Недавний контент» (заголовок + дата создания).
+  const latestContent = contentStats?.data?.latest ?? [];
+
   // Используем первую кампанию если нет selectedCampaignId
   const activeCampaignId = selectedCampaignId || campaignsResponse?.data?.[0]?.id;
 
-  // Получаем тренды для виджета (только если есть активная кампания)
+  // Получаем тренды для виджета (только если есть активная кампания).
+  // Виджет показывает топ-3, поэтому берём небольшую свежую выборку. Без queryFn
+  // сработал бы дефолтный (голый GET по queryKey[0]) — а он раньше тянул ВСЕ тренды
+  // кампании (сервер игнорировал period): ~4 МБ JSON на каждое открытие дашборда.
   const { data: trendsResponse, isLoading: trendsLoading } = useQuery<TrendsResponse>({
-    queryKey: [`/api/campaign-trends?campaignId=${activeCampaignId}&period=7days`, activeCampaignId],
+    queryKey: ["/api/campaign-trends", activeCampaignId, "dashboard-widget"],
     enabled: !!activeCampaignId && !!userId && !campaignsLoading,
-    retry: false
+    retry: false,
+    queryFn: async () => {
+      const response = await fetch(`/api/campaign-trends?campaignId=${activeCampaignId}&period=7days&limit=20`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
+      });
+      if (!response.ok) throw new Error('Не удалось загрузить тренды');
+      return response.json();
+    },
   });
 
   // Ключевые слова убраны с Dashboard так как они относятся к конкретной кампании
@@ -149,24 +183,28 @@ export default function Dashboard() {
     draft: campaignsResponse?.data?.filter(c => !isCampaignActive(c)).length || 0,
   };
 
-  // Вычисляем метрики публикаций из реальных данных
+  // Метрики публикаций. Итоговые счётчики считает Directus и отдаёт числами —
+  // раньше ради них с сервера выкачивалась вся таблица контента (354 КБ).
+  // «Сегодня»/«на этой неделе» по-прежнему считаются на клиенте: границы суток и
+  // недели зависят от часового пояса и локали браузера. Окно `recent` заведомо
+  // шире недели, поэтому результат тот же, что и по полной выборке.
   const publicationMetrics = {
-    today: contentResponse?.data?.filter(item => {
+    today: recentContent.filter(item => {
       // Считаем публикации опубликованные сегодня или запланированные на сегодня
       const publishedToday = item.publishedAt && isToday(new Date(item.publishedAt));
       const scheduledToday = item.scheduledAt && isToday(new Date(item.scheduledAt)) && item.status === 'scheduled';
       return publishedToday || scheduledToday;
-    }).length || 0,
-    thisWeek: contentResponse?.data?.filter(item => {
+    }).length,
+    thisWeek: recentContent.filter(item => {
       // Считаем публикации опубликованные на этой неделе или запланированные на эту неделю
       const publishedThisWeek = item.publishedAt && isThisWeek(new Date(item.publishedAt));
       const scheduledThisWeek = item.scheduledAt && isThisWeek(new Date(item.scheduledAt)) && item.status === 'scheduled';
       return publishedThisWeek || scheduledThisWeek;
-    }).length || 0,
-    published: contentResponse?.data?.filter(item => item.status === 'published' || item.status === 'partial' || item.status === 'partially_published').length || 0,
-    scheduled: contentResponse?.data?.filter(item => item.status === 'scheduled').length || 0,
-    failed: contentResponse?.data?.filter(item => item.status === 'failed').length || 0,
-    total: contentResponse?.data?.length || 0,
+    }).length,
+    published: contentStats?.data?.published || 0,
+    scheduled: contentStats?.data?.scheduled || 0,
+    failed: contentStats?.data?.failed || 0,
+    total: contentStats?.data?.total || 0,
   };
 
   // Получаем топовые тренды, сортированные по суммарной активности (лайки + просмотры + комментарии)
@@ -184,8 +222,8 @@ export default function Dashboard() {
 
   // Данные для графика активности за последние 7 дней
   const activityChartData = (() => {
-    if (!contentResponse?.data) return [];
-    
+    if (!contentStats?.data) return [];
+
     const today = new Date();
     const last7Days = eachDayOfInterval({
       start: subDays(today, 6),
@@ -196,13 +234,13 @@ export default function Dashboard() {
       const dayStart = startOfDay(day);
       const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000 - 1);
       
-      const published = contentResponse.data.filter(item => {
+      const published = recentContent.filter(item => {
         if (!item.publishedAt) return false;
         const publishedDate = new Date(item.publishedAt);
         return publishedDate >= dayStart && publishedDate <= dayEnd;
       }).length;
-      
-      const scheduled = contentResponse.data.filter(item => {
+
+      const scheduled = recentContent.filter(item => {
         if (!item.scheduledAt || item.status !== 'scheduled') return false;
         const scheduledDate = new Date(item.scheduledAt);
         return scheduledDate >= dayStart && scheduledDate <= dayEnd;
@@ -458,9 +496,9 @@ export default function Dashboard() {
                   </div>
                 ))}
               </div>
-            ) : contentResponse?.data && contentResponse.data.length > 0 ? (
+            ) : latestContent.length > 0 ? (
               <div className="space-y-4">
-                {contentResponse.data.slice(0, 3).map((content) => (
+                {latestContent.slice(0, 3).map((content) => (
                   <div key={content.id} className="border-l-2 border-muted pl-3" data-testid={`content-${content.id}`}>
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-xs font-medium">{content.title || 'Без названия'}</span>

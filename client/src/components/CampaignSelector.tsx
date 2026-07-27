@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { 
+import { useCampaignsList } from "@/hooks/use-campaigns";
+import {
   Select, 
   SelectContent, 
   SelectItem, 
@@ -8,7 +8,6 @@ import {
   SelectValue 
 } from "@/components/ui/select";
 import { useCampaignStore } from "@/lib/campaignStore";
-import { useAuthStore } from "@/lib/store";
 import { Loader2 } from "lucide-react";
 
 // Интерфейс для кампании
@@ -29,8 +28,6 @@ interface CampaignSelectorProps {
 
 export function CampaignSelector({ persistSelection = false }: CampaignSelectorProps) {
   const { selectedCampaignId, selectedCampaignName, setSelectedCampaign } = useCampaignStore();
-  const getAuthToken = useAuthStore((state) => state.getAuthToken);
-  const userId = useAuthStore((state) => state.userId);
   const [isFirstLoad, setIsFirstLoad] = useState(true);
   const [initiallySelectedId, setInitiallySelectedId] = useState<string | null>(null);
 
@@ -42,42 +39,9 @@ export function CampaignSelector({ persistSelection = false }: CampaignSelectorP
     }
   }, [persistSelection, selectedCampaignId, initiallySelectedId]);
 
-  // Получаем список всех кампаний
-  const { data: campaignsResponse, isLoading, isError, error } = useQuery({
-    queryKey: ['/api/campaigns', userId],
-    queryFn: async () => {
-      try {
-        const token = getAuthToken();
-        if (!token) {
-          throw new Error('Отсутствует токен авторизации');
-        }
-
-        const response = await fetch('/api/campaigns', {
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'x-user-id': userId || ''
-          }
-        });
-
-        if (!response.ok) {
-          if (response.status === 401) {
-            throw new Error('Требуется авторизация. Пожалуйста, войдите снова.');
-          }
-          throw new Error(`Не удалось загрузить кампании (${response.status})`);
-        }
-
-        const data = await response.json();
-
-        return data;
-      } catch (error) {
-        console.error("Error loading campaigns:", error);
-        throw error;
-      }
-    },
-    enabled: !!userId, // Запрос активен только если есть userId
-    refetchOnWindowFocus: false,
-    retry: 1
-  });
+  // Получаем список всех кампаний.
+  // Запрос общий на всё приложение — см. hooks/use-campaigns.
+  const { data: campaignsResponse, isLoading, isError, error } = useCampaignsList();
 
   // При первой загрузке, проверяем:
   // 1. Если persistSelection=true и у нас уже есть сохраненный ID, используем его

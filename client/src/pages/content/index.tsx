@@ -26,7 +26,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { usePlan } from "@/hooks/use-plan";
-import { useAuth } from "@/hooks/use-auth";
+import { useAuthStore } from "@/lib/store";
+import { useCampaignsList, useCampaignDetail } from "@/hooks/use-campaigns";
 import { PublishingStatus } from "@/components/PublishingStatus";
 import { ScheduledPostInfo } from "@/components/ScheduledPostInfo";
 import { Textarea } from "@/components/ui/textarea";
@@ -200,13 +201,14 @@ const cleanAiText = (text: string): string => {
 export default function ContentPage() {
   const { t } = useTranslation();
   const { limits, effectivePlan, isExpired } = usePlan();
-  const { user } = useAuth();
 
-  // Feature flag: стиль доступен только для signmark@gmail.com
-  const userId = user?.user?.id || user?.id;
-  const token = localStorage.getItem('auth_token');
+  // Feature flag: стиль доступен только для signmark@gmail.com.
+  // userId берём из useAuthStore, а не из useAuth(): ключ профиля должен совпасть
+  // с ключом в usePlan и топбаре ДО символа, иначе запрос не схлопнется. Раньше
+  // здесь был id из /api/auth/me плюс token в ключе — и профиль ехал дважды.
+  const userId = useAuthStore((state) => state.userId);
   const { data: userProfile } = useQuery<{ email: string }>({
-    queryKey: ['/api/user/profile', userId || 'me', token],
+    queryKey: ['/api/user/profile', userId || 'me'],
     enabled: !!userId,
   });
   const isStyleFeatureEnabled = userProfile?.email === 'signmark@gmail.com';
@@ -582,58 +584,29 @@ export default function ContentPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedCampaignId, location]); // location нужен чтобы перечитывать при навигации на страницу
 
-  // Запрос списка кампаний
-  const { data: campaignsResponse, isLoading: isLoadingCampaigns } = useQuery({
-    queryKey: ["/api/campaigns"],
-    queryFn: async () => {
-      const response = await fetch('/api/campaigns', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
-        }
-      });
-      if (!response.ok) {
-        throw new Error('Failed to fetch campaigns');
-      }
-      return response.json();
-    },
-    staleTime: 10 * 1000,
-    refetchOnWindowFocus: true,
-  });
+  // Запрос списка кампаний. Общий с CampaignSelector в топбаре — раньше у них
+  // были разные ключи (['/api/campaigns'] против ['/api/campaigns', userId]),
+  // и один и тот же список ехал двумя параллельными запросами по 43 КБ.
+  const { data: campaignsResponse, isLoading: isLoadingCampaigns } = useCampaignsList();
 
   const campaigns = campaignsResponse?.data || [];
 
-  // Запрос полных данных выбранной кампании для получения socialMediaSettings
-  const { data: fullCampaignData, isLoading: isLoadingCampaign } = useQuery({
-    queryKey: ["campaign-detail", selectedCampaignId],
-    queryFn: async () => {
-      if (!selectedCampaignId) return null;
+  // Запрос полных данных выбранной кампании для получения socialMediaSettings.
+  // Ключ общий с топбаром и AIChat (раньше был свой, ["campaign-detail", id]),
+  // поэтому карточка кампании грузится один раз на страницу, а не дважды.
+  const { data: fullCampaignData, isLoading: isLoadingCampaign } = useCampaignDetail(selectedCampaignId);
 
-      const response = await fetch(`/api/campaigns/${selectedCampaignId}`, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
-        }
-      });
-      if (!response.ok) {
-        throw new Error('Failed to fetch campaign details');
-      }
-      return response.json();
-    },
-    enabled: !!selectedCampaignId,
-    staleTime: 30 * 1000,
-    refetchOnWindowFocus: true,
-  });
-
-  const contentStyle = (fullCampaignData?.data as any)?.content_style || null;
+  const contentStyle = (fullCampaignData as any)?.content_style || null;
 
   // Определяем подключенные платформы из настроек кампании.
   // Возвращает null если данные ещё не загружены (→ UI показывает все платформы активными).
   // Возвращает объект с явными true/false когда данные есть.
   const getConnectedPlatforms = (): Record<string, boolean> | null => {
-    // fullCampaignData.data может быть объектом (detail) или массивом (если React Query вернул кэш списка)
-    const rawData = fullCampaignData?.data;
-    const campaignData = Array.isArray(rawData)
-      ? rawData.find((c: any) => c.id === selectedCampaignId)
-      : rawData || (campaigns as any[])?.find((c: any) => c.id === selectedCampaignId);
+    // useCampaignDetail отдаёт уже развёрнутый объект кампании. Пока он грузится —
+    // подстраховываемся общим списком: social_media_settings есть и там.
+    const campaignData =
+      (fullCampaignData as any) ||
+      (campaigns as any[])?.find((c: any) => c.id === selectedCampaignId);
 
     const settingsRaw =
       campaignData?.social_media_settings ||

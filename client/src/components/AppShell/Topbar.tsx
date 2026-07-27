@@ -7,6 +7,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useAuthStore } from "@/lib/store";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useCampaignDetail } from "@/hooks/use-campaigns";
 import { useThemeStore } from "@/lib/themeStore";
 import { useCampaignStore } from "@/lib/campaignStore";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
@@ -70,12 +71,13 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
   const isAutonomousActive = autonomousStatus?.isActive === true;
   const hasQuotaError = !isAutonomousActive && !!autonomousStatus?.quotaError;
 
-  // Настройки автономного режима из кампании
-  const { data: campaignData } = useQuery<any>({
-    queryKey: ['/api/campaigns', selectedCampaignId],
-    enabled: !!selectedCampaignId && !!token,
-    staleTime: 60000,
-  });
+  // Настройки автономного режима из кампании.
+  // Раньше здесь был useQuery без queryFn с ключом ['/api/campaigns', id]:
+  // дефолтный queryFn шлёт голый GET по queryKey[0], то есть тянул СПИСОК
+  // кампаний (43 КБ, третий параллельный дубль на каждой странице), а
+  // autonomous_settings читался с верхнего уровня списочного ответа и всегда
+  // был undefined — тултип автономного режима молча пустовал.
+  const { data: campaignData } = useCampaignDetail(selectedCampaignId);
 
   // Формируем описание настроек для тултипа
   const autonomousSettings = campaignData?.autonomous_settings;
@@ -137,9 +139,13 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
     },
   });
 
-  // Загружаем полный профиль пользователя из API
+  // Загружаем полный профиль пользователя из API.
+  // Ключ БЕЗ токена: с ним запрос не схлопывался с точно таким же из usePlan
+  // (ключ ['/api/user/profile', userId]) — профиль ехал дважды параллельно.
+  // Смена пользователя и так чистит кеш (queryClient.clear в use-auth), а смена
+  // токена того же пользователя новых данных профиля не даёт.
   const { data: userProfile, isLoading, error } = useQuery<UserProfile>({
-    queryKey: ['/api/user/profile', userId || 'me', token],
+    queryKey: ['/api/user/profile', userId || 'me'],
     enabled: !!token,
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: true,

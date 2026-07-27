@@ -11,8 +11,8 @@ const contentCache = new Map<string, CacheEntry>();
 export const CONTENT_CACHE_TTL = 60 * 1000; // 60 секунд
 
 /**
- * `variant` разделяет полную выдачу и облегчённую сводку: тела ответов разные,
- * и без него сводка отдалась бы вместо полного списка (или наоборот).
+ * `variant` разделяет полную выдачу, облегчённую сводку и агрегаты: тела ответов
+ * разные, и без него сводка отдалась бы вместо полного списка (или наоборот).
  * Идёт в конец ключа — инвалидация сверяет префикс `userId:` и `:campaignId:`.
  */
 export function buildCacheKey(
@@ -20,7 +20,7 @@ export function buildCacheKey(
   campaignId: string,
   page: number,
   limit: number,
-  variant: 'full' | 'summary' = 'full',
+  variant: 'full' | 'summary' | 'stats' = 'full',
 ): string {
   return `${userId}:${campaignId}:${page}:${limit}:${variant}`;
 }

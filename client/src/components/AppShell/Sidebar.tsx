@@ -54,27 +54,23 @@ function SidebarContent({ location, onNavigate, onLogout, userIsAdmin, isCollaps
   const userId = useAuthStore((state) => state.userId);
 
   // Сайдбар живёт на КАЖДОЙ странице, поэтому цена этого запроса умножается на
-  // всё приложение. Без своего queryFn срабатывал дефолтный — он берёт URL из
-  // queryKey[0], то есть уходил голый GET /api/campaign-content: полная выдача
-  // пользователя со всеми текстами и картинками, ~5 МБ на 1417 записей. И всё
-  // это ради красного кружка с числом упавших публикаций. С summary=1 приезжают
-  // только id/статус/даты — 293 КБ вместо 5 МБ на тех же данных.
-  const { data: failedContentData } = useQuery<{ data: any[] }>({
-    queryKey: ['/api/campaign-content', userId, 'summary'],
+  // всё приложение. Ради ОДНОГО числа — красного кружка с количеством упавших
+  // публикаций — здесь последовательно тянули сначала полную выдачу (~5 МБ), потом
+  // `?summary=1` (354 КБ, 1422 объекта на проде). Оба варианта росли линейно с
+  // числом постов. Теперь считает Directus, а сюда приезжают только агрегаты.
+  const { data: contentStats } = useQuery<{ data: { failed: number } }>({
+    queryKey: ['/api/campaign-content/stats', userId],
     enabled: !!userId,
     staleTime: 60000,
     queryFn: async () => {
-      const response = await fetch('/api/campaign-content?summary=1', {
+      const response = await fetch('/api/campaign-content/stats', {
         headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
       });
       if (!response.ok) throw new Error('Не удалось загрузить сводку по контенту');
       return response.json();
     },
-    select: (data) => ({
-      data: (data as any)?.data?.filter?.((item: any) => item.status === 'failed') || []
-    })
   });
-  const failedCount = failedContentData?.data?.length || 0;
+  const failedCount = contentStats?.data?.failed || 0;
 
   return (
     <nav 

@@ -8,6 +8,7 @@ import { directusCrud } from '../services/directus-crud';
 import { storage } from '../storage';
 import { log } from '../utils/logger';
 import { aiService } from '../services/ai-service';
+import { toSafeErrorDetails } from '../utils/safe-error';
 import axios from 'axios';
 
 import { buildCacheKey, getFromCache, setToCache, invalidateContentCache } from '../utils/content-cache';
@@ -65,6 +66,132 @@ function parseArrayField(value: any, itemId?: string): any[] {
   }
   
   return [value];
+}
+
+// Окно графика активности на дашборде — 7 дней, но «сегодня»/«на этой неделе»
+// считаются на клиенте по тем же строкам, поэтому окно берём с запасом.
+const STATS_WINDOW_DEFAULT_DAYS = 31;
+const STATS_WINDOW_MAX_DAYS = 92;
+const STATS_WINDOW_ROW_LIMIT = 1000;
+// Карточка «Недавний контент» на дашборде показывает три последние записи.
+const STATS_LATEST_LIMIT = 5;
+
+// «Опубликовано» на дашборде исторически включает частичную публикацию.
+const PUBLISHED_LIKE_STATUSES = ['published', 'partial', 'partially_published'];
+
+/**
+ * Количество записей по статусам. Основной путь — агрегат на стороне Directus:
+ * наружу едет по строке на статус независимо от размера таблицы.
+ *
+ * Запасной путь — выборка двух колонок (id, status). Он существует потому, что
+ * `aggregate`+`groupBy` зависят от прав роли в Directus: если агрегат когда-нибудь
+ * отвалится, счётчики на дашборде и красный кружок в сайдбаре не должны исчезать.
+ * Это всё равно на порядок дешевле прежнего `?summary=1` (два поля вместо семи и
+ * без мета-обвязки), но это аварийный режим, а не штатный.
+ */
+async function fetchStatusCounts(
+  baseFilter: Record<string, any>,
+  headers: Record<string, string>,
+): Promise<Record<string, number>> {
+  const counts: Record<string, number> = {};
+  try {
+    const response = await directusApi.get('/items/campaign_content', {
+      headers,
+      params: {
+        filter: JSON.stringify(baseFilter),
+        aggregate: JSON.stringify({ count: ['id'] }),
+        groupBy: ['status'],
+        limit: -1,
+      },
+    });
+    const rows = Array.isArray(response.data?.data) ? response.data.data : [];
+    for (const row of rows) {
+      const status = row?.status ?? 'unknown';
+      // Directus отдаёт count строкой; в зависимости от версии — вложенным в id.
+      const raw = row?.count?.id ?? row?.count ?? 0;
+      const value = Number(raw);
+      counts[status] = (counts[status] || 0) + (Number.isFinite(value) ? value : 0);
+    }
+    return counts;
+  } catch (aggregateError: any) {
+    if (aggregateError.response?.status === 404) throw aggregateError;
+    log(`[content-stats] aggregate недоступен (${aggregateError.message}), считаем по id+status`, 'content');
+  }
+
+  const fallback = await directusApi.get('/items/campaign_content', {
+    headers,
+    params: {
+      filter: JSON.stringify(baseFilter),
+      fields: ['id', 'status'],
+      limit: -1,
+    },
+  });
+  const rows = Array.isArray(fallback.data?.data) ? fallback.data.data : [];
+  for (const row of rows) {
+    const status = row?.status ?? 'unknown';
+    counts[status] = (counts[status] || 0) + 1;
+  }
+  return counts;
+}
+
+/**
+ * Directus-строка → форма, в которой контент отдаётся наружу.
+ *
+ * ОДНА функция на список и на `/:id`. Раньше маппинг жил только внутри
+ * обработчика списка, а `/:id` отдавал сырую строку Directus: `published_at`
+ * вместо `publishedAt`, `campaign_id` вместо `campaignId`, а `keywords`/
+ * `hashtags`/`links` — строкой вместо разобранного массива. Любой потребитель,
+ * переключившийся со списка на `/:id` (например, диалог редактирования, если он
+ * начнёт дотягивать полное тело поста), получил бы поля не под теми именами.
+ * Держим один источник правды, чтобы формы не разъехались снова.
+ */
+export function mapContentItemFromDirectus(item: any) {
+  const additionalImages = Array.isArray(item.additional_images) ? item.additional_images : [];
+  const isVideoType = item.content_type === 'video' || item.content_type === 'video-text';
+
+  return {
+    id: item.id,
+    campaignId: item.campaign_id,
+    userId: item.user_id,
+    title: item.title,
+    content: item.content,
+    contentType: item.content_type,
+    imageUrl: item.image_url,
+    additionalImages,
+    additionalMedia: item.additional_media || [],
+    videoThumbnail: additionalImages.length > 0 && isVideoType ? additionalImages[0] : '',
+    videoUrl: item.video_url,
+    prompt: item.prompt,
+    keywords: parseArrayField(item.keywords, item.id),
+    hashtags: parseArrayField(item.hashtags, item.id),
+    links: parseArrayField(item.links, item.id),
+    createdAt: item.created_at,
+    scheduledAt: item.scheduled_at,
+    publishedAt: item.published_at,
+    status: item.status,
+    socialPlatforms: item.social_platforms || {},
+    metadata: item.metadata || {},
+  };
+}
+
+const TITLE_MAX_LENGTH = 255;
+
+/**
+ * `title` приходит из внешнего мира и до этой проверки уходил прямо в
+ * `data.title.charAt(0)`. На `{"title": 999}` или `{"title": [1,2]}` это давало
+ * `charAt is not a function` и HTTP 500 на POST/PATCH/PUT — то есть ошибка
+ * валидации выглядела как падение сервера. Возвращаем 400 с внятным текстом.
+ */
+function validateTitle(raw: unknown): { ok: true; value: string } | { ok: false; message: string } {
+  if (typeof raw !== 'string') {
+    return { ok: false, message: 'Поле title должно быть строкой' };
+  }
+  const trimmed = raw.trim();
+  if (trimmed.length > TITLE_MAX_LENGTH) {
+    return { ok: false, message: `Поле title не может быть длиннее ${TITLE_MAX_LENGTH} символов` };
+  }
+  // Первая буква заголовка — заглавная.
+  return { ok: true, value: trimmed.charAt(0).toUpperCase() + trimmed.slice(1) };
 }
 
 export function registerContentRoutes(app: Express) {
@@ -144,31 +271,8 @@ export function registerContentRoutes(app: Express) {
             }))
           : responseData.map((item: any) => {
           try {
-            return {
-              id: item.id,
-              campaignId: item.campaign_id,
-              userId: item.user_id,
-              title: item.title,
-              content: item.content,
-              contentType: item.content_type,
-              imageUrl: item.image_url,
-              additionalImages: Array.isArray(item.additional_images) ? item.additional_images : [],
-              additionalMedia: item.additional_media || [],
-              videoThumbnail: Array.isArray(item.additional_images) && item.additional_images.length > 0 && 
-                              (item.content_type === 'video' || item.content_type === 'video-text') 
-                              ? item.additional_images[0] : '',
-              videoUrl: item.video_url,
-              prompt: item.prompt,
-              keywords: parseArrayField(item.keywords, item.id),
-              hashtags: parseArrayField(item.hashtags, item.id),
-              links: parseArrayField(item.links, item.id),
-              createdAt: item.created_at,
-              scheduledAt: item.scheduled_at,
-              publishedAt: item.published_at,
-              status: item.status,
-              socialPlatforms: item.social_platforms || {},
-              metadata: item.metadata || {}
-            };
+            // Общий маппер со списком и /:id — см. mapContentItemFromDirectus.
+            return mapContentItemFromDirectus(item);
           } catch (mapError: any) {
             console.error(`❌ [API] Error mapping item ${item.id}:`, mapError.message);
             return null;
@@ -209,6 +313,136 @@ export function registerContentRoutes(app: Express) {
     }
   });
 
+  // GET /api/campaign-content/stats
+  //
+  // Счётчики и график активности дашборда/сайдбара. Раньше и то и другое
+  // считалось на клиенте из `?summary=1` без campaignId и без limit — то есть из
+  // ВСЕЙ таблицы пользователя (на проде 1422 объекта, 354 КБ на каждое открытие
+  // дашборда и на каждую страницу с сайдбаром). Объём рос линейно с числом постов,
+  // хотя на экран попадают три числа и гистограмма по дням.
+  //
+  // Здесь наружу едут агрегаты: количества по статусам считает Directus
+  // (`aggregate[count]` + `groupBy=status`, наружу — по строке на статус), а
+  // сырыми отдаются только даты за окно графика и только два datetime-поля.
+  // ВАЖНО: маршрут обязан регистрироваться до `/api/campaign-content/:id`,
+  // иначе "stats" уедет в него как id.
+  app.get("/api/campaign-content/stats", authenticateUser, async (req, res) => {
+    try {
+      const userId = req.user?.id;
+      const token = req.user?.token;
+      if (!userId || !token) return res.status(401).json({ error: "Unauthorized" });
+
+      const campaignId = (req.query.campaignId as string) || '';
+      const parsedDays = parseInt(req.query.days as string, 10);
+      const days = Number.isFinite(parsedDays) && parsedDays > 0
+        ? Math.min(parsedDays, STATS_WINDOW_MAX_DAYS)
+        : STATS_WINDOW_DEFAULT_DAYS;
+
+      const key = buildCacheKey(userId, campaignId, 1, days, 'stats');
+      if (req.query.nocache !== '1') {
+        const cached = getFromCache(key);
+        if (cached) {
+          res.setHeader('X-Cache', 'HIT');
+          return res.json(cached);
+        }
+      }
+      res.setHeader('X-Cache', 'MISS');
+
+      const baseFilter: Record<string, any> = {
+        user_id: { _eq: userId },
+        ...(campaignId ? { campaign_id: { _eq: campaignId } } : {}),
+      };
+      const authHeaders = { Authorization: `Bearer ${token}` };
+
+      // Начало окна — полночь UTC дня (days-1) назад, чтобы сегодняшний день
+      // попадал в выборку целиком.
+      const windowStart = new Date(Date.now() - (days - 1) * 24 * 60 * 60 * 1000);
+      windowStart.setUTCHours(0, 0, 0, 0);
+      const windowStartIso = windowStart.toISOString();
+
+      const [byStatus, windowRows, latestRows] = await Promise.all([
+        fetchStatusCounts(baseFilter, authHeaders),
+        // Окно графика: и опубликованные за период, и запланированные (в т.ч.
+        // на будущее — они тоже рисуются на гистограмме).
+        directusApi.get('/items/campaign_content', {
+          headers: authHeaders,
+          params: {
+            filter: JSON.stringify({
+              ...baseFilter,
+              _or: [
+                { published_at: { _gte: windowStartIso } },
+                { _and: [{ status: { _eq: 'scheduled' } }, { scheduled_at: { _gte: windowStartIso } }] },
+              ],
+            }),
+            fields: ['id', 'status', 'published_at', 'scheduled_at'],
+            sort: ['-created_at'],
+            limit: STATS_WINDOW_ROW_LIMIT,
+          },
+        }).then(r => (Array.isArray(r.data?.data) ? r.data.data : [])),
+        // Карточка «Недавний контент»: заголовок и дата у последних записей.
+        // Окно графика её не закрывает — оно отфильтровано по датам публикации.
+        directusApi.get('/items/campaign_content', {
+          headers: authHeaders,
+          params: {
+            filter: JSON.stringify(baseFilter),
+            fields: ['id', 'title', 'status', 'created_at'],
+            sort: ['-created_at', '-id'],
+            limit: STATS_LATEST_LIMIT,
+          },
+        }).then(r => (Array.isArray(r.data?.data) ? r.data.data : [])),
+      ]);
+
+      const sumStatuses = (statuses: string[]) =>
+        statuses.reduce((acc, s) => acc + (byStatus[s] || 0), 0);
+
+      const responseBody = {
+        success: true,
+        data: {
+          total: Object.values(byStatus).reduce((acc, n) => acc + n, 0),
+          byStatus,
+          // Клиент исторически считает «опубликовано» вместе с частичной
+          // публикацией — сохраняем ту же арифметику, чтобы плитки не изменились.
+          published: sumStatuses(PUBLISHED_LIKE_STATUSES),
+          scheduled: byStatus.scheduled || 0,
+          failed: byStatus.failed || 0,
+          draft: byStatus.draft || 0,
+          windowDays: days,
+          windowStart: windowStartIso,
+          latest: latestRows.map((item: any) => ({
+            id: item.id,
+            title: item.title,
+            status: item.status,
+            createdAt: item.created_at,
+          })),
+          recent: windowRows.map((item: any) => ({
+            id: item.id,
+            status: item.status,
+            publishedAt: item.published_at,
+            scheduledAt: item.scheduled_at,
+          })),
+        },
+      };
+
+      setToCache(key, responseBody);
+      log(`[content-stats] SET total=${responseBody.data.total} window=${days}d rows=${responseBody.data.recent.length}`, 'content');
+      res.json(responseBody);
+    } catch (error: any) {
+      if (error.response?.status === 404) {
+        console.warn('⚠️ [API] Collection campaign_content not found in Directus. Returning empty stats.');
+        return res.json({
+          success: true,
+          data: {
+            total: 0, byStatus: {}, published: 0, scheduled: 0, failed: 0, draft: 0,
+            windowDays: STATS_WINDOW_DEFAULT_DAYS, windowStart: new Date().toISOString(),
+            latest: [], recent: [],
+          },
+        });
+      }
+      console.error('❌ Error in GET /api/campaign-content/stats:', error.message);
+      res.status(500).json({ error: "Failed to fetch content stats" });
+    }
+  });
+
   // POST /api/campaign-content
   app.post("/api/campaign-content", authenticateUser, async (req, res) => {
     console.log('🚀 [API] POST /api/campaign-content REQUEST RECEIVED');
@@ -226,8 +460,11 @@ export function registerContentRoutes(app: Express) {
       const data = mapContentFieldsToDirectus(req.body);
       data.user_id = userId;
       if (!data.title) data.title = 'Без названия';
-      // Первая буква заголовка — заглавная
-      if (data.title) data.title = data.title.charAt(0).toUpperCase() + data.title.slice(1);
+      const titleCheck = validateTitle(data.title);
+      if (!titleCheck.ok) {
+        return res.status(400).json({ error: "Invalid title", details: titleCheck.message });
+      }
+      data.title = titleCheck.value;
       if (!data.content && req.body.text) data.content = req.body.text;
       if (!data.content_type) data.content_type = 'text';
       if (!data.status) data.status = 'draft';
@@ -250,9 +487,13 @@ export function registerContentRoutes(app: Express) {
         console.error('❌ [API] Directus Response Status:', error.response.status);
         console.error('❌ [API] Directus Response Data:', JSON.stringify(error.response.data, null, 2));
       }
-      res.status(error.response?.status || 500).json({ 
+      // details — только сообщение валидации от Directus, оно осмысленно для UI.
+      // error.message наружу больше не уходит: это сырой текст JS-исключения
+      // (именно так «data.title.charAt is not a function» уезжало клиенту).
+      const directusMessage = error.response?.data?.errors?.[0]?.message;
+      res.status(error.response?.status || 500).json({
         error: "Failed to create content",
-        details: error.response?.data?.errors?.[0]?.message || error.message
+        ...(directusMessage ? { details: directusMessage } : {}),
       });
     }
   });
@@ -262,11 +503,38 @@ export function registerContentRoutes(app: Express) {
     try {
       const { id } = req.params;
       const token = req.user?.token;
+      const userId = req.user?.id;
+      if (!userId || !token) return res.status(401).json({ error: "Unauthorized" });
+
       const response = await directusApi.get(`/items/campaign_content/${id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      res.json({ data: response.data.data });
-    } catch (error) {
+
+      const item = response.data?.data;
+      if (!item) return res.status(404).json({ error: "Content item not found" });
+
+      // Проверка владения — как во всех остальных чтениях этой коллекции
+      // (список фильтрует по user_id явно). 404, а не 403: чужой id не должен
+      // отличаться по ответу от несуществующего.
+      const isAdmin = req.user?.is_smm_admin === true;
+      if (!isAdmin && item.user_id && item.user_id !== userId) {
+        return res.status(404).json({ error: "Content item not found" });
+      }
+
+      // Та же форма, что и у списка — иначе потребитель, перешедший со списка
+      // на /:id, получит published_at вместо publishedAt и строки вместо массивов.
+      res.json({ data: mapContentItemFromDirectus(item) });
+    } catch (error: any) {
+      const status = error.response?.status;
+      // 403 от Directus = записи нет или к ней нет доступа. Раньше общий catch
+      // превращал и 404, и 403 в 500 — мониторинг шумел, настоящие сбои терялись.
+      if (status === 404 || status === 403) {
+        return res.status(404).json({ error: "Content item not found" });
+      }
+      if (status === 401) {
+        return res.status(401).json({ error: "Сессия истекла. Пожалуйста, войдите заново.", sessionExpired: true });
+      }
+      console.error(`❌ [API] GET /api/campaign-content/${req.params.id} error:`, toSafeErrorDetails(error));
       res.status(500).json({ error: "Failed to fetch content item" });
     }
   });
@@ -278,7 +546,13 @@ export function registerContentRoutes(app: Express) {
       const token = req.user?.token;
       const userId = req.user?.id || '';
       const data = mapContentFieldsToDirectus(req.body);
-      if (data.title) data.title = data.title.charAt(0).toUpperCase() + data.title.slice(1);
+      if (data.title !== undefined && data.title !== null) {
+        const titleCheck = validateTitle(data.title);
+        if (!titleCheck.ok) {
+          return res.status(400).json({ error: "Invalid title", details: titleCheck.message });
+        }
+        data.title = titleCheck.value;
+      }
       const response = await directusApi.patch(`/items/campaign_content/${id}`, data, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -297,7 +571,13 @@ export function registerContentRoutes(app: Express) {
       const token = req.user?.token;
       const userId = req.user?.id || '';
       const data = mapContentFieldsToDirectus(req.body);
-      if (data.title) data.title = data.title.charAt(0).toUpperCase() + data.title.slice(1);
+      if (data.title !== undefined && data.title !== null) {
+        const titleCheck = validateTitle(data.title);
+        if (!titleCheck.ok) {
+          return res.status(400).json({ error: "Invalid title", details: titleCheck.message });
+        }
+        data.title = titleCheck.value;
+      }
       const response = await directusApi.patch(`/items/campaign_content/${id}`, data, {
         headers: { Authorization: `Bearer ${token}` }
       });

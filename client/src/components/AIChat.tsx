@@ -31,7 +31,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuthStore } from "@/lib/store";
 import { useCampaignStore } from "@/lib/campaignStore";
 import { queryClient } from "@/lib/queryClient";
-import { useQuery } from "@tanstack/react-query";
+import { useCampaignDetail } from "@/hooks/use-campaigns";
 import { useLocation } from "wouter";
 
 interface Message {
@@ -168,26 +168,23 @@ export function AIChat({ isOpen: externalIsOpen, onOpenChange, showFloatingButto
   const { selectedCampaignId, selectedCampaignName, setSelectedCampaign } = useCampaignStore();
   const [, setLocation] = useLocation();
   
-  // Запрос названия кампании если его нет в store
-  const { data: campaignData } = useQuery({
-    queryKey: ['/api/campaigns', selectedCampaignId],
-    queryFn: async () => {
-      const res = await fetch(`/api/campaigns/${selectedCampaignId}`);
-      return res.json();
-    },
-    enabled: !!selectedCampaignId && !selectedCampaignName,
-    staleTime: Infinity,
-  });
-  
+  // Название кампании, если его нет в store.
+  // Ключ был ['/api/campaigns', selectedCampaignId] — тот же, что у топбара, но с
+  // другим queryFn (там дефолтный, тянущий список). Два разных URL под одним
+  // ключом — источник и лишних запросов, и данных не той формы. Теперь общий хук.
+  const { data: campaignData } = useCampaignDetail(
+    selectedCampaignId && !selectedCampaignName ? selectedCampaignId : null,
+  );
+
   // Обновляем store когда получили название
   useEffect(() => {
-    if (campaignData?.success && campaignData?.data?.name && selectedCampaignId && !selectedCampaignName) {
-      setSelectedCampaign(selectedCampaignId, campaignData.data.name);
+    if (campaignData?.name && selectedCampaignId && !selectedCampaignName) {
+      setSelectedCampaign(selectedCampaignId, campaignData.name);
     }
   }, [campaignData, selectedCampaignId, selectedCampaignName, setSelectedCampaign]);
-  
+
   // Отображаемое название
-  const displayCampaignName = selectedCampaignName || campaignData?.data?.name;
+  const displayCampaignName = selectedCampaignName || campaignData?.name;
 
   // Маппинг навигационных команд на URL (все реальные страницы приложения)
   const navigationMap: Record<string, { path: string; name: string }> = {

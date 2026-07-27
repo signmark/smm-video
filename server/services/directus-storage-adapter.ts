@@ -189,7 +189,7 @@ export class DirectusStorageAdapter {
         ? { authToken: userToken.token, filter }
         : { filter };
       
-      const sources = await directusCrud.list<ContentSource>('content_sources', options);
+      const sources = await directusCrud.list<ContentSource>('campaign_content_sources', options);
       
       log(`Found ${sources.length} content sources`, this.logPrefix);
       return sources;
@@ -218,7 +218,7 @@ export class DirectusStorageAdapter {
       const userToken = await this.getUserTokenInfo(campaign.userId);
       const options = userToken ? { authToken: userToken.token } : {};
       
-      const newSource = await directusCrud.create<ContentSource>('content_sources', source, options);
+      const newSource = await directusCrud.create<ContentSource>('campaign_content_sources', source, options);
       
       log(`Created new content source with ID: ${newSource.id}`, this.logPrefix);
       return newSource;
@@ -240,7 +240,7 @@ export class DirectusStorageAdapter {
       const userToken = await this.getUserTokenInfo(userId);
       const options = userToken ? { authToken: userToken.token } : {};
       
-      await directusCrud.delete('content_sources', id, options);
+      await directusCrud.delete('campaign_content_sources', id, options);
       
       log(`Deleted content source with ID: ${id}`, this.logPrefix);
     } catch (error) {

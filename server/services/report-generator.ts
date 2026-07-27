@@ -406,27 +406,12 @@ export async function generateCampaignReport(
     console.warn('⚠️ [REPORT] Scraper supplement failed (non-critical):', err?.message);
   }
 
-  // Получаем комментарии (опционально, если нет прав - пустой массив)
-  let comments: any[] = [];
-  try {
-    comments = await directusCrud.list('comments', {
-      authToken: accessToken,
-      filter: {
-        campaign_id: { _eq: campaignId },
-        created_at: {
-          _between: [fromDate.toISOString(), toDate.toISOString()]
-        }
-      },
-      limit: -1
-    });
-  } catch (error: any) {
-    if (error.response && (error.response.status === 403 || error.response.status === 404)) {
-      console.log('⚠️ [REPORT] No access to comments collection or no comments found, using empty array');
-      comments = [];
-    } else {
-      throw error;
-    }
-  }
+  // Комментарии в отчёт не попадают: коллекции `comments` в схеме нет вообще, и
+  // запрос к ней гарантированно отдавал 403 на каждую генерацию отчёта. Ближайшая
+  // существующая коллекция — `post_comment`, но она привязана к посту-источнику
+  // (`trent_post_id`) и не имеет ни `campaign_id`, ни `created_at`, поэтому
+  // отобрать комментарии кампании за период по ней нельзя без отдельной доработки.
+  const comments: any[] = [];
 
   // Рост аудитории по коллекции analytics здесь не считаем (followers_growth в
   // потоке публикаций отсутствует) — оставляем пустым, метрики уже в posts.

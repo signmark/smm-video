@@ -721,7 +721,9 @@ export function registerContentRoutes(app: Express) {
       try {
         const campaignId = contentItem.campaign_id;
         if (campaignId) {
-          const campaign = await directusCrud.getById('campaigns', campaignId);
+          // Коллекция — user_campaigns; 'campaigns' не существует и отдавала 403,
+          // из-за чего редакторский проход шёл без настроек стиля кампании.
+          const campaign = await directusCrud.getById('user_campaigns', campaignId, { authToken: token });
           if (campaign?.autonomous_settings) {
             const raw = campaign.autonomous_settings;
             autoSettings = typeof raw === 'string' ? JSON.parse(raw) : raw;

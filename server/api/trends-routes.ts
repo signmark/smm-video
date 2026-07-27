@@ -1402,7 +1402,7 @@ export function registerTrendsRoutes(app: Express) {
       let keywordsList: string[] = [];
 
       try {
-        const campaignData = await directusCrud.getById('campaigns', campaignId, { useAdminToken: true });
+        const campaignData = await directusCrud.getById('user_campaigns', campaignId, { useAdminToken: true });
         campaignName = (campaignData as any)?.name || '';
       } catch (err) {
         log(`[Trends Route] Не удалось загрузить кампанию ${campaignId}`, 'warn');

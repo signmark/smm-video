@@ -55,7 +55,9 @@ describe('DatabaseStorage', () => {
 
             const sources = await storage.getContentSources('user-123');
 
-            expect(directusApi.get).toHaveBeenCalledWith('/items/content_sources', expect.objectContaining({
+            // Коллекция называется campaign_content_sources; 'content_sources' нет
+            // ни в схеме Directus, ни в БД — этот тест фиксировал старую опечатку.
+            expect(directusApi.get).toHaveBeenCalledWith('/items/campaign_content_sources', expect.objectContaining({
                 headers: { Authorization: 'Bearer mock-service-token' }
             }));
             expect(sources).toHaveLength(1);

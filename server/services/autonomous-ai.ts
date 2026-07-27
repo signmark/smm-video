@@ -272,7 +272,7 @@ export async function startAutonomousExternal(params: {
   let launchCommand: string | undefined = params.launchCommand;
   if (!launchCommand) {
     try {
-      const camp: any = await directusCrud.getById('user_campaigns', params.campaignId, { token: adminToken });
+      const camp: any = await directusCrud.getById('user_campaigns', params.campaignId, { authToken: adminToken });
       const rawSettings = camp?.autonomous_settings;
       let savedSettings: Record<string, any> = {};
       if (rawSettings && typeof rawSettings === 'object') savedSettings = rawSettings;

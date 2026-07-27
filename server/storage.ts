@@ -156,7 +156,7 @@ export class DatabaseStorage implements IStorage {
         };
       }
       
-      const response = await directusApi.get('/items/content_sources', {
+      const response = await directusApi.get('/items/campaign_content_sources', {
         params: {
           filter
         },
@@ -192,7 +192,7 @@ export class DatabaseStorage implements IStorage {
         throw new Error('No auth token found for user');
       }
       
-      const response = await directusApi.post('/items/content_sources', {
+      const response = await directusApi.post('/items/campaign_content_sources', {
         name: source.name,
         url: source.url,
         type: source.type,
@@ -229,7 +229,7 @@ export class DatabaseStorage implements IStorage {
       }
       
       // Мы используем PATCH вместо DELETE для soft delete
-      await directusApi.patch(`/items/content_sources/${id}`, {
+      await directusApi.patch(`/items/campaign_content_sources/${id}`, {
         is_active: false
       }, {
         headers: {

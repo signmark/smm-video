@@ -31,6 +31,13 @@ export interface DirectusRequestOptions {
   userId?: string;
   authToken?: string;
   useAdminToken?: boolean;
+  /**
+   * Осознанно анонимный запрос (публичная коллекция). Без этого флага вызов без
+   * authToken/useAdminToken считается забытым токеном и логируется как ошибка:
+   * раньше такой запрос молча уходил в Directus без заголовка Authorization и
+   * возвращал 403, который съедался ближайшим catch.
+   */
+  allowAnonymous?: boolean;
   fields?: string[];
   sort?: string[];
   limit?: number;

@@ -888,7 +888,7 @@ export function registerCampaignRoutes(app: Express) {
       let campaignBusinessContext = '';
       try {
         const { directusCrud } = await import('../services/directus-crud');
-        const camp = await directusCrud.getById('user_campaigns', campaignId);
+        const camp = await directusCrud.getById('user_campaigns', campaignId, { authToken: token });
         if (camp?.target_audience) campaignAudience = camp.target_audience;
         if (camp?.business_description) campaignBusinessContext = camp.business_description;
       } catch { /* не критично — используем дефолты */ }

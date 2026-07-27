@@ -245,7 +245,9 @@ class PublicationStatusChecker {
       
       // Для отладки включаем все статусы кроме 'published'
       const includeStatuses = ['scheduled', 'draft'];
-      const filters = includeStatuses.map(status => `filter[status][_eq]=${status}`).join('&');
+      // Через _in, а не повторяющийся _eq: два одинаковых ключа filter[status][_eq]
+      // Directus отвергал с 400, и проверка статусов не работала вообще.
+      const filters = `filter[status][_in]=${includeStatuses.join(',')}`;
       
       // Бóльшие лимиты для проверки большего количества контента за раз
       let response;

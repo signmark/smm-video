@@ -187,11 +187,27 @@ export class DirectusCrud {
   }
 
   /**
-   * Определяет какой токен использовать для запроса
+   * Определяет какой токен использовать для запроса.
+   *
+   * Если токена нет и анонимность не заявлена явно — это забытый токен, а не
+   * публичный запрос. Раньше такой вызов уходил в Directus вообще без заголовка
+   * Authorization, получал 403 и умирал в ближайшем catch: так молча ломались
+   * загрузка autonomous_settings и подгрузка выбранных трендов.
    */
-  private async resolveToken(options: DirectusRequestOptions): Promise<string | undefined> {
+  private async resolveToken(
+    options: DirectusRequestOptions,
+    operation: CrudOperation,
+    collection: string,
+  ): Promise<string | undefined> {
     if (options.useAdminToken) {
       return this.getAdminToken();
+    }
+    if (!options.authToken && !options.allowAnonymous) {
+      console.error(
+        `[${this.logPrefix}] ${operation} ${collection}: запрос без токена — ` +
+        `не передан ни authToken, ни useAdminToken. Directus ответит 403. ` +
+        `Если анонимность намеренная, передайте allowAnonymous: true.`
+      );
     }
     return options.authToken;
   }
@@ -262,7 +278,7 @@ export class DirectusCrud {
    */
   async create<T>(collection: string, data: Record<string, any>, options: DirectusRequestOptions = {}): Promise<T> {
     return this.executeWithRetry('create', collection, async () => {
-      const authToken = await this.resolveToken(options);
+      const authToken = await this.resolveToken(options, 'create', collection);
       return this.executeRequest<T>({
         method: 'post',
         url: `/items/${collection}`,
@@ -277,7 +293,7 @@ export class DirectusCrud {
    */
   async list<T>(collection: string, options: DirectusRequestOptions = {}): Promise<T[]> {
     return this.executeWithRetry('list', collection, async () => {
-      const authToken = await this.resolveToken(options);
+      const authToken = await this.resolveToken(options, 'list', collection);
       const params = this.buildParams(options);
       return this.executeRequest<T[]>({
         method: 'get',
@@ -293,7 +309,7 @@ export class DirectusCrud {
    */
   async getById<T>(collection: string, id: string | number, options: DirectusRequestOptions = {}): Promise<T | null> {
     return this.executeWithRetry('read', collection, async () => {
-      const authToken = await this.resolveToken(options);
+      const authToken = await this.resolveToken(options, 'read', collection);
       try {
         return await this.executeRequest<T>({
           method: 'get',
@@ -312,7 +328,7 @@ export class DirectusCrud {
    */
   async update<T>(collection: string, id: string | number, data: Record<string, any>, options: DirectusRequestOptions = {}): Promise<T> {
     return this.executeWithRetry('update', collection, async () => {
-      const authToken = await this.resolveToken(options);
+      const authToken = await this.resolveToken(options, 'update', collection);
       return this.executeRequest<T>({
         method: 'patch',
         url: `/items/${collection}/${id}`,
@@ -327,7 +343,7 @@ export class DirectusCrud {
    */
   async delete(collection: string, id: string | number, options: DirectusRequestOptions = {}): Promise<void> {
     return this.executeWithRetry('delete', collection, async () => {
-      const authToken = await this.resolveToken(options);
+      const authToken = await this.resolveToken(options, 'delete', collection);
       await axios.delete(`${this.directusUrl}/items/${collection}/${id}`, {
         headers: authToken ? { 'Authorization': `Bearer ${authToken}` } : {},
         timeout: 15000
@@ -340,7 +356,7 @@ export class DirectusCrud {
    */
   async custom<T>(method: string, path: string, data?: any, options: DirectusRequestOptions = {}): Promise<T> {
     return this.executeWithRetry('custom', path, async () => {
-      const authToken = await this.resolveToken(options);
+      const authToken = await this.resolveToken(options, 'custom', path);
       return this.executeRequest<T>({
         method: method.toLowerCase(),
         url: path,

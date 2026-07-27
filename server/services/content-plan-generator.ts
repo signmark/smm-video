@@ -260,7 +260,10 @@ export async function generateContentPlan(params: GeneratePlanParams): Promise<{
   // Загружаем autonomous_settings кампании (globalPrompt, alwaysInclude, signature, useEditorPass)
   let autonomousSettings: { globalPrompt?: string; alwaysInclude?: string; signature?: string; useEditorPass?: boolean } = {};
   try {
-    const campaignData = await directusCrud.getById('campaigns', campaignId);
+    // Коллекция называется user_campaigns; 'campaigns' не существует, и запрос к
+    // ней отдавал 403 — autonomous_settings молча терялись, и globalPrompt,
+    // alwaysInclude, signature, useEditorPass не доезжали до генерации.
+    const campaignData = await directusCrud.getById('user_campaigns', campaignId, { authToken: userToken });
     if (campaignData?.autonomous_settings) {
       const raw = campaignData.autonomous_settings;
       autonomousSettings = typeof raw === 'string' ? JSON.parse(raw) : raw;
@@ -276,6 +279,7 @@ export async function generateContentPlan(params: GeneratePlanParams): Promise<{
   if (selectedTrendTopics.length > 0) {
     try {
       const trendData = await directusCrud.list('campaign_trend_topics', {
+        authToken: userToken,
         filter: { id: { _in: selectedTrendTopics } },
         limit: -1
       });

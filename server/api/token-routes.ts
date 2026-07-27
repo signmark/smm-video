@@ -219,8 +219,8 @@ export function registerTokenRoutes(app: Express) {
       const collections = [
         'campaign_content',
         'user_campaigns',
-        'content_sources',
-        'trend_topics',
+        'campaign_content_sources',
+        'source_posts',
         'campaign_trend_topics'
       ];
       
@@ -349,8 +349,8 @@ export function registerTokenRoutes(app: Express) {
       const collections = [
         'campaign_content',
         'user_campaigns',
-        'content_sources',
-        'trend_topics',
+        'campaign_content_sources',
+        'source_posts',
         'campaign_trend_topics'
       ];
       

@@ -173,6 +173,36 @@ describe('Route-level граница арендатора', () => {
     expect(publishInstagramStory).not.toHaveBeenCalled();
   });
 
+  it('stories POST / без campaignId → 400, дефолт не подставляется и запись не создаётся', async () => {
+    const res = await authed(request(storiesApp).post('/api/stories')).send({ title: 'x' });
+    expect(res.status).toBe(400);
+    expect(authorizeCampaignAccess).not.toHaveBeenCalled();
+    expect(directusPost).not.toHaveBeenCalled();
+  });
+
+  it('stories POST / с чужим campaignId → 403, запись не создаётся', async () => {
+    const res = await authed(request(storiesApp).post('/api/stories'))
+      .send({ title: 'x', campaignId: 'foreign-campaign' });
+    expect(res.status).toBe(403);
+    expect(authorizeCampaignAccess).toHaveBeenCalled();
+    expect(directusPost).not.toHaveBeenCalled();
+  });
+
+  it('stories POST /simple с чужим campaignId → 403, запись не создаётся', async () => {
+    const res = await authed(request(storiesApp).post('/api/stories/simple'))
+      .send({ title: 'x', campaignId: 'foreign-campaign' });
+    expect(res.status).toBe(403);
+    expect(authorizeCampaignAccess).toHaveBeenCalled();
+    expect(directusPost).not.toHaveBeenCalled();
+  });
+
+  it('stories GET /?campaignId=чужой → 403, чтение из Directus не выполняется', async () => {
+    const res = await authed(request(storiesApp).get('/api/stories').query({ campaignId: 'foreign-campaign' }));
+    expect(res.status).toBe(403);
+    expect(authorizeCampaignAccess).toHaveBeenCalled();
+    expect(H.directusGet).not.toHaveBeenCalled();
+  });
+
   it('social POST /api/content/:id/publish с чужим ID → 404, PATCH/scheduler не вызваны', async () => {
     const res = await authed(request(socialApp).post('/api/content/foreign/publish'))
       .send({ socialPlatforms: {}, status: 'scheduled' });

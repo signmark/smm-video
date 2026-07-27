@@ -8,6 +8,8 @@ import { directusApi } from '../directus';
 import axios from 'axios';
 import { log } from '../utils/logger';
 import { SocialPlatform } from '@shared/schema';
+import { authenticateUser } from '../middleware/user-auth';
+import { assertContentBelongsToRequester } from '../services/content-access';
 
 export const forceUpdateStatusRouter = Router();
 
@@ -16,40 +18,29 @@ export const forceUpdateStatusRouter = Router();
  * Проверяет все выбранные платформы и, если все имеют статус "published",
  * устанавливает общий статус контента в "published"
  */
-forceUpdateStatusRouter.post('/publish/force-update-status/:contentId', async (req, res) => {
+forceUpdateStatusRouter.post('/publish/force-update-status/:contentId', authenticateUser, async (req, res) => {
   const contentId = req.params.contentId;
   const operationId = `force_update_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-  
+
   log.info(`[${operationId}] Принудительное обновление статуса для контента ${contentId}`);
-  
+
   try {
     // Получаем API URL системы
     const directusUrl = process.env.DIRECTUS_URL;
-    
-    // Получаем токен из заголовка Authorization или из переменных окружения
-    const directusAuthManager = await import('../services/directus-auth-manager').then(m => m.directusAuthManager);
-    let token = process.env.DIRECTUS_ADMIN_TOKEN || '';
-    const authHeader = req.headers.authorization;
-    
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      token = authHeader.slice(7);
-    } else {
-      // Если токен не указан в заголовке, пробуем получить из активных сессий
-      const sessions = directusAuthManager.getAllActiveSessions();
-      
-      if (sessions.length > 0) {
-        // Берем самый свежий токен из активных сессий
-        token = sessions[0].token;
-        log.info(`[${operationId}] Используем токен из активных сессий`);
-      } else if (!token) {
-        log.error(`[${operationId}] Не найден токен авторизации`);
-        return res.status(401).json({ 
-          success: false, 
-          error: 'Не найден токен авторизации' 
-        });
-      }
+
+    // Только токен пользователя из запроса. Фолбэки на DIRECTUS_ADMIN_TOKEN и на
+    // чужую активную сессию убраны — раньше они позволяли анониму патчить любой
+    // contentId. authenticateUser гарантирует req.user.token.
+    const token = req.user?.token;
+    if (!token) {
+      return res.status(401).json({ success: false, error: 'Не найден токен авторизации' });
     }
-    
+
+    // Проверяем владение контентом до любого чтения/патча.
+    if (!(await assertContentBelongsToRequester(contentId, req, res))) {
+      return; // ответ (404/503/500) уже отправлен внутри
+    }
+
     // 1. Получаем текущие данные контента
     log.info(`[${operationId}] Получение данных контента ${contentId}`);
     const contentResponse = await axios.get(`${directusUrl}/items/campaign_content/${contentId}`, {
@@ -201,40 +192,27 @@ forceUpdateStatusRouter.post('/publish/force-update-status/:contentId', async (r
 /**
  * Получает текущий статус публикаций для контента
  */
-forceUpdateStatusRouter.get('/publish/content-status/:contentId', async (req, res) => {
+forceUpdateStatusRouter.get('/publish/content-status/:contentId', authenticateUser, async (req, res) => {
   const contentId = req.params.contentId;
   const operationId = `status_check_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-  
+
   log.info(`[${operationId}] Проверка статуса публикаций для контента ${contentId}`);
-  
+
   try {
     // Получаем API URL системы
     const directusUrl = process.env.DIRECTUS_URL;
-    
-    // Получаем токен из заголовка Authorization или из переменных окружения
-    const directusAuthManager = await import('../services/directus-auth-manager').then(m => m.directusAuthManager);
-    let token = process.env.DIRECTUS_ADMIN_TOKEN || '';
-    const authHeader = req.headers.authorization;
-    
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      token = authHeader.slice(7);
-    } else {
-      // Если токен не указан в заголовке, пробуем получить из активных сессий
-      const sessions = directusAuthManager.getAllActiveSessions();
-      
-      if (sessions.length > 0) {
-        // Берем самый свежий токен из активных сессий
-        token = sessions[0].token;
-        log.info(`[${operationId}] Используем токен из активных сессий`);
-      } else if (!token) {
-        log.error(`[${operationId}] Не найден токен авторизации`);
-        return res.status(401).json({ 
-          success: false, 
-          error: 'Не найден токен авторизации' 
-        });
-      }
+
+    // Только токен пользователя из запроса (см. комментарий в POST-ручке выше).
+    const token = req.user?.token;
+    if (!token) {
+      return res.status(401).json({ success: false, error: 'Не найден токен авторизации' });
     }
-    
+
+    // Проверяем владение контентом до чтения.
+    if (!(await assertContentBelongsToRequester(contentId, req, res))) {
+      return; // ответ уже отправлен внутри
+    }
+
     // Получаем данные контента
     const contentResponse = await axios.get(`${directusUrl}/items/campaign_content/${contentId}`, {
       headers: { 'Authorization': `Bearer ${token}` }

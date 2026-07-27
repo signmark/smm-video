@@ -190,6 +190,16 @@ export default function StoryEditor({ campaignId: propCampaignId, storyId: propS
 
   // Функция сохранения истории
   const saveStory = async () => {
+    // Сервер требует campaignId: без кампании история сохранялась бы без привязки
+    if (!finalCampaignId) {
+      toast({
+        title: "Кампания не выбрана",
+        description: "Выберите кампанию в селекторе выше, чтобы сохранить историю",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setIsSaving(true);
     try {
       const response = await fetch('/api/stories', {
@@ -201,7 +211,7 @@ export default function StoryEditor({ campaignId: propCampaignId, storyId: propS
         body: JSON.stringify({
           title: storyTitle,
           slides: slides,
-          campaignId: null
+          campaignId: finalCampaignId
         })
       });
 

@@ -538,11 +538,6 @@ export default function VideoStoryEditor({ storyId }: VideoStoryEditorProps) {
   };
 
   const selectedOverlayData = selectedOverlay >= 0 ? story.textOverlays[selectedOverlay] : null;
-  
-  const getCampaignId = () => {
-    const urlParams = new URLSearchParams(window.location.search);
-    return urlParams.get('campaignId') || "46868c44-c6a4-4bed-accf-9ad07bba790e";
-  };
 
   if (loading) {
     return (

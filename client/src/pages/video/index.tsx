@@ -46,7 +46,8 @@ interface VideoContent {
 export default function VideoEditor() {
   const { campaignId: urlCampaignId } = useParams();
   const selectedCampaign = useCampaignStore((state) => state.selectedCampaign);
-  const campaignId = urlCampaignId || selectedCampaign?.id || "46868c44-c6a4-4bed-accf-9ad07bba790e";
+  // Дефолта нет намеренно: пустое значение = «кампания не выбрана» (см. заглушку ниже)
+  const campaignId = urlCampaignId || selectedCampaign?.id || '';
   const { toast } = useToast();
   
   const [videoContent, setVideoContent] = useState<VideoContent>({
@@ -326,6 +327,27 @@ export default function VideoEditor() {
   const handleGoBack = () => {
     window.location.href = campaignId ? `/campaigns/${campaignId}/content` : '/campaigns';
   };
+
+  // Кампания не выбрана — сохранять и публиковать видео некуда
+  if (!campaignId) {
+    return (
+      <div className="h-screen bg-gray-100 flex items-center justify-center p-4">
+        <Card className="max-w-md w-full">
+          <CardContent className="flex flex-col items-center justify-center py-16 space-y-4">
+            <div className="text-center">
+              <h3 className="text-lg font-medium text-muted-foreground mb-2">Выберите кампанию</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Для создания видео выберите кампанию в селекторе выше или создайте новую
+              </p>
+              <Button variant="outline" onClick={() => { window.location.href = '/campaigns'; }}>
+                Перейти к кампаниям
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="h-screen bg-gray-100 flex flex-col">

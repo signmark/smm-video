@@ -768,11 +768,24 @@
  *     security:
  *       - bearerAuth: []
  *     parameters:
- *       - name: campaign_id
+ *       - name: campaignId
  *         in: query
+ *         required: true
  *         schema:
  *           type: string
  *           format: uuid
+ *       - name: period
+ *         in: query
+ *         description: Окно по дате публикации поста; all/пусто — без фильтра
+ *         schema:
+ *           type: string
+ *           enum: [3days, 7days, 14days, 30days, all]
+ *       - name: limit
+ *         in: query
+ *         description: Сколько трендов вернуть (по умолчанию 500, максимум 5000). all/-1 — вернуть все
+ *         schema:
+ *           type: string
+ *           default: '500'
  *     responses:
  *       200:
  *         description: Тренды с метаданными комментариев

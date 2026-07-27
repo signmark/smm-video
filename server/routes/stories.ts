@@ -169,6 +169,35 @@ router.use((req, res, next) => {
   next();
 });
 
+/**
+ * Проверка владения кампанией для ручек, куда campaignId приходит от клиента.
+ * При отказе САМА пишет ответ в res и возвращает false — вызывающему остаётся
+ * только выйти. 503 отдаём отдельно от 403: недоступный Directus — это не
+ * «кампания чужая», и молча пропускать запись в этом случае нельзя.
+ */
+async function assertCampaignBelongsToRequester(
+  campaignId: string,
+  req: express.Request,
+  res: express.Response,
+): Promise<boolean> {
+  try {
+    await authorizeCampaignAccess(
+      campaignId,
+      req.user?.id,
+      req.user?.token || '',
+      req.user?.is_smm_admin === true,
+    );
+    return true;
+  } catch (error) {
+    if (error instanceof CampaignAccessError && error.status === 503) {
+      res.status(503).json({ error: 'Проверка доступа временно недоступна' });
+      return false;
+    }
+    res.status(403).json({ error: 'Кампания не найдена или недоступна' });
+    return false;
+  }
+}
+
 // Create a new story
 router.post('/', authenticateUser, async (req, res) => {
   try {
@@ -179,6 +208,13 @@ router.post('/', authenticateUser, async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
+    if (!campaignId || typeof campaignId !== 'string') {
+      return res.status(400).json({ error: 'Не выбрана кампания: campaignId обязателен' });
+    }
+
+    // Без этой проверки история уезжала в кампанию, ID которой клиент прислал
+    // в теле запроса, — включая чужую.
+    if (!(await assertCampaignBelongsToRequester(campaignId, req, res))) return;
 
     // Create story content in campaign_content collection
     const storyData = {
@@ -219,17 +255,26 @@ router.get('/', authenticateUser, async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
+    const campaignId = typeof req.query.campaignId === 'string' ? req.query.campaignId.trim() : '';
+
+    const filter: Record<string, any> = {
+      user_id: { _eq: userId },
+      content_type: { _in: ['story', 'video_story'] }
+    };
+
+    if (campaignId) {
+      if (!(await assertCampaignBelongsToRequester(campaignId, req, res))) return;
+      filter.campaign_id = { _eq: campaignId };
+    }
 
     const response = await directusApi.get('/items/campaign_content', {
       headers: {
         'Authorization': req.headers.authorization
       },
       params: {
-        filter: JSON.stringify({
-          user_id: { _eq: userId },
-          content_type: { _in: ['story', 'video_story'] }
-        }),
-        sort: '-created_at'
+        filter: JSON.stringify(filter),
+        sort: '-created_at',
+        limit: 200
       }
     });
 
@@ -914,10 +959,12 @@ router.post('/simple', authenticateUser, async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    if (!campaignId) {
-      return res.status(400).json({ error: 'campaignId is required' });
+    if (!campaignId || typeof campaignId !== 'string') {
+      return res.status(400).json({ error: 'Не выбрана кампания: campaignId обязателен' });
     }
 
+    // Та же дыра, что и в POST /: campaignId берётся из тела запроса.
+    if (!(await assertCampaignBelongsToRequester(campaignId, req, res))) return;
 
     // Создаем базовую Stories с пустыми данными
     const storyData = {

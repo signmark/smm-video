@@ -4,6 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ImageIcon, Layers3, Type, Sticker, MapPin, Clock } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
 export type StoryMode = 'simple' | 'video';
 
@@ -15,10 +16,21 @@ interface StoryModeSelectorProps {
 export default function StoryModeSelector({ onModeSelect, campaignId }: StoryModeSelectorProps) {
   const [selectedMode, setSelectedMode] = useState<StoryMode | null>(null);
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
 
   const handleModeSelect = async (mode: StoryMode) => {
+    // Без кампании создавать нечего: раньше здесь подставлялся чужой campaignId
+    if (!campaignId) {
+      toast({
+        title: 'Кампания не выбрана',
+        description: 'Выберите кампанию в селекторе выше, чтобы создать Stories',
+        variant: 'destructive'
+      });
+      return;
+    }
+
     setSelectedMode(mode);
-    
+
     if (mode === 'simple') {
       // Создаем новую story и переходим к редактору
       try {
@@ -36,7 +48,7 @@ export default function StoryModeSelector({ onModeSelect, campaignId }: StoryMod
           },
           body: JSON.stringify({
             title: 'Новая Stories',
-            campaignId: campaignId || "46868c44-c6a4-4bed-accf-9ad07bba790e",
+            campaignId,
             content: '',
             type: 'story',
             status: 'draft'
@@ -76,7 +88,7 @@ export default function StoryModeSelector({ onModeSelect, campaignId }: StoryMod
           },
           body: JSON.stringify({
             title: 'Новая Видео Stories',
-            campaignId: campaignId || "46868c44-c6a4-4bed-accf-9ad07bba790e",
+            campaignId,
             content: '',
             type: 'story',
             status: 'draft'

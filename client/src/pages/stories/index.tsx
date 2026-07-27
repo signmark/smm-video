@@ -6,10 +6,11 @@ import { useCampaignStore } from "@/lib/campaignStore";
 export default function StoriesPage() {
   const { campaignId, storyId } = useParams();
   const selectedCampaign = useCampaignStore((state) => state.selectedCampaign);
-  
-  // Стабилизируем campaignId с приоритетом URL параметру
+
+  // Стабилизируем campaignId с приоритетом URL параметру.
+  // Дефолта нет намеренно: пустая строка = «кампания не выбрана», её обрабатывает редактор.
   const activeCampaignId = useMemo(() => {
-    return campaignId || selectedCampaign?.id || "46868c44-c6a4-4bed-accf-9ad07bba790e";
+    return campaignId || selectedCampaign?.id || "";
   }, [campaignId, selectedCampaign?.id]);
 
   // Если storyId отсутствует, это новая Stories - очищаем состояние

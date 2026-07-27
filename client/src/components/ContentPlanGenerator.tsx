@@ -64,6 +64,7 @@ export function ContentPlanGenerator({
 }: ContentPlanGeneratorProps) {
   const [selectedTopicIds, setSelectedTopicIds] = useState<Set<string>>(new Set());
   const [contentCount, setContentCount] = useState(5);
+  const [aiDecidesCount, setAiDecidesCount] = useState(false); // ИИ сам решает кол-во постов и расписание
   const [selectedType, setSelectedType] = useState<string>("mixed");
   const [includeBusiness, setIncludeBusiness] = useState(true);
   const [includeGeneratedImage, setIncludeGeneratedImage] = useState(true);
@@ -296,9 +297,11 @@ export function ContentPlanGenerator({
         postsCount: contentCount,
         contentType: selectedType,
         period: 14,
+        aiDecidesCount, // ИИ сам решает кол-во постов и расписание (без потолка)
         // «Смешанный» и «рандом» включают ВСЕ типы; конкретный тип — только свои флаги.
         includeImages: includeGeneratedImage
-          && (allTypes || selectedType === "image" || selectedType === "text-image"),
+          && (allTypes || selectedType === "image" || selectedType === "text-image"
+            || selectedType === "text-image-mix"),
         includeVideos: allTypes || selectedType === "video",
         includeClips: allTypes || selectedType === "clip",
         includeStories: allTypes || selectedType === "story",
@@ -580,10 +583,21 @@ export function ContentPlanGenerator({
                 id="content-count"
                 type="number"
                 min={1}
-                max={20}
+                max={60}
                 value={contentCount}
                 onChange={(e) => setContentCount(parseInt(e.target.value))}
+                disabled={aiDecidesCount}
               />
+              <div className="flex items-center space-x-2 mt-1">
+                <Checkbox
+                  id="ai-decides-count"
+                  checked={aiDecidesCount}
+                  onCheckedChange={(v) => setAiDecidesCount(v === true)}
+                />
+                <Label htmlFor="ai-decides-count" className="cursor-pointer text-sm font-normal">
+                  ИИ сам решает количество постов и расписание (без ограничения)
+                </Label>
+              </div>
             </div>
             
             <div className="grid gap-2">
@@ -602,6 +616,7 @@ export function ContentPlanGenerator({
                   <SelectItem value="video" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Видео</SelectItem>
                   <SelectItem value="clip" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Клип (Shorts/Reels)</SelectItem>
                   <SelectItem value="story" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Stories</SelectItem>
+                  <SelectItem value="text-image-mix" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Текст + текст с картинкой (ИИ выбирает)</SelectItem>
                   <SelectItem value="mixed" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Смешанный (все типы вперемешку)</SelectItem>
                   <SelectItem value="random" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Рандом (случайный тип у каждого поста)</SelectItem>
                 </SelectContent>

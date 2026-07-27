@@ -11,6 +11,7 @@ export interface ContentPlanSettings {
   includeClips?: boolean;
   includeStories?: boolean;
   customInstructions?: string;
+  aiDecidesCount?: boolean; // ИИ сам решает кол-во постов и расписание (без потолка)
 }
 
 export interface BusinessData {
@@ -228,6 +229,8 @@ function normalizeContentType(raw: any): string {
 /** Список типов, разрешённых к генерации, исходя из настроек кампании/выбора. */
 function allowedContentTypes(settings: ContentPlanSettings): string[] {
   const mode = settings.contentType;
+  // Режим «текст + текст с картинкой» — строго два основных типа, ИИ выбирает.
+  if (mode === 'text-image-mix') return ['text', 'text-image'];
   const isMixedOrRandom = mode === 'mixed' || mode === 'random';
   // text и text-image — основной контент: в «смешанный»/«рандом» включаем всегда
   // (независимо от флага картинок), иначе — по флагам настроек.
@@ -310,6 +313,8 @@ export async function generateContentPlan(params: GeneratePlanParams): Promise<{
       ? `Тип контента: СЛУЧАЙНЫЙ — для КАЖДОГО поста выбирай contentType случайно из разрешённых; посты должны отличаться по типу. ОСНОВА — text и text-image (это главный контент, их должно быть большинство); video/clip/story — изредка и только если уместно.`
       : ctMode === 'mixed'
         ? `Тип контента: СМЕШАННЫЙ — используй РАЗНЫЕ типы из разрешённых. ОСНОВА — text и text-image (главный контент, ~70% постов); video/clip/story добавляй как разнообразие, меньшинством.`
+      : ctMode === 'text-image-mix'
+        ? `Тип контента: ТЕКСТ + ТЕКСТ С КАРТИНКОЙ — используй ТОЛЬКО типы text и text-image, вперемешку. Для каждого поста сам выбирай, что лучше зайдёт: чистый текст или текст с картинкой. Других типов (video/clip/story/image) НЕ используй.`
         : `Тип контента: ${ctLabel} — используй этот тип (${ctMode}) для всех постов.`;
   const mediaTypeText = `Типы медиа: ${[settings.includeImages && 'изображения', settings.includeVideos && 'видео'].filter(Boolean).join(' и ') || 'не указано'}`;
 
@@ -419,6 +424,46 @@ ${autonomousSignatureBlock}
     text: `- ${t.description} (Реакции: ${t.reactions}, Комментарии: ${t.comments}, Просмотры: ${t.views}, Дата: ${t.created_at})`,
     size: (t.description?.length || 0) + 100
   }));
+
+  // --- Смарт-режим: ИИ сам решает количество постов и расписание (без потолка) ---
+  if (settings.aiDecidesCount) {
+    const trendsText = trends.length > 0
+      ? `\nВыбранные тренды:\n${trendsData.map(t => t.text).join('\n')}`
+      : '\nТренды: не выбраны.';
+    const endDate = new Date(now);
+    endDate.setDate(endDate.getDate() + settings.period);
+    const hoursHint = topHours || '9:00, 13:00, 19:00, 21:00';
+    const lo = Math.max(4, Math.round(settings.period / 2));
+    const hi = Math.min(20, settings.period + Math.round(settings.period / 2));
+    const scheduleText = `\nКОЛИЧЕСТВО И РАСПИСАНИЕ: САМ реши, сколько постов нужно для качественного ${settings.period}-дневного контент-плана — столько, сколько уместно для темы и аудитории (не ограничивай себя искусственно, но без спама; ориентир — примерно ${lo}–${hi} постов). Каждому посту проставь scheduledAt (ISO) в интервале с ${now.toISOString()} по ${endDate.toISOString()}. Можно несколько постов в один день, если это уместно. Удачные часы публикации: ${hoursHint}.`;
+
+    const prompt = `${baseTemplate}${keywordsText}${trendsText}${scheduleText}`;
+
+    progress('Генерация контент-плана', 40, 'ИИ определяет количество и расписание...');
+    const text = await callGemini(prompt, userId, userToken);
+    progress('Обработка ответа', 85);
+
+    let contentPlan = parseGeminiResponse(text);
+    if (!contentPlan) return { success: false, error: 'Не удалось разобрать ответ Gemini как массив постов' };
+
+    contentPlan = contentPlan.map((p: any) => {
+      if (typeof p.title === 'string') {
+        const words = p.title.trim().split(/\s+/);
+        const byWords = words.length > 7 ? words.slice(0, 7).join(' ') : p.title.trim();
+        p.title = byWords.length > 60 ? byWords.slice(0, 60).trimEnd() : byWords;
+      }
+      p.contentType = normalizeContentType(p.contentType);
+      return p;
+    });
+
+    if (autonomousSettings.useEditorPass) {
+      progress('AI-редактор', 90, `Редактирование ${contentPlan.length} постов...`);
+      contentPlan = await runEditorPass(contentPlan, autonomousSettings, userId, userToken);
+    }
+
+    progress('Готово', 100, `ИИ создал ${contentPlan.length} постов`);
+    return { success: true, data: { contentPlan } };
+  }
 
   const totalTrendsSize = trendsData.reduce((s, t) => s + t.size, 0);
   const needsChunking = (baseTemplate.length + keywordsText.length + totalTrendsSize) > MAX_CHARS_PER_CHUNK;

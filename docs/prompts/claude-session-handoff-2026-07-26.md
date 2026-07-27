@@ -85,3 +85,38 @@ git log --oneline -1
 2. **Публичный VK token-webhook мимо auth/tenant.** Роуты `/api/vk/token-webhook/:campaignId` (POST и `/status` GET) в `PUBLIC_OAUTH_CALLBACKS` обходят auth/ownership/rate-limit, хендлер (`server/routes/vk-oauth.ts:116`) читает и патчит `user_campaigns` **админ-токеном** по `campaignId` из URL. Публичный POST с чужим `campaignId` пишет токены в любую кампанию. Нужен подписанный одноразовый `state`, привязанный к `campaignId`. Трогать аккуратно — внешний needanapp постит сюда без токена.
 
 **Локальный git владельца:** его `main` отстал на 14 (ff-возможен, это мои коммиты); в рабочем дереве — те самые TODO-комментарии в `server/index.ts`. Сохранить (`git stash push -- server/index.ts` → `git pull --ff-only` → `git stash pop`); с `4229b1cdf` они не пересекаются, конфликта не будет.
+
+---
+
+## Апдейт 2 — ночь: фиксы по ревью Codex (коммит `d4fadb37b`)
+
+Codex отревьюил дневной объём, вердикт был «не чисто» — несколько обходов tenant
+boundary. Пофикшено разом (`d4fadb37b`, в `origin/main`, **на прод НЕ выкачено** —
+деплой блокировался; команда в «Апдейт — вечер»).
+
+**Единый guard.** Проверка владения вынесена в `server/services/content-access.ts`
+(`assertContentBelongsToRequester`) — единственный источник для всех публикующих
+ручек. `publish-tenant-boundary.test.ts` теперь гоняет эту реальную функцию, а не
+свою копию.
+
+Закрыто из отчёта Codex:
+- **[P0]** `facebook-webhook-unified` `POST /` (в корне, анонимно) — + `authenticateUser` + guard.
+- **[P0]** stories `publish-video/:id` — пустое тело `user_id !== userId`, добавлен guard.
+- **[P0]** social `POST /api/content/:id/publish` — admin-fallback патч чужого id, добавлен guard.
+- **[P1]** stories `convert-and-publish` — `campaignId` из body, добавлен `authorizeCampaignAccess`.
+- **[P2]** `retry-platform` — guard переставлен ДО чтения полного объекта.
+- **[P1]** `scripts/create_token.mjs` + `create_static_admin_token.js` — больше не пишут admin-токен в `.env`.
+- **[P2]** `content.ts` — `total`/`totalPages` не падают на `total_count` (только `filter_count` → длина выборки).
+
+**Частично — #7 (P2).** Тест теперь гоняет реальную функцию (копия убрана), но роутеры
+целиком не монтирует: удаление самого ВЫЗОВА guard'а в конкретной ручке тест не
+поймает. Полноценные интеграционные тесты роутеров — отдельная задача.
+
+**Проверки:** `check` ✓ `build` ✓ `vitest` 1016/1016 ✓ (тест границы — 11/11).
+
+**Остались открытыми (в этот заход НЕ трогал намеренно):** две P1 из «Апдейт — вечер»
+(дубль лимита `1mb` на `/api`; публичный VK token-webhook мимо auth). Codex их
+не переоткрыл, но они живые. Дубль лимита: реальный фикс — сузить `1mb` до VK-роута,
+а это перестановка body-parser'ов (в `index.ts` явное предупреждение про порядок и
+crash-loop) — рискованно без прогона. VK-webhook: нужен подписанный одноразовый
+`state`, меняет контракт с внешним needanapp (постит без токена). Оба — с владельцем.

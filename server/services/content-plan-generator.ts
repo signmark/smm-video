@@ -227,8 +227,13 @@ function normalizeContentType(raw: any): string {
 
 /** Список типов, разрешённых к генерации, исходя из настроек кампании/выбора. */
 function allowedContentTypes(settings: ContentPlanSettings): string[] {
+  const mode = settings.contentType;
+  const isMixedOrRandom = mode === 'mixed' || mode === 'random';
+  // text и text-image — основной контент: в «смешанный»/«рандом» включаем всегда
+  // (независимо от флага картинок), иначе — по флагам настроек.
   const allowed = ['text'];
-  if (settings.includeImages) allowed.push('text-image', 'image');
+  if (settings.includeImages || isMixedOrRandom) allowed.push('text-image');
+  if (settings.includeImages) allowed.push('image');
   if (settings.includeVideos) allowed.push('video');
   if (settings.includeClips) allowed.push('clip');
   if (settings.includeStories) allowed.push('story');
@@ -302,9 +307,9 @@ export async function generateContentPlan(params: GeneratePlanParams): Promise<{
   const ctLabel = contentTypeTranslation[ctMode] || ctMode;
   const contentTypeText =
     ctMode === 'random'
-      ? `Тип контента: СЛУЧАЙНЫЙ — для КАЖДОГО поста выбирай contentType случайно из разрешённых; посты должны отличаться по типу.`
+      ? `Тип контента: СЛУЧАЙНЫЙ — для КАЖДОГО поста выбирай contentType случайно из разрешённых; посты должны отличаться по типу. ОСНОВА — text и text-image (это главный контент, их должно быть большинство); video/clip/story — изредка и только если уместно.`
       : ctMode === 'mixed'
-        ? `Тип контента: СМЕШАННЫЙ — используй РАЗНЫЕ типы из разрешённых, распределяя их сбалансированно между постами (не все одинаковые).`
+        ? `Тип контента: СМЕШАННЫЙ — используй РАЗНЫЕ типы из разрешённых. ОСНОВА — text и text-image (главный контент, ~70% постов); video/clip/story добавляй как разнообразие, меньшинством.`
         : `Тип контента: ${ctLabel} — используй этот тип (${ctMode}) для всех постов.`;
   const mediaTypeText = `Типы медиа: ${[settings.includeImages && 'изображения', settings.includeVideos && 'видео'].filter(Boolean).join(' и ') || 'не указано'}`;
 

@@ -1,12 +1,55 @@
 /**
- * Простая утилита для логирования сообщений с поддержкой ENV переменной
- * Не использует vite.config.ts напрямую или через импорты
+ * Логгер приложения.
+ *
+ * Контракт уровней (docs/LOGGING-PLAN.md):
+ *   fatal — процесс не может продолжать работу;
+ *   error — сломан пользовательский сценарий или упала фоновая задача;
+ *   warn  — деградация с фолбэком (ретрай выручил, токен протух, платформа 429);
+ *   info  — жизненный цикл и итоги (старт сервиса, результат цикла крона);
+ *   debug — трассировки, промпты, тела запросов.
+ *
+ * error/warn/info печатаются всегда, включая production. debug — только при
+ * LOG_LEVEL=debug. Порог берётся из envConfig.logLevel, который читает LOG_LEVEL.
+ *
+ * Почему так: раньше в production выкидывались все info и debug, а error —
+ * всё, кроме совпадений с коротким списком русских фраз. Вдобавок существовал
+ * список подавления по подстроке, в котором первыми строками стояли
+ * «Request failed with status code 401/403/400», ECONNREFUSED и лимиты соцсетей.
+ * То есть приложение по построению не могло сообщить ни об отказе Directus, ни
+ * об обрыве сети: сотни 403 были видны только в логах самого Directus.
+ * Глушение по тексту сообщения удалено целиком — уровень назначает автор строки.
+ *
+ * В production строка лога — один JSON-объект (её разбирает сборщик логов),
+ * в development — человекочитаемый текст.
  */
 
 import { detectEnvironment } from './environment-detector';
 
 // Получаем конфигурацию окружения
 export let envConfig = detectEnvironment();
+
+export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'fatal';
+
+const LEVEL_ORDER: Record<LogLevel, number> = {
+  debug: 10,
+  info: 20,
+  warn: 30,
+  error: 40,
+  fatal: 50,
+};
+
+function isLogLevel(value: unknown): value is LogLevel {
+  return typeof value === 'string' && value in LEVEL_ORDER;
+}
+
+/**
+ * Порог вывода. Всё ниже порога отбрасывается, всё остальное печатается —
+ * без исключений по тексту сообщения.
+ */
+function threshold(): number {
+  const configured = envConfig?.logLevel;
+  return LEVEL_ORDER[isLogLevel(configured) ? configured : 'info'];
+}
 
 // --- In-memory кольцевой буфер последних логов (для эндпоинта /api/debug/logs) ---
 // Заполняется самим логгером — глобальный console НЕ патчим.
@@ -27,312 +70,182 @@ export function getRecentLogs(limit = LOG_BUFFER_SIZE): string[] {
 }
 
 /**
- * Режим отладки для всех модулей с учетом ENV переменной
- * В production режиме отключаем почти все логи
+ * Режим подробной отладки отдельных подсистем. Влияет только на то, что сам
+ * вызывающий код решает логировать; порогом уровней управляет LOG_LEVEL.
  */
 export const DEBUG_LEVELS = {
-  // Общий режим отладки для всех модулей - только в development
   GLOBAL: envConfig.environment === 'development' && envConfig.verboseLogs,
-  // Отладка планировщика - только в development или с явным включением
   SCHEDULER: envConfig.environment === 'development' ? envConfig.debugScheduler : false,
-  // Отладка публикаций - только в development
   PUBLISHING: envConfig.environment === 'development',
-  // Отладка социальных платформ - только в development
   SOCIAL: envConfig.environment === 'development',
-  // Отладка сервиса проверки статусов - только в development
-  STATUS_CHECKER: envConfig.environment === 'development'
+  STATUS_CHECKER: envConfig.environment === 'development',
 };
 
-/**
- * Список сообщений, которые не нужно выводить в логи в production
- */
-const FILTERED_MESSAGES = [
-  // Ошибки авторизации
-  "Request failed with status code 401",
-  "Request failed with status code 403",
-  "Request failed with status code 400",
-  "Unauthorized",
-  "Ошибка авторизации",
-  "Не удалось получить токен",
-  "token expired",
-  "token is expired",
-  "jwt expired",
+// --- Редакция секретов ---------------------------------------------------
+// Режем по имени поля и на любой глубине: расставлять '[REDACTED]' руками по
+// коду ненадёжно — рано или поздно один вызов забудут.
+const SECRET_KEY = /(pass(word)?|secret|token|api[-_]?key|apikey|authorization|cookie|credential|client[-_]?secret|session)/i;
+const REDACTED = '[REDACTED]';
+const MAX_DEPTH = 6;
 
-  // Ошибки сетевых запросов
-  "ECONNREFUSED",
-  "ETIMEDOUT",
-  "ENOTFOUND",
-  "socket hang up",
-  "network error",
-  "Network Error",
+function redact(value: any, depth = 0, seen = new WeakSet<object>()): any {
+  if (value === null || typeof value !== 'object') return value;
+  if (depth >= MAX_DEPTH) return '[depth-limit]';
+  if (seen.has(value)) return '[circular]';
+  seen.add(value);
 
-  // Частые ошибки социальных сетей
-  "API rate limit exceeded",
-  "Too many requests",
-  "(#4) Application request limit reached",
-  "(#32) Page request limit reached",
-  "Flood control exceeded",
+  if (Array.isArray(value)) return value.slice(0, 50).map(v => redact(v, depth + 1, seen));
 
-  // Информационные сообщения в production
-  "successfully logged in",
-  "Admin session for user",
-  "успешно инициализированы",
-  "registered successfully",
-  "операция выполнена успешно",
-  "токен сохранен в кэше",
-  "cache refreshed",
-  "Использование токена",
-  "Системный токен получен"
-];
-
-/**
- * Критически серьезные ошибки, которые всегда показываем пользователю
- * Только ошибки, требующие немедленного обращения к администратору
- */
-const CRITICAL_ERROR_KEYWORDS = [
-  "КРИТИЧЕСКАЯ ОШИБКА",
-  "SYSTEM ERROR",
-  "DATABASE ERROR",
-  "FATAL ERROR",
-  "SERVICE UNAVAILABLE",
-  "обратитесь к администрации",
-  "свяжитесь с поддержкой",
-  "Системная ошибка",
-  "Сервис недоступен",
-  "База данных недоступна",
-  "Критический сбой"
-];
-
-/**
- * Проверяет, нужно ли выводить отладочные сообщения для конкретного источника
- * @param source Источник сообщения
- * @returns true, если нужно выводить отладочные сообщения
- */
-function shouldDebug(source: string): boolean {
-  if (DEBUG_LEVELS.GLOBAL) return true;
-
-  if (typeof source !== 'string') return false;
-
-  if (source === 'scheduler' && DEBUG_LEVELS.SCHEDULER) return true;
-  if (source.includes('publish') && DEBUG_LEVELS.PUBLISHING) return true;
-  if (['facebook', 'telegram', 'vk', 'instagram'].some(p => source.includes(p)) && DEBUG_LEVELS.SOCIAL) return true;
-
-  return false;
+  const out: Record<string, any> = {};
+  for (const [key, val] of Object.entries(value)) {
+    out[key] = SECRET_KEY.test(key) ? REDACTED : redact(val, depth + 1, seen);
+  }
+  return out;
 }
 
 /**
- * Выводит сообщение в консоль с указанием источника
- * @param message Сообщение для вывода
- * @param source Источник сообщения (по умолчанию "express")
- * @param level Уровень логирования (info, debug, error)
+ * Разворачивает ошибку в поля, по которым можно что-то понять: статус ответа и
+ * тело важнее текста «Request failed with status code 403».
  */
-export function logMessage(message: string, source = "express", level = "info") {
-  // В production режиме строгая фильтрация
+function serializeError(err: any): any {
+  if (err === undefined || err === null || err === '') return undefined;
+  if (typeof err !== 'object') return String(err);
+
+  const out: Record<string, any> = {};
+  if (err.message) out.message = String(err.message);
+  if (err.name && err.name !== 'Error') out.name = err.name;
+  if (err.code) out.code = err.code;
+  if (err.response) {
+    out.status = err.response.status;
+    if (err.response.data !== undefined) out.body = redact(err.response.data);
+  }
+  if (err.stack) out.stack = String(err.stack).split('\n').slice(0, 12).join('\n');
+  return Object.keys(out).length ? out : redact(err);
+}
+
+function safeStringify(payload: Record<string, any>): string {
+  try {
+    return JSON.stringify(payload);
+  } catch {
+    return JSON.stringify({ ts: payload.ts, level: payload.level, source: payload.source, msg: String(payload.msg) });
+  }
+}
+
+// --- Ядро ----------------------------------------------------------------
+
+function emit(level: LogLevel, message: string, source: string, err?: any): void {
+  if (LEVEL_ORDER[level] < threshold()) return;
+
+  const text = typeof message === 'string' ? message : String(message);
+  const details = serializeError(err);
+  let line: string;
+
   if (envConfig.environment === 'production') {
-    // Показываем только критические ошибки
-    const isCriticalError = level === "fatal" || CRITICAL_ERROR_KEYWORDS.some(keyword => message.toUpperCase().includes(keyword.toUpperCase()));
-
-    // Фильтруем все обычные сообщения в production
-    if (!isCriticalError && FILTERED_MESSAGES.some(msg => message.includes(msg))) {
-      return;
-    }
-
-    // Показываем только критические ошибки и важные системные сообщения
-    if (level === "info" || level === "debug") {
-      return; // Отключаем все info и debug логи в production
-    }
-
-    // Если не критическая ошибка, тоже скрываем
-    if (level === "error" && !isCriticalError) {
-      return;
-    }
+    line = safeStringify({
+      ts: new Date().toISOString(),
+      level,
+      source,
+      msg: text,
+      ...(details !== undefined ? { err: details } : {}),
+    });
+  } else {
+    const time = new Date().toLocaleTimeString();
+    line = `${time} [DEV] [${source}] ${text}`;
   }
 
-  // Development режим - показываем в зависимости от debug уровней
-  if (envConfig.environment === 'development') {
-    // Проверка на отладочные сообщения
-    if (level === "debug" && !shouldDebug(source)) {
-      return;
-    }
-
-    // Фильтруем известные ошибки даже в development
-    if (FILTERED_MESSAGES.some(msg => message.includes(msg))) {
-      return;
-    }
-  }
-
-  const time = new Date().toLocaleTimeString();
-  const envPrefix = envConfig.environment === 'development' ? '[DEV] ' : '';
-  const line = `${time} ${envPrefix}[${source}] ${message}`;
   recordLog(line);
-  console.log(line);
 
+  if (level === 'error' || level === 'fatal') {
+    // В development детали ошибки отдаём вторым аргументом — так их видно
+    // раскрытыми в консоли; в production они уже внутри JSON-строки.
+    if (envConfig.environment === 'production' || details === undefined) console.error(line);
+    else console.error(line, err);
+  } else if (level === 'warn') {
+    console.warn(line);
+  } else {
+    console.log(line);
+  }
+}
+
+/**
+ * Выводит сообщение с указанием источника и уровня.
+ * @param message Сообщение
+ * @param source Источник сообщения
+ * @param level Уровень: debug | info | warn | error | fatal
+ */
+export function logMessage(message: string, source = 'express', level: string = 'info'): void {
+  emit(isLogLevel(level) ? level : 'info', message, source);
+}
+
+/**
+ * Информационное сообщение: жизненный цикл и итоги.
+ */
+export function info(message: string, source = 'express'): void {
+  emit('info', message, source);
+}
+
+/**
+ * Ошибка: сломан пользовательский сценарий или упала фоновая задача.
+ * Печатается всегда, включая production.
+ */
+export function error(message: string, err?: any, source = 'express'): void {
+  emit('error', message, source, err);
+}
+
+/**
+ * Критический сбой: процесс не может продолжать работу.
+ */
+export function criticalError(message: string, source = 'system', userFriendlyMessage?: string): void {
+  const text = userFriendlyMessage
+    ? `КРИТИЧЕСКАЯ ОШИБКА: ${userFriendlyMessage}. Обратитесь к администрации. Детали: ${message}`
+    : `КРИТИЧЕСКАЯ ОШИБКА: ${message}. Обратитесь к администрации.`;
+  emit('fatal', text, source);
+}
+
+/**
+ * Системная ошибка. Раньше печаталась только в development — то есть в проде
+ * молчала именно там, где нужнее всего. Теперь это обычный error.
+ */
+export function systemError(message: string, source = 'system'): void {
+  emit('error', message, source);
+}
+
+/**
+ * Предупреждение: деградация, с которой система справилась.
+ */
+export function warn(message: string, source = 'express'): void {
+  emit('warn', message, source);
+}
+
+/**
+ * Отладочное сообщение. В production не печатается, если не задан LOG_LEVEL=debug.
+ */
+export function debug(message: string, source = 'express'): void {
+  emit('debug', message, source);
 }
 
 /**
  * Выводит информацию о конфигурации окружения
  */
-export function logEnvironmentInfo() {
-  logMessage(`Running in ${envConfig.environment} mode`, 'env', 'info');
-  logMessage(`Log level: ${envConfig.logLevel}`, 'env', 'info');
-  logMessage(`Directus URL: ${envConfig.directusUrl}`, 'env', 'info');
-
-  if (envConfig.verboseLogs) {
-    logMessage(`Verbose logs: enabled`, 'env', 'debug');
-    logMessage(`Debug scheduler: ${envConfig.debugScheduler}`, 'env', 'debug');
-  }
+export function logEnvironmentInfo(): void {
+  info(`Running in ${envConfig.environment} mode`, 'env');
+  info(`Log level: ${envConfig.logLevel}`, 'env');
+  info(`Directus URL: ${envConfig.directusUrl}`, 'env');
 }
 
 /**
- * Обновляет конфигурацию окружения
+ * Перечитывает окружение (используется в тестах и при смене конфигурации)
  */
-export function refreshEnvironmentConfig() {
+export function refreshEnvironmentConfig(): void {
   envConfig = detectEnvironment();
-  const newConfig = envConfig;
 
-  DEBUG_LEVELS.GLOBAL = newConfig.environment === 'development' && newConfig.verboseLogs;
-  DEBUG_LEVELS.SCHEDULER = newConfig.environment === 'development' ? newConfig.debugScheduler : false;
-  DEBUG_LEVELS.PUBLISHING = newConfig.environment === 'development';
-  DEBUG_LEVELS.SOCIAL = newConfig.environment === 'development';
-  DEBUG_LEVELS.STATUS_CHECKER = newConfig.environment === 'development';
+  DEBUG_LEVELS.GLOBAL = envConfig.environment === 'development' && envConfig.verboseLogs;
+  DEBUG_LEVELS.SCHEDULER = envConfig.environment === 'development' ? envConfig.debugScheduler : false;
+  DEBUG_LEVELS.PUBLISHING = envConfig.environment === 'development';
+  DEBUG_LEVELS.SOCIAL = envConfig.environment === 'development';
+  DEBUG_LEVELS.STATUS_CHECKER = envConfig.environment === 'development';
 
-  if (newConfig.environment === 'development') {
-    logMessage('Environment configuration refreshed', 'env', 'info');
-  }
-}
-
-/**
- * Выводит информационное сообщение в консоль с указанием источника
- * @param message Сообщение для вывода
- * @param source Источник сообщения (по умолчанию "express")
- */
-export function info(message: string, source = "express") {
-  // Фильтруем некоторые часто повторяющиеся информационные сообщения
-  if (FILTERED_MESSAGES.some(msg => message.includes(msg))) {
-    return;
-  }
-
-  const time = new Date().toLocaleTimeString();
-  const line = `${time} [${source}] ${message}`;
-  recordLog(line);
-  console.log(line);
-}
-
-/**
- * Выводит сообщение об ошибке в консоль с указанием источника
- * @param message Сообщение для вывода
- * @param error Объект ошибки
- * @param source Источник сообщения (по умолчанию "express")
- */
-export function error(message: string, error?: any, source = "express") {
-  // В production режиме применяем строгую фильтрацию
-  if (envConfig.environment === 'production') {
-    // Проверяем, является ли это критической ошибкой
-    const isCritical = CRITICAL_ERROR_KEYWORDS.some(keyword => message.includes(keyword));
-    if (!isCritical) {
-      return; // Скрываем все некритические ошибки в production
-    }
-  }
-
-  // В development режиме фильтруем известные ошибки
-  if (envConfig.environment === 'development') {
-    if (FILTERED_MESSAGES.some(msg => message.includes(msg) || (error && typeof error === 'string' && error.includes(msg)))) {
-      return;
-    }
-
-    // Дополнительная проверка ошибки axios
-    if (error && typeof error === 'object') {
-      if (error.response) {
-        if (error.response.status === 401 || error.response.status === 403 || error.response.status === 429) {
-          return;
-        }
-
-        if (error.response.data && typeof error.response.data === 'object') {
-          if (error.response.data.error && typeof error.response.data.error === 'string') {
-            if (FILTERED_MESSAGES.some(msg => error.response.data.error.includes(msg))) {
-              return;
-            }
-          }
-
-          if (error.response.data.error && typeof error.response.data.error === 'object' && error.response.data.error.message) {
-            if (FILTERED_MESSAGES.some(msg => error.response.data.error.message.includes(msg))) {
-              return;
-            }
-          }
-        }
-      }
-
-      if (error.message && typeof error.message === 'string') {
-        if (FILTERED_MESSAGES.some(msg => error.message.includes(msg))) {
-          return;
-        }
-      }
-
-      if (error.code && typeof error.code === 'string') {
-        if (FILTERED_MESSAGES.some(msg => error.code.includes(msg))) {
-          return;
-        }
-      }
-    }
-  }
-
-  const time = new Date().toLocaleTimeString();
-  const envPrefix = envConfig.environment === 'development' ? '[DEV] ' : '';
-  const line = `${time} ${envPrefix}[${source}] ERROR: ${message}`;
-  recordLog(line);
-  console.error(`${time} ${envPrefix}[${source}] ${message}`, error || '');
-}
-
-/**
- * Логирует критическую ошибку, которая всегда показывается пользователю
- * @param message Сообщение об ошибке
- * @param source Источник сообщения
- * @param userFriendlyMessage Понятное пользователю сообщение
- */
-export function criticalError(message: string, source = "system", userFriendlyMessage?: string) {
-  const criticalMessage = userFriendlyMessage
-    ? `КРИТИЧЕСКАЯ ОШИБКА: ${userFriendlyMessage}. Обратитесь к администрации. Детали: ${message}`
-    : `КРИТИЧЕСКАЯ ОШИБКА: ${message}. Обратитесь к администрации.`;
-
-  const time = new Date().toLocaleTimeString();
-  const line = `${time} [${source}] ${criticalMessage}`;
-  recordLog(line);
-  console.error(line);
-}
-
-/**
- * Логирует системную ошибку только в development режиме
- * @param message Сообщение об ошибке
- * @param source Источник сообщения
- */
-export function systemError(message: string, source = "system") {
-  if (envConfig.environment === 'development') {
-    const time = new Date().toLocaleTimeString();
-    const line = `${time} [DEV] [${source}] SYSTEM ERROR: ${message}`;
-    recordLog(line);
-    console.error(line);
-  }
-}
-
-/**
- * Выводит предупреждение в консоль с указанием источника
- * @param message Сообщение для вывода
- * @param source Источник сообщения (по умолчанию "express")
- */
-export function warn(message: string, source = "express") {
-  const time = new Date().toLocaleTimeString();
-  const line = `${time} [${source}] ${message}`;
-  recordLog(line);
-  console.warn(line);
-}
-
-/**
- * Выводит отладочное сообщение в консоль с указанием источника
- * @param message Сообщение для вывода
- * @param source Источник сообщения (по умолчанию "express")
- */
-export function debug(message: string, source = "express") {
-  logMessage(message, source, 'debug');
+  debug('Environment configuration refreshed', 'env');
 }
 
 /**
@@ -346,7 +259,6 @@ export const log: {
   debug: typeof debug;
 } = logMessage as any;
 
-// Добавляем методы для функции log
 log.info = info;
 log.error = error;
 log.warn = warn;
@@ -358,5 +270,5 @@ export default {
   error,
   warn,
   debug,
-  info
+  info,
 };

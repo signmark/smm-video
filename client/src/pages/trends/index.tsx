@@ -1,56 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Input } from "@/components/ui/input";
 import { ArrowUpIcon, ArrowDownIcon, Globe, ChevronDown, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { formatDistanceToNow } from "date-fns";
-import { ru } from "date-fns/locale";
 import { useTranslation } from "react-i18next";
-
-/**
- * Создает проксированный URL для загрузки изображений/видео через серверный прокси
- * с учетом специфики разных источников (Instagram, VK, Telegram)
- */
-function createProxyImageUrl(imageUrl: string, itemId: string): string {
-  // Если URL пустой или undefined, возвращаем пустую строку
-  if (!imageUrl) return '';
-
-  // Добавляем cache-busting параметр
-  const timestamp = Date.now();
-
-  // Определяем тип источника (Instagram, VK, etc)
-  const isInstagram = imageUrl.includes('instagram.') ||
-    imageUrl.includes('fbcdn.net') ||
-    imageUrl.includes('cdninstagram.com');
-
-  const isVk = imageUrl.includes('vk.com') ||
-    imageUrl.includes('vk.me') ||
-    imageUrl.includes('userapi.com');
-
-  const isTelegram = imageUrl.includes('tgcnt.ru') ||
-    imageUrl.includes('t.me');
-
-  // Формируем параметры для прокси
-  let forcedType = isInstagram ? 'instagram' :
-    isVk ? 'vk' :
-      isTelegram ? 'telegram' : null;
-
-  // Базовый URL прокси с параметрами
-  return `/api/proxy-image?url=${encodeURIComponent(imageUrl)}&_t=${timestamp}${forcedType ? '&forceType=' + forcedType : ''}&itemId=${itemId}`;
-}
-
-/**
- * Определяет платформу по полю sourceType
- */
-function detectPlatform(sourceType: string): string {
-  if (!sourceType) return 'unknown';
-  const normalized = sourceType.toLowerCase().trim();
-  if (normalized === 'instagram') return 'instagram';
-  if (normalized === 'vk' || normalized === 'vkontakte') return 'vk';
-  if (normalized === 'telegram') return 'telegram';
-  if (normalized === 'facebook') return 'facebook';
-  return 'unknown';
-}
 
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -73,6 +26,9 @@ import { BulkSourcesImportDialog } from "@/components/BulkSourcesImportDialog";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { TrendCard } from "@/components/trends/TrendCard";
 import { SentimentEmoji } from "@/components/trends/SentimentEmoji";
+import { TrendListItem } from "./components/TrendListItem";
+import { useVisibleTrends } from "./hooks/useVisibleTrends";
+import { getPostTimeMs } from "./lib/trends-view";
 import { TrendsCollection } from "@/components/trends/TrendsCollection";
 import { SourceCollectionDialog } from "@/components/SourceCollectionDialog";
 
@@ -306,19 +262,6 @@ const isValidPeriod = (period: string): period is Period => {
 };
 
 
-// Функция форматирования относительного времени (например, "2 часа назад")
-const formatRelativeTime = (date: Date): string => {
-  try {
-    return formatDistanceToNow(date, {
-      addSuffix: true,
-      locale: ru
-    });
-  } catch (error) {
-    console.error('Error formatting date:', error);
-    return 'Н/Д';
-  }
-};
-
 export default function Trends() {
   const { t, i18n } = useTranslation();
   const [selectedPeriod, setSelectedPeriod] = useState<Period>("all");
@@ -452,6 +395,14 @@ export default function Trends() {
 
   const sources = sourcesResponse?.data || [];
 
+  // Индекс источников по id — чтобы не делать sources.find (O(n)) на каждый тренд
+  // при фильтрации/сортировке и рендере списка.
+  const sourcesById = useMemo(() => {
+    const map = new Map<string, any>();
+    for (const s of sources) map.set(String((s as any).id), s);
+    return map;
+  }, [sources]);
+
   // Ключевые слова кампании. Раньше переменная `keywords` использовалась ниже
   // (сбор трендов, поиск источников), но её запрос был потерян при рефакторинге —
   // ссылки на `keywords` висели неопределёнными (ReferenceError в рантайме, сбор
@@ -519,36 +470,35 @@ export default function Trends() {
         };
       });
 
-      // Период НЕ фильтруем здесь — это делает клиентский filteredTrends, чтобы
-      // переключение периода не требовало нового запроса к серверу.
+      // Период НЕ фильтруем здесь — это делает клиентский мемо `trends` (по дате
+      // поста), чтобы переключение периода не требовало нового запроса к серверу.
       return processedTrends;
     },
     enabled: !!selectedCampaignId
   });
 
-  // Граница даты для выбранного периода (null = «all», без фильтра). Вынесено из
-  // queryFn, чтобы период применялся клиентски без рефетча.
-  const periodFilterDate = useMemo(() => {
+  // Граница периода в мс (null = «весь период», без фильтра).
+  const periodCutoffMs = useMemo(() => {
     const days: Record<string, number> = { '3days': 3, '7days': 7, '14days': 14, '30days': 30 };
     const n = days[selectedPeriod as string];
     if (!n) return null;
     const d = new Date();
     d.setDate(d.getDate() - n);
-    return d;
+    return d.getTime();
   }, [selectedPeriod]);
 
-  // Период применяем ОДИН раз здесь, поверх кэшированного rawTrends. Все потребители
-  // `trends` (список, статистика по источникам, тональность, filteredTrends) получают
-  // данные уже в рамках периода — как раньше делал queryFn, но без сетевого рефетча.
+  // Период применяем ОДИН раз здесь, поверх кэшированного rawTrends. Фильтруем по
+  // ДАТЕ ПУБЛИКАЦИИ поста (postDate считается на сервере из raw_source_data), а не по
+  // дате вставки записи в Directus — иначе окна 7/14/30 дней давали одинаковый счётчик,
+  // т.к. тренды кампании собираются пачками. Запасной вариант — created_at.
   const trends = useMemo(() => {
-    if (!periodFilterDate) return rawTrends;
+    if (!periodCutoffMs) return rawTrends;
     return rawTrends.filter((t: any) => {
-      const raw = t.created_at || t.createdAt;
-      if (!raw) return true; // тренды без даты показываем всегда
-      const d = new Date(raw);
-      return isNaN(d.getTime()) || d >= periodFilterDate;
+      const ms = getPostTimeMs(t);
+      if (ms == null) return true; // тренды без даты показываем всегда
+      return ms >= periodCutoffMs;
     });
-  }, [rawTrends, periodFilterDate]);
+  }, [rawTrends, periodCutoffMs]);
 
 
   // Состояния для сворачивания/разворачивания секций
@@ -558,58 +508,20 @@ export default function Trends() {
 
   const [selectedKeyword, setSelectedKeyword] = useState<string>("");
 
-  // Вычисляем отфильтрованные и отсортированные тренды
-  const filteredTrends = useMemo(() => {
-    if (!trends || !Array.isArray(trends)) return [];
-
-    return trends
-      .filter((topic: TrendTopic) => {
-        const sourceType = (topic as any).sourceType || (topic as any).source_type || '';
-        if (sourceType.toString().startsWith('AI:')) return false;
-
-        if (selectedSourceId) {
-          const trendSourceId = (topic as any).sourceId || (topic as any).source_id || '';
-          const trendSourceIdStr = typeof trendSourceId === 'object' ? (trendSourceId?.id || trendSourceId?.key || JSON.stringify(trendSourceId)) : String(trendSourceId);
-          if (trendSourceIdStr !== String(selectedSourceId)) return false;
-        }
-
-        const platform = detectPlatform((topic as any).sourceType || (topic as any).source_type || '');
-        const matchesSearch = topic.title.toLowerCase().includes(searchQuery.toLowerCase());
-
-        let platformMatches = false;
-        if (selectedPlatform === 'all') {
-          platformMatches = true;
-        } else {
-          platformMatches = platform === selectedPlatform;
-        }
-
-        return matchesSearch && platformMatches;
-      })
-      .sort((a: TrendTopic, b: TrendTopic) => {
-        if (sortField === 'none') return 0;
-
-        let valueA: any, valueB: any;
-        switch (sortField) {
-          case 'reactions': valueA = a.reactions || 0; valueB = b.reactions || 0; break;
-          case 'comments': valueA = a.comments || 0; valueB = b.comments || 0; break;
-          case 'views': valueA = a.views || 0; valueB = b.views || 0; break;
-          case 'trendScore': valueA = a.trendScore || 0; valueB = b.trendScore || 0; break;
-          case 'date':
-            valueA = new Date(a.created_at || a.createdAt || 0).getTime();
-            valueB = new Date(b.created_at || b.createdAt || 0).getTime();
-            break;
-          case 'platform':
-            valueA = detectPlatform((a as any).sourceType || '');
-            valueB = detectPlatform((b as any).sourceType || '');
-            break;
-          default: return 0;
-        }
-
-        if (valueA < valueB) return sortDirection === 'asc' ? -1 : 1;
-        if (valueA > valueB) return sortDirection === 'asc' ? 1 : -1;
-        return 0;
-      });
-  }, [trends, searchQuery, selectedPlatform, sortField, sortDirection, selectedSourceId]);
+  // Видимый список: фильтр (скрытые/платформа/поиск/источник) + сортировка +
+  // вью-модель. Вынесено в useVisibleTrends — тяжёлое считается один раз на
+  // изменение зависимостей, а не на каждый ре-рендер прямо в JSX (был источник фризов).
+  const visibleTrends = useVisibleTrends({
+    trends,
+    hiddenTrendIds,
+    searchQuery,
+    selectedPlatform,
+    selectedSourceId,
+    sortField,
+    sortDirection,
+    sourcesById,
+    t,
+  });
 
   // Refs для автоматического скролла к элементам
   const sourcesRefs = useRef<{ [key: string]: HTMLDivElement | null }>({});
@@ -862,9 +774,9 @@ export default function Trends() {
     }
   }, [selectedTrendTopic]);
 
-  // Функции для работы с выбором всех трендов
+  // Функции для работы с выбором всех трендов (по фактически видимому списку)
   const selectAllVisibleTrends = () => {
-    setSelectedTopics(filteredTrends);
+    setSelectedTopics(visibleTrends.map(v => v.topic as any));
   };
 
   const deselectAllTrends = () => {
@@ -872,10 +784,28 @@ export default function Trends() {
   };
 
   const areAllVisibleTrendsSelected = () => {
-    return filteredTrends.length > 0 && filteredTrends.every((trend: any) =>
-      selectedTopics.some(t => t.id === trend.id)
+    return visibleTrends.length > 0 && visibleTrends.every((v) =>
+      selectedTopics.some(t => t.id === v.topic.id)
     );
   };
+
+  // Стабильные хендлеры для мемоизированной карточки TrendListItem — без них
+  // React.memo не сработает и карточки будут перерисовываться на любое действие.
+  const handleOpenTrend = useCallback((topic: any) => {
+    setSelectedTrendTopic(topic);
+    setActiveTab('comments');
+    loadTrendComments(topic.id);
+  }, []);
+  const handlePreviewTrend = useCallback((topic: any) => {
+    setPreviewTrendTopic(topic);
+  }, []);
+  const handleHideTrend = useCallback((id: string) => {
+    setHiddenTrendIds(prev => new Set([...prev, id]));
+  }, []);
+  const handleOpenTrendComments = useCallback((topic: any) => {
+    setSelectedTrendTopic(topic);
+    setActiveTab('comments');
+  }, []);
 
 
 
@@ -1387,7 +1317,7 @@ export default function Trends() {
 
 
 
-  const toggleTopicSelection = (topic: TrendTopic) => {
+  const toggleTopicSelection = useCallback((topic: any) => {
     setSelectedTopics(prev => {
       const isSelected = prev.some(t => t.id === topic.id);
       if (isSelected) {
@@ -1396,7 +1326,7 @@ export default function Trends() {
         return [...prev, topic];
       }
     });
-  };
+  }, []);
 
   // Мутация для обновления статуса закладки
   const { mutate: updateTrendBookmark } = useMutation({
@@ -2400,7 +2330,7 @@ export default function Trends() {
                             <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2">
                               <div className="flex items-center justify-between mb-3 border-b pb-2">
                                 <div className="text-xs text-gray-500 flex items-center gap-2 flex-wrap">
-                                  <span>{t('trends.trendList.totalCount', { count: trends.length })}</span>
+                                  <span>{t('trends.trendList.totalCount', { count: visibleTrends.length })}</span>
                                   {selectedSourceId && (
                                     <>
                                       <span>|</span>
@@ -2486,351 +2416,23 @@ export default function Trends() {
                                   )}
                                 </div>
                               </div>
-                              {trends
-                                .filter((topic: TrendTopic) => !hiddenTrendIds.has(topic.id))
-                                .filter((topic: TrendTopic) => {
-                                  // Определяем платформу ТОЛЬКО по полю sourceType
-                                  const detectPlatform = () => {
-                                    const sourceType = (topic as any).sourceType || '';
-                                    if (!sourceType) return 'unknown';
-
-                                    const normalized = sourceType.toLowerCase().trim();
-                                    if (normalized === 'instagram') return 'instagram';
-                                    if (normalized === 'vk' || normalized === 'vkontakte') return 'vk';
-                                    if (normalized === 'telegram') return 'telegram';
-                                    if (normalized === 'facebook') return 'facebook';
-
-                                    return 'unknown';
-                                  };
-
-                                  const detectedPlatform = detectPlatform();
-
-                                  // Период уже применён в мемо `trends` (срез поверх кэша),
-                                  // поэтому здесь фильтровать не нужно.
-                                  const withinPeriod = true;
-
-                                  // Фильтр по поисковому запросу
-                                  const matchesSearch = topic.title.toLowerCase().includes(searchQuery.toLowerCase());
-
-                                  // Фильтр по соцсети
-                                  let platformMatches = false;
-                                  if (selectedPlatform === 'all') {
-                                    platformMatches = true;
-                                  } else {
-                                    switch (selectedPlatform) {
-                                      case 'instagram':
-                                        platformMatches = detectedPlatform === 'instagram';
-                                        break;
-                                      case 'vk':
-                                        platformMatches = detectedPlatform === 'vk';
-                                        break;
-                                      case 'telegram':
-                                        platformMatches = detectedPlatform === 'telegram';
-                                        break;
-                                      case 'facebook':
-                                        platformMatches = detectedPlatform === 'facebook';
-                                        break;
-                                      default:
-                                        platformMatches = true;
-                                    }
-                                  }
-
-                                  let sourceMatches = true;
-                                  if (selectedSourceId) {
-                                    const trendSrcId = (topic as any).sourceId || (topic as any).source_id || '';
-                                    const trendSrcIdStr = typeof trendSrcId === 'object' ? (trendSrcId?.id || String(trendSrcId)) : String(trendSrcId);
-                                    sourceMatches = trendSrcIdStr === String(selectedSourceId);
-                                  }
-
-                                  const finalResult = withinPeriod && matchesSearch && platformMatches && sourceMatches;
-
-
-
-                                  return finalResult;
-                                })
-                                // Сортировка трендов
-                                .sort((a: TrendTopic, b: TrendTopic) => {
-                                  if (sortField === 'none') return 0;
-
-                                  let valueA, valueB;
-
-                                  // Определяем значения для сравнения в зависимости от выбранного поля сортировки
-                                  switch (sortField) {
-                                    case 'reactions':
-                                      valueA = a.reactions || 0;
-                                      valueB = b.reactions || 0;
-                                      break;
-                                    case 'comments':
-                                      valueA = a.comments || 0;
-                                      valueB = b.comments || 0;
-                                      break;
-                                    case 'views':
-                                      valueA = a.views || 0;
-                                      valueB = b.views || 0;
-                                      break;
-                                    case 'trendScore':
-                                      valueA = a.trendScore || 0;
-                                      valueB = b.trendScore || 0;
-                                      break;
-                                    case 'date':
-                                      valueA = new Date(a.created_at || a.createdAt || 0).getTime();
-                                      valueB = new Date(b.created_at || b.createdAt || 0).getTime();
-                                      break;
-                                    case 'platform': {
-                                      // Определяем платформу по источнику
-                                      const sourceA = sources.find(s => s.id === a.source_id || s.id === a.sourceId);
-                                      const sourceB = sources.find(s => s.id === b.source_id || s.id === b.sourceId);
-
-                                      const getPlatform = (source: any) => {
-                                        if (!source) return 'zz_unknown'; // Неизвестные в конце
-                                        const url = source.url.toLowerCase();
-                                        if (url.includes('instagram.com')) return 'instagram';
-                                        if (url.includes('vk.com') || url.includes('vkontakte.ru')) return 'vk';
-                                        if (url.includes('t.me') || url.includes('telegram.org')) return 'telegram';
-                                        if (url.includes('facebook.com') || url.includes('fb.com')) return 'facebook';
-                                        return 'zz_other';
-                                      };
-
-                                      valueA = getPlatform(sourceA);
-                                      valueB = getPlatform(sourceB);
-
-                                      // Для строковых значений используем localeCompare
-                                      return sortDirection === 'asc'
-                                        ? valueA.localeCompare(valueB)
-                                        : valueB.localeCompare(valueA);
-                                    }
-                                    default:
-                                      return 0;
-                                  }
-
-                                  // Применяем выбранное направление сортировки
-                                  const valA = typeof valueA === 'number' ? valueA : 0;
-                                  const valB = typeof valueB === 'number' ? valueB : 0;
-
-                                  return sortDirection === 'asc'
-                                    ? valA - valB
-                                    : valB - valA;
-                                })
-                                .map((topic: TrendTopic) => {
-                                  const sourceType = (topic as any).sourceType || (topic as any).source_type || '';
-                                  const isAiTrend = sourceType.toString().startsWith('AI:');
-                                  const topicSourceId = topic.source_id || topic.sourceId;
-                                  const foundSource = sources.find(s => s.id === topicSourceId);
-                                  const sourceName = isAiTrend
-                                    ? sourceType.replace('AI: ', '')
-                                    : foundSource?.name
-                                    || topic.sourceName || (topic as any).source_name
-                                    || (sourceType ? sourceType.charAt(0).toUpperCase() + sourceType.slice(1) : null)
-                                    || (topicSourceId ? t('trends.trendList.deletedSource') : t('trends.trendList.generalTrends'));
-
-                                  // Разбор JSON из поля media_links для превью (в реальном режиме)
-                                  let mediaData: { images: string[], videos: string[] } = {
-                                    images: [],  // Пустой массив, если нет реальных изображений 
-                                    videos: []
-                                  };
-
-                                  // Проверяем разные варианты имен полей (snake_case и camelCase)
-                                  const mediaLinksStr = topic.media_links || topic.mediaLinks;
-
-                                  if (mediaLinksStr) {
-                                    try {
-                                      if (typeof mediaLinksStr === 'string') {
-                                        const parsed = JSON.parse(mediaLinksStr);
-                                        if (parsed.images && Array.isArray(parsed.images) && parsed.images.length > 0) {
-                                          mediaData = parsed;
-                                        }
-                                      } else if (typeof mediaLinksStr === 'object') {
-                                        // Может прийти уже распарсенным
-                                        if ((mediaLinksStr as any).images && Array.isArray((mediaLinksStr as any).images) && (mediaLinksStr as any).images.length > 0) {
-                                          mediaData = mediaLinksStr as { images: string[], videos: string[] };
-                                        }
-                                      }
-                                    } catch (e) {
-                                      // Ошибка парсинга
-                                    }
-                                  }
-
-                                  // Первое изображение для отображения (если есть)
-                                  const firstImage = mediaData.images && mediaData.images.length > 0 ? mediaData.images[0] : undefined;
-
-                                   return (
-                                    <Card
-                                      key={topic.id}
-                                      className={`hover:shadow-md transition-shadow cursor-pointer ${selectedTrendTopic?.id === topic.id ? 'ring-2 ring-primary bg-accent/20 dark:bg-accent/30' : ''
-                                        }`}
-                                      onClick={() => {
-                                        setSelectedTrendTopic(topic);
-                                        setActiveTab('comments');
-                                        loadTrendComments(topic.id);
-                                      }}
-                                    >
-                                      <CardContent className="py-3 px-4">
-                                        <div className="flex items-start gap-3">
-                                          {/* Чекбокс для пакетного сбора */}
-                                          <div className="flex-shrink-0 mt-1">
-                                            <div className="flex items-center gap-1 p-0.5 rounded hover:bg-accent cursor-pointer">
-                                              <Checkbox
-                                                checked={selectedTopics.some(t => t.id === topic.id)}
-                                                onCheckedChange={() => toggleTopicSelection(topic)}
-                                                className="h-4 w-4"
-                                                aria-label={t('trends.trendCard.selectTrend')}
-                                                onClick={(e) => e.stopPropagation()}
-                                              />
-                                            </div>
-                                          </div>
-
-                                          {/* Изображение из media_links */}
-                                          {firstImage ? (
-                                            <div className="flex-shrink-0">
-                                              <img
-                                                src={createProxyImageUrl(firstImage, topic.id)}
-                                                alt={t('trends.globalTrends.thumbnail')}
-                                                className="h-16 w-16 object-cover rounded-md"
-                                                onError={(e) => {
-                                                  e.currentTarget.onerror = null;
-                                                  // Пробуем повторную загрузку с прямой ссылкой если это не Instagram
-                                                  if (firstImage.includes('instagram') ||
-                                                    firstImage.includes('fbcdn') ||
-                                                    firstImage.includes('cdninstagram')) {
-                                                    const retryUrl = createProxyImageUrl(firstImage, topic.id) + "&_retry=true";
-                                                    e.currentTarget.src = retryUrl;
-                                                  } else {
-                                                    e.currentTarget.src = 'https://placehold.co/100x100/jpeg?text=Нет+фото';
-                                                  }
-                                                }}
-                                                loading="lazy"
-                                                referrerPolicy="no-referrer"
-                                                crossOrigin="anonymous"
-                                              />
-                                            </div>
-                                          ) : null}
-
-                                          <div className="flex-1 min-w-0">
-                                            {/* Название канала вверху — ссылка на пост (urlPost) */}
-                                            {(() => {
-                                              const postUrl = (topic as any).urlPost || topic.url || "";
-                                              // URL канала: берём из источника или убираем ID поста из URL
-                                              const src = sources.find((s: any) => s.id === topic.source_id || s.id === (topic as any).sourceId);
-                                              const channelUrl = src?.url
-                                                || postUrl.replace(/\/(c\/\d+|\d+)$/, '')
-                                                || postUrl;
-                                              return (
-                                                <>
-                                                  <div className="mb-1 font-medium">
-                                                    <a
-                                                      href={postUrl}
-                                                      target="_blank"
-                                                      rel="noopener noreferrer"
-                                                      className="text-primary hover:underline"
-                                                      onClick={(e) => e.stopPropagation()}
-                                                    >
-                                                      {sourceName}
-                                                    </a>
-                                                  </div>
-                                                  {/* URL поста (urlPost) */}
-                                                  <div className="text-xs mb-2 text-muted-foreground truncate" title={postUrl || channelUrl}>
-                                                    {postUrl || channelUrl}
-                                                  </div>
-                                                </>
-                                              );
-                                            })()}
-
-                                            {/* Первая строка описания поста (если есть) */}
-                                            <div
-                                              className="text-sm line-clamp-2 flex items-start gap-2"
-                                            >
-                                              <SentimentEmoji sentiment={topic.sentiment_analysis} className="text-sm" />
-                                              <span className="flex-1">
-                                                {topic.description ? topic.description.split('\n')[0] : topic.title}
-                                              </span>
-                                            </div>
-
-                                            <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
-                                              <div className="flex items-center gap-1">
-                                                <ThumbsUp className="h-3 w-3" />
-                                                <span>{typeof topic.reactions === 'number' ? Math.round(topic.reactions).toLocaleString('ru-RU') : (topic.reactions ?? 0)}</span>
-                                              </div>
-                                              <div className="flex items-center gap-1">
-                                                <MessageSquare className="h-3 w-3" />
-                                                <span>{typeof topic.comments === 'number' ? Math.round(topic.comments).toLocaleString('ru-RU') : (topic.comments ?? 0)}</span>
-                                              </div>
-                                              <div className="flex items-center gap-1">
-                                                <Eye className="h-3 w-3" />
-                                                <span>{typeof topic.views === 'number' ? Math.round(topic.views).toLocaleString('ru-RU') : (topic.views ?? 0)}</span>
-                                              </div>
-                                              {/* Показываем trendScore - показатель трендовости */}
-                                              <div className="flex items-center gap-1">
-                                                <Flame className="h-3 w-3 text-orange-500" />
-                                                <span>{typeof topic.trendScore === 'number' ? Math.round(topic.trendScore).toLocaleString('ru-RU') : (topic.trendScore ?? 0)}</span>
-                                              </div>
-                                              {topic.is_bookmarked && (
-                                                <div className="flex items-center gap-1">
-                                                  <Bookmark className="h-3 w-3 text-primary" />
-                                                </div>
-                                              )}
-                                              <div className="flex items-center gap-1">
-                                                <Clock className="h-3 w-3" />
-                                                <span>
-                                                  {/* Удаляем многоточие - показываем только дату */}
-                                                  {topic.created_at
-                                                    ? formatRelativeTime(new Date(topic.created_at))
-                                                    : topic.createdAt
-                                                      ? formatRelativeTime(new Date(topic.createdAt))
-                                                      : formatRelativeTime(new Date())}
-                                                </span>
-                                              </div>
-
-                                              {/* Кнопка превью поста */}
-                                              <button
-                                                onClick={(e) => {
-                                                  e.stopPropagation();
-                                                  console.log('Открываем превью тренда:', topic.id, topic.title);
-                                                  setPreviewTrendTopic(topic);
-                                                }}
-                                                className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400 hover:text-green-800 dark:hover:text-green-300"
-                                                title={t('trends.trendCard.preview')}
-                                              >
-                                                <ExternalLink className="h-3 w-3" />
-                                                <span>{t('trends.trendCard.preview')}</span>
-                                              </button>
-
-                                              {/* Кнопка скрыть пост из ленты */}
-                                              <button
-                                                onClick={(e) => {
-                                                  e.stopPropagation();
-                                                  setHiddenTrendIds(prev => new Set([...prev, topic.id]));
-                                                }}
-                                                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive"
-                                                title={t('trends.trendCard.hide')}
-                                              >
-                                                <EyeOff className="h-3 w-3" />
-                                                <span>{t('trends.trendCard.hide')}</span>
-                                              </button>
-
-                                              {/* Кнопка перехода на вкладку комментариев */}
-                                              {(topic.urlPost?.includes('vk.com') || topic.urlPost?.includes('t.me') ||
-                                                topic.accountUrl?.includes('vk.com') || topic.accountUrl?.includes('t.me')) && (
-                                                  <button
-                                                    onClick={(e) => {
-                                                      e.stopPropagation();
-                                                      setSelectedTrendTopic(topic);
-                                                      setActiveTab('comments');
-                                                    }}
-                                                    className="flex items-center gap-1 text-xs text-primary hover:text-blue-800"
-                                                    title={t('trends.trendCard.comments')}
-                                                  >
-                                                    <MessageSquare className="h-3 w-3" />
-                                                    <span>{t('trends.trendCard.comments')}</span>
-                                                  </button>
-                                                )}
-                                            </div>
-                                          </div>
-                                        </div>
-                                      </CardContent>
-                                    </Card>
-                                  );
-                                })
-                              }
+                              {visibleTrends.map((vt) => (
+                                <TrendListItem
+                                  key={vt.topic.id}
+                                  topic={vt.topic}
+                                  sourceName={vt.sourceName}
+                                  postUrl={vt.postUrl}
+                                  channelUrl={vt.channelUrl}
+                                  isActive={selectedTrendTopic?.id === vt.topic.id}
+                                  isSelected={selectedTopics.some((s) => s.id === vt.topic.id)}
+                                  t={t}
+                                  onOpen={handleOpenTrend}
+                                  onToggleSelect={toggleTopicSelection}
+                                  onPreview={handlePreviewTrend}
+                                  onHide={handleHideTrend}
+                                  onOpenComments={handleOpenTrendComments}
+                                />
+                              ))}
                             </div>
                           )}
                         </>

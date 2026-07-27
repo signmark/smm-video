@@ -11,6 +11,45 @@ import axios from 'axios';
 import { authorizeCampaignAccess, CampaignAccessError } from '../services/campaign-access';
 import { sanitizeOAuthSecrets } from '../services/oauth-response-sanitizer';
 
+/**
+ * Достаёт дату публикации поста из raw_source_data тренда (TG: date, VK: timestamp,
+ * IG/YT: taken_at/published_at и т.п.). Возвращает ISO-строку или null.
+ * Unix-секунды и миллисекунды различаются по величине; строки парсим через Date.
+ */
+function extractPostDate(rawSourceData: any): string | null {
+  if (!rawSourceData) return null;
+
+  let raw: any = rawSourceData;
+  if (typeof raw === 'string') {
+    try { raw = JSON.parse(raw); } catch { return null; }
+  }
+  if (typeof raw !== 'object') return null;
+
+  const candidates = [
+    raw.date, raw.timestamp, raw.taken_at, raw.taken_at_timestamp,
+    raw.published_at, raw.publishedAt, raw.pubDate, raw.created_time, raw.post_date,
+  ];
+
+  for (const c of candidates) {
+    if (c == null || c === '') continue;
+    if (typeof c === 'number') {
+      const ms = c < 1e12 ? c * 1000 : c;
+      if (Number.isFinite(ms) && ms > 0) return new Date(ms).toISOString();
+      continue;
+    }
+    if (typeof c === 'string') {
+      const num = Number(c);
+      if (!Number.isNaN(num) && c.trim() !== '') {
+        const ms = num < 1e12 ? num * 1000 : num;
+        if (Number.isFinite(ms) && ms > 0) return new Date(ms).toISOString();
+      }
+      const t = new Date(c).getTime();
+      if (!Number.isNaN(t)) return new Date(t).toISOString();
+    }
+  }
+  return null;
+}
+
 export function registerAnalyticsRoutes(app: Express) {
   /**
    * Admin-only: принудительный refresh метрик через scraper.
@@ -258,7 +297,17 @@ export function registerAnalyticsRoutes(app: Express) {
         });
       }
 
-      const trendsData = response.data?.data || [];
+      const rawTrends = response.data?.data || [];
+
+      // Дата ПУБЛИКАЦИИ поста берётся из raw_source_data (в самой записи её нет —
+      // created_at это момент вставки в Directus). Нужна для фильтра по периоду на
+      // клиенте: без неё окна 7/14/30 дней давали одинаковый счётчик, т.к. тренды
+      // собираются пачками. Считаем на чтении, чтобы работало и на уже собранных.
+      const trendsData = rawTrends.map((trend: any) => {
+        const postDate = extractPostDate(trend.raw_source_data);
+        return postDate ? { ...trend, postDate } : trend;
+      });
+
       if (trendsData.length > 0) {
         const sample = trendsData[0];
         log(`[Analytics Route] Sample trend fields: ${Object.keys(sample).join(', ')}`, 'info');

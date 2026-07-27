@@ -161,13 +161,18 @@ async function loadCampaigns(): Promise<CampaignRow[]> {
 }
 
 /** Один проход по всем кампаниям. Экспортируется, чтобы можно было дёрнуть вручную. */
-export async function runEngagementCheck(): Promise<{ campaigns: number; notified: number }> {
+export async function runEngagementCheck(): Promise<{
+  campaigns: number;
+  notified: number;
+  totalCampaigns: number;
+  monitoredChannels: number;
+}> {
   let campaigns: CampaignRow[];
   try {
     campaigns = await loadCampaigns();
   } catch (err: any) {
     log(`[ENGAGEMENT] Не удалось загрузить кампании: ${err.message}`, 'engagement', 'warn');
-    return { campaigns: 0, notified: 0 };
+    return { campaigns: 0, notified: 0, totalCampaigns: 0, monitoredChannels: 0 };
   }
 
   const { getChannelPostsDynamics, getAllMonitoredChannels } = await import('./scraper-analytics');
@@ -223,7 +228,12 @@ export async function runEngagementCheck(): Promise<{ campaigns: number; notifie
     }
   }
 
-  return { campaigns: checked, notified };
+  return {
+    campaigns: checked,
+    notified,
+    totalCampaigns: campaigns.length,
+    monitoredChannels: monitoredIndex.size,
+  };
 }
 
 /** Запускает периодический опрос. Повторный вызов игнорируется. */
@@ -242,7 +252,14 @@ export function startEngagementWatcher(): void {
   const tick = async () => {
     try {
       const result = await runEngagementCheck();
-      log(`[ENGAGEMENT] Проверено кампаний: ${result.campaigns}, уведомлено: ${result.notified}`, 'engagement', 'warn');
+      // Счётчики агрегатные: по ним видно, где обрывается связка кампания → канал,
+      // без выгрузки самих кампаний и их настроек в логи.
+      log(
+        `[ENGAGEMENT] Кампаний всего: ${result.totalCampaigns}, каналов в мониторинге: ${result.monitoredChannels}, `
+        + `с привязанным каналом: ${result.campaigns}, уведомлено: ${result.notified}`,
+        'engagement',
+        'warn',
+      );
     } catch (err: any) {
       log(`[ENGAGEMENT] Ошибка цикла: ${err.message}`, 'engagement', 'error');
     }

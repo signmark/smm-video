@@ -71,10 +71,7 @@ export function VkTokenBanner() {
   const startReconnect = async () => {
     if (!selectedCampaignId) return;
 
-    // token объявлен локально: в scope компонента его нет (единственный const token
-    // живёт внутри fetchVkSettings), а без него ссылки ниже падали ReferenceError.
-    const token = localStorage.getItem("auth_token");
-
+    // Авторизация к prepare/status инкапсулирована в helpers vk-token-webhook.ts.
     // Стабильный webhook URL (постоянный секрет): уже сохранённый в needanapp URL
     // продолжит работать. Кладём URL в буфер обмена на случай первой настройки.
     try {

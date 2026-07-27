@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { useToast } from "@/hooks/use-toast";
 import { Bot, Zap, GitMerge, SlidersHorizontal } from "lucide-react";
 
 export type PipelineMode = 'full_auto' | 'controlled' | 'mixed';
@@ -71,6 +72,7 @@ export function AutonomousLaunchDialog({
   onStarted,
 }: AutonomousLaunchDialogProps) {
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [selectedMode, setSelectedMode] = useState<PipelineMode>('full_auto');
 
   const { mutate: startAutonomousWithMode, isPending } = useMutation({
@@ -91,12 +93,25 @@ export function AutonomousLaunchDialog({
           refresh_token: localStorage.getItem('refresh_token'),
         }),
       });
-      return res.json();
+      // Сервер отвечает {error} с 4xx/5xx — без throw мутация «успешна» и
+      // пользователь видел тост «Агент запущен» при упавшем старте.
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data?.error) {
+        throw new Error(data?.error || `HTTP ${res.status}`);
+      }
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/autonomous/status', campaignId] });
       onStarted?.();
       onOpenChange(false);
+    },
+    onError: (e: any) => {
+      toast({
+        variant: 'destructive',
+        title: 'Не удалось запустить агента',
+        description: e?.message || 'Неизвестная ошибка',
+      });
     },
   });
 

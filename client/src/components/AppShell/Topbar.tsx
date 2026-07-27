@@ -1,10 +1,9 @@
 ﻿import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Menu, X, User, LogOut, Settings, Sun, Moon, Sparkles, Send, CreditCard, Bot, Zap, SlidersHorizontal, GitMerge, ClipboardList } from "lucide-react";
+import { Menu, X, User, LogOut, Settings, Sun, Moon, Sparkles, Send, CreditCard, Bot, ClipboardList } from "lucide-react";
 import { CampaignSelector } from "../CampaignSelector";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { useAuthStore } from "@/lib/store";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useThemeStore } from "@/lib/themeStore";
@@ -12,8 +11,7 @@ import { useCampaignStore } from "@/lib/campaignStore";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { useTranslation } from 'react-i18next';
 import { Link } from "wouter";
-
-type PipelineMode = 'full_auto' | 'controlled' | 'mixed';
+import { AutonomousLaunchDialog } from "@/components/AutonomousLaunchDialog";
 
 interface TopbarProps {
   onMenuClick: () => void;
@@ -37,7 +35,6 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [showModeDialog, setShowModeDialog] = useState(false);
-  const [selectedMode, setSelectedMode] = useState<PipelineMode>('full_auto');
   
   // Нормализуем location и скрываем селектор на Dashboard и списке кампаний
   const normalizedLocation = location.replace(/\/+$/, '') || '/';
@@ -97,31 +94,6 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
     const imgPart = tooltipWithImages !== false ? ' · с картинками' : '';
     return `${posts} ${postWord} каждые ${interval} ч${imgPart}`;
   };
-
-  const { mutate: startAutonomousWithMode, isPending: isTogglingAutonomous } = useMutation({
-    mutationFn: async (mode: PipelineMode) => {
-      const res = await fetch('/api/autonomous/start', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: token ? `Bearer ${token}` : '' },
-        body: JSON.stringify({
-          campaignId: selectedCampaignId,
-          userId,
-          interval: autonomousSettings?.intervalHours ?? 8,
-          postsPerCycle: autonomousSettings?.postsPerCycle ?? 1,
-          autoSchedule: autonomousSettings?.autoSchedule ?? true,
-          withImages: autonomousSettings?.withImages ?? true,
-          pipelineMode: mode,
-          auth_token: localStorage.getItem('auth_token'),
-          refresh_token: localStorage.getItem('refresh_token'),
-        }),
-      });
-      return res.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/autonomous/status', selectedCampaignId] });
-      setShowModeDialog(false);
-    },
-  });
 
   const { mutate: stopAutonomous, isPending: isStoppingAutonomous } = useMutation({
     mutationFn: async () => {
@@ -267,7 +239,7 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
                     }}
                     className="h-9 w-9 relative"
                     data-testid="button-autonomous-toggle"
-                    disabled={isTogglingAutonomous || isStoppingAutonomous}
+                    disabled={isStoppingAutonomous}
                     aria-label={
                       isAutonomousActive
                         ? t('nav.autonomous.stopLabel')
@@ -414,91 +386,16 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
       </div>
     </header>
 
-      {/* Диалог выбора режима автономного ассистента */}
-    <Dialog open={showModeDialog} onOpenChange={setShowModeDialog}>
-      <DialogContent className="sm:max-w-[520px]" data-testid="dialog-pipeline-mode">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Bot className="h-5 w-5 text-primary" />
-            Запуск автономного ассистента
-          </DialogTitle>
-          <DialogDescription>
-            Выберите режим работы — насколько автономно должен действовать ассистент
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-3 py-2">
-          {[
-            {
-              id: 'full_auto' as PipelineMode,
-              icon: <Zap className="h-5 w-5 text-green-500" />,
-                title: 'Полный автомат',
-                description: 'Генерирует план, пишет тексты, создаёт картинки и публикует по расписанию — без остановок.',
-                badge: 'Рекомендуется',
-              badgeColor: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
-            },
-            {
-              id: 'mixed' as PipelineMode,
-              icon: <GitMerge className="h-5 w-5 text-blue-500" />,
-                title: 'Смешанный',
-                description: 'Показывает контент-план на одобрение, затем самостоятельно пишет, генерирует картинки и публикует.',
-                badge: 'С одобрением плана',
-              badgeColor: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
-            },
-            {
-              id: 'controlled' as PipelineMode,
-              icon: <SlidersHorizontal className="h-5 w-5 text-orange-500" />,
-                title: 'С контролем',
-                description: 'После каждого шага (план → тексты → картинки) показывает результат и ждёт вашего одобрения.',
-                badge: 'Максимальный контроль',
-              badgeColor: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300',
-            },
-          ].map((option) => (
-            <button
-              key={option.id}
-              data-testid={`option-mode-${option.id}`}
-              onClick={() => setSelectedMode(option.id)}
-              className={`w-full text-left rounded-lg border-2 p-4 transition-all ${
-                selectedMode === option.id
-                  ? 'border-primary bg-primary/5'
-                  : 'border-border hover:border-primary/40'
-              }`}
-            >
-              <div className="flex items-start gap-3">
-                <div className="mt-0.5">{option.icon}</div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-semibold text-sm">{option.title}</span>
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${option.badgeColor}`}>
-                      {option.badge}
-                    </span>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-1">{option.description}</p>
-                </div>
-                <div className={`h-4 w-4 rounded-full border-2 mt-0.5 flex-shrink-0 ${
-                  selectedMode === option.id ? 'border-primary bg-primary' : 'border-muted-foreground/30'
-                }`} />
-              </div>
-            </button>
-          ))}
-        </div>
-
-        <div className="flex gap-2 justify-end pt-2">
-          <Button variant="outline" onClick={() => setShowModeDialog(false)} data-testid="button-mode-cancel">
-              Отмена
-          </Button>
-          <Button
-            onClick={() => startAutonomousWithMode(selectedMode)}
-            disabled={isTogglingAutonomous}
-            data-testid="button-mode-confirm"
-            className="gap-2"
-          >
-            <Bot className="h-4 w-4" />
-              {isTogglingAutonomous ? 'Запускаем…' : 'Запустить'}
-          </Button>
-        </div>
-      </DialogContent>
-    </Dialog>
+      {/* Диалог выбора режима автономного ассистента — общий компонент,
+          тот же вход из генератора КП («Доверить агенту») */}
+    <AutonomousLaunchDialog
+      open={showModeDialog}
+      onOpenChange={setShowModeDialog}
+      campaignId={selectedCampaignId}
+      userId={userId}
+      token={token}
+      autonomousSettings={autonomousSettings}
+    />
     </>
   );
 }

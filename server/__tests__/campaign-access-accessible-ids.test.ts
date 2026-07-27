@@ -29,7 +29,7 @@ beforeEach(() => {
 });
 
 describe('listAccessibleCampaignIds', () => {
-  it('спрашивает у Directus кампании, где пользователь владелец ИЛИ создатель', async () => {
+  it('спрашивает у Directus кампании пользователя фильтром только по user_id', async () => {
     directusGet.mockResolvedValueOnce({ data: { data: [{ id: 'c1' }, { id: 'c2' }] } });
 
     const ids = await listAccessibleCampaignIds(USER, 'user-token');
@@ -37,9 +37,11 @@ describe('listAccessibleCampaignIds', () => {
     expect(ids).toEqual(['c1', 'c2']);
     const [path, config] = directusGet.mock.calls[0];
     expect(path).toBe('/items/user_campaigns');
-    expect(JSON.parse(config.params.filter)).toEqual({
-      _or: [{ user_id: { _eq: USER } }, { user_created: { _eq: USER } }],
-    });
+    // Именно так, и никаких _or с user_created: живой Directus отвергает фильтр по
+    // этому полю с 403, что через catch превращалось в 503 для всех неадминов.
+    // Мок такое поймать не может — регрессию нашли только прогоном по проду.
+    // Канонический GET /api/campaigns фильтрует так же.
+    expect(JSON.parse(config.params.filter)).toEqual({ user_id: { _eq: USER } });
     // Сервисный токен, а не пользовательский: сама выборка кампаний не должна
     // зависеть от прав пользователя в Directus.
     expect(config.headers.Authorization).toBe('Bearer service-token');

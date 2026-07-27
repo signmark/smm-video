@@ -39,9 +39,13 @@ export async function listAccessibleCampaignIds(
     const response = await directusApi.get('/items/user_campaigns', {
       headers: { Authorization: `Bearer ${resolveServiceToken(userToken)}` },
       params: {
-        filter: JSON.stringify({
-          _or: [{ user_id: { _eq: userId } }, { user_created: { _eq: userId } }],
-        }),
+        // Только user_id. Фильтр по user_created живой Directus отвергает с 403
+        // («no permission to access field user_created ... or it does not exist»):
+        // в SQL-схеме колонка есть, но у роли этого поля нет. Через catch ниже это
+        // превращалось в 503 на каждом запросе без campaignId — то есть эндпоинт
+        // ложился для всех неадминов. Канонический список кампаний
+        // (GET /api/campaigns) фильтрует ровно так же, только по user_id.
+        filter: JSON.stringify({ user_id: { _eq: userId } }),
         fields: ['id'],
         limit: -1,
       },

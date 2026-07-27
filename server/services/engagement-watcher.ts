@@ -139,7 +139,7 @@ function pluralComments(count: number): string {
 
 interface CampaignRow {
   id: string;
-  title?: string;
+  /** Только `name`: поля `title` у роли админ-токена нет, запрос с ним падает в 403. */
   name?: string;
   user_id?: string;
   social_media_settings?: unknown;
@@ -167,7 +167,10 @@ async function loadCampaigns(): Promise<CampaignRow[]> {
     const response = await axios.get(`${directusUrl}/items/user_campaigns`, {
       headers: { Authorization: `Bearer ${adminToken}` },
       params: {
-        fields: 'id,title,name,user_id,social_media_settings',
+        // Никаких лишних полей: `title` роли админ-токена недоступен, и запрос
+        // целиком отдаёт 403 («no permission to access field title»). Та же грабля,
+        // что была с user_created в фильтре доступных кампаний.
+        fields: 'id,name,user_id,social_media_settings',
         limit: PAGE_SIZE,
         page,
         filter: { social_media_settings: { _nnull: true } },
@@ -175,7 +178,16 @@ async function loadCampaigns(): Promise<CampaignRow[]> {
       timeout: 20000,
     });
 
-    const batch: CampaignRow[] = response.data?.data || [];
+    const batch = response.data?.data;
+    if (!Array.isArray(batch)) {
+      // Directus на отказ по правам отвечает телом {errors:[...]}, а не массивом.
+      // Без этой проверки такой ответ молча превращался в «кампаний нет».
+      throw new Error(
+        `Directus вернул не список кампаний (HTTP ${response.status}): `
+        + JSON.stringify(response.data?.errors?.[0]?.message || response.data).slice(0, 200),
+      );
+    }
+
     rows.push(...batch);
     if (batch.length < PAGE_SIZE) break;
   }
@@ -239,7 +251,7 @@ export async function runEngagementCheck(): Promise<{
       ...events.filter(e => e.kind === 'views').sort((a, b) => b.delta - a.delta),
     ].slice(0, MAX_NOTIFICATIONS_PER_CAMPAIGN);
 
-    const campaignName = campaign.title || campaign.name || 'Кампания';
+    const campaignName = campaign.name || 'Кампания';
     const channel = await notifyUser({
       userId: campaign.user_id,
       telegramText: buildNotificationText(campaignName, ordered),

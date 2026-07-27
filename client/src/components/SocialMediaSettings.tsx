@@ -217,8 +217,8 @@ export function SocialMediaSettings({
   const [loadingVkGroups, setLoadingVkGroups] = useState(false);
   const [vkPolling, setVkPolling] = useState(false);
   const [vkWebhookCopied, setVkWebhookCopied] = useState(false);
-  // URL с одноразовым state выдаёт сервер (prepare). Без валидного state
-  // публичный VK-webhook отклоняется, поэтому статичный URL больше не годится.
+  // Стабильный URL с постоянным секретом выдаёт сервер (prepare). Без верного
+  // секрета публичный VK-webhook отклоняется; сам URL переиспользуется.
   const [vkWebhookUrl, setVkWebhookUrl] = useState('');
   const [vkWebhookPreparing, setVkWebhookPreparing] = useState(false);
   const [vkShowManual, setVkShowManual] = useState(false);
@@ -583,8 +583,8 @@ export function SocialMediaSettings({
     }
   };
 
-  // Готовит свежий webhook URL с одноразовым state (сервер привязывает его к
-  // кампании и пользователю). Возвращает URL или '' при ошибке.
+  // Получает стабильный webhook URL с постоянным per-campaign секретом (сервер
+  // генерит его один раз и переиспользует). Возвращает URL или '' при ошибке.
   const prepareVkWebhook = async (): Promise<string> => {
     setVkWebhookPreparing(true);
     try {
@@ -614,8 +614,8 @@ export function SocialMediaSettings({
 
   // Переподключение VK через needanapp (webhook polling)
   const startVkReconnect = async () => {
-    // Свежий state обязателен: needanapp постит на URL, который мы дали. Старый
-    // сохранённый в needanapp URL без state будет отклонён — просим вставить новый.
+    // URL стабилен (постоянный секрет): уже сохранённый в needanapp URL продолжит
+    // работать. Готовим его на всякий случай, чтобы показать пользователю.
     const freshUrl = await prepareVkWebhook();
 
     // Ставим флаг reconnecting чтобы polling не срабатывал на старом токене
@@ -633,7 +633,7 @@ export function SocialMediaSettings({
     toast({
       title: "Переподключение VK",
       description: freshUrl
-        ? "Скопируйте НОВЫЙ webhook URL ниже и вставьте его в needanapp — старый уже не подойдёт. Ожидаем токен..."
+        ? "Откройте needanapp, получите токен. Webhook URL уже сохранён (можно проверить ниже). Ожидаем токен..."
         : "Откройте vk.needanapp.ru, получите токен и вставьте webhook URL. Ожидаем токен..."
     });
 
@@ -1941,7 +1941,7 @@ export function SocialMediaSettings({
                       size="sm"
                       className="shrink-0"
                       onClick={async () => {
-                        // Гарантируем свежий state на момент копирования.
+                        // URL стабилен; если ещё не подготовлен — готовим сейчас.
                         const url = vkWebhookUrl || (await prepareVkWebhook());
                         if (!url) return;
                         await navigator.clipboard.writeText(url);

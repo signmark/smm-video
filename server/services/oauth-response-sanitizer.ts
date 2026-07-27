@@ -24,6 +24,9 @@ const SECRET_KEYS = new Set([
   'token', 'accesstoken', 'refreshtoken', 'longlivedtoken', 'pageaccesstoken', 'usertoken',
   'bottoken', 'telegrambottoken',
   'appsecret', 'clientsecret', 'password', 'apikey', 'apisecret',
+  // Секрет VK token-webhook: кто им владеет — может писать токены в кампанию.
+  // Наружу отдаём только через /prepare (владельцу); из настроек — вырезаем.
+  'webhooksecret',
 ]);
 
 function normalizedKey(key: string): string {

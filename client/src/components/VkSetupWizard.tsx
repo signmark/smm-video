@@ -37,8 +37,8 @@ const VkSetupWizard: React.FC<VkSetupWizardProps> = ({ campaignId, onComplete, o
   const oauth2PopupRef = useRef<Window | null>(null);
   const oauth2ListenerRef = useRef<((e: MessageEvent) => void) | null>(null);
 
-  // URL с одноразовым state выдаёт сервер (prepare). Именно его пользователь
-  // вставляет в needanapp — без валидного state публичный callback отклоняется.
+  // Стабильный URL с постоянным секретом выдаёт сервер (prepare). Именно его
+  // пользователь вставляет в needanapp — без верного секрета callback отклоняется.
   const [webhookUrl, setWebhookUrl] = useState('');
   const [preparingWebhook, setPreparingWebhook] = useState(false);
 
@@ -80,7 +80,7 @@ const VkSetupWizard: React.FC<VkSetupWizardProps> = ({ campaignId, onComplete, o
   }, []);
 
   const copyWebhook = async () => {
-    // Гарантируем свежий state на момент копирования.
+    // URL стабилен; если ещё не подготовлен — готовим сейчас.
     const url = webhookUrl || (await prepareWebhook().catch(() => ''));
     if (!url) return;
     await navigator.clipboard.writeText(url);

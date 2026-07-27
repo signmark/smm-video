@@ -67,8 +67,8 @@ export function VkTokenBanner() {
   const startReconnect = async () => {
     if (!selectedCampaignId) return;
 
-    // Свежий одноразовый state: старый сохранённый в needanapp URL без state
-    // будет отклонён. Готовим новый URL и кладём его в буфер обмена.
+    // Стабильный webhook URL (постоянный секрет): уже сохранённый в needanapp URL
+    // продолжит работать. Кладём URL в буфер обмена на случай первой настройки.
     try {
       const prep = await fetch(`/api/vk/token-webhook/${selectedCampaignId}/prepare`, {
         method: 'POST',
@@ -138,7 +138,7 @@ export function VkTokenBanner() {
             }
           </button>
           {isReconnecting && urlCopied && (
-            <span className="ml-2 text-xs">Новый webhook URL скопирован — вставьте его в needanapp (старый уже не подойдёт).</span>
+            <span className="ml-2 text-xs">Webhook URL скопирован — вставьте его в needanapp, если ещё не сохранён.</span>
           )}
         </p>
         <button

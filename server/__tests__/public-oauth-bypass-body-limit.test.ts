@@ -16,7 +16,7 @@ import { registerPublicOAuthBypass } from '../middleware/public-oauth-bypass';
 
 // Настоящий роутер — из его stack хелпер достаёт handler (как в index.ts).
 const vkRouter = express.Router();
-vkRouter.post('/vk/token-webhook/:campaignId', (req, res) => {
+vkRouter.post('/vk/token-webhook/:campaignId/submit/:secret', (req, res) => {
   res.json({ token: (req.body as any)?.access_token ?? null });
 });
 
@@ -24,7 +24,7 @@ const app = express();
 // 1) Публичные callback'и — первыми, с точечным 1mb-парсером внутри хелпера.
 registerPublicOAuthBypass(
   app,
-  [{ router: vkRouter, routerPath: '/vk/token-webhook/:campaignId', publicPath: '/api/vk/token-webhook/:campaignId', method: 'post' }],
+  [{ router: vkRouter, routerPath: '/vk/token-webhook/:campaignId/submit/:secret', publicPath: '/api/vk/token-webhook/:campaignId/submit/:secret', method: 'post' }],
   { warn: () => {}, info: () => {} },
 );
 // 2) Глобальный 50mb-парсер и обычный /api-роут — как в index.ts, ПОСЛЕ callback'ов.
@@ -40,7 +40,7 @@ const MB = 1024 * 1024;
 describe('body-parser: 1mb для callback, 50mb для обычных /api', () => {
   it('маленький публичный callback получает распарсенное тело', async () => {
     const res = await request(app)
-      .post('/api/vk/token-webhook/camp-1')
+      .post('/api/vk/token-webhook/camp-1/submit/sec-1')
       .send({ access_token: 'short-token' });
     expect(res.status).toBe(200);
     expect(res.body.token).toBe('short-token');
@@ -48,7 +48,7 @@ describe('body-parser: 1mb для callback, 50mb для обычных /api', ()
 
   it('публичный callback с телом >1mb → 413', async () => {
     const res = await request(app)
-      .post('/api/vk/token-webhook/camp-1')
+      .post('/api/vk/token-webhook/camp-1/submit/sec-1')
       .send({ access_token: bytes(2 * MB) });
     expect(res.status).toBe(413);
   });

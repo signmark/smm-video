@@ -128,8 +128,8 @@ import tiktokAuthRouter from './routes/tiktok-auth';
 import { registerPublicOAuthBypass } from './middleware/public-oauth-bypass';
 
 // Отдельный лимитер для публичного VK token-webhook: он мимо globalApiLimiter
-// (смонтирован в байпасе до общей цепочки), поэтому ограничиваем перебор state
-// точечно. 60 запросов за 15 минут на IP — легитимный needanapp постит однократно.
+// (смонтирован в байпасе до общей цепочки), поэтому ограничиваем перебор секрета
+// точечно. 60 запросов за 15 минут на IP — легитимный needanapp постит редко.
 const vkWebhookLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 60,
@@ -148,6 +148,7 @@ const PUBLIC_OAUTH_CALLBACKS: Array<{
   routerPath: string;
   publicPath: string;
   method: 'get' | 'post' | 'options';
+  middleware?: express.RequestHandler[];
 }> = [
   // OAuth provider redirect callbacks (GET, redirect from Google/VK/IG/Threads/TikTok)
   { router: youtubeAuthRouter, routerPath: '/youtube/auth/callback', publicPath: '/api/youtube/auth/callback', method: 'get' },
@@ -157,11 +158,12 @@ const PUBLIC_OAUTH_CALLBACKS: Array<{
   { router: threadsOAuthRouter, routerPath: '/threads/auth/callback', publicPath: '/api/threads/auth/callback', method: 'get' },
   { router: tiktokAuthRouter, routerPath: '/tiktok/auth/callback', publicPath: '/api/tiktok/auth/callback', method: 'get' },
   // needanapp.ru webhook для VK: POST с токенами (body: {access_token, refresh_token, device_id, client_id}).
-  // Публичный (needanapp без Bearer), но защищён одноразовым state (?state=…) —
-  // проверяется в хендлере до admin GET/PATCH. Плюс отдельный rate limiter.
-  { router: vkOAuthRouter, routerPath: '/vk/token-webhook/:campaignId', publicPath: '/api/vk/token-webhook/:campaignId', method: 'post', middleware: [vkWebhookLimiter] },
+  // Публичный (needanapp без Bearer), но защищён постоянным per-campaign секретом
+  // в сегменте пути (/submit/:secret) — сверяется в хендлере до admin PATCH.
+  // URL стабилен и переиспользуется на каждый реконнект. Плюс отдельный rate limiter.
+  { router: vkOAuthRouter, routerPath: '/vk/token-webhook/:campaignId/submit/:secret', publicPath: '/api/vk/token-webhook/:campaignId/submit/:secret', method: 'post', middleware: [vkWebhookLimiter] },
   // CORS preflight от needanapp (vk.needanapp.ru → smm.omemo.tech)
-  { router: vkOAuthRouter, routerPath: '/vk/token-webhook/:campaignId', publicPath: '/api/vk/token-webhook/:campaignId', method: 'options' },
+  { router: vkOAuthRouter, routerPath: '/vk/token-webhook/:campaignId/submit/:secret', publicPath: '/api/vk/token-webhook/:campaignId/submit/:secret', method: 'options' },
   // Статус-polling НЕ в байпасе: теперь требует сессию (authenticateUser +
   // authorizeCampaignAccess внутри роута) и обслуживается обычным mount'ом vkOAuthRouter.
 ];

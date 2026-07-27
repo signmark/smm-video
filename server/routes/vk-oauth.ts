@@ -4,7 +4,7 @@ import crypto from 'crypto';
 import { log } from '../utils/logger';
 import { authenticateUser } from '../middleware/user-auth';
 import { authorizeCampaignAccess, CampaignAccessError } from '../services/campaign-access';
-import { createVkWebhookState, consumeVkWebhookState } from '../services/vk-webhook-state';
+import { generateVkWebhookSecret, vkWebhookSecretMatches } from '../services/vk-webhook-secret';
 
 const router = express.Router();
 
@@ -261,51 +261,98 @@ function setCorsHeaders(req: express.Request, res: express.Response) {
 
 /**
  * POST /api/vk/token-webhook/:campaignId/prepare  (authenticated)
- * Инициация подключения: авторизованный владелец кампании получает одноразовый
- * state и готовый webhook URL с ним. Именно этот URL пользователь вставляет в
- * needanapp. Публичный callback без валидного state будет отклонён.
+ * Инициация подключения: авторизованный владелец кампании получает стабильный
+ * webhook URL с постоянным per-campaign секретом (генерируется один раз и
+ * хранится в настройках кампании). Именно этот URL пользователь вставляет в
+ * needanapp — он переиспользуется на каждый реконнект и переживает деплои.
+ * Публичный callback без верного секрета будет отклонён.
  */
 router.post('/vk/token-webhook/:campaignId/prepare', authenticateUser, async (req, res) => {
   const { campaignId } = req.params;
   if (!(await ensureCampaignAccess(req, res, campaignId))) return;
 
-  const state = createVkWebhookState(campaignId, (req as any).user.id);
-  const webhookUrl = `${getAppBaseUrl(req)}/api/vk/token-webhook/${encodeURIComponent(campaignId)}?state=${state}`;
-  // state в логи не пишем.
-  res.json({ webhookUrl, state });
+  try {
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+    const directusUrl = process.env.DIRECTUS_URL;
+
+    const campaignResp = await axios.get(`${directusUrl}/items/user_campaigns/${campaignId}`, {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const existingSettings = campaignResp.data.data?.social_media_settings || {};
+    const existingVk = existingSettings.vk || {};
+
+    // Секрет генерируем один раз и переиспользуем — URL остаётся стабильным.
+    let secret: string = existingVk.webhookSecret;
+    if (!secret) {
+      secret = generateVkWebhookSecret();
+      await axios.patch(`${directusUrl}/items/user_campaigns/${campaignId}`, {
+        social_media_settings: { ...existingSettings, vk: { ...existingVk, webhookSecret: secret } }
+      }, { headers: { Authorization: `Bearer ${adminToken}` } });
+      log(`[VK-WEBHOOK] Сгенерирован постоянный webhook-секрет для кампании ${campaignId}`, 'vk-oauth');
+    }
+
+    // Секрет — в сегменте пути (needanapp не может срезать его как query-параметр).
+    const webhookUrl = `${getAppBaseUrl(req)}/api/vk/token-webhook/${encodeURIComponent(campaignId)}/submit/${secret}`;
+    // Секрет/URL целиком в логи не пишем.
+    res.json({ webhookUrl });
+  } catch (err: any) {
+    log(`[VK-WEBHOOK] prepare error для ${campaignId}: ${err.message}`, 'vk-oauth', 'error');
+    res.status(500).json({ error: 'Не удалось подготовить webhook URL' });
+  }
 });
 
 // Preflight для браузерных CORS-запросов от needanapp
-router.options('/vk/token-webhook/:campaignId', (req, res) => {
+router.options('/vk/token-webhook/:campaignId/submit/:secret', (req, res) => {
   setCorsHeaders(req, res);
   res.status(204).end();
 });
 
 /**
- * POST /api/vk/token-webhook/:campaignId
+ * POST /api/vk/token-webhook/:campaignId/submit/:secret
  * Body: { access_token, refresh_token, device_id, client_id }
  *
  * Принимает токены от внешнего сервиса (needanapp и т.п.) и сохраняет
  * в настройки кампании. Сразу выполняет первый refresh, чтобы убедиться
  * что данные рабочие.
  *
- * Поддерживает прямые CORS-запросы из браузера (vk.needanapp.ru),
- * поэтому needanapp можно настроить напрямую на этот URL — без N8N.
+ * Публичный (needanapp без Bearer), но защищён постоянным per-campaign секретом
+ * в сегменте пути: секрет сверяется с хранимым в кампании ДО любого PATCH.
+ * URL стабилен — needanapp постит на него при каждом реконнекте. Поддерживает
+ * прямые CORS-запросы из браузера (vk.needanapp.ru) — без N8N.
  */
-router.post('/vk/token-webhook/:campaignId', async (req, res) => {
+router.post('/vk/token-webhook/:campaignId/submit/:secret', async (req, res) => {
   // CORS-заголовки ставим сразу — даже при ошибках ответ будет читаем браузером
   setCorsHeaders(req, res);
-  const { campaignId } = req.params;
+  const { campaignId, secret } = req.params;
 
-  // Проверяем одноразовый state ДО любых admin GET/PATCH. Без валидного state,
-  // привязанного к этой кампании, публичный callback не читает и не патчит ничего.
-  const stateNonce = (req.query.state as string) || (req.body?.state as string) || null;
-  const consumed = consumeVkWebhookState(stateNonce, campaignId);
-  if (!consumed.ok) {
-    // state в лог не пишем — только причину отказа.
-    log(`[VK-WEBHOOK] Callback для ${campaignId} отклонён: state ${consumed.reason}`, 'vk-oauth', 'warn');
-    // missing → 401 (нет удостоверения), остальное → 403 (есть, но невалидно).
-    return res.status(consumed.reason === 'missing' ? 401 : 403).json({ error: 'invalid or missing state' });
+  const adminAuthToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+  const directusUrl = process.env.DIRECTUS_URL;
+
+  // Секрет сверяем ДО любого PATCH. Читаем кампанию админ-токеном только чтобы
+  // достать хранимый секрет; при несовпадении/отсутствии — 403, ничего не пишем.
+  let existingSettings: Record<string, any>;
+  let existingVk: Record<string, any>;
+  try {
+    const campaignResp = await axios.get(`${directusUrl}/items/user_campaigns/${campaignId}`, {
+      headers: { Authorization: `Bearer ${adminAuthToken}` }
+    });
+    existingSettings = campaignResp.data.data?.social_media_settings || {};
+    existingVk = existingSettings.vk || {};
+  } catch (err: any) {
+    // Directus недоступен (нет ответа) → 503, чтобы needanapp повторил.
+    // Кампания не найдена / прочая ошибка ответа → 403 (не раскрываем существование).
+    if (!err.response) {
+      log(`[VK-WEBHOOK] Directus недоступен при проверке секрета для ${campaignId}: ${err.message}`, 'vk-oauth', 'error');
+      return res.status(503).json({ error: 'temporarily unavailable' });
+    }
+    log(`[VK-WEBHOOK] Callback для ${campaignId} отклонён: кампания недоступна`, 'vk-oauth', 'warn');
+    return res.status(403).json({ error: 'invalid webhook secret' });
+  }
+
+  if (!vkWebhookSecretMatches(secret, existingVk.webhookSecret)) {
+    // Секрет в лог не пишем — только факт отказа.
+    log(`[VK-WEBHOOK] Callback для ${campaignId} отклонён: неверный секрет`, 'vk-oauth', 'warn');
+    return res.status(403).json({ error: 'invalid webhook secret' });
   }
 
   const {
@@ -327,14 +374,8 @@ router.post('/vk/token-webhook/:campaignId', async (req, res) => {
   }
 
   try {
-    const adminAuthToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
-    const directusUrl = process.env.DIRECTUS_URL;
-
-    const campaignResp = await axios.get(`${directusUrl}/items/user_campaigns/${campaignId}`, {
-      headers: { Authorization: `Bearer ${adminAuthToken}` }
-    });
-    const existingSettings = campaignResp.data.data?.social_media_settings || {};
-    const existingVk = existingSettings.vk || {};
+    // adminAuthToken/directusUrl/existingSettings/existingVk уже получены выше
+    // при проверке секрета — повторный GET не нужен.
 
     // expires_in из входящего запроса
     const incomingExpiresIn: number | undefined =

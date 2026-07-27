@@ -8,6 +8,22 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { apiKeyService, ApiServiceName } from './api-keys';
 
+/** Описывает соотношение сторон по width/height для подсказки в промпт Gemini. */
+function describeAspectRatio(
+  width?: number,
+  height?: number,
+): { ratio: string; orientation: string } | null {
+  const w = Number(width);
+  const h = Number(height);
+  if (!w || !h || isNaN(w) || isNaN(h)) return null;
+  const gcd = (a: number, b: number): number => (b === 0 ? a : gcd(b, a % b));
+  const g = gcd(Math.round(w), Math.round(h)) || 1;
+  const rw = Math.round(w / g);
+  const rh = Math.round(h / g);
+  const orientation = w > h ? 'landscape' : w < h ? 'portrait' : 'square';
+  return { ratio: `${rw}:${rh}`, orientation };
+}
+
 // Интерфейс для параметров генерации изображений
 export interface GeminiImageOptions {
   prompt: string;                // Промт для генерации
@@ -118,6 +134,14 @@ export class GeminiImageService {
     // Добавляем качественные модификаторы
     enhancedPrompt += '. High quality, detailed, professional';
 
+    // Соотношение сторон: у Gemini image нет параметра width/height, аспект
+    // задаётся ТОЛЬКО через промпт. Раньше выбранный размер игнорировался
+    // полностью («выбор размерности ничего не меняет»).
+    const aspect = describeAspectRatio(options.width, options.height);
+    if (aspect) {
+      enhancedPrompt += `. Aspect ratio ${aspect.ratio} (${aspect.orientation}), composed for a ${aspect.ratio} frame`;
+    }
+
     // Добавляем негативный промт если указан
     if (options.negativePrompt) {
       enhancedPrompt += `. Avoid: ${options.negativePrompt}`;
@@ -140,6 +164,8 @@ export class GeminiImageService {
         prompt: options.prompt,
         numImages: 1,
         style: options.style,
+        width: options.width,
+        height: options.height,
       });
 
       if (urls.length > 0) {
@@ -184,13 +210,17 @@ export class GeminiImageService {
     prompt: string;
     numImages?: number;
     style?: string;
+    width?: number;
+    height?: number;
   }): Promise<string[]> {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) throw new Error('GEMINI_API_KEY не настроен');
 
     const enhancedPrompt = this.buildEnhancedPrompt({
       prompt: options.prompt,
-      style: options.style
+      style: options.style,
+      width: options.width,
+      height: options.height,
     });
 
     const numImages = Math.min(options.numImages || 1, 4);

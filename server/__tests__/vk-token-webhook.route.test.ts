@@ -114,6 +114,19 @@ describe('VK token-webhook POST: постоянный per-campaign секрет'
     expect(H.axiosPatch).not.toHaveBeenCalled();
   });
 
+  it.each([429, 500, 503])('Directus %i при проверке → 503, PATCH не вызван', async (status) => {
+    const err: any = new Error(`Directus ${status}`);
+    err.response = { status };
+    H.axiosGet.mockRejectedValue(err);
+
+    const res = await request(app)
+      .post(`/api/vk/token-webhook/${CAMPAIGN}/submit/${STORED_SECRET}`)
+      .send({ access_token: 'tok' });
+
+    expect(res.status).toBe(503);
+    expect(H.axiosPatch).not.toHaveBeenCalled();
+  });
+
   it('кампания не найдена (404 от Directus) → 403, существование не раскрываем', async () => {
     const err: any = new Error('not found'); err.response = { status: 404 };
     H.axiosGet.mockRejectedValue(err);
@@ -146,6 +159,184 @@ describe('VK token-webhook prepare: владелец получает стаби
     expect(patchedVk.webhookSecret).toBeTruthy();
     expect(res.body.webhookUrl).toContain(`/submit/${patchedVk.webhookSecret}`);
   });
+
+  it('Directus 503 при admin GET → 503, не общий 500', async () => {
+    const err: any = new Error('Directus unavailable');
+    err.response = { status: 503 };
+    H.axiosGet.mockRejectedValue(err);
+
+    const res = await request(app)
+      .post(`/api/vk/token-webhook/${CAMPAIGN}/prepare`)
+      .set('Authorization', `Bearer ${TOKEN}`);
+
+    expect(res.status).toBe(503);
+    expect(H.axiosPatch).not.toHaveBeenCalled();
+  });
+
+  it('два параллельных первых prepare возвращают один сохранённый URL', async () => {
+    let storedSecret: string | undefined;
+    H.axiosGet.mockImplementation(async () => campaignWithSecret(storedSecret));
+    H.axiosPatch.mockImplementation(async (_url: string, body: any) => {
+      // Даём второму запросу дойти до GET до завершения первой записи.
+      await new Promise((resolve) => setTimeout(resolve, 15));
+      storedSecret = body.social_media_settings.vk.webhookSecret;
+      return { data: { data: {} } };
+    });
+
+    const [first, second] = await Promise.all([
+      request(app).post(`/api/vk/token-webhook/${CAMPAIGN}/prepare`).set('Authorization', `Bearer ${TOKEN}`),
+      request(app).post(`/api/vk/token-webhook/${CAMPAIGN}/prepare`).set('Authorization', `Bearer ${TOKEN}`),
+    ]);
+
+    expect(first.status).toBe(200);
+    expect(second.status).toBe(200);
+    const firstSecret = first.body.webhookUrl.split('/submit/')[1];
+    const secondSecret = second.body.webhookUrl.split('/submit/')[1];
+    expect(firstSecret).toBe(secondSecret);
+    expect(firstSecret).toBe(storedSecret);
+    expect(H.axiosPatch).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('VK token-webhook secret lifecycle', () => {
+  it('rotate требует auth и не читает кампанию анонимно', async () => {
+    const res = await request(app).post(`/api/vk/token-webhook/${CAMPAIGN}/rotate`);
+    expect(res.status).toBe(401);
+    expect(H.axiosGet).not.toHaveBeenCalled();
+    expect(H.axiosPatch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['POST', `/api/vk/token-webhook/${CAMPAIGN}/rotate`],
+    ['DELETE', `/api/vk/token-webhook/${CAMPAIGN}/secret`],
+  ])('%s %s: чужой пользователь → 404 до admin GET/PATCH', async (method, path) => {
+    H.authorizeCampaignAccess.mockRejectedValue(
+      new H.CampaignAccessError(404, 'CAMPAIGN_NOT_FOUND'),
+    );
+
+    const res = method === 'POST'
+      ? await request(app).post(path).set('Authorization', `Bearer ${TOKEN}`)
+      : await request(app).delete(path).set('Authorization', `Bearer ${TOKEN}`);
+
+    expect(res.status).toBe(404);
+    expect(H.axiosGet).not.toHaveBeenCalled();
+    expect(H.axiosPatch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['POST', `/api/vk/token-webhook/${CAMPAIGN}/rotate`],
+    ['DELETE', `/api/vk/token-webhook/${CAMPAIGN}/secret`],
+  ])('%s %s: Directus 503 → 503 без PATCH', async (method, path) => {
+    const err: any = new Error('Directus unavailable');
+    err.response = { status: 503 };
+    H.axiosGet.mockRejectedValue(err);
+
+    const res = method === 'POST'
+      ? await request(app).post(path).set('Authorization', `Bearer ${TOKEN}`)
+      : await request(app).delete(path).set('Authorization', `Bearer ${TOKEN}`);
+
+    expect(res.status).toBe(503);
+    expect(H.axiosPatch).not.toHaveBeenCalled();
+  });
+
+  it('владелец ротирует секрет: старый URL → 403, новый → 200', async () => {
+    let storedSecret: string | undefined = STORED_SECRET;
+    H.axiosGet.mockImplementation(async () => campaignWithSecret(storedSecret));
+    H.axiosPatch.mockImplementation(async (_url: string, body: any) => {
+      storedSecret = body.social_media_settings.vk.webhookSecret;
+      return { data: { data: {} } };
+    });
+
+    const rotated = await request(app)
+      .post(`/api/vk/token-webhook/${CAMPAIGN}/rotate`)
+      .set('Authorization', `Bearer ${TOKEN}`);
+
+    expect(rotated.status).toBe(200);
+    expect(rotated.body.webhookUrl).toContain('/submit/');
+    expect(rotated.body.webhookUrl).not.toContain(`/submit/${STORED_SECRET}`);
+
+    const oldCallback = await request(app)
+      .post(`/api/vk/token-webhook/${CAMPAIGN}/submit/${STORED_SECRET}`)
+      .send({ access_token: 'old' });
+    expect(oldCallback.status).toBe(403);
+
+    const newSecret = rotated.body.webhookUrl.split('/submit/')[1];
+    const newCallback = await request(app)
+      .post(`/api/vk/token-webhook/${CAMPAIGN}/submit/${newSecret}`)
+      .send({ access_token: 'new' });
+    expect(newCallback.status).toBe(200);
+  });
+
+  it('revoke удаляет секрет: прежний URL больше не принимает токены', async () => {
+    let storedSecret: string | undefined = STORED_SECRET;
+    H.axiosGet.mockImplementation(async () => campaignWithSecret(storedSecret));
+    H.axiosPatch.mockImplementation(async (_url: string, body: any) => {
+      storedSecret = body.social_media_settings.vk.webhookSecret;
+      return { data: { data: {} } };
+    });
+
+    const revoked = await request(app)
+      .delete(`/api/vk/token-webhook/${CAMPAIGN}/secret`)
+      .set('Authorization', `Bearer ${TOKEN}`);
+    expect(revoked.status).toBe(200);
+
+    const oldCallback = await request(app)
+      .post(`/api/vk/token-webhook/${CAMPAIGN}/submit/${STORED_SECRET}`)
+      .send({ access_token: 'old' });
+    expect(oldCallback.status).toBe(403);
+  });
+
+  it('in-flight callback не может восстановить старый секрет после rotate', async () => {
+    let storedVk: Record<string, any> = {
+      webhookSecret: STORED_SECRET,
+      token: 'initial',
+      tokenReceivedAt: new Date().toISOString(),
+      serverRefreshedAt: new Date().toISOString(),
+    };
+    let releaseCallbackPatch!: () => void;
+    let callbackPatchStarted!: () => void;
+    const callbackPatchGate = new Promise<void>((resolve) => {
+      releaseCallbackPatch = resolve;
+    });
+    const callbackPatchSeen = new Promise<void>((resolve) => {
+      callbackPatchStarted = resolve;
+    });
+
+    H.axiosGet.mockImplementation(async () => ({
+      data: { data: { social_media_settings: { vk: { ...storedVk } } } },
+    }));
+    H.axiosPatch.mockImplementation(async (_url: string, body: any) => {
+      const nextVk = body.social_media_settings.vk;
+      if (nextVk.token === 'in-flight') {
+        callbackPatchStarted();
+        await callbackPatchGate;
+      }
+      storedVk = { ...nextVk };
+      return { data: { data: {} } };
+    });
+
+    const callbackPromise = request(app)
+      .post(`/api/vk/token-webhook/${CAMPAIGN}/submit/${STORED_SECRET}`)
+      .send({ access_token: 'in-flight' })
+      .then((response) => response);
+    await callbackPatchSeen;
+
+    const rotatePromise = request(app)
+      .post(`/api/vk/token-webhook/${CAMPAIGN}/rotate`)
+      .set('Authorization', `Bearer ${TOKEN}`)
+      .then((response) => response);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    releaseCallbackPatch();
+
+    const [callback, rotated] = await Promise.all([callbackPromise, rotatePromise]);
+    expect(callback.status).toBe(200);
+    expect(rotated.status).toBe(200);
+
+    const rotatedSecret = rotated.body.webhookUrl.split('/submit/')[1];
+    expect(rotatedSecret).not.toBe(STORED_SECRET);
+    expect(storedVk.webhookSecret).toBe(rotatedSecret);
+    expect(storedVk.token).toBe('in-flight');
+  });
 });
 
 describe('VK token-webhook status: сессия + доступ к кампании', () => {
@@ -168,8 +359,57 @@ describe('VK token-webhook status: сессия + доступ к кампани
     expect(res.status).toBe(503);
   });
 
+  it('guard прошёл, но admin GET получил Directus 503 → 503', async () => {
+    const err: any = new Error('Directus unavailable');
+    err.response = { status: 503 };
+    H.axiosGet.mockRejectedValue(err);
+
+    const res = await request(app)
+      .get(`/api/vk/token-webhook/${CAMPAIGN}/status`)
+      .set('Authorization', `Bearer ${TOKEN}`);
+
+    expect(res.status).toBe(503);
+    expect(res.body.ready).toBe(false);
+  });
+
   it('владелец → 200', async () => {
     const res = await request(app).get(`/api/vk/token-webhook/${CAMPAIGN}/status`).set('Authorization', `Bearer ${TOKEN}`);
     expect(res.status).toBe(200);
+  });
+});
+
+describe('VK token-webhook reconnecting: сессия + доступ + fail-closed', () => {
+  it('без auth → 401, admin GET/PATCH не вызываются', async () => {
+    const res = await request(app).patch(`/api/vk/token-webhook/${CAMPAIGN}/reconnecting`);
+    expect(res.status).toBe(401);
+    expect(H.axiosGet).not.toHaveBeenCalled();
+    expect(H.axiosPatch).not.toHaveBeenCalled();
+  });
+
+  it('чужой пользователь → 404 до admin GET/PATCH', async () => {
+    H.authorizeCampaignAccess.mockRejectedValue(
+      new H.CampaignAccessError(404, 'CAMPAIGN_NOT_FOUND'),
+    );
+
+    const res = await request(app)
+      .patch(`/api/vk/token-webhook/${CAMPAIGN}/reconnecting`)
+      .set('Authorization', `Bearer ${TOKEN}`);
+
+    expect(res.status).toBe(404);
+    expect(H.axiosGet).not.toHaveBeenCalled();
+    expect(H.axiosPatch).not.toHaveBeenCalled();
+  });
+
+  it('guard прошёл, но admin GET получил Directus 503 → 503 без PATCH', async () => {
+    const err: any = new Error('Directus unavailable');
+    err.response = { status: 503 };
+    H.axiosGet.mockRejectedValue(err);
+
+    const res = await request(app)
+      .patch(`/api/vk/token-webhook/${CAMPAIGN}/reconnecting`)
+      .set('Authorization', `Bearer ${TOKEN}`);
+
+    expect(res.status).toBe(503);
+    expect(H.axiosPatch).not.toHaveBeenCalled();
   });
 });

@@ -29,6 +29,11 @@ const SECRET_KEYS = new Set([
   'webhooksecret',
 ]);
 
+// These credentials are created and rotated only by authenticated server routes.
+// A generic campaign settings PATCH must preserve them even when a client submits
+// a non-empty replacement value.
+const SERVER_MANAGED_SECRET_KEYS = new Set(['webhooksecret']);
+
 function normalizedKey(key: string): string {
   return key.replace(/[_-]/g, '').toLowerCase();
 }
@@ -77,7 +82,11 @@ export function mergeOAuthSettings(existing: any, incoming: any): any {
   if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) return incoming;
   const result: Record<string, unknown> = { ...(existing && typeof existing === 'object' ? existing : {}) };
   for (const [key, value] of Object.entries(incoming)) {
-    if (SECRET_KEYS.has(normalizedKey(key))) {
+    const normalized = normalizedKey(key);
+    if (SERVER_MANAGED_SECRET_KEYS.has(normalized)) {
+      continue;
+    }
+    if (SECRET_KEYS.has(normalized)) {
       if (value !== '' && value !== null && value !== undefined) result[key] = value;
     } else if (isPresenceFlag(key)) {
       continue;

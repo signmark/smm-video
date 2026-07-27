@@ -4,6 +4,7 @@ import cors from "cors";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
+import { shouldSkipGlobalApiRateLimit } from './middleware/global-api-rate-limit';
 import swaggerUi from 'swagger-ui-express';
 import swaggerSpecs from './config/swagger';
 import { readFileSync, existsSync } from 'fs';
@@ -276,7 +277,7 @@ const globalApiLimiter = rateLimit({
   max: 600,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: (req) => req.path.includes('/webhook'),
+  skip: (req) => shouldSkipGlobalApiRateLimit(req.path),
   message: { success: false, error: 'Слишком много запросов. Повторите позже.' },
 });
 

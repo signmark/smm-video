@@ -30,21 +30,26 @@ function extractPostDate(rawSourceData: any): string | null {
     raw.published_at, raw.publishedAt, raw.pubDate, raw.created_time, raw.post_date,
   ];
 
+  // Floor 2000-01-01: мусор вроде "5" даёт 1970 год, и клиентский фильтр периода
+  // прячет пост во всех окнах, кроме «всего». Такой кандидат пропускаем.
+  const MIN_SANE_MS = 946684800000;
+
   for (const c of candidates) {
     if (c == null || c === '') continue;
     if (typeof c === 'number') {
       const ms = c < 1e12 ? c * 1000 : c;
-      if (Number.isFinite(ms) && ms > 0) return new Date(ms).toISOString();
+      if (Number.isFinite(ms) && ms >= MIN_SANE_MS) return new Date(ms).toISOString();
       continue;
     }
     if (typeof c === 'string') {
       const num = Number(c);
       if (!Number.isNaN(num) && c.trim() !== '') {
         const ms = num < 1e12 ? num * 1000 : num;
-        if (Number.isFinite(ms) && ms > 0) return new Date(ms).toISOString();
+        if (Number.isFinite(ms) && ms >= MIN_SANE_MS) return new Date(ms).toISOString();
+        continue;
       }
       const t = new Date(c).getTime();
-      if (!Number.isNaN(t)) return new Date(t).toISOString();
+      if (!Number.isNaN(t) && t >= MIN_SANE_MS) return new Date(t).toISOString();
     }
   }
   return null;

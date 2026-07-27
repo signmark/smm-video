@@ -5,8 +5,12 @@
 import { Router, Request, Response } from 'express';
 import { log } from '../utils/logger';
 import sharp from 'sharp';
+import { isSafeHttpUrl } from '../utils/ssrf-guard';
 
 const router = Router();
+
+// Таймаут исходящих запросов к произвольным (не-Beget) URL, чтобы прокси не висел.
+const OUTBOUND_FETCH_TIMEOUT_MS = 30_000;
 
 /**
  * Преобразует изображение в формат 9:16 для Instagram Stories
@@ -302,10 +306,11 @@ router.get('/video-proxy/:encodedUrl', async (req: Request, res: Response) => {
     const videoUrl = Buffer.from(encodedUrl, 'base64').toString('utf-8');
     const rangeHeader = req.headers.range;
     
-    if (!videoUrl || !videoUrl.startsWith('http')) {
-      log(`[Video Proxy] Некорректный URL: ${videoUrl}`, 'video-proxy');
+    const videoUrlCheck = isSafeHttpUrl(videoUrl);
+    if (!videoUrlCheck.ok) {
+      log(`[Video Proxy] Отклонён URL (${videoUrlCheck.reason}): ${videoUrl}`, 'video-proxy');
       return res.status(400).json({
-        error: 'Invalid encoded URL'
+        error: 'Invalid or blocked URL'
       });
     }
 
@@ -406,8 +411,8 @@ router.get('/video-proxy/:encodedUrl', async (req: Request, res: Response) => {
       if (rangeHeader) {
         headers['Range'] = rangeHeader;
       }
-      
-      const sourceResponse = await fetch(videoUrl, { headers });
+
+      const sourceResponse = await fetch(videoUrl, { headers, signal: AbortSignal.timeout(OUTBOUND_FETCH_TIMEOUT_MS) });
 
       if (!sourceResponse.ok) {
         log(`[Video Proxy] Ошибка источника: ${sourceResponse.status}`, 'video-proxy');
@@ -485,12 +490,19 @@ router.get('/video-stream-proxy', async (req: Request, res: Response) => {
       });
     }
 
+    const streamUrlCheck = isSafeHttpUrl(videoUrl);
+    if (!streamUrlCheck.ok) {
+      log(`[Video Stream Proxy] Отклонён URL (${streamUrlCheck.reason}): ${videoUrl}`, 'video-proxy');
+      return res.status(400).json({ error: 'Invalid or blocked URL' });
+    }
+
     log(`[Video Stream Proxy] Запрос видео: ${videoUrl}`, 'video-proxy');
     log(`[Video Stream Proxy] Range header: ${rangeHeader || 'отсутствует'}`, 'video-proxy');
 
     // Делаем запрос к источнику
     const sourceResponse = await fetch(videoUrl, {
-      headers: rangeHeader ? { 'Range': rangeHeader } : {}
+      headers: rangeHeader ? { 'Range': rangeHeader } : {},
+      signal: AbortSignal.timeout(OUTBOUND_FETCH_TIMEOUT_MS)
     });
 
     if (!sourceResponse.ok) {
@@ -585,10 +597,11 @@ router.get('/media-proxy/:encodedUrl', async (req: Request, res: Response) => {
     const mediaUrl = Buffer.from(encodedUrl, 'base64').toString('utf-8');
     const rangeHeader = req.headers.range;
     
-    if (!mediaUrl || !mediaUrl.startsWith('http')) {
-      log(`[Media Proxy] Некорректный URL: ${mediaUrl}`, 'media-proxy');
+    const mediaUrlCheck = isSafeHttpUrl(mediaUrl);
+    if (!mediaUrlCheck.ok) {
+      log(`[Media Proxy] Отклонён URL (${mediaUrlCheck.reason}): ${mediaUrl}`, 'media-proxy');
       return res.status(400).json({
-        error: 'Invalid encoded URL'
+        error: 'Invalid or blocked URL'
       });
     }
 
@@ -731,8 +744,8 @@ router.get('/media-proxy/:encodedUrl', async (req: Request, res: Response) => {
       if (rangeHeader) {
         headers['Range'] = rangeHeader;
       }
-      
-      const sourceResponse = await fetch(mediaUrl, { headers });
+
+      const sourceResponse = await fetch(mediaUrl, { headers, signal: AbortSignal.timeout(OUTBOUND_FETCH_TIMEOUT_MS) });
 
       if (!sourceResponse.ok) {
         log(`[Media Proxy] Ошибка источника: ${sourceResponse.status}`, 'media-proxy');
@@ -833,9 +846,14 @@ router.head('/video-stream-proxy', async (req: Request, res: Response) => {
       return res.status(400).end();
     }
 
+    if (!isSafeHttpUrl(videoUrl).ok) {
+      log(`[Video Stream Proxy HEAD] Отклонён URL: ${videoUrl}`, 'video-proxy');
+      return res.status(400).end();
+    }
+
     log(`[Video Stream Proxy HEAD] Запрос метаданных: ${videoUrl}`, 'video-proxy');
 
-    const headResponse = await fetch(videoUrl, { method: 'HEAD' });
+    const headResponse = await fetch(videoUrl, { method: 'HEAD', signal: AbortSignal.timeout(OUTBOUND_FETCH_TIMEOUT_MS) });
 
     if (!headResponse.ok) {
       return res.status(headResponse.status).end();

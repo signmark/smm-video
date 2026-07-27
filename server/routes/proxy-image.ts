@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from 'express';
 import axios from 'axios';
-import net from 'net';
 import { log } from '../utils/logger';
+import { isSafeHttpUrl } from '../utils/ssrf-guard';
 
 /**
  * Публичный прокси картинок для тегов <img src="/api/proxy-image?url=...">.
@@ -15,36 +15,8 @@ import { log } from '../utils/logger';
  * (в т.ч. metadata 169.254.169.254) блокируем.
  */
 
-function isBlockedHost(hostname: string): boolean {
-  const h = hostname.toLowerCase().replace(/^\[|\]$/g, ''); // убрать скобки IPv6
-  if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.internal') || h.endsWith('.local')) {
-    return true;
-  }
-  if (net.isIP(h) === 4) {
-    const p = h.split('.').map(Number);
-    if (p[0] === 127) return true;                       // loopback
-    if (p[0] === 10) return true;                        // private A
-    if (p[0] === 192 && p[1] === 168) return true;       // private C
-    if (p[0] === 172 && p[1] >= 16 && p[1] <= 31) return true; // private B
-    if (p[0] === 169 && p[1] === 254) return true;       // link-local / cloud metadata
-    if (p[0] === 0) return true;                         // 0.0.0.0/8
-  }
-  if (net.isIP(h) === 6) {
-    if (h === '::1' || h.startsWith('fc') || h.startsWith('fd') || h.startsWith('fe80') || h === '::') {
-      return true;
-    }
-  }
-  return false;
-}
-
-/** Только для тестов/переиспользования. */
-export function isSafeProxyImageUrl(raw: string): { ok: true; url: URL } | { ok: false; reason: string } {
-  let parsed: URL;
-  try { parsed = new URL(raw); } catch { return { ok: false, reason: 'bad-url' }; }
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return { ok: false, reason: 'protocol' };
-  if (isBlockedHost(parsed.hostname)) return { ok: false, reason: 'blocked-host' };
-  return { ok: true, url: parsed };
-}
+/** Только для тестов/переиспользования. Обёртка над общим ssrf-guard. */
+export const isSafeProxyImageUrl = isSafeHttpUrl;
 
 export function registerProxyImageRoute(app: Express): void {
   app.get('/api/proxy-image', async (req: Request, res: Response) => {

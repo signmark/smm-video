@@ -2,6 +2,7 @@
 import { Router, Request, Response } from 'express';
 import { webCrawlerAgent } from '../services/web-crawler-agent';
 import { authMiddleware } from '../middleware/auth';
+import { isSafeHttpUrl } from '../utils/ssrf-guard';
 
 const router = Router();
 
@@ -27,20 +28,14 @@ router.post('/api/web-crawler/crawl', authMiddleware, async (req: Request, res: 
       });
     }
     
-    // Валидация URL
-    try {
-      const parsedUrl = new URL(url);
-      const allowedProtocols = ['http:', 'https:'];
-      if (!allowedProtocols.includes(parsedUrl.protocol)) {
-        throw new Error('Недопустимый протокол URL');
-      }
-    } catch (error) {
+    // Валидация URL + SSRF-защита (протокол + блок приватных/loopback/metadata хостов)
+    if (!isSafeHttpUrl(url).ok) {
       return res.status(400).json({
         success: false,
-        error: 'Некорректный URL'
+        error: 'Некорректный или заблокированный URL'
       });
     }
-    
+
     console.log(`[WEB-CRAWLER-API] 🕷️ Запрос на парсинг от пользователя ${req.userId}: ${url}`);
     
     const result = await webCrawlerAgent.crawlSite({
@@ -77,7 +72,15 @@ router.post('/api/web-crawler/intelligent-crawl', authMiddleware, async (req: Re
         error: 'URL обязателен'
       });
     }
-    
+
+    // SSRF-защита: протокол + блок приватных/loopback/metadata хостов
+    if (!isSafeHttpUrl(url).ok) {
+      return res.status(400).json({
+        success: false,
+        error: 'Некорректный или заблокированный URL'
+      });
+    }
+
     console.log(`[WEB-CRAWLER-API] 🧠 Интеллектуальный парсинг от пользователя ${req.userId}: ${url}`);
     
     const result = await webCrawlerAgent.intelligentCrawl(url, options);

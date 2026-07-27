@@ -68,9 +68,15 @@ export function initializeAvailableFunctions(): AvailableFunction[] {
       description: 'Планирование публикации контента в социальных сетях',
       parameters: {
         platforms: { type: 'array', description: 'Платформы: Instagram, Facebook, VK, Telegram, YouTube', default: ['Instagram'] },
-        scheduleTime: { type: 'string', description: 'Время публикации', required: false }
+        scheduleTime: { type: 'string', description: 'Когда публиковать, СЛОВАМИ КАК СКАЗАЛ ПОЛЬЗОВАТЕЛЬ: «завтра в 10:00», «сегодня вечером», «5 августа в 9:30», «через 2 часа». Не переводи в дату, передай фразу целиком', required: false },
+        topic: { type: 'string', description: 'Тема поста, который надо запланировать («о новинке», «про весну») — по ней отбирается нужный черновик', required: false }
       },
-      examples: ['Запланируй эти посты в Instagram', 'Опубликуй в ТГ и ВК завтра']
+      examples: [
+        'Запланируй эти посты в Instagram',
+        'Опубликуй в ТГ и ВК завтра',
+        'Запланируй пост о новинке на завтра в 10:00',
+        'Поставь пост про весну на 5 августа в 9:30',
+      ]
     },
     {
       name: 'publish_content',
@@ -490,9 +496,13 @@ export function fallbackAnalyzeCommand(message: string): CommandAnalysis {
   }
   
   if (lowerMessage.includes('запланируй') || lowerMessage.includes('schedule') || lowerMessage.includes('опубликуй')) {
+    // Время handleSchedulePosts разберёт сам из полной фразы; здесь достаём только тему,
+    // чтобы «запланируй пост о новинке» отобрал нужный черновик и без AI-роутера.
+    const topicMatch = lowerMessage.match(/(?:о|об|про)\s+([а-яёa-z0-9\s-]{3,40}?)(?:\s+на\s|\s+в\s|\s+через\s|$)/);
     return {
-      intent: 'schedule_posts', 
-      confidence: 0.8
+      intent: 'schedule_posts',
+      confidence: 0.8,
+      parameters: topicMatch ? { topic: topicMatch[1].trim() } : undefined,
     };
   }
   

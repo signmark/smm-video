@@ -68,53 +68,45 @@ document.addEventListener('DOMContentLoaded', function() {
         observer.observe(el);
     });
 
-    // Эффект параллакса для hero секции
-    window.addEventListener('scroll', () => {
-        const scrolled = window.pageYOffset;
-        const heroVisual = document.querySelector('.hero-visual');
-        
-        if (heroVisual) {
-            heroVisual.style.transform = `translateY(${scrolled * 0.3}px)`;
-        }
-    });
+    // Лёгкий параллакс макета дашборда. Сдвиг ограничен: без потолка макет уезжал
+    // за пределы экрана на длинной странице.
+    const heroVisual = document.querySelector('.hero-visual');
+    let parallaxScheduled = false;
 
-    // Активация header при скролле
     window.addEventListener('scroll', () => {
-        const header = document.querySelector('.header');
-        if (window.scrollY > 100) {
-            header.style.background = 'rgba(255, 255, 255, 0.98)';
-            header.style.boxShadow = '0 4px 20px rgba(0, 0, 0, 0.1)';
-        } else {
-            header.style.background = 'rgba(255, 255, 255, 0.95)';
-            header.style.boxShadow = 'none';
-        }
-    });
+        if (!heroVisual || parallaxScheduled) return;
+        parallaxScheduled = true;
+        requestAnimationFrame(() => {
+            const shift = Math.min(window.pageYOffset * 0.12, 60);
+            heroVisual.style.transform = `translateY(${shift}px)`;
+            parallaxScheduled = false;
+        });
+    }, { passive: true });
 
-    // Кнопки CTA - добавляем обработчики
+    // Шапка при скролле: переключаем класс, а фон задаёт CSS.
+    // Раньше здесь проставлялся белый инлайн-фон — на тёмной теме шапка становилась белой.
+    const header = document.querySelector('.header');
+    window.addEventListener('scroll', () => {
+        if (header) header.classList.toggle('scrolled', window.scrollY > 40);
+    }, { passive: true });
+
+    // Кнопки CTA без собственной ссылки ведут в приложение.
+    // У .pricing-btn и .nav-cta есть href, и раньше клик по ним открывал разом
+    // и свою страницу, и второе окно с приложением.
     const ctaButtons = document.querySelectorAll('.btn-primary, .nav-cta, .pricing-btn');
     ctaButtons.forEach(button => {
+        if (button.tagName === 'A' && button.getAttribute('href')) return;
         button.addEventListener('click', function() {
-            // Переход к главному приложению SMM Manager
             // URL берется из config.js для удобного переключения между клиентами
             window.open(getAppUrl(), '_blank');
         });
     });
 
-    // Эффект печатания для hero title
+    // Появление заголовка. Раньше он печатался посимвольно через innerHTML —
+    // эффект выглядел устаревшим и ломал бы любую разметку внутри заголовка.
     const heroTitle = document.querySelector('.hero-title');
     if (heroTitle) {
-        const originalText = heroTitle.innerHTML;
-        heroTitle.innerHTML = '';
-        
-        let i = 0;
-        const typeEffect = setInterval(() => {
-            if (i < originalText.length) {
-                heroTitle.innerHTML += originalText.charAt(i);
-                i++;
-            } else {
-                clearInterval(typeEffect);
-            }
-        }, 30);
+        heroTitle.style.animation = 'fadeInUp 0.7s ease both';
     }
 
     // Счетчики в hero stats с анимацией

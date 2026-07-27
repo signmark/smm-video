@@ -858,10 +858,74 @@ async function getCampaignPlatforms(campaignId: string, authToken?: string): Pro
   }
 }
 
+/**
+ * Отбирает черновики, подходящие под названную тему («запланируй пост о новинке»).
+ * Совпадение ищем по началу слова, чтобы «новинк» поймало и «новинка», и «новинки»,
+ * но «нов» не тащило «новостной дайджест» целиком.
+ */
+function filterDraftsByTopic(drafts: any[], topic: string): any[] {
+  const stopWords = new Set(['пост', 'посты', 'про', 'о', 'об', 'на', 'в', 'и', 'для']);
+  const terms = topic
+    .toLowerCase()
+    .replace(/ё/g, 'е')
+    .split(/[^0-9a-zа-я]+/)
+    .filter(term => term.length >= 4 && !stopWords.has(term))
+    // Отрезаем окончание: сравниваем по основе слова
+    .map(term => term.slice(0, Math.max(4, term.length - 2)));
+
+  if (terms.length === 0) return [];
+
+  return drafts.filter(draft => {
+    const haystack = `${draft?.title || ''} ${draft?.content || ''}`.toLowerCase().replace(/ё/g, 'е');
+    return terms.some(term => haystack.includes(term));
+  });
+}
+
+/** Часы по МСК, когда данных по каналу нет: обычные пики для рунета. */
+const DEFAULT_MSK_HOURS = [9, 12, 18, 21];
+
+/**
+ * Спрашивает у Analytics API реальные часы пиковой вовлечённости канала.
+ * Возвращает дефолтные часы, если аналитика не подключена или данных мало —
+ * обещать «подобрано под вашу аудиторию» на пустой выборке нельзя.
+ */
+async function resolveBestMskHours(
+  campaignId: string,
+  authToken?: string,
+): Promise<{ hours: number[]; fromRealData: boolean }> {
+  try {
+    const campaign: any = await directusCrud.getById(
+      'user_campaigns', campaignId as any, authToken ? { authToken } : {},
+    );
+    const { getCampaignAnalyticsChannels } = await import('../campaign-analytics-channels');
+    const channels = getCampaignAnalyticsChannels(campaign?.social_media_settings);
+    if (channels.length === 0) return { hours: DEFAULT_MSK_HOURS, fromRealData: false };
+
+    const { getChannelBestTimes } = await import('../scraper-analytics');
+    const bestTimes = await getChannelBestTimes(channels[0].channelId);
+
+    // by_hour приходит отсортированным по вовлечённости; берём только часы,
+    // за которыми стоит хотя бы несколько постов, иначе это шум.
+    const solidHours = (bestTimes?.data?.by_hour || [])
+      .filter(entry => entry.posts_count >= 3)
+      .map(entry => entry.hour)
+      .filter(hour => Number.isInteger(hour) && hour >= 0 && hour <= 23);
+
+    if (solidHours.length === 0) return { hours: DEFAULT_MSK_HOURS, fromRealData: false };
+
+    return { hours: solidHours.slice(0, 4), fromRealData: true };
+  } catch (error: any) {
+    console.warn('[AI-ASSISTANT] Не удалось получить лучшее время из аналитики:', error?.message);
+    return { hours: DEFAULT_MSK_HOURS, fromRealData: false };
+  }
+}
+
 /** Подбирает оптимальные времена публикации (в UTC) для N постов */
-function pickSmartScheduleTimes(count: number, takenMs: number[] = []): string[] {
-  // Предпочтительные часы по МСК (UTC+3): 9, 12, 18, 21
-  const preferredMskHours = [9, 12, 18, 21];
+function pickSmartScheduleTimes(
+  count: number,
+  takenMs: number[] = [],
+  preferredMskHours: number[] = DEFAULT_MSK_HOURS,
+): string[] {
   const now = Date.now();
   const MIN_DELAY = 30 * 60 * 1000; // минимум 30 минут вперёд
   const MIN_GAP = 2 * 60 * 60 * 1000; // минимум 2 часа между постами
@@ -869,10 +933,14 @@ function pickSmartScheduleTimes(count: number, takenMs: number[] = []): string[]
   const results: string[] = [];
   const usedMs: number[] = [...takenMs];
 
+  // Аналитика отдаёт часы по убыванию вовлечённости; внутри суток идём по возрастанию,
+  // иначе посты в одном дне встанут вразнобой.
+  const hoursInDayOrder = [...new Set(preferredMskHours)].sort((a, b) => a - b);
+
   let dayOffset = 0;
   while (results.length < count && dayOffset < 14) {
     const baseDate = new Date(now + dayOffset * 24 * 60 * 60 * 1000);
-    for (const mskHour of preferredMskHours) {
+    for (const mskHour of hoursInDayOrder) {
       if (results.length >= count) break;
       // Переводим МСК в UTC
       const mskMidnight = new Date(baseDate);
@@ -920,7 +988,7 @@ export async function handleSchedulePosts(request: AIAssistantRequest, parameter
     
     const recentContent = await directusCrud.list('campaign_content', {
       authToken: request.authToken,
-      filter: { 
+      filter: {
         campaign_id: { _eq: request.campaignId },
         status: { _eq: 'draft' }
       },
@@ -938,9 +1006,42 @@ export async function handleSchedulePosts(request: AIAssistantRequest, parameter
     const { filterCompatiblePlatforms } = await import('../../utils/content-type-platform-map');
     const baseUrl = `http://localhost:${process.env.PORT || 5000}`;
 
-    const postsToSchedule = recentContent.slice(0, 5);
-    // Выбираем оптимальные времена для всех постов сразу
-    const scheduleTimes = pickSmartScheduleTimes(postsToSchedule.length);
+    // Время из фразы: «на завтра в 10:00». Роутер кладёт его в scheduleTime/when,
+    // но фразу разбираем и целиком — на случай, если параметр не извлёкся.
+    const { parseRussianSchedule, formatMskLabel } = await import('../../utils/ru-datetime');
+    const requestedWhen = parseRussianSchedule(parameters?.scheduleTime || parameters?.when || '')
+      || parseRussianSchedule(request.message || '');
+
+    // Тема из фразы: «запланируй пост о новинке» — отбираем подходящие черновики.
+    const topic: string = (parameters?.topic || '').trim();
+    let candidates = recentContent;
+    let topicMatched = false;
+    if (topic) {
+      const matched = filterDraftsByTopic(recentContent, topic);
+      if (matched.length > 0) {
+        candidates = matched;
+        topicMatched = true;
+      }
+    }
+
+    // Названо конкретное время — планируем один пост, а не вываливаем пять в одну минуту.
+    const postsToSchedule = requestedWhen?.hasExplicitTime
+      ? candidates.slice(0, 1)
+      : candidates.slice(0, 5);
+
+    let usedRealBestTimes = false;
+    let scheduleTimes: string[];
+    if (requestedWhen) {
+      scheduleTimes = [requestedWhen.iso];
+      // Если постов всё же несколько — разносим их от названного времени с шагом в 2 часа.
+      for (let i = 1; i < postsToSchedule.length; i++) {
+        scheduleTimes.push(new Date(Date.parse(requestedWhen.iso) + i * 2 * 60 * 60 * 1000).toISOString());
+      }
+    } else {
+      const best = await resolveBestMskHours(request.campaignId, request.authToken);
+      usedRealBestTimes = best.fromRealData;
+      scheduleTimes = pickSmartScheduleTimes(postsToSchedule.length, [], best.hours);
+    }
 
     let scheduledCount = 0;
     const scheduledDetails: string[] = [];
@@ -991,12 +1092,24 @@ export async function handleSchedulePosts(request: AIAssistantRequest, parameter
 
     const platformsText = platforms.join(', ');
     const detailsText = scheduledDetails.length > 0 ? '\n\n' + scheduledDetails.join('\n') : '';
-    
+
+    // Объясняем, откуда взялось время. Раньше здесь всегда стояло «подобрано под пиковую
+    // аудиторию», хотя часы были захардкожены — теперь так пишем только по реальным данным.
+    let timingNote: string;
+    if (requestedWhen) {
+      timingNote = `Время взято из вашей команды — ${formatMskLabel(scheduleTimes[0])} МСК.`;
+    } else if (usedRealBestTimes) {
+      timingNote = 'Время подобрано по вашей аналитике — часы, когда аудитория активнее всего.';
+    } else {
+      timingNote = 'Время подобрано по обычным часам активности: аналитики по каналу пока мало.';
+    }
+    const topicNote = topicMatched ? ` Отобрал черновики по теме «${topic}».` : '';
+
     return {
-      response: `✅ Запланировано ${scheduledCount} публикаций в: ${platformsText}${detailsText}\n\nВремя подобрано автоматически под пиковую аудиторию. Смотрите раздел "Запланированные".`,
+      response: `✅ Запланировано ${scheduledCount} публикаций в: ${platformsText}${detailsText}\n\n${timingNote}${topicNote} Смотрите раздел "Запланированные".`,
       success: true,
       action: `Запланировано ${scheduledCount} публикаций`,
-      data: { scheduledCount, platforms }
+      data: { scheduledCount, platforms, scheduledAt: scheduleTimes[0], topicMatched, usedRealBestTimes }
     };
 
   } catch (error) {
@@ -1185,6 +1298,49 @@ export async function handleAnalyzeCampaign(request: AIAssistantRequest, paramet
   }
 }
 
+export interface StoryIdea {
+  title: string;
+  content: string;
+}
+
+/**
+ * Просит модель придумать N идей для Stories по теме и разбирает ответ.
+ * Формат ответа — JSON-массив; на случай, если модель обернёт его в ```json,
+ * ограждение снимаем перед разбором.
+ */
+export async function generateStoryIdeas(topic: string, count: number): Promise<StoryIdea[]> {
+  const prompt = `Придумай ${count} идей для Stories в соцсетях по теме «${topic}».
+
+Stories — вертикальный короткий формат: одна мысль, живой разговорный тон, призыв к действию или вопрос аудитории.
+
+Верни СТРОГО JSON-массив из ${count} объектов, без пояснений и без markdown:
+[{"title": "короткий заголовок до 60 символов", "content": "текст Stories, 2-4 предложения"}]`;
+
+  try {
+    const raw = await geminiDirect.generateContent({ prompt, model: 'gemini-3-pro-preview' });
+    const cleaned = String(raw || '').replace(/```json|```/g, '').trim();
+    const jsonMatch = cleaned.match(/\[[\s\S]*\]/);
+    if (!jsonMatch) {
+      console.warn('[AI-ASSISTANT] Ответ по идеям Stories без JSON-массива');
+      return [];
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed
+      .map((item: any) => ({
+        title: truncateTitle(sanitizeContent(String(item?.title || '')).trim()),
+        content: sanitizeContent(String(item?.content || '')).trim(),
+      }))
+      .filter(idea => idea.title && idea.content)
+      .slice(0, count);
+  } catch (error: any) {
+    console.error('[AI-ASSISTANT] Ошибка генерации идей для Stories:', error?.message);
+    return [];
+  }
+}
+
 export async function handleCreateStories(request: AIAssistantRequest, parameters: any): Promise<AIAssistantResponse> {
   try {
     if (!request.campaignId) {
@@ -1194,26 +1350,71 @@ export async function handleCreateStories(request: AIAssistantRequest, parameter
       };
     }
 
-    const title = parameters?.title || 'Новая история';
-    const content = parameters?.content || '';
+    const topic: string = (parameters?.topic || parameters?.title || '').trim();
+    const requestedCount = Number(parameters?.count);
+    const count = Number.isFinite(requestedCount)
+      ? Math.min(Math.max(Math.trunc(requestedCount), 1), 10)
+      : 1;
 
-    const storyData = {
-      title,
-      campaignId: request.campaignId,
-      content,
-      type: 'story',
-      status: 'draft'
-    };
+    if (!topic) {
+      return {
+        response: 'Про что сделать Stories? Напишите тему — например, «сгенерируй 5 идей для сторис про весну».',
+        success: false
+      };
+    }
 
-    const response = await directusCrud.create('campaign_content', storyData, {
-      authToken: request.authToken
-    }) as any;
+    // Генерируем идеи, а не пустые заглушки: раньше здесь создавался один черновик
+    // с заголовком и пустым текстом, сколько бы идей ни попросили.
+    const ideas = await generateStoryIdeas(topic, count);
+    if (ideas.length === 0) {
+      return {
+        response: 'Не получилось придумать идеи для Stories — попробуйте переформулировать тему.',
+        success: false
+      };
+    }
 
+    const createdIds: string[] = [];
+    const createdTitles: string[] = [];
+
+    for (const idea of ideas) {
+      // campaign_id/content_type — канонические имена полей campaign_content.
+      // Здесь раньше писались campaignId/type, из-за чего Stories не привязывались к кампании.
+      const storyData = {
+        campaign_id: request.campaignId,
+        user_id: request.userId,
+        title: idea.title,
+        content: idea.content,
+        content_type: 'stories',
+        status: 'draft',
+        prompt: `Идея для Stories по теме «${topic}»`,
+        keywords: [topic],
+        hashtags: []
+      };
+
+      try {
+        const created = await directusCrud.create('campaign_content', storyData, {
+          authToken: request.authToken
+        }) as any;
+        if (created?.id) createdIds.push(created.id);
+        createdTitles.push(idea.title);
+      } catch (error: any) {
+        console.error('[AI-ASSISTANT] Ошибка сохранения Stories:', error?.message);
+      }
+    }
+
+    if (createdIds.length === 0) {
+      return {
+        response: 'Идеи сгенерированы, но сохранить их не удалось. Попробуйте ещё раз.',
+        success: false
+      };
+    }
+
+    const list = createdTitles.map((title, i) => `${i + 1}. ${title}`).join('\n');
     return {
-      response: `✅ Stories "${title}" успешно создана! ID: ${response?.id || 'unknown'}. Теперь вы можете отредактировать её в разделе Stories, добавив текст, изображения и интерактивные элементы.`,
+      response: `✅ Готово — ${createdIds.length} ${createdIds.length === 1 ? 'идея' : 'идей'} для Stories по теме «${topic}»:\n\n${list}\n\nВсе черновики лежат в разделе Stories — можно отредактировать и добавить визуал.`,
       success: true,
-      action: 'Создание Stories',
-      data: { storyId: response?.id }
+      action: `Создано Stories: ${createdIds.length}`,
+      data: { storyIds: createdIds, count: createdIds.length, topic }
     };
   } catch (error) {
     console.error('[AI-ASSISTANT] Ошибка создания Stories:', error);

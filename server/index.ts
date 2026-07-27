@@ -1254,6 +1254,16 @@ setTimeout(async () => {
   }, 30 * 60 * 1000); // каждые 30 минут
 }, 3 * 60 * 1000);
 
+// Уведомления о новых комментариях и всплесках охвата.
+// Данные берём готовыми из Analytics API (он сам обновляет метрики раз в 6 часов),
+// поэтому цикл лёгкий: один запрос на канал. Выключается ENGAGEMENT_WATCH_ENABLED=false.
+try {
+  const { startEngagementWatcher } = await import('./services/engagement-watcher');
+  startEngagementWatcher();
+} catch (e: any) {
+  log(`[ENGAGEMENT] Не удалось запустить наблюдатель: ${e.message}`, 'engagement', 'error');
+}
+
 // Graceful shutdown для всех сервисов
 function gracefulShutdown(signal: string) {
   log(`🔴 Получен сигнал ${signal}, выполняем graceful shutdown`, 'shutdown');
@@ -1269,6 +1279,10 @@ function gracefulShutdown(signal: string) {
     // Останавливаем все сервисы
     const scheduler = getPublishScheduler();
     if (scheduler?.shutdown) scheduler.shutdown();
+
+    import('./services/engagement-watcher')
+      .then(({ stopEngagementWatcher }) => stopEngagementWatcher())
+      .catch(() => {});
 
     performGlobalMemoryCleanup();
 

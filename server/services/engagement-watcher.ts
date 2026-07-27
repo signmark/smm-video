@@ -14,7 +14,7 @@
 
 import { log } from '../utils/logger';
 import { notifyUser, escapeHtml } from './notify-user';
-import { getCampaignAnalyticsChannels } from './campaign-analytics-channels';
+import { getCampaignAnalyticsChannels, buildMonitoredChannelIndex } from './campaign-analytics-channels';
 import type { PostDynamics } from './scraper-analytics';
 
 /** Как часто опрашивать. Analytics API обновляет метрики раз в 6 часов — чаще смысла нет. */
@@ -170,12 +170,24 @@ export async function runEngagementCheck(): Promise<{ campaigns: number; notifie
     return { campaigns: 0, notified: 0 };
   }
 
-  const { getChannelPostsDynamics } = await import('./scraper-analytics');
+  const { getChannelPostsDynamics, getAllMonitoredChannels } = await import('./scraper-analytics');
+
+  // Один запрос на цикл: индекс уже заведённых в мониторинге каналов. Нужен потому,
+  // что analyticsChannelId сохраняется в кампании лениво — только когда пользователь
+  // откроет раздел Аналитика. Без индекса уведомления не пошли бы до первого визита.
+  let monitoredIndex = new Map<string, string>();
+  try {
+    const monitored = await getAllMonitoredChannels();
+    monitoredIndex = buildMonitoredChannelIndex(monitored.items || []);
+  } catch (err: any) {
+    log(`[ENGAGEMENT] Не удалось получить список каналов мониторинга: ${err.message}`, 'engagement', 'warn');
+  }
+
   let checked = 0;
   let notified = 0;
 
   for (const campaign of campaigns) {
-    const channels = getCampaignAnalyticsChannels(campaign.social_media_settings);
+    const channels = getCampaignAnalyticsChannels(campaign.social_media_settings, monitoredIndex);
     if (channels.length === 0 || !campaign.user_id) continue;
 
     checked++;

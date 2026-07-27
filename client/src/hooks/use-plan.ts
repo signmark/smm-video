@@ -102,6 +102,7 @@ export function usePlan() {
   const { data: profile } = useQuery<{
     plan?: string;
     expire_date?: string | null;
+    is_smm_admin?: boolean;
   }>({
     queryKey: ['/api/user/profile', userId || 'me'],
     enabled: !!token,
@@ -111,9 +112,11 @@ export function usePlan() {
 
   const plan = (profile?.plan || 'basic') as PlanType;
   const expireDate = profile?.expire_date ?? null;
+  const isAdmin = profile?.is_smm_admin === true;
 
-  // Подписка истекла если expire_date задана и уже прошла
-  const isExpired = expireDate
+  // Подписка истекла если expire_date задана и уже прошла.
+  // На админов правило не распространяется — их доступ не зависит от даты тарифа.
+  const isExpired = !isAdmin && expireDate
     ? new Date(expireDate) < new Date()
     : false;
 

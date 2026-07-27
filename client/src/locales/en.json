@@ -529,9 +529,9 @@
         "trial": "Trial"
       },
       "planOptions": {
-        "basic": "Basic — 990 ₽/mo",
-        "pro": "Professional — 4,990 ₽/mo",
-        "enterprise": "Enterprise — Custom"
+        "basic": "Basic",
+        "pro": "Professional",
+        "enterprise": "Enterprise"
       },
       "expireDate": "Subscription End Date",
       "statusLabel": "Status",

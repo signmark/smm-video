@@ -32,7 +32,7 @@ function getBaseUrl(req: Request): string {
   return 'https://smm.omemo.tech';
 }
 
-function isConfigured(): boolean {
+export function isConfigured(): boolean {
   return !!(SHOP_ID && SECRET_KEY);
 }
 

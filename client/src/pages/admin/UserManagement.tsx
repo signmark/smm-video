@@ -306,47 +306,52 @@ function UserEditForm({ user, onUpdate }: { user: User; onUpdate: (userId: strin
         <p>{user.email}</p>
       </div>
 
-      <div>
-        <label className="block text-sm font-medium mb-1">{um('plan')}</label>
-        <select
-          value={formData.plan}
-          onChange={(e) => setFormData({ ...formData, plan: e.target.value })}
-          className="w-full p-2 border rounded bg-background"
-          data-testid="select-plan"
-        >
-          <option value="basic">{um('planOptions.basic')}</option>
-          <option value="pro">{um('planOptions.pro')}</option>
-          <option value="enterprise">{um('planOptions.enterprise')}</option>
-        </select>
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium mb-1">{um('expireDate')}</label>
-        <Input
-          type="date"
-          value={formData.expire_date}
-          onChange={(e) => setFormData({ ...formData, expire_date: e.target.value })}
-          data-testid="input-expire-date"
-        />
-        <div className="flex gap-2 mt-2">
-          {[30, 90, 365].map((days) => (
-            <Button
-              key={days}
-              type="button"
-              variant="outline"
-              size="sm"
-              className="text-xs h-7"
-              onClick={() => {
-                const d = new Date();
-                d.setDate(d.getDate() + days);
-                setFormData({ ...formData, expire_date: d.toISOString().split('T')[0] });
-              }}
+      {/* Тариф и срок подписки не применяются к админам — скрываем для них */}
+      {!formData.is_smm_admin && (
+        <>
+          <div>
+            <label className="block text-sm font-medium mb-1">{um('plan')}</label>
+            <select
+              value={formData.plan}
+              onChange={(e) => setFormData({ ...formData, plan: e.target.value })}
+              className="w-full p-2 border rounded bg-background"
+              data-testid="select-plan"
             >
-              {days === 365 ? um('addYear') : um('addDays', { days })}
-            </Button>
-          ))}
-        </div>
-      </div>
+              <option value="basic">{um('planOptions.basic')}</option>
+              <option value="pro">{um('planOptions.pro')}</option>
+              <option value="enterprise">{um('planOptions.enterprise')}</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1">{um('expireDate')}</label>
+            <Input
+              type="date"
+              value={formData.expire_date}
+              onChange={(e) => setFormData({ ...formData, expire_date: e.target.value })}
+              data-testid="input-expire-date"
+            />
+            <div className="flex gap-2 mt-2">
+              {[30, 90, 365].map((days) => (
+                <Button
+                  key={days}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="text-xs h-7"
+                  onClick={() => {
+                    const d = new Date();
+                    d.setDate(d.getDate() + days);
+                    setFormData({ ...formData, expire_date: d.toISOString().split('T')[0] });
+                  }}
+                >
+                  {days === 365 ? um('addYear') : um('addDays', { days })}
+                </Button>
+              ))}
+            </div>
+          </div>
+        </>
+      )}
 
       <div>
         <label className="block text-sm font-medium mb-1">{um('statusLabel')}</label>

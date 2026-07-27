@@ -88,6 +88,7 @@ import realVideoConverterRoutes from './routes/real-video-converter';
 import webCrawlerRoutes from './routes/web-crawler-routes';
 import subscriptionsRouter from './routes/subscriptions';
 import yookassaRouter from './routes/yookassa';
+import { resolvePlanPrice } from './services/plan-pricing';
 
 // NODE_ENV должен определяться системой (development или production)
 
@@ -167,9 +168,25 @@ const PUBLIC_OAUTH_CALLBACKS: Array<{
   { router: vkOAuthRouter, routerPath: '/vk/token-webhook/:campaignId/submit/:secret', publicPath: '/api/vk/token-webhook/:campaignId/submit/:secret', method: 'options' },
   // Статус-polling НЕ в байпасе: теперь требует сессию (authenticateUser +
   // authorizeCampaignAccess внутри роута) и обслуживается обычным mount'ом vkOAuthRouter.
+  // Проверка доступности ЮКассы — публичный GET со страницы тарифов (без Bearer).
+  // Без байпаса его отбивал глобальный authenticateUser → available:false → кнопка
+  // онлайн-оплаты не показывалась, работала только заявка админу.
+  { router: yookassaRouter, routerPath: '/payments/available', publicPath: '/api/payments/available', method: 'get' },
 ];
 
 registerPublicOAuthBypass(app, PUBLIC_OAUTH_CALLBACKS);
+
+// Публичная витрина цен — тоже ДО глобального auth. Страница тарифов дергает этот
+// эндпоинт tokenless (в т.ч. для гостей/лендинга); без байпаса прилетал 401 и цена
+// падала на хардкод-дефолт (670) вместо фактической из resolvePlanPrice.
+app.get('/api/config/pricing', async (_req, res) => {
+  try {
+    const [pro, basic] = await Promise.all([resolvePlanPrice('pro'), resolvePlanPrice('basic')]);
+    res.json({ pro, basic });
+  } catch {
+    res.status(500).json({ error: 'Не удалось получить цены' });
+  }
+});
 
 // Security-заголовки. CSP/frameguard/CORP отключены намеренно: приложение работает
 // как Telegram Mini App внутри iframe (web.telegram.org) и грузит ассеты с S3.

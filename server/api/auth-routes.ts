@@ -12,6 +12,7 @@ import { detectEnvironment } from '../utils/environment-detector';
 import { sendRegistrationPostback } from '../services/partner-postback';
 import { validateDirectusSession } from '../services/directus-session-validator';
 import { refreshDirectusSession } from '../services/directus-refresh-service';
+import { downgradeExpiredPlan } from '../services/plan-expiry';
 
 /**
  * Регистрирует маршруты для авторизации
@@ -314,6 +315,11 @@ export function registerAuthRoutes(app: Express): void {
       // Проверяем, является ли пользователь администратором
       const isAdmin = await isUserAdmin(req, token);
       log(`Пользователь ${userData.email}: статус администратора = ${isAdmin}`, 'auth');
+
+      // Без крона: при входе не-админа сбрасываем истёкший тариф на free.
+      if (!isAdmin) {
+        await downgradeExpiredPlan(userData.id);
+      }
 
       // КРИТИЧНО: Сохраняем сессию в DirectusAuthManager для единой авторизации веб+бот
       // Это позволит использовать одну сессию для веб-приложения и Telegram бота

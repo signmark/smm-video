@@ -1,5 +1,4 @@
 import { Express } from "express";
-import { resolvePlanPrice } from './services/plan-pricing';
 
 // Роутеры, регистрируемые здесь. Остальные (auth, video, stories, analytics и т.д.)
 // монтируются в server/index.ts — порядок монтирования там критичен.
@@ -82,15 +81,8 @@ export function registerRoutes(app: Express): void {
   registerDebugRoutes(app);
   registerUserRoutes(app);
 
-  // Публичный эндпоинт цен тарифов
-  // Приоритет: Directus global_api_keys → env vars → дефолты
-  app.get('/api/config/pricing', async (_req, res) => {
-    const [pro, basic] = await Promise.all([
-      resolvePlanPrice('pro'),
-      resolvePlanPrice('basic'),
-    ]);
-    res.json({ pro, basic });
-  });
+  // /api/config/pricing смонтирован РАНО в index.ts (публичный bypass до auth) —
+  // здесь не регистрируем, иначе он окажется за глобальным authenticateUser.
 
   // Запускаем сервис проверки статусов публикаций
   publicationStatusChecker.start();

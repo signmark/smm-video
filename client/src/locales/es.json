@@ -529,9 +529,9 @@
         "trial": "Prueba"
       },
       "planOptions": {
-        "basic": "Básico — 990 ₽/mes",
-        "pro": "Profesional — 4.990 ₽/mes",
-        "enterprise": "Empresarial — Precio personalizado"
+        "basic": "Básico",
+        "pro": "Profesional",
+        "enterprise": "Empresarial"
       },
       "expireDate": "Fecha de Vencimiento",
       "statusLabel": "Estado",

@@ -223,12 +223,14 @@ export function startEngagementWatcher(): void {
   }
 
   running = true;
-  log(`[ENGAGEMENT] Наблюдатель запущен, интервал ${Math.round(CHECK_INTERVAL_MS / 60000)} мин`, 'engagement');
+  // Уровень warn, а не info: в production logMessage глушит info и debug целиком,
+  // а старт и итоги циклов сервиса, который пишет живым пользователям, видеть нужно.
+  log(`[ENGAGEMENT] Наблюдатель запущен, интервал ${Math.round(CHECK_INTERVAL_MS / 60000)} мин`, 'engagement', 'warn');
 
   const tick = async () => {
     try {
       const result = await runEngagementCheck();
-      log(`[ENGAGEMENT] Проверено кампаний: ${result.campaigns}, уведомлено: ${result.notified}`, 'engagement');
+      log(`[ENGAGEMENT] Проверено кампаний: ${result.campaigns}, уведомлено: ${result.notified}`, 'engagement', 'warn');
     } catch (err: any) {
       log(`[ENGAGEMENT] Ошибка цикла: ${err.message}`, 'engagement', 'error');
     }

@@ -23,6 +23,52 @@
       "pendingLabel": "Open pending approval"
     }
   },
+  "topbar": {
+    "menuExpand": "Expand menu",
+    "menuCollapse": "Collapse menu",
+    "language": "Select language",
+    "aiAssistant": "AI Assistant",
+    "tgAssistant": "TG Assistant",
+    "pricing": "Pricing",
+    "smmAdmin": "SMM Admin",
+    "autonomous": {
+      "schedule_one": "{{count}} post every {{interval}} h",
+      "schedule_other": "{{count}} posts every {{interval}} h",
+      "withImages": "with images",
+      "pendingTitle": "Awaiting approval",
+      "pendingDescription": "The AI has drafted a content plan — click to review and approve",
+      "activeTitle": "Autonomous mode is active",
+      "activeHint": "Click to stop",
+      "stats": "Cycles: {{cycles}} · Posts: {{posts}}",
+      "quotaTitle": "Agent stopped",
+      "quotaHint": "Click to restart",
+      "offTitle": "Autonomous mode is off",
+      "offHint": "Click to start now"
+    },
+    "pipelineDialog": {
+      "title": "Start the autonomous assistant",
+      "description": "Choose how autonomously the assistant should operate",
+      "start": "Start",
+      "starting": "Starting…",
+      "modes": {
+        "fullAuto": {
+          "title": "Full auto",
+          "description": "Generates the plan, writes the copy, creates images and publishes on schedule — non-stop.",
+          "badge": "Recommended"
+        },
+        "mixed": {
+          "title": "Mixed",
+          "description": "Submits the content plan for approval, then writes, generates images and publishes on its own.",
+          "badge": "Plan approval"
+        },
+        "controlled": {
+          "title": "Supervised",
+          "description": "After each step (plan → copy → images) it shows the result and waits for your approval.",
+          "badge": "Maximum control"
+        }
+      }
+    }
+  },
   "ui": {
     "retry": "Retry",
     "loading": "Loading...",
@@ -137,7 +183,12 @@
     "manage": "Manage",
     "open": "Open",
     "actionsMenuLabel": "Actions for campaign {{name}}",
-    "settings": "Settings"
+    "settings": "Settings",
+    "selectorLabel": "Campaign:",
+    "selectPlaceholder": "Select a campaign",
+    "loadingList": "Loading campaigns...",
+    "noActive": "No active campaign",
+    "loadError": "Failed to load campaigns"
   },
   "content": {
     "title": "Content Management",

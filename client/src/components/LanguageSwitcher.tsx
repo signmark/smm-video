@@ -17,7 +17,7 @@ const languages = [
 ];
 
 export function LanguageSwitcher() {
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
 
   const changeLanguage = (languageCode: string) => {
     i18n.changeLanguage(languageCode);
@@ -34,7 +34,7 @@ export function LanguageSwitcher() {
           size="icon"
           className="h-9 w-9"
           data-testid="button-language-toggle"
-          title="Выбрать язык / Select language / Seleccionar idioma"
+          title={t('topbar.language')}
         >
           <Globe className="h-4 w-4" />
         </Button>

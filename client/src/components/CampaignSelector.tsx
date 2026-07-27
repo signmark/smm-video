@@ -9,6 +9,7 @@ import {
 } from "@/components/ui/select";
 import { useCampaignStore } from "@/lib/campaignStore";
 import { Loader2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 
 // Интерфейс для кампании
 export interface Campaign {
@@ -27,6 +28,7 @@ interface CampaignSelectorProps {
 }
 
 export function CampaignSelector({ persistSelection = false }: CampaignSelectorProps) {
+  const { t } = useTranslation();
   const { selectedCampaignId, selectedCampaignName, setSelectedCampaign } = useCampaignStore();
   const [isFirstLoad, setIsFirstLoad] = useState(true);
   const [initiallySelectedId, setInitiallySelectedId] = useState<string | null>(null);
@@ -120,7 +122,9 @@ export function CampaignSelector({ persistSelection = false }: CampaignSelectorP
   if (isError) {
     return (
       <div className="flex items-center text-red-500">
-        <span className="text-sm">Ошибка: {error instanceof Error ? error.message : 'Не удалось загрузить кампании'}</span>
+        <span className="text-sm">
+          {t('common.error')}: {error instanceof Error ? error.message : t('campaigns.loadError')}
+        </span>
       </div>
     );
   }
@@ -135,17 +139,17 @@ export function CampaignSelector({ persistSelection = false }: CampaignSelectorP
 
   return (
     <div className="flex items-center py-2">
-      <span className="mr-2 text-sm font-medium">Кампания:</span>
+      <span className="mr-2 text-sm font-medium">{t('campaigns.selectorLabel')}</span>
       <div className="w-[250px]">
         {isLoading ? (
           <div className="flex items-center space-x-2">
             <Loader2 className="h-4 w-4 animate-spin" />
-            <span className="text-sm text-muted-foreground">Загрузка кампаний...</span>
+            <span className="text-sm text-muted-foreground">{t('campaigns.loadingList')}</span>
           </div>
         ) : campaignsResponse?.data?.length === 1 ? (
           // Если есть только одна кампания - показываем статичную надпись
           <div className="px-3 py-2 border rounded-md text-sm">
-            {activeCampaignName || "Нет активной кампании"}
+            {activeCampaignName || t('campaigns.noActive')}
           </div>
         ) : (
           // Если есть более одной кампании - показываем селектор
@@ -154,7 +158,7 @@ export function CampaignSelector({ persistSelection = false }: CampaignSelectorP
             onValueChange={handleCampaignChange}
           >
             <SelectTrigger>
-              <SelectValue placeholder="Выберите кампанию" />
+              <SelectValue placeholder={t('campaigns.selectPlaceholder')} />
             </SelectTrigger>
             <SelectContent>
               {campaignsResponse?.data

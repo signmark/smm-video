@@ -95,9 +95,12 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
     if (!tooltipInterval && !tooltipPosts) return null;
     const interval = tooltipInterval ?? 8;
     const posts = tooltipPosts ?? 1;
-    const postWord = posts === 1 ? 'пост' : posts < 5 ? 'поста' : 'постов';
-    const imgPart = tooltipWithImages !== false ? ' · с картинками' : '';
-    return `${posts} ${postWord} каждые ${interval} ч${imgPart}`;
+    // Склонение «пост/поста/постов» отдано i18next (count + _one/_few/_many):
+    // в en/es правила другие, руками их не воспроизвести.
+    const schedule = t('topbar.autonomous.schedule', { count: posts, interval });
+    return tooltipWithImages !== false
+      ? `${schedule} · ${t('topbar.autonomous.withImages')}`
+      : schedule;
   };
 
   const { mutate: startAutonomousWithMode, isPending: isTogglingAutonomous } = useMutation({
@@ -192,7 +195,7 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
           data-testid="button-menu"
           className="h-9 w-9"
           onClick={onMenuClick}
-          title={isSidebarCollapsed ? "Развернуть меню" : "Свернуть меню"}
+          title={isSidebarCollapsed ? t('topbar.menuExpand') : t('topbar.menuCollapse')}
         >
           <Menu className="h-4 w-4" />
         </Button>
@@ -234,7 +237,7 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
             onClick={onOpenAIChat}
             className="h-9 w-9 relative"
             data-testid="button-ai-assistant"
-            title="AI Помощник"
+            title={t('topbar.aiAssistant')}
           >
             <Sparkles className="h-4 w-4 text-purple-600 dark:text-purple-400" />
             <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 animate-pulse" />
@@ -312,35 +315,40 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
               <TooltipContent side="bottom" className="max-w-[220px] text-center">
                 {autonomousStatus?.pendingApprovalStep ? (
                   <div className="space-y-0.5">
-                    <p className="font-medium text-amber-600 dark:text-amber-400">Ожидает одобрения</p>
+                    <p className="font-medium text-amber-600 dark:text-amber-400">{t('topbar.autonomous.pendingTitle')}</p>
                     <p className="text-xs text-muted-foreground">
-                      AI составил контент-план — нажмите, чтобы просмотреть и одобрить
+                      {t('topbar.autonomous.pendingDescription')}
                     </p>
                   </div>
                 ) : isAutonomousActive ? (
                   <div className="space-y-0.5">
-                    <p className="font-medium text-green-600 dark:text-green-400">Автономный режим активен</p>
+                    <p className="font-medium text-green-600 dark:text-green-400">{t('topbar.autonomous.activeTitle')}</p>
                     {buildAutonomousDesc() && (
                       <p className="text-xs text-muted-foreground">{buildAutonomousDesc()}</p>
                     )}
                     {autonomousStatus?.cyclesCompleted != null && (
-                      <p className="text-xs text-muted-foreground">Циклов: {autonomousStatus.cyclesCompleted} · Постов: {autonomousStatus.postsCreated ?? 0}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {t('topbar.autonomous.stats', {
+                          cycles: autonomousStatus.cyclesCompleted,
+                          posts: autonomousStatus.postsCreated ?? 0,
+                        })}
+                      </p>
                     )}
-                    <p className="text-xs text-muted-foreground">Нажмите, чтобы остановить</p>
+                    <p className="text-xs text-muted-foreground">{t('topbar.autonomous.activeHint')}</p>
                   </div>
                 ) : hasQuotaError ? (
                   <div className="space-y-0.5">
-                    <p className="font-medium text-yellow-600 dark:text-yellow-400">Агент остановлен</p>
+                    <p className="font-medium text-yellow-600 dark:text-yellow-400">{t('topbar.autonomous.quotaTitle')}</p>
                     <p className="text-xs text-yellow-700 dark:text-yellow-300">{autonomousStatus.quotaError.message}</p>
-                    <p className="text-xs text-muted-foreground">Нажмите, чтобы перезапустить</p>
+                    <p className="text-xs text-muted-foreground">{t('topbar.autonomous.quotaHint')}</p>
                   </div>
                 ) : (
                   <div className="space-y-0.5">
-                    <p className="font-medium">Автономный режим выключен</p>
+                    <p className="font-medium">{t('topbar.autonomous.offTitle')}</p>
                     {buildAutonomousDesc() && (
                       <p className="text-xs text-muted-foreground">{buildAutonomousDesc()}</p>
                     )}
-                    <p className="text-xs text-muted-foreground">Нажмите, чтобы запустить сейчас</p>
+                    <p className="text-xs text-muted-foreground">{t('topbar.autonomous.offHint')}</p>
                   </div>
                 )}
               </TooltipContent>
@@ -356,7 +364,7 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
             onClick={onOpenTGBot}
             className="h-9 w-9 relative bg-gradient-to-r from-blue-500 to-cyan-500 text-white hover:from-blue-600 hover:to-cyan-600"
             data-testid="button-tg-bot"
-            title="TG Ассистент"
+            title={t('topbar.tgAssistant')}
           >
             <Send className="h-4 w-4" />
             <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-red-500 animate-pulse" />
@@ -370,10 +378,10 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
             size="sm"
             className="hidden sm:flex items-center gap-1.5 h-9 px-3 text-blue-600 dark:text-blue-400 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20"
             data-testid="button-pricing-nav"
-            title="Тарифы"
+            title={t('topbar.pricing')}
           >
             <CreditCard className="h-4 w-4" />
-            <span className="text-sm font-medium">Тарифы</span>
+            <span className="text-sm font-medium">{t('topbar.pricing')}</span>
           </Button>
         </Link>
 
@@ -393,7 +401,7 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
               </div>
               {userIsAdmin && (
                 <span className="hidden md:inline-block bg-blue-500 text-white text-xs px-2 py-1 rounded">
-                  СММ Админ
+                  {t('topbar.smmAdmin')}
                 </span>
               )}
             </Button>
@@ -426,10 +434,10 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Bot className="h-5 w-5 text-primary" />
-            Запуск автономного ассистента
+            {t('topbar.pipelineDialog.title')}
           </DialogTitle>
           <DialogDescription>
-            Выберите режим работы — насколько автономно должен действовать ассистент
+            {t('topbar.pipelineDialog.description')}
           </DialogDescription>
         </DialogHeader>
 
@@ -437,26 +445,21 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
           {[
             {
               id: 'full_auto' as PipelineMode,
+              // ключ локали отдельно от id: в JSON camelCase, в API — snake_case
+              i18nKey: 'fullAuto',
               icon: <Zap className="h-5 w-5 text-green-500" />,
-                title: 'Полный автомат',
-                description: 'Генерирует план, пишет тексты, создаёт картинки и публикует по расписанию — без остановок.',
-                badge: 'Рекомендуется',
               badgeColor: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300',
             },
             {
               id: 'mixed' as PipelineMode,
+              i18nKey: 'mixed',
               icon: <GitMerge className="h-5 w-5 text-blue-500" />,
-                title: 'Смешанный',
-                description: 'Показывает контент-план на одобрение, затем самостоятельно пишет, генерирует картинки и публикует.',
-                badge: 'С одобрением плана',
               badgeColor: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
             },
             {
               id: 'controlled' as PipelineMode,
+              i18nKey: 'controlled',
               icon: <SlidersHorizontal className="h-5 w-5 text-orange-500" />,
-                title: 'С контролем',
-                description: 'После каждого шага (план → тексты → картинки) показывает результат и ждёт вашего одобрения.',
-                badge: 'Максимальный контроль',
               badgeColor: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300',
             },
           ].map((option) => (
@@ -474,12 +477,16 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
                 <div className="mt-0.5">{option.icon}</div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-semibold text-sm">{option.title}</span>
+                    <span className="font-semibold text-sm">
+                      {t(`topbar.pipelineDialog.modes.${option.i18nKey}.title`)}
+                    </span>
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${option.badgeColor}`}>
-                      {option.badge}
+                      {t(`topbar.pipelineDialog.modes.${option.i18nKey}.badge`)}
                     </span>
                   </div>
-                  <p className="text-xs text-muted-foreground mt-1">{option.description}</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {t(`topbar.pipelineDialog.modes.${option.i18nKey}.description`)}
+                  </p>
                 </div>
                 <div className={`h-4 w-4 rounded-full border-2 mt-0.5 flex-shrink-0 ${
                   selectedMode === option.id ? 'border-primary bg-primary' : 'border-muted-foreground/30'
@@ -491,7 +498,7 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
 
         <div className="flex gap-2 justify-end pt-2">
           <Button variant="outline" onClick={() => setShowModeDialog(false)} data-testid="button-mode-cancel">
-              Отмена
+              {t('common.cancel')}
           </Button>
           <Button
             onClick={() => startAutonomousWithMode(selectedMode)}
@@ -500,7 +507,9 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
             className="gap-2"
           >
             <Bot className="h-4 w-4" />
-              {isTogglingAutonomous ? 'Запускаем…' : 'Запустить'}
+              {isTogglingAutonomous
+                ? t('topbar.pipelineDialog.starting')
+                : t('topbar.pipelineDialog.start')}
           </Button>
         </div>
       </DialogContent>

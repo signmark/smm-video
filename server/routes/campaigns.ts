@@ -381,6 +381,25 @@ export function registerCampaignRoutes(app: Express) {
     }
   });
 
+  // /api/keywords/search и /api/keywords/analyze-website — POST-роуты (routes/ai.ts).
+  // GET по ним проваливался в "/api/keywords/:campaignId" с campaignId="search",
+  // где имя действия уходило в Directus как id кампании и возвращалось 500
+  // «Не удалось загрузить ключевые слова». Пользователей это не задевало, но
+  // шумело в мониторинге и маскировало настоящие сбои.
+  // Регистрируем ДО ":campaignId", иначе параметрический роут снова перехватит.
+  const KEYWORDS_POST_ONLY_ACTIONS = ['search', 'analyze-website'];
+  for (const action of KEYWORDS_POST_ONLY_ACTIONS) {
+    for (const method of ['get', 'put', 'patch', 'delete'] as const) {
+      app[method](`/api/keywords/${action}`, (_req, res) => {
+        res.set('Allow', 'POST');
+        return res.status(405).json({
+          error: `Метод не поддерживается: /api/keywords/${action} принимает только POST`,
+          code: 'METHOD_NOT_ALLOWED',
+        });
+      });
+    }
+  }
+
   app.get("/api/keywords/:campaignId", authenticateUser, async (req, res) => {
     try {
       const { campaignId } = req.params;

@@ -58,7 +58,51 @@ const KEY_PATHS = [
   'auth.recovery.explanation',
   'auth.recovery.logoutButton',
   'auth.recovery.loggingOut',
+  // Топбар: раньше эти подписи были захардкожены по-русски и не реагировали
+  // на переключатель языка
+  'topbar.menuExpand',
+  'topbar.menuCollapse',
+  'topbar.language',
+  'topbar.aiAssistant',
+  'topbar.tgAssistant',
+  'topbar.pricing',
+  'topbar.smmAdmin',
+  'topbar.autonomous.withImages',
+  'topbar.autonomous.pendingTitle',
+  'topbar.autonomous.pendingDescription',
+  'topbar.autonomous.activeTitle',
+  'topbar.autonomous.activeHint',
+  'topbar.autonomous.stats',
+  'topbar.autonomous.quotaTitle',
+  'topbar.autonomous.quotaHint',
+  'topbar.autonomous.offTitle',
+  'topbar.autonomous.offHint',
+  'topbar.pipelineDialog.title',
+  'topbar.pipelineDialog.description',
+  'topbar.pipelineDialog.start',
+  'topbar.pipelineDialog.starting',
+  ...['fullAuto', 'mixed', 'controlled'].flatMap((mode) => [
+    `topbar.pipelineDialog.modes.${mode}.title`,
+    `topbar.pipelineDialog.modes.${mode}.description`,
+    `topbar.pipelineDialog.modes.${mode}.badge`,
+  ]),
+  // Селектор кампании в топбаре
+  'campaigns.selectorLabel',
+  'campaigns.selectPlaceholder',
+  'campaigns.loadingList',
+  'campaigns.noActive',
+  'campaigns.loadError',
 ];
+
+/**
+ * Плюрализация «пост/поста/постов» отдана i18next, поэтому ключ существует
+ * только в виде суффиксов. Проверяем per-locale: у ru четыре формы, у en две.
+ */
+const PLURAL_KEYS: Record<string, string[]> = {
+  ru: ['topbar.autonomous.schedule_one', 'topbar.autonomous.schedule_few', 'topbar.autonomous.schedule_many'],
+  en: ['topbar.autonomous.schedule_one', 'topbar.autonomous.schedule_other'],
+  es: ['topbar.autonomous.schedule_one', 'topbar.autonomous.schedule_other'],
+};
 
 describe('i18n keys referenced by aria-labels exist in all locales', () => {
   it.each(KEY_PATHS)('%s is present in ru.json, en.json, es.json', (key) => {
@@ -71,6 +115,14 @@ describe('i18n keys referenced by aria-labels exist in all locales', () => {
       expect(value, `key ${key} missing in ${name}.json`).toBeDefined();
       expect(typeof value, `key ${key} in ${name}.json is not a string`).toBe('string');
       expect((value as string).length, `key ${key} in ${name}.json is empty`).toBeGreaterThan(0);
+    }
+  });
+
+  it.each(Object.entries(PLURAL_KEYS))('%s has every plural form of the autonomous schedule', (name, keys) => {
+    const dict = ({ ru, en, es } as Record<string, unknown>)[name] as JsonObject;
+    for (const key of keys) {
+      const value = lookupPath(dict, key);
+      expect(typeof value, `plural key ${key} missing in ${name}.json`).toBe('string');
     }
   });
 });

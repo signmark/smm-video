@@ -23,6 +23,53 @@
       "pendingLabel": "Abrir aprobación pendiente"
     }
   },
+  "topbar": {
+    "menuExpand": "Expandir menú",
+    "menuCollapse": "Contraer menú",
+    "language": "Seleccionar idioma",
+    "aiAssistant": "Asistente IA",
+    "tgAssistant": "Asistente TG",
+    "pricing": "Tarifas",
+    "smmAdmin": "Admin SMM",
+    "autonomous": {
+      "schedule_one": "{{count}} publicación cada {{interval}} h",
+      "schedule_many": "{{count}} publicaciones cada {{interval}} h",
+      "schedule_other": "{{count}} publicaciones cada {{interval}} h",
+      "withImages": "con imágenes",
+      "pendingTitle": "Pendiente de aprobación",
+      "pendingDescription": "La IA ha preparado un plan de contenido: haz clic para revisarlo y aprobarlo",
+      "activeTitle": "Modo autónomo activo",
+      "activeHint": "Haz clic para detener",
+      "stats": "Ciclos: {{cycles}} · Publicaciones: {{posts}}",
+      "quotaTitle": "Agente detenido",
+      "quotaHint": "Haz clic para reiniciar",
+      "offTitle": "Modo autónomo desactivado",
+      "offHint": "Haz clic para iniciar ahora"
+    },
+    "pipelineDialog": {
+      "title": "Iniciar el asistente autónomo",
+      "description": "Elige el modo de trabajo: con cuánta autonomía debe actuar el asistente",
+      "start": "Iniciar",
+      "starting": "Iniciando…",
+      "modes": {
+        "fullAuto": {
+          "title": "Automático total",
+          "description": "Genera el plan, escribe los textos, crea las imágenes y publica según el calendario, sin pausas.",
+          "badge": "Recomendado"
+        },
+        "mixed": {
+          "title": "Mixto",
+          "description": "Presenta el plan de contenido para su aprobación y luego escribe, genera imágenes y publica por su cuenta.",
+          "badge": "Con aprobación del plan"
+        },
+        "controlled": {
+          "title": "Supervisado",
+          "description": "Tras cada paso (plan → textos → imágenes) muestra el resultado y espera tu aprobación.",
+          "badge": "Control máximo"
+        }
+      }
+    }
+  },
   "ui": {
     "retry": "Reintentar",
     "loading": "Cargando...",
@@ -137,7 +184,12 @@
     "manage": "Gestionar",
     "open": "Abrir",
     "actionsMenuLabel": "Acciones para la campaña {{name}}",
-    "settings": "Configuración"
+    "settings": "Configuración",
+    "selectorLabel": "Campaña:",
+    "selectPlaceholder": "Selecciona una campaña",
+    "loadingList": "Cargando campañas...",
+    "noActive": "No hay campaña activa",
+    "loadError": "No se han podido cargar las campañas"
   },
   "content": {
     "title": "Gestión de Contenido",

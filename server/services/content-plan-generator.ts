@@ -287,16 +287,25 @@ export async function generateContentPlan(params: GeneratePlanParams): Promise<{
   progress('Составление промпта', 25, `Загружено ${trends.length} трендов`);
 
   const contentTypeTranslation: Record<string, string> = {
-    mixed: 'смешанный', educational: 'обучающий', promotional: 'рекламный',
-    entertaining: 'развлекательный', text: 'только текст',
-    'text-image': 'текст с изображениями', video: 'с видео'
+    mixed: 'смешанный', random: 'случайный', educational: 'обучающий',
+    promotional: 'рекламный', entertaining: 'развлекательный',
+    text: 'только текст', 'text-image': 'текст с изображениями',
+    image: 'только изображение', video: 'видео', clip: 'клип (Shorts/Reels)',
+    story: 'Stories'
   };
 
   const businessInfo = businessData
     ? `\nИнформация о бизнесе:\n- Название: ${businessData.companyName || ''}\n- Описание: ${businessData.businessDescription || ''}\n- Аудитория: ${businessData.targetAudience || ''}\n- Ценности: ${businessData.businessValues || ''}\n- Продукты/услуги: ${businessData.productsServices || ''}\n- Преимущества: ${businessData.competitiveAdvantages || ''}`
     : 'Информация о бизнесе отсутствует.';
 
-  const contentTypeText = `Тип контента: ${contentTypeTranslation[settings.contentType || 'mixed'] || settings.contentType || 'смешанный'}`;
+  const ctMode = settings.contentType || 'mixed';
+  const ctLabel = contentTypeTranslation[ctMode] || ctMode;
+  const contentTypeText =
+    ctMode === 'random'
+      ? `Тип контента: СЛУЧАЙНЫЙ — для КАЖДОГО поста выбирай contentType случайно из разрешённых; посты должны отличаться по типу.`
+      : ctMode === 'mixed'
+        ? `Тип контента: СМЕШАННЫЙ — используй РАЗНЫЕ типы из разрешённых, распределяя их сбалансированно между постами (не все одинаковые).`
+        : `Тип контента: ${ctLabel} — используй этот тип (${ctMode}) для всех постов.`;
   const mediaTypeText = `Типы медиа: ${[settings.includeImages && 'изображения', settings.includeVideos && 'видео'].filter(Boolean).join(' и ') || 'не указано'}`;
 
   // Определяем оптимальные часы публикации на основе трендов

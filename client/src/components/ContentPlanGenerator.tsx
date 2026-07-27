@@ -286,16 +286,22 @@ export function ContentPlanGenerator({
     setIsGenerating(true);
     processedJobRef.current = null;
 
+    // «Смешанный» (все типы вперемешку) и «рандом» (случайный тип у поста) —
+    // оба включают все доступные типы; отличаются инструкцией модели на бэке.
+    const allTypes = selectedType === "mixed" || selectedType === "random";
+
     const requestData = {
       campaignId,
       settings: {
         postsCount: contentCount,
         contentType: selectedType,
         period: 14,
-        includeImages: includeGeneratedImage && selectedType !== "text",
-        includeVideos: selectedType === "video" || selectedType === "clip" || selectedType === "text-video" || selectedType === "mixed",
-        includeClips: selectedType === "clip" || selectedType === "mixed",
-        includeStories: selectedType === "story" || selectedType === "mixed",
+        // «Смешанный» и «рандом» включают ВСЕ типы; конкретный тип — только свои флаги.
+        includeImages: includeGeneratedImage
+          && (allTypes || selectedType === "image" || selectedType === "text-image"),
+        includeVideos: allTypes || selectedType === "video",
+        includeClips: allTypes || selectedType === "clip",
+        includeStories: allTypes || selectedType === "story",
         customInstructions: customInstructions || null
       },
       selectedTrendTopics: Array.from(selectedTopicIds),
@@ -591,14 +597,13 @@ export function ContentPlanGenerator({
                 </SelectTrigger>
                 <SelectContent className="z-[9999] !bg-white dark:!bg-gray-800 !text-black dark:!text-white !border-gray-300 dark:!border-gray-600">
                   <SelectItem value="text" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Текст</SelectItem>
-                  <SelectItem value="image" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Картинка</SelectItem>
-                  <SelectItem value="text-image" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Текст + картинка</SelectItem>
-                  <SelectItem value="clip" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Клип (Shorts/Reels/Stories)</SelectItem>
-                  <SelectItem value="video" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Длинное видео</SelectItem>
-                  <SelectItem value="text-video" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Текст + видео</SelectItem>
+                  <SelectItem value="text-image" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Текст с картинкой</SelectItem>
+                  <SelectItem value="image" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Только картинка</SelectItem>
+                  <SelectItem value="video" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Видео</SelectItem>
+                  <SelectItem value="clip" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Клип (Shorts/Reels)</SelectItem>
                   <SelectItem value="story" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Stories</SelectItem>
-                  <SelectItem value="mixed" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Смешанный</SelectItem>
-                  <SelectItem value="random" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Рандом</SelectItem>
+                  <SelectItem value="mixed" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Смешанный (все типы вперемешку)</SelectItem>
+                  <SelectItem value="random" className="!hover:bg-gray-100 dark:!hover:bg-gray-700">Рандом (случайный тип у каждого поста)</SelectItem>
                 </SelectContent>
               </Select>
             </div>

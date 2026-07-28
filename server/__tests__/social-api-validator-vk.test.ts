@@ -100,6 +100,39 @@ describe('validateVkToken — проверка группы', () => {
     expect(result.details.user).toEqual(USER);
   });
 
+  // Продакшен-кампания «omemo.tech» (группа «Движение к миллионам с Дмитрием
+  // Ждановым») хранит groupId как -176171231. groups.getById отвечает на него
+  // ошибкой 100 «group_id should be greater than 0» — живой админский токен
+  // выглядел сломанным, и карточка уезжала в «Требует переподключения».
+  describe('нормализация groupId перед groups.getById', () => {
+    it.each([
+      ['-176171231', '176171231', 'отрицательный id из настроек'],
+      ['176171231', '176171231', 'уже положительный id'],
+      ['club226440032', '226440032', 'префикс club'],
+      ['https://vk.com/club226440032', '226440032', 'полный URL с club'],
+      ['https://vk.com/avtocargo_pro03', 'avtocargo_pro03', 'URL со screen_name'],
+      ['omemo_education', 'omemo_education', 'голый screen_name'],
+    ])('%s → group_id=%s (%s)', async (stored, expected) => {
+      stubVk({ data: { response: [USER] } }, { data: { response: [GROUP] } });
+
+      const result = await validateVkToken('vk1.token', stored);
+
+      expect(result.isValid).toBe(true);
+      const groupCall = (axios.get as any).mock.calls
+        .find((call: any[]) => call[0] === GROUPS_GET_BY_ID);
+      expect(groupCall[1].params.group_id).toBe(expected);
+    });
+
+    it('пустой groupId не порождает запрос к groups.getById', async () => {
+      stubVk({ data: { response: [USER] } });
+
+      const result = await validateVkToken('vk1.token', '');
+
+      expect(result.isValid).toBe(true);
+      expect((axios.get as any).mock.calls.some((c: any[]) => c[0] === GROUPS_GET_BY_ID)).toBe(false);
+    });
+  });
+
   it('токен не попадает в message и details', async () => {
     const token = 'vk1.секретный-токен-кампании';
     stubVk(

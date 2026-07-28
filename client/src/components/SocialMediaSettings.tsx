@@ -1133,9 +1133,13 @@ export function SocialMediaSettings({
               isValid: response.data.success,
               message: response.data.message
             });
-            // Если токен невалиден — authExpired выставлен на бэке, обновляем локально
-            if (!response.data.success && !vkSettings.authExpired) {
-              setVkSettings((prev: any) => prev ? { ...prev, authExpired: true } : prev);
+            // Вердикт про переподключение берём с бэка, а не выводим из
+            // `success`: провал проверки бывает от сети, ошибки группы и
+            // блокировки VK-приложения — токен при этом жив, и требовать
+            // переподключения не за что.
+            const authExpired = Boolean(response.data.authExpired);
+            if (authExpired !== Boolean(vkSettings.authExpired)) {
+              setVkSettings((prev: any) => prev ? { ...prev, authExpired } : prev);
             }
           })
           .catch(() => {
@@ -1270,10 +1274,10 @@ export function SocialMediaSettings({
       // Если валидация успешна, автоматически сохраняем настройки
       if (response.data.success) {
         await onSubmit(form.getValues());
-      } else {
-        // Токен невалиден — authExpired выставлен на бэке, обновляем локально
-        setVkSettings((prev: any) => prev ? { ...prev, authExpired: true } : prev);
       }
+      // Флаг переподключения — только по вердикту бэка (см. авто-проверку выше)
+      setVkSettings((prev: any) =>
+        prev ? { ...prev, authExpired: Boolean(response.data.authExpired) } : prev);
     } catch (error) {
       console.error('Error validating VK token:', error);
       setVkStatus({

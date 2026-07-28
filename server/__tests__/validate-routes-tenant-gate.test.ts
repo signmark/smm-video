@@ -3,7 +3,7 @@ import request from 'supertest';
 import express from 'express';
 import { registerRoutes } from '../routes';
 import { validateVkToken } from '../services/social-api-validator';
-import { markVkAuthExpired } from '../services/vk-token-refresh';
+import { markVkAuthExpired, clearVkAuthExpired } from '../services/vk-token-refresh';
 import { directusApi } from '../directus';
 
 // Регрессия на консолидацию /api/validate/*.
@@ -37,6 +37,7 @@ vi.mock('../services/social-api-validator', () => ({
 
 vi.mock('../services/vk-token-refresh', () => ({
   markVkAuthExpired: vi.fn(),
+  clearVkAuthExpired: vi.fn(),
 }));
 
 const OWNER_ID = 'owner-11111111-1111-1111-1111-111111111111';
@@ -282,6 +283,109 @@ describe('Консолидация /api/validate/*: аутентификация
 
       expect(response.status).toBe(200);
       expect(markVkAuthExpired).toHaveBeenCalledWith(CAMPAIGN_ID);
+    });
+  });
+
+  // Вердикт про переподключение должен ехать к клиенту явным полем. Пока его не
+  // было, SocialMediaSettings выводил флаг сам из `success === false` — все
+  // границы выше существовали на сервере, но на экран не влияли: карточка
+  // «Требует переподключения» поднималась на любой неудаче проверки, включая
+  // ошибку группы и код 8 «Application is blocked» при живом токене.
+  describe('POST /api/validate/vk — поле authExpired в ответе', () => {
+    const ownerRequest = (body: object) => request(app)
+      .post('/api/validate/vk')
+      .set('Authorization', `Bearer ${createMockToken({ id: OWNER_ID, email: 'owner@example.com' })}`)
+      .send(body);
+
+    it('постоянная auth-ошибка → authExpired: true', async () => {
+      stubAuthFetch();
+      (validateVkToken as any).mockResolvedValue({
+        isValid: false,
+        message: 'User authorization failed',
+        details: { error: { error_code: 5, error_msg: 'User authorization failed' } },
+      });
+
+      const response = await ownerRequest({ campaignId: CAMPAIGN_ID });
+
+      expect(response.body.authExpired).toBe(true);
+    });
+
+    it('приложение заблокировано (error_code 8) → authExpired: false', async () => {
+      stubAuthFetch();
+      (validateVkToken as any).mockResolvedValue({
+        isValid: false,
+        message: 'Application is blocked',
+        details: { error: { error_code: 8, error_msg: 'Application is blocked' } },
+      });
+
+      const response = await ownerRequest({ campaignId: CAMPAIGN_ID });
+
+      expect(response.body.success).toBe(false);
+      // Заблокировано само VK-приложение — переподключение токена не поможет.
+      expect(response.body.authExpired).toBe(false);
+      expect(markVkAuthExpired).not.toHaveBeenCalled();
+    });
+
+    it('провал проверки группы → authExpired: false', async () => {
+      stubAuthFetch();
+      (validateVkToken as any).mockResolvedValue({
+        isValid: false,
+        message: 'Токен валиден, но ошибка при проверке группы',
+        details: { user: { id: 42 }, groupError: { error: { error_code: 100 } } },
+      });
+
+      const response = await ownerRequest({ campaignId: CAMPAIGN_ID });
+
+      expect(response.body.authExpired).toBe(false);
+    });
+
+    it('успешная проверка сохранённого токена снимает флаг', async () => {
+      stubAuthFetch();
+      (validateVkToken as any).mockResolvedValue({
+        isValid: true,
+        message: 'Токен валиден',
+        details: { user: { id: 42 }, group: { id: 777, name: 'Группа' } },
+      });
+
+      const response = await ownerRequest({ campaignId: CAMPAIGN_ID });
+
+      expect(response.body.authExpired).toBe(false);
+      // Иначе флаг неснимаем: refresh cron пропускает кампании с authExpired.
+      expect(clearVkAuthExpired).toHaveBeenCalledWith(CAMPAIGN_ID);
+    });
+
+    it('успешная проверка произвольного токена из body флаг не снимает', async () => {
+      stubAuthFetch();
+      (validateVkToken as any).mockResolvedValue({ isValid: true, message: 'Токен валиден' });
+
+      await ownerRequest({ campaignId: CAMPAIGN_ID, token: 'vk1.чужой-токен' });
+
+      // Сохранённый токен кампании не проверялся — про него ничего не известно.
+      expect(clearVkAuthExpired).not.toHaveBeenCalled();
+    });
+
+    it('проверка токена из body не гасит уже стоящий флаг кампании', async () => {
+      stubAuthFetch();
+      (directusApi.get as any).mockResolvedValue({
+        data: {
+          data: {
+            id: CAMPAIGN_ID,
+            user_id: OWNER_ID,
+            user_created: OWNER_ID,
+            social_media_settings: {
+              vk: { token: CAMPAIGN_VK_TOKEN, groupId: '777', authExpired: true },
+            },
+          },
+        },
+      });
+      (validateVkToken as any).mockResolvedValue({ isValid: true, message: 'Токен валиден' });
+
+      const response = await ownerRequest({ campaignId: CAMPAIGN_ID, token: 'vk1.другой-токен' });
+
+      // Успех чужого токена не доказывает, что ожил сохранённый: отдаём
+      // сохранённое состояние, иначе плашка разъезжается с базой до перезагрузки.
+      expect(response.body.authExpired).toBe(true);
+      expect(clearVkAuthExpired).not.toHaveBeenCalled();
     });
   });
 

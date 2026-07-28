@@ -98,6 +98,10 @@ export function registerValidationRoutes(app: Express): void {
       // доказывает про сохранённое подключение.
       let tokenSource: 'body' | 'campaign' = 'body';
 
+      // Сохранённое состояние кампании — база для ответа: клиент рисует плашку
+      // по нему, а не по исходу конкретной проверки.
+      let storedAuthExpired = false;
+
       // campaignId проверяется на владение всегда, а не только когда из кампании
       // берётся токен: ниже по нему пишется authExpired, и запись в чужую
       // кампанию недопустима. authorizeCampaignAccess внутри резолвера отдаёт
@@ -105,6 +109,7 @@ export function registerValidationRoutes(app: Express): void {
       if (campaignId) {
         try {
           const sms = await getCampaignSocialSettings(campaignId, { user: req.user });
+          storedAuthExpired = sms.vk?.authExpired === true;
           // Токены вырезаны из браузера (sanitizeOAuthSecrets) — если клиент их
           // не прислал, берём из настроек кампании. Клиенту уходит только вердикт.
           if (!token) {
@@ -134,21 +139,42 @@ export function registerValidationRoutes(app: Express): void {
       // выше, и VK структурно подтвердил постоянную auth-ошибку. Невалидный
       // токен из body, сеть, таймаут и провал проверки группы состояние
       // кампании не трогают.
-      if (!result.isValid
-        && campaignId
-        && tokenSource === 'campaign'
-        && isPermanentVkAuthFailure(result.details)) {
+      const checkedStoredToken = Boolean(campaignId) && tokenSource === 'campaign';
+      let authExpired = storedAuthExpired;
+
+      if (checkedStoredToken && !result.isValid && isPermanentVkAuthFailure(result.details)) {
+        authExpired = true;
         try {
           const { markVkAuthExpired } = await import('../services/vk-token-refresh');
           await markVkAuthExpired(campaignId);
         } catch (e: any) {
           console.error('[validate/vk] Ошибка при выставлении authExpired:', e.message);
         }
+      } else if (checkedStoredToken && result.isValid) {
+        // Симметрия: сохранённый токен снова прошёл проверку — снимаем флаг.
+        // Иначе он неснимаем: refresh cron пропускает кампании с authExpired
+        // (vk-token-refresh.ts), а снимал флаг только он — красная плашка
+        // держалась вечно, даже когда публикация шла нормально.
+        authExpired = false;
+        try {
+          const { clearVkAuthExpired } = await import('../services/vk-token-refresh');
+          await clearVkAuthExpired(campaignId);
+        } catch (e: any) {
+          console.error('[validate/vk] Ошибка при снятии authExpired:', e.message);
+        }
       }
 
+      // Состояние переподключения отдаём явным полем — и это именно СОХРАНЁННОЕ
+      // состояние кампании, а не исход текущей проверки. Раньше клиент выводил
+      // плашку из `success === false` и поднимал «Требует переподключения» на
+      // любой неудаче: сеть, ошибка группы, код 8 «Application is blocked»
+      // (блокировка VK-приложения, к токену отношения не имеющая). Границы ниже
+      // существовали на сервере, но клиент их не видел. Когда проверялся токен
+      // из body, сохранённого состояния проверка не меняет — отдаём как есть.
       return res.json({
         success: result.isValid,
         message: result.message,
+        authExpired,
         details: result.details
       });
     } catch (error) {

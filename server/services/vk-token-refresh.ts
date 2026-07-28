@@ -46,6 +46,46 @@ export async function markVkAuthExpired(campaignId: string): Promise<void> {
 }
 
 /**
+ * Снимает authExpired для VK, когда сохранённый токен кампании снова прошёл
+ * проверку.
+ *
+ * Без этого флаг был ловушкой: выставленный однажды, он выключает кампанию из
+ * refresh cron (`refreshExpiringVkTokens` ниже пропускает `authExpired`), а
+ * снимал его только сам refresh — то есть никто. Кампания оставалась с красным
+ * «Требует переподключения» навсегда, даже когда токен жив и публикация идёт.
+ *
+ * @returns true, если флаг действительно был снят
+ */
+export async function clearVkAuthExpired(campaignId: string): Promise<boolean> {
+  try {
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+    const directusUrl = process.env.DIRECTUS_URL;
+    if (!adminToken || !directusUrl) return false;
+
+    const resp = await axios.get(`${directusUrl}/items/user_campaigns/${campaignId}`, {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    const existing = resp.data.data?.social_media_settings || {};
+    const existingVk = existing.vk || {};
+
+    if (existingVk.authExpired !== true) return false;
+
+    await axios.patch(`${directusUrl}/items/user_campaigns/${campaignId}`, {
+      social_media_settings: {
+        ...existing,
+        vk: { ...existingVk, authExpired: false }
+      }
+    }, { headers: { Authorization: `Bearer ${adminToken}` } });
+
+    log(`[VK-REFRESH] authExpired снят для кампании ${campaignId} — токен снова валиден`, 'vk-refresh');
+    return true;
+  } catch (err: any) {
+    log(`[VK-REFRESH] Ошибка при снятии authExpired для кампании ${campaignId}: ${err.message}`, 'vk-refresh', 'warn');
+    return false;
+  }
+}
+
+/**
  * Отправляет уведомление владельцу кампании о том, что VK-подключение устарело.
  * Сначала пытается отправить через Telegram (если у кампании настроен Telegram
  * или у пользователя есть бот-сессия), иначе — на email.

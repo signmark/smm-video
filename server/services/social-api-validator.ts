@@ -5,6 +5,7 @@
 
 import axios from 'axios';
 import { log } from '../utils/logger';
+import { normalizeVkGroupId } from '../utils/vk-group-id';
 
 /**
  * Результат проверки API ключа
@@ -83,12 +84,16 @@ export async function validateVkToken(token: string, groupId?: string): Promise<
     if (response.data && response.data.response && Array.isArray(response.data.response)) {
       const userInfo = response.data.response[0];
       
-      // Если указан ID группы, проверяем права на публикацию
-      if (groupId) {
+      // Если указан ID группы, проверяем права на публикацию.
+      // groups.getById принимает только положительный id или screen_name, а в
+      // настройках groupId лежит в четырёх разных формах (см. vk-group-id.ts) —
+      // без нормализации живой токен получал ошибку 100 и выглядел мёртвым.
+      const normalizedGroupId = normalizeVkGroupId(groupId);
+      if (normalizedGroupId) {
         try {
           const groupResponse = await axios.get('https://api.vk.com/method/groups.getById', {
             params: {
-              group_id: groupId,
+              group_id: normalizedGroupId,
               access_token: token,
               v: '5.131'
             }

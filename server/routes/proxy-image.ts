@@ -18,6 +18,28 @@ import { safeGet, BlockedUrlError } from '../utils/safe-http';
 /** Только для тестов/переиспользования. Обёртка над общим ssrf-guard. */
 export const isSafeProxyImageUrl = isSafeHttpUrl;
 
+/** Типы, которые прокси готов отдавать. SVG нет намеренно: он исполняет скрипты. */
+const ALLOWED_IMAGE_TYPES = new Set([
+  'image/jpeg', 'image/pjpeg', 'image/png', 'image/gif', 'image/webp',
+  'image/avif', 'image/bmp', 'image/x-icon', 'image/vnd.microsoft.icon',
+  'image/tiff', 'image/heic', 'image/heif',
+]);
+
+const FALLBACK_IMAGE_TYPE = 'image/jpeg';
+
+/**
+ * Content-Type ответа: только из allowlist, иначе image/jpeg.
+ *
+ * Раньше сюда попадал заголовок апстрима без разбора — в том числе text/html.
+ */
+export function pickSafeImageContentType(raw: unknown): string {
+  if (typeof raw !== 'string') return FALLBACK_IMAGE_TYPE;
+
+  // Отрезаем параметры (charset и прочее) и нормализуем регистр.
+  const base = raw.split(';')[0].trim().toLowerCase();
+  return ALLOWED_IMAGE_TYPES.has(base) ? base : FALLBACK_IMAGE_TYPE;
+}
+
 export function registerProxyImageRoute(app: Express): void {
   app.get('/api/proxy-image', async (req: Request, res: Response) => {
     const { url } = req.query;
@@ -43,8 +65,17 @@ export function registerProxyImageRoute(app: Express): void {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         },
       });
-      const contentType = response.headers['content-type'] || 'image/jpeg';
+      // Content-Type апстрима наружу как есть не отдаём. Прокси публичный и
+      // отвечает с НАШЕГО origin: text/html от чужого сервера исполнялся бы в
+      // контексте приложения, а auth_token лежит в localStorage — то есть это
+      // прямой угон сессии (находка ревью 2026-07-28).
+      const contentType = pickSafeImageContentType(response.headers['content-type']);
       res.setHeader('Content-Type', contentType);
+      // Страховка на случай, если тип всё же окажется рендерящимся: файл
+      // скачивается, а не исполняется, и не наследует наш origin.
+      res.setHeader('Content-Disposition', 'inline; filename="image"');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Content-Security-Policy', "default-src 'none'; sandbox");
       res.setHeader('Cache-Control', 'public, max-age=86400');
       res.send(Buffer.from(response.data));
     } catch (e: any) {

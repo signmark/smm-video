@@ -1861,7 +1861,8 @@ class TelegramBotService {
           mode: 'json'
         });
 
-        console.log('[LOGIN-DEBUG] Directus auth response:', JSON.stringify(response.data, null, 2));
+        // Ответ /auth/login целиком — это access_token и refresh_token в логе.
+        console.log('[LOGIN-DEBUG] Directus auth response received:', response.status);
 
         token = response.data.data.access_token;
 

@@ -540,7 +540,8 @@ export class ApiKeyService {
           console.log(`[fal_ai] Ключ успешно обновлен в БД с правильным форматом`);
           return true;
         } else {
-          console.log(`[fal_ai] Ключ в неизвестном формате, не содержит ":"`, apiKey);
+          // Сам ключ в лог не пишем — раньше он уезжал туда целиком.
+          console.log(`[fal_ai] Ключ в неизвестном формате, не содержит ":" (длина ${apiKey?.length ?? 0})`);
           return false;
         }
       } else {

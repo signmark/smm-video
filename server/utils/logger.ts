@@ -108,6 +108,17 @@ const KV_PAIR = new RegExp(
 const AUTH_SCHEME = /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi;
 
 /**
+ * Секрет в query-параметре с «несекретным» именем: `?key=`, `?sig=`, `?auth=`.
+ *
+ * KV_PAIR сюда не достаёт — он требует, чтобы имя параметра содержало слово из
+ * SECRET_WORD, а у Gemini ключ передаётся параметром `key`. Из-за этого сетевая
+ * ошибка node-fetch с полным URL уносила GEMINI_API_KEY в логи целиком
+ * (находка ревью 2026-07-28). Ограничиваемся именно query-контекстом: `key=` в
+ * обычном тексте встречается слишком часто, чтобы резать его везде.
+ */
+const QUERY_SECRET = /([?&](?:key|sig|signature|auth|code)=)[^&#\s"'<>]+/gi;
+
+/**
  * Вырезает секреты из готовой строки.
  *
  * До этого редакция применялась только к структурированной ошибке, а `msg`
@@ -122,6 +133,7 @@ export function redactText(text: string): string {
     // для KV_PAIR выглядит слово «Bearer» (оно кончается пробелом), и порядок
     // наоборот вырезал бы именно его, оставив сам токен снаружи.
     .replace(AUTH_SCHEME, (_m, scheme) => `${scheme} ${REDACTED}`)
+    .replace(QUERY_SECRET, (_m, head) => `${head}${REDACTED}`)
     .replace(JSON_PAIR, (_m, head) => `${head}"${REDACTED}"`)
     .replace(KV_PAIR, (match, key, sep, value) => {
       const v = String(value);

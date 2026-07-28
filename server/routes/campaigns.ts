@@ -301,7 +301,8 @@ export function registerCampaignRoutes(app: Express) {
         return res.status(404).json({ error: "Кампания не найдена" });
       }
 
-      console.log(`[CAMPAIGN_DELETE] Found campaign:`, JSON.stringify(campaign));
+      // Целиком запись не пишем: в social_media_settings лежат токены соцсетей.
+      console.log(`[CAMPAIGN_DELETE] Found campaign: id=${campaign.id}, name=${campaign.name}`);
 
       if (campaign.user_id !== userId && campaign.user_created !== userId) {
         console.error(`[CAMPAIGN_DELETE] Permission denied for user ${userId}. Owner: ${campaign.user_id}, Creator: ${campaign.user_created}`);

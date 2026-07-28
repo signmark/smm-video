@@ -8,8 +8,10 @@ export interface SafeErrorDetails {
 const SENSITIVE_VALUE_PATTERN =
   /(password|passwd|secret|token|authorization|api[-_]?key)(\s*[=:]\s*)(["']?)[^\s,;&"']+\3/gi;
 const AUTH_HEADER_PATTERN = /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi;
+// `key` без префикса — так передаёт ключ Gemini: сетевая ошибка node-fetch несёт
+// полный URL, а роут отдавал её текст клиенту (находка ревью 2026-07-28).
 const SENSITIVE_QUERY_PATTERN =
-  /([?&](?:access_token|refresh_token|token|password|secret|api[-_]?key)=)[^&#\s]*/gi;
+  /([?&](?:access_token|refresh_token|token|password|secret|api[-_]?key|key|sig|signature|auth|code)=)[^&#\s]*/gi;
 
 function sanitizeErrorMessage(message: string): string {
   return message

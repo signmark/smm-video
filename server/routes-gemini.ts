@@ -4,6 +4,7 @@ import { geminiDirect } from './services/gemini-direct';
 import { GeminiProxyService } from './services/gemini-proxy';
 import { ApiKeyService, ApiServiceName } from './services/api-keys';
 import * as logger from './utils/logger';
+import { toSafeErrorDetails } from './utils/safe-error';
 
 /**
  * Регистрирует маршруты для работы с Gemini API
@@ -118,7 +119,9 @@ export function registerGeminiRoutes(app: Express) {
       
       return res.status(500).json({
         success: false,
-        error: `Ошибка при улучшении текста: ${(error as Error).message}`
+        // Не сырой текст ошибки: node-fetch кладёт в message полный URL запроса,
+        // а в нём ?key=GEMINI_API_KEY (находка ревью 2026-07-28).
+        error: `Ошибка при улучшении текста: ${toSafeErrorDetails(error).message}`
       });
     }
   });
@@ -162,7 +165,7 @@ export function registerGeminiRoutes(app: Express) {
       
       return res.status(500).json({
         success: false,
-        error: `Ошибка при проверке API ключа: ${(error as Error).message}`
+        error: `Ошибка при проверке API ключа: ${toSafeErrorDetails(error).message}`
       });
     }
   });

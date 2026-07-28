@@ -181,3 +181,45 @@ describe('development output', () => {
     expect(getRecentLogs().join('\n')).not.toContain('DEV_SECRET_VALUE');
   });
 });
+
+/**
+ * Ключ в query-параметре с «несекретным» именем.
+ *
+ * Находка ревью 2026-07-28 (P1): Gemini передаёт ключ параметром `key`, а KV_PAIR
+ * требует, чтобы имя параметра содержало слово из SECRET_WORD. Поэтому сетевая
+ * ошибка node-fetch с полным URL уносила GEMINI_API_KEY в логи целиком.
+ */
+describe('redactText — секрет в query-параметре key=', () => {
+  it('вырезает ключ Gemini из URL', () => {
+    const out = redactText(
+      'FetchError: request to https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=AIzaSyFAKE_TEST_KEY_000 failed',
+    );
+
+    expect(out).not.toContain('AIzaSyFAKE_TEST_KEY_000');
+    expect(out).toContain('key=[REDACTED]');
+    // Остальная часть сообщения должна остаться читаемой.
+    expect(out).toContain('generativelanguage.googleapis.com');
+    expect(out).toContain('FetchError');
+  });
+
+  it('режет и другие «несекретные» имена параметров', () => {
+    for (const param of ['sig', 'signature', 'auth', 'code']) {
+      const out = redactText(`https://api.test/x?${param}=FAKE_VALUE_000&page=2`);
+      expect(out).not.toContain('FAKE_VALUE_000');
+      expect(out).toContain(`${param}=[REDACTED]`);
+      // Несекретные параметры не трогаем.
+      expect(out).toContain('page=2');
+    }
+  });
+
+  it('не трогает key= вне query-строки', () => {
+    // Иначе редакция съела бы обычные отладочные строки вида `key=value`.
+    const msg = 'cache lookup: key=user-42 hit';
+    expect(redactText(msg)).toBe(msg);
+  });
+
+  it('идемпотентна', () => {
+    const once = redactText('https://api.test/x?key=SECRET');
+    expect(redactText(once)).toBe(once);
+  });
+});

@@ -50,33 +50,60 @@ class AdminTokenManager {
   }
 
   /**
+   * Проверяет, что статический токен ещё принимается Directus.
+   * Дешёвый запрос /users/me: 200 → жив, иначе (401 протух / отозван) → нет.
+   */
+  private async isStaticTokenValid(token: string): Promise<boolean> {
+    const directusUrl = process.env.DIRECTUS_URL;
+    if (!directusUrl) return false;
+    try {
+      const r = await axios.get(`${directusUrl}/users/me?fields=id`, {
+        headers: { Authorization: `Bearer ${token}` },
+        validateStatus: () => true,
+      });
+      return r.status === 200;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Performs admin authentication
    */
   private async authenticate(): Promise<string | null> {
     try {
-      // Try static token first (prefer dev token in Replit dev environment)
-      const staticToken = process.env.ADMIN_TOKEN || process.env.DIRECTUS_DEV_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
-      if (staticToken) {
+      const directusUrl = process.env.DIRECTUS_URL;
+
+      // Статический сервисный токен используем ТОЛЬКО если он живой. Раньше его
+      // брали безусловно; когда он протухал (INVALID_CREDENTIALS), все админские
+      // операции падали 401, а рабочий вход по email/паролю не задействовался —
+      // именно из-за этого не грузился список пользователей и фоновые задачи.
+      const staticToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.ADMIN_TOKEN
+        || process.env.DIRECTUS_DEV_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
+      if (staticToken && await this.isStaticTokenValid(staticToken)) {
         this.adminToken = staticToken;
         this.tokenTimestamp = Date.now();
         return staticToken;
       }
+      if (staticToken) {
+        log('Статический admin-токен недействителен — вхожу по email/паролю', 'admin-token-manager');
+      }
 
-      // Fallback to login
+      // Fallback to login (рабочий путь, когда статик-токен протух/не задан)
       const email = process.env.DIRECTUS_ADMIN_EMAIL;
       const password = process.env.DIRECTUS_ADMIN_PASSWORD;
-      const directusUrl = process.env.DIRECTUS_URL;
 
       if (email && password && directusUrl) {
         const authResponse = await axios.post(`${directusUrl}/auth/login`, {
           email,
-          password
+          password,
+          mode: 'json',
         });
 
         if (authResponse.data?.data?.access_token) {
           this.adminToken = authResponse.data.data.access_token;
           this.tokenTimestamp = Date.now();
-          log('Admin token obtained successfully', 'admin-token-manager');
+          log('Admin token obtained via login', 'admin-token-manager');
           return this.adminToken;
         }
       }

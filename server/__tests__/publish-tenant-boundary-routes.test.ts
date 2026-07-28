@@ -54,6 +54,9 @@ const {
   axiosGet, axiosPatch,
 } = H;
 
+vi.mock('../services/admin-token-manager', () => ({
+  adminTokenManager: { getAdminToken: vi.fn(async () => 'test-service-token'), clearToken: vi.fn() },
+}));
 vi.mock('../services/content-access', () => ({ assertContentBelongsToRequester: H.assertContentBelongsToRequester }));
 vi.mock('../services/campaign-access', () => ({ authorizeCampaignAccess: H.authorizeCampaignAccess, CampaignAccessError: H.CampaignAccessError }));
 vi.mock('../services/publishing-token', () => ({ resolvePublishingToken: H.resolvePublishingToken, getServiceTokenFromEnv: vi.fn(() => 'service-token') }));

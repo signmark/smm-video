@@ -8,6 +8,7 @@
  */
 import axios, { AxiosRequestConfig } from 'axios';
 import { DirectusAuthResult, DirectusRequestOptions } from './directus-types';
+import { adminTokenManager } from './admin-token-manager';
 
 export class RefreshTokenExpiredError extends Error {
   constructor(message: string = 'Refresh token истёк или недействителен') {
@@ -109,74 +110,20 @@ export class DirectusCrud {
       return this.adminTokenCache.token;
     }
 
-    // КРИТИЧНО: Приоритет DIRECTUS_STATIC_TOKEN, DIRECTUS_DEV_TOKEN (Replit dev), DIRECTUS_ADMIN_TOKEN или DIRECTUS_TOKEN
-    const staticToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_DEV_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
-    if (staticToken) {
-      // Проверяем: если это JWT (3 части через точку), смотрим exp
-      const parts = staticToken.split('.');
-      if (parts.length === 3) {
-        try {
-          const payload = JSON.parse(Buffer.from(parts[1], 'base64url').toString('utf-8'));
-          const expMs = (payload.exp || 0) * 1000;
-          if (expMs > 0 && expMs < Date.now()) {
-            console.warn(`[directus-crud] ⚠️ DIRECTUS_ADMIN_TOKEN является JWT и истёк ${new Date(expMs).toISOString()} — попытка войти через email/password`);
-            // Не используем истёкший токен, падаем к email/password ниже
-          } else {
-            const cacheUntil = expMs > 0 ? expMs - 60000 : Date.now() + 24 * 60 * 60 * 1000;
-            console.log(`[directus-crud] 🔑 Using JWT admin token from environment (valid until ${new Date(cacheUntil).toISOString()})`);
-            this.adminTokenCache = { token: staticToken, expiresAt: cacheUntil };
-            return staticToken;
-          }
-        } catch {
-          // Не удалось распарсить — используем как есть
-          console.log(`[directus-crud] 🔑 Using static admin token from environment`);
-          this.adminTokenCache = { token: staticToken, expiresAt: Date.now() + 24 * 60 * 60 * 1000 };
-          return staticToken;
-        }
-      } else {
-        // Не JWT — статический токен, не истекает
-        console.log(`[directus-crud] 🔑 Using static admin token from environment`);
-        this.adminTokenCache = { token: staticToken, expiresAt: Date.now() + 24 * 60 * 60 * 1000 };
-        return staticToken;
-      }
-    }
-
-    const email = process.env.DIRECTUS_ADMIN_EMAIL;
-    const password = process.env.DIRECTUS_ADMIN_PASSWORD;
-
-    if (!email || !password) {
-      console.error(`[directus-crud] ❌ Admin credentials missing!`);
-      console.error(`[directus-crud] Checked env: DIRECTUS_ADMIN_EMAIL=${!!process.env.DIRECTUS_ADMIN_EMAIL}, DIRECTUS_ADMIN_PASSWORD=${!!process.env.DIRECTUS_ADMIN_PASSWORD}`);
-      console.error(`[directus-crud] Also checked for static token: DIRECTUS_STATIC_TOKEN=${!!process.env.DIRECTUS_STATIC_TOKEN}, DIRECTUS_ADMIN_TOKEN=${!!process.env.DIRECTUS_ADMIN_TOKEN}`);
-      console.error(`[directus-crud] Current NODE_ENV: ${process.env.NODE_ENV}`);
+    // Единый источник admin-токена — adminTokenManager: он проверяет статический
+    // токен на живость и при протухании входит по email/паролю. Раньше здесь была
+    // своя копия логики, которая брала статический токен БЕЗ проверки и кэшировала
+    // на 24 часа — из-за чего протухший токен ронял все админские операции разом.
+    const token = await adminTokenManager.getAdminToken();
+    if (!token) {
+      console.error(`[directus-crud] ❌ Не удалось получить admin-токен (ни статический, ни email/password)`);
       throw new Error('Admin credentials not configured');
     }
 
-    try {
-      console.log(`[directus-crud] 🔑 Logging in as admin: ${email} to ${this.directusUrl}`);
-      const response = await axios.post(`${this.directusUrl}/auth/login`, {
-        email,
-        password,
-        mode: 'json',
-        expires: 86400 // 24 часа
-      });
-      const token = response.data.data.access_token;
-      const expires = response.data.data.expires || 86400000;
-
-      this.adminTokenCache = {
-        token,
-        expiresAt: Date.now() + expires - 60000
-      };
-
-      console.log(`[directus-crud] ✅ Admin token obtained successfully`);
-      return token;
-    } catch (error: any) {
-      console.error(`[directus-crud] ❌ Admin login failed: ${error.message}`);
-      if (error.response) {
-        console.error(`[directus-crud] Response: ${error.response.status} - ${JSON.stringify(error.response.data)}`);
-      }
-      throw error;
-    }
+    // Локальное зеркало кэша менеджера (у него TTL 30 мин) — чуть короче, чтобы
+    // не пережить его инвалидацию.
+    this.adminTokenCache = { token, expiresAt: Date.now() + 25 * 60 * 1000 };
+    return token;
   }
 
   /**

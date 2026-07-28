@@ -28,6 +28,9 @@ const H = vi.hoisted(() => {
     axiosPost: vi.fn(async () => ({ data: {} })),
   };
 });
+vi.mock('../services/admin-token-manager', () => ({
+  adminTokenManager: { getAdminToken: vi.fn(async () => 'test-service-token'), clearToken: vi.fn() },
+}));
 vi.mock('../services/campaign-access', () => ({ authorizeCampaignAccess: H.authorizeCampaignAccess, CampaignAccessError: H.CampaignAccessError }));
 vi.mock('axios', () => {
   const instance = { get: H.axiosGet, post: H.axiosPost, patch: H.axiosPatch, interceptors: { request: { use: vi.fn() }, response: { use: vi.fn() } } };

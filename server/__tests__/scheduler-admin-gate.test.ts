@@ -8,6 +8,9 @@ import { getPublishScheduler } from '../services/publish-scheduler';
 // См. docs/PRIORITIZED_IMPROVEMENT_PLAN_2026-07-23.md §2 и
 // docs/followups/2026-07-24-security-backlog.md.
 
+vi.mock('../services/admin-token-manager', () => ({
+  adminTokenManager: { getAdminToken: vi.fn(async () => 'test-service-token'), clearToken: vi.fn() },
+}));
 vi.mock('../directus', () => ({
   directusApi: {
     get: vi.fn(),

@@ -6,6 +6,7 @@ import { Application, Request, Response } from 'express';
 import { globalApiKeysService } from './services/global-api-keys';
 import { log } from './utils/logger';
 import { directusCrud } from './services/directus-crud';
+import { adminTokenManager } from './services/admin-token-manager';
 import { directusApiManager } from './directus';
 import { ApiServiceName } from './services/api-keys';
 import axios from 'axios';
@@ -52,7 +53,6 @@ export async function isUserAdmin(req: Request, directusToken?: string): Promise
 
     log(`Проверка прав администратора с токеном: ${token.substring(0, 10)}...`, 'admin');
 
-    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
     const directusUrl = (process.env.DIRECTUS_URL || '').replace(/\/$/, '');
 
     // Пробуем через пользовательский токен (/users/me)
@@ -61,12 +61,18 @@ export async function isUserAdmin(req: Request, directusToken?: string): Promise
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
       });
       const currentUser = response.data.data;
-      if (!currentUser) return false;
-      const isAdmin = currentUser.is_smm_admin === true || currentUser.is_smm_admin === 1 || currentUser.is_smm_admin === '1' || currentUser.is_smm_admin === 'true';
-      const isRoleAdmin = currentUser.role === 'admin' || (typeof currentUser.role === 'object' && (currentUser.role?.name === 'Administrator' || currentUser.role?.admin_access === true));
-      const finalResult = isAdmin || isRoleAdmin;
-      if (finalResult) log(`Пользователь ${currentUser.email} признан администратором`, 'admin');
-      return finalResult;
+      if (currentUser) {
+        const isAdmin = currentUser.is_smm_admin === true || currentUser.is_smm_admin === 1 || currentUser.is_smm_admin === '1' || currentUser.is_smm_admin === 'true';
+        const isRoleAdmin = currentUser.role === 'admin' || (typeof currentUser.role === 'object' && (currentUser.role?.name === 'Administrator' || currentUser.role?.admin_access === true));
+        if (isAdmin || isRoleAdmin) {
+          log(`Пользователь ${currentUser.email} признан администратором`, 'admin');
+          return true;
+        }
+        // is_smm_admin — привилегированное поле, юзерский токен его НЕ видит
+        // (в RBAC его нет в списке read-полей) → нельзя делать вывод «не админ».
+        // Раньше здесь стоял return false и проверка служебным токеном ниже была
+        // недостижима. Проваливаемся в неё.
+      }
     } catch (innerError: any) {
       // Токен истёк или недействителен — пробуем через admin-токен по userId из JWT
       if (innerError?.response?.status !== 401 && innerError?.response?.status !== 403) {
@@ -75,7 +81,10 @@ export async function isUserAdmin(req: Request, directusToken?: string): Promise
       }
     }
 
-    // Фолбэк: парсим userId из JWT и проверяем через admin-токен
+    // Фолбэк: парсим userId из JWT и проверяем СЛУЖЕБНЫМ токеном (авторитетно).
+    // adminTokenManager валидирует статический токен и при протухании входит по
+    // email/паролю — раньше тут был сырой process.env.*, который был мёртв.
+    const adminToken = await adminTokenManager.getAdminToken();
     if (!adminToken) return false;
     try {
       const parts = token.split('.');

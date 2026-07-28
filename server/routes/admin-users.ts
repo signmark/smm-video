@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import axios from 'axios';
+import { adminTokenManager } from '../services/admin-token-manager';
 
 const router = Router();
 
@@ -10,8 +11,8 @@ async function checkAdminRights(token: string): Promise<{ isAdmin: boolean; user
   try {
     const directusUrl = process.env.DIRECTUS_URL;
 
-    // Запрашиваем данные текущего пользователя через его токен
-    const meResponse = await fetch(`${directusUrl}/users/me?fields=id,email,first_name,last_name,is_smm_admin`, {
+    // 1) Валидируем сессию и берём id пользователя ЕГО ЖЕ токеном.
+    const meResponse = await fetch(`${directusUrl}/users/me?fields=id,email,first_name,last_name`, {
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
@@ -23,11 +24,27 @@ async function checkAdminRights(token: string): Promise<{ isAdmin: boolean; user
       return { isAdmin: false, userData: null };
     }
 
-    const meData = await meResponse.json();
-    const userData = meData.data;
-    const isAdmin = userData?.is_smm_admin === true;
+    const userData = (await meResponse.json()).data;
+    if (!userData?.id) return { isAdmin: false, userData: null };
 
-    return { isAdmin, userData };
+    // 2) is_smm_admin — привилегированное поле, пользователь его читать не должен
+    //    (в RBAC-политике его нет в списке read-полей). Читаем авторитетно
+    //    служебным токеном: adminTokenManager проверяет его на живость и при
+    //    протухании входит по email/паролю. Раньше признак админа читался
+    //    юзерским токеном → приходил undefined → любой админ получал 403.
+    const adminToken = await adminTokenManager.getAdminToken();
+    if (!adminToken) {
+      console.error('[admin-users] Не удалось получить служебный токен для проверки прав');
+      return { isAdmin: false, userData };
+    }
+    const privResp = await fetch(`${directusUrl}/users/${userData.id}?fields=is_smm_admin`, {
+      headers: { 'Authorization': `Bearer ${adminToken}` }
+    });
+    if (!privResp.ok) return { isAdmin: false, userData };
+    const v = (await privResp.json())?.data?.is_smm_admin;
+    const isAdmin = v === true || v === 1 || v === '1' || v === 'true';
+
+    return { isAdmin, userData: { ...userData, is_smm_admin: isAdmin } };
   } catch (error) {
     console.error('[admin-users] Ошибка проверки прав:', error);
     return { isAdmin: false, userData: null };
@@ -63,7 +80,7 @@ router.get('/admin/users', async (req: Request, res: Response) => {
     const directusUrl = process.env.DIRECTUS_URL;
     
     // Используем готовый админский токен из env
-    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
+    const adminToken = await adminTokenManager.getAdminToken();
     if (!adminToken) {
       console.log('[admin-users] Нет админского токена в env');
       return res.status(500).json({ 
@@ -157,7 +174,7 @@ router.patch('/admin/users/:userId', async (req: any, res: Response) => {
 
     // Используем админский токен для обновления
     const directusUrl = process.env.DIRECTUS_URL;
-    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
+    const adminToken = await adminTokenManager.getAdminToken();
     
     if (!adminToken) {
       console.log('[admin-users] Нет админского токена');
@@ -218,7 +235,7 @@ router.get('/admin/users/activity', async (req, res) => {
 
     // Получаем статистику пользователей напрямую через Directus API
     const directusUrl = process.env.DIRECTUS_URL;
-    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
+    const adminToken = await adminTokenManager.getAdminToken();
     
     if (!adminToken) {
       console.log('[admin-users] Нет админского токена для статистики');

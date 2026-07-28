@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { directusApiManager } from '../directus';
 import { validateDirectusSession } from '../services/directus-session-validator';
+import { adminTokenManager } from '../services/admin-token-manager';
 
 const adminStatusCache = new Map<string, { is_smm_admin: boolean; cachedAt: number }>();
 const ADMIN_CACHE_TTL = 30 * 1000;
@@ -14,9 +15,13 @@ async function fetchAdminStatus(userId: string): Promise<boolean> {
   // Admin privilege is authoritative data. Never repopulate this cache from the
   // long-lived session snapshot because demotion must take effect within the TTL.
   try {
-    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
+    // Служебный токен через менеджер: он валидирует статический токен и при
+    // протухании входит по email/паролю. Раньше здесь брался сырой
+    // process.env.DIRECTUS_STATIC_TOKEN — когда он протух, is_smm_admin у ВСЕХ
+    // приходил false, и админка (список пользователей и т.п.) отдавала 403.
+    const adminToken = await adminTokenManager.getAdminToken();
     if (!adminToken) {
-      console.error('[user-auth] fetchAdminStatus: нет admin-токена в env');
+      console.error('[user-auth] fetchAdminStatus: не удалось получить служебный токен');
       return false;
     }
     const directusUrl = (process.env.DIRECTUS_URL || '').replace(/\/$/, '');

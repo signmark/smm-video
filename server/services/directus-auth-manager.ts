@@ -1,4 +1,5 @@
 import { directusCrud } from './directus-crud';
+import { adminTokenManager } from './admin-token-manager';
 import { directusApiManager } from '../directus';
 import { DirectusAuthResult, DirectusUser } from './directus-types';
 import { log } from '../utils/logger';
@@ -1034,58 +1035,16 @@ public isTokenValid(token: string): boolean {
    */
   async getAdminAuthToken(): Promise<string | null> {
     try {
-      // ИСПОЛЬЗУЕМ ТОЛЬКО СТАТИЧЕСКИЙ ТОКЕН
-      // Убираем зависимость от логина/пароля администратора
-      const token = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
-      
-      if (token) {
-        // Кэшируем токен как админскую сессию для совместимости (опционально)
-        // Но главное - возвращаем его сразу
-        return token;
+      // Единый источник служебного токена — adminTokenManager: он проверяет
+      // статический токен на живость и при протухании входит по email/паролю.
+      // Раньше метод возвращал ТОЛЬКО статический токен (логин был закомментирован
+      // «во избежание ошибок»), поэтому при протухшем статике фон — telegram-сессии,
+      // vk-refresh, notify-user — падал с 401 INVALID_CREDENTIALS.
+      const token = await adminTokenManager.getAdminToken();
+      if (!token) {
+        log('❌ Не удалось получить служебный admin-токен (ни статический, ни email/пароль)', this.logPrefix);
       }
-      
-      // Старая логика с логином закомментирована для предотвращения ошибок
-      /*
-      // 1. Ищем админскую сессию в кэше
-      const adminSessions = Object.values(this.sessionCache).filter(session => 
-        session.user?.email && 
-        (session.user.email === process.env.DIRECTUS_ADMIN_EMAIL || 
-         session.user.email === 'admin@nplanner.ru')
-      );
-      
-      if (adminSessions.length > 0) {
-        const adminSession = adminSessions[0];
-        if (adminSession.expiresAt > Date.now()) {
-          return adminSession.token;
-        }
-      }
-      
-      // 2. Проверяем наличие статического токена (DIRECTUS_STATIC_TOKEN)
-      if (process.env.DIRECTUS_STATIC_TOKEN) {
-        log('Using DIRECTUS_STATIC_TOKEN for admin access', this.logPrefix);
-        return process.env.DIRECTUS_STATIC_TOKEN;
-      }
-      
-      // 3. Пытаемся авторизоваться через Email/Password
-      const adminEmail = process.env.DIRECTUS_ADMIN_EMAIL;
-      const adminPassword = process.env.DIRECTUS_ADMIN_PASSWORD;
-      
-      if (!adminEmail || !adminPassword) {
-        log('⚠️ Warning: DIRECTUS_ADMIN_EMAIL or DIRECTUS_ADMIN_PASSWORD not set. Cannot login as admin dynamically.', this.logPrefix);
-        return null;
-      }
-      
-      try {
-        const loginResult = await this.login(adminEmail, adminPassword);
-        return loginResult.token;
-      } catch (loginError) {
-        log(`❌ Failed to login as admin: ${(loginError as Error).message}`, this.logPrefix);
-        return null;
-      }
-      */
-     
-      log('❌ Static Admin Token not found in environment variables (DIRECTUS_STATIC_TOKEN or DIRECTUS_ADMIN_TOKEN)', this.logPrefix);
-      return null;
+      return token;
     } catch (error) {
       log(`Error getting admin auth token: ${(error as Error).message}`, this.logPrefix);
       return null;

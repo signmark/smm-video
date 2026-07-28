@@ -46,6 +46,9 @@ const H = vi.hoisted(() => {
   };
 });
 
+vi.mock('../services/admin-token-manager', () => ({
+  adminTokenManager: { getAdminToken: vi.fn(async () => 'test-service-token'), clearToken: vi.fn() },
+}));
 vi.mock('../services/campaign-access', () => ({
   authorizeCampaignAccess: H.authorizeCampaignAccess,
   listAccessibleCampaignIds: H.listAccessibleCampaignIds,

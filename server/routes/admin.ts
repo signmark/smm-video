@@ -1,4 +1,5 @@
 import { Express, Request, Response } from 'express';
+import { adminTokenManager } from '../services/admin-token-manager';
 import { authenticateUser } from '../middleware/user-auth';
 import { directusApi, directusApiManager } from '../directus';
 import { isUserAdmin } from '../routes-global-api-keys';
@@ -86,7 +87,7 @@ export function registerAdminRoutes(app: Express) {
         return res.status(403).json({ error: 'Доступ запрещен' });
       }
 
-      const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
+      const adminToken = await adminTokenManager.getAdminToken();
       if (!adminToken) return res.status(500).json({ success: false, error: 'Ошибка конфигурации' });
 
       const response = await directusApi.get('/users', {
@@ -112,7 +113,7 @@ export function registerAdminRoutes(app: Express) {
       const isAdmin = await isUserAdmin(req);
       if (!isAdmin) return res.status(403).json({ error: 'Доступ запрещен' });
 
-      const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
+      const adminToken = await adminTokenManager.getAdminToken();
       if (!adminToken) return res.status(500).json({ error: 'Ошибка конфигурации' });
 
       const response = await directusApi.patch(`/users/${targetUserId}`, req.body, {

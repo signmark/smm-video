@@ -1,6 +1,9 @@
 # docs/agents — персональные инструкции активного состава
 
 **Создано:** 2026-07-24 (Claude, по поручению owner'а — см. `docs/prompts/claude-roster-handoff-2026-07-24.md`)
+> **Состав ниже устарел.** Актуальный — v4 в `AGENTS.md` (Claude: код + деплой, Codex: ревью).
+> Профили Hermes/Mavis/Mimo сохранены как исторические. Профиль владельца — `owner.md`.
+
 **Состав v3 (2026-07-24 вечер):** Hermes (исполнитель) · Mavis (ревьюер + docs) · Mimo (deploy + infra-ревью) · **Claude (Fable 5, HIGH priority, опциональный архитектурный ревью + co-author)**
 
 ## Зачем это
@@ -11,6 +14,7 @@ Codex и Kimi выбыли. Активная тройка (Hermes/Mavis/Mimo) з
 
 | Файл | Для кого |
 |---|---|
+| `owner.md` | **Owner (Dmitry) — человек, ставящий задачи: рабочая модель, классы инженерных задач, owner-gate** |
 | `hermes.md` | Hermes — исполнитель (код, тесты, merge, смоки) |
 | `mavis.md` | Mavis — независимый ревьюер, docs, мониторинг |
 | `mimo.md` | Mimo — production deploy, infra-ревью |

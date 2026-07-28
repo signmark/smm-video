@@ -195,7 +195,7 @@ describe('PUT /api/user/profile — смена пароля требует те�
     const res = await request(makeApp())
       .put('/api/user/profile')
       .set('Authorization', `Bearer ${authToken()}`)
-      .send({ first_name: 'Дмитрий', email: OLD_EMAIL, new_password: 'hacked123' });
+      .send({ first_name: 'Дмитрий', email: OLD_EMAIL, new_password: 'FAKE-PWD-FOR-TEST-A' });
 
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('CURRENT_PASSWORD_REQUIRED');
@@ -212,7 +212,7 @@ describe('PUT /api/user/profile — смена пароля требует те�
       .send({
         first_name: 'Дмитрий',
         email: OLD_EMAIL,
-        new_password: 'hacked123',
+        new_password: 'FAKE-PWD-FOR-TEST-A',
         current_password: 'guess',
       });
 
@@ -276,7 +276,7 @@ describe('PUT /api/user/profile — смена пароля требует те�
       .send({
         first_name: 'Дмитрий',
         email: OLD_EMAIL,
-        new_password: 'hacked123',
+        new_password: 'FAKE-PWD-FOR-TEST-A',
         current_password: 'whatever',
       });
 

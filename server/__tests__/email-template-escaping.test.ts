@@ -112,7 +112,7 @@ describe('письмо об изменённом пароле', () => {
     // PATCH в Directus должен пройти успешно — стаб выше отдаёт ok на всё.
     await request(app)
       .post('/api/auth/password-reset/confirm')
-      .send({ userId: m[1], ts: m[2], token: m[3], password: 'newpassword1' });
+      .send({ userId: m[1], ts: m[2], token: m[3], password: 'FAKE-PWD-FOR-TEST-B' });
 
     const html = (H.sendEmail.mock.calls[0][0] as any).html as string;
     expect(html).not.toContain('<img src=x');

@@ -103,7 +103,7 @@ describe('одноразовость ссылки сброса', () => {
 
     const first = await request(app)
       .post('/api/auth/password-reset/confirm')
-      .send({ ...link, password: 'newpassword1' });
+      .send({ ...link, password: 'FAKE-PWD-FOR-TEST-B' });
     expect(first.status).toBe(200);
     expect(first.body.success).toBe(true);
 
@@ -120,7 +120,7 @@ describe('одноразовость ссылки сброса', () => {
     const app = makeApp();
     const link = await requestReset(app);
 
-    await request(app).post('/api/auth/password-reset/confirm').send({ ...link, password: 'newpassword1' });
+    await request(app).post('/api/auth/password-reset/confirm').send({ ...link, password: 'FAKE-PWD-FOR-TEST-B' });
     const patchesAfterFirst = patchCalls.length;
 
     await request(app).post('/api/auth/password-reset/confirm').send({ ...link, password: 'attacker-pass' });
@@ -143,12 +143,12 @@ describe('одноразовость ссылки сброса', () => {
 
     const stale = await request(app)
       .post('/api/auth/password-reset/confirm')
-      .send({ ...firstLink, password: 'newpassword1' });
+      .send({ ...firstLink, password: 'FAKE-PWD-FOR-TEST-B' });
     expect(stale.status).toBe(400);
 
     const fresh = await request(app)
       .post('/api/auth/password-reset/confirm')
-      .send({ ...secondLink, password: 'newpassword1' });
+      .send({ ...secondLink, password: 'FAKE-PWD-FOR-TEST-B' });
     expect(fresh.status).toBe(200);
     vi.useRealTimers();
   });
@@ -164,7 +164,7 @@ describe('одноразовость ссылки сброса', () => {
 
     const res = await request(app)
       .post('/api/auth/password-reset/confirm')
-      .send({ ...link, password: 'newpassword1' });
+      .send({ ...link, password: 'FAKE-PWD-FOR-TEST-B' });
     expect(res.status).toBe(400);
   });
 
@@ -175,13 +175,13 @@ describe('одноразовость ссылки сброса', () => {
 
     const failed = await request(app)
       .post('/api/auth/password-reset/confirm')
-      .send({ ...link, password: 'newpassword1' });
+      .send({ ...link, password: 'FAKE-PWD-FOR-TEST-B' });
     expect(failed.status).toBe(500);
 
     // Токен гасится до обращения к Directus — повтор запрещён.
     const retry = await request(app)
       .post('/api/auth/password-reset/confirm')
-      .send({ ...link, password: 'newpassword1' });
+      .send({ ...link, password: 'FAKE-PWD-FOR-TEST-B' });
     expect(retry.status).toBe(400);
   });
 });
@@ -197,7 +197,7 @@ describe('подпись токена', () => {
       userId: USER.id,
       ts,
       token: signToken(USER.id, ts, 'wrong-secret'),
-      password: 'newpassword1',
+      password: 'FAKE-PWD-FOR-TEST-B',
     });
     expect(res.status).toBe(400);
   });
@@ -210,7 +210,7 @@ describe('подпись токена', () => {
 
     await request(app)
       .post('/api/auth/password-reset/confirm')
-      .send({ ...link, password: 'newpassword1' });
+      .send({ ...link, password: 'FAKE-PWD-FOR-TEST-B' });
 
     expect(crypto.timingSafeEqual).toHaveBeenCalled();
   });
@@ -224,7 +224,7 @@ describe('подпись токена', () => {
       userId: USER.id,
       ts,
       token: 'ab',
-      password: 'newpassword1',
+      password: 'FAKE-PWD-FOR-TEST-B',
     });
     // Именно 400, а не 500: разная длина обрабатывается, а не бросает.
     expect(res.status).toBe(400);
@@ -244,7 +244,7 @@ describe('подпись токена', () => {
       userId: USER.id,
       ts,
       token: legacyToken,
-      password: 'newpassword1',
+      password: 'FAKE-PWD-FOR-TEST-B',
     });
 
     // Раньше фолбэк 'smm-reset-secret' сделал бы такую ссылку валидной.
@@ -262,7 +262,7 @@ describe('уведомление о смене пароля', () => {
 
     await request(app)
       .post('/api/auth/password-reset/confirm')
-      .send({ ...link, password: 'newpassword1' });
+      .send({ ...link, password: 'FAKE-PWD-FOR-TEST-B' });
 
     expect(H.sendEmail).toHaveBeenCalledTimes(1);
     const mail = H.sendEmail.mock.calls[0][0] as any;
@@ -278,7 +278,7 @@ describe('уведомление о смене пароля', () => {
 
     const res = await request(app)
       .post('/api/auth/password-reset/confirm')
-      .send({ ...link, password: 'newpassword1' });
+      .send({ ...link, password: 'FAKE-PWD-FOR-TEST-B' });
     expect(res.status).toBe(200);
   });
 });

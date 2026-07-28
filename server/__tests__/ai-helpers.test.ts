@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import axios from 'axios';
 import {
     cleanupExpiredCache,
     getCachedResults,
@@ -12,6 +11,16 @@ import {
 } from '../utils/ai-helpers';
 
 vi.mock('axios');
+
+// Загрузка сайта идёт через safeGet, а не через голый axios: адрес задаёт
+// пользователь, и SSRF-проверка обязана быть и на этом запасном пути
+// (находка ревью 2026-07-28). Мокаем именно эту границу.
+const H = vi.hoisted(() => ({ safeGet: vi.fn() }));
+vi.mock('../utils/safe-http', () => ({
+    safeGet: H.safeGet,
+    BlockedUrlError: class BlockedUrlError extends Error {},
+}));
+
 vi.mock('./logger', () => ({
     log: vi.fn()
 }));
@@ -76,7 +85,7 @@ describe('ai-helpers', () => {
 
     describe('extractFullSiteContent', () => {
         it('should extract content from a valid URL', async () => {
-            (axios.get as any).mockResolvedValue({
+            H.safeGet.mockResolvedValue({
                 status: 200,
                 data: '<html><title>Test Page</title><body>Hello World</body></html>',
                 headers: {}
@@ -86,11 +95,11 @@ describe('ai-helpers', () => {
 
             expect(content).toContain('URL: http://test.com');
             expect(content).toContain('ЗАГОЛОВОК: Test Page');
-            expect(axios.get).toHaveBeenCalledWith(expect.stringContaining('http://test.com'), expect.anything());
+            expect(H.safeGet).toHaveBeenCalledWith(expect.stringContaining('http://test.com'), expect.anything());
         });
 
         it('should handle axios errors gracefully', async () => {
-            (axios.get as any).mockRejectedValue(new Error('Network error'));
+            H.safeGet.mockRejectedValue(new Error('Network error'));
 
             const content = await extractFullSiteContent('http://fail.com');
 
@@ -98,7 +107,7 @@ describe('ai-helpers', () => {
         });
 
         it('should extract contacts (phones and emails)', async () => {
-            (axios.get as any).mockResolvedValue({
+            H.safeGet.mockResolvedValue({
                 status: 200,
                 data: 'Contact us at +7 999 123-45-67 or support@mytest.ru',
                 headers: {}

@@ -18,6 +18,7 @@ import * as path from 'path';
 import { Readable } from 'stream';
 import { v4 as uuidv4 } from 'uuid';
 import { log } from '../utils/logger';
+import { safeFetch } from '../utils/safe-http';
 
 export interface BegetS3StorageConfig {
   accessKey: string;
@@ -214,10 +215,12 @@ export class BegetS3StorageAws {
     try {
       log.info(`Uploading file from URL: ${url}`, this.logPrefix);
       
-      const response = await fetch(url);
+      // safeFetch: тело ответа уезжает в S3 и становится публично доступным —
+      // без проверки это прямая эксфильтрация внутренних сервисов.
+      const response = await safeFetch(url);
       
       if (!response.ok) {
-        throw new Error(`Failed to fetch file from URL: ${response.status} ${response.statusText}`);
+        throw new Error(`Failed to fetch file from URL: ${response.status}`);
       }
       
       const fileData = await response.arrayBuffer();

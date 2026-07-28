@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { log } from './logger';
+import { safeGet } from './safe-http';
 
 // Кеш для ключевых слов
 export const searchCache = new Map<string, { timestamp: number, results: any[] }>();
@@ -101,7 +102,9 @@ export async function extractFullSiteContent(url: string): Promise<string> {
     
     log(`🚀 [SCRAPER] Normalized URL: ${normalizedUrl}`, 'info');
 
-    const response = await axios.get(normalizedUrl, {
+    // safeGet: адрес сайта задаёт пользователь, проверка адресов и редиректов
+    // обязана быть и на этом запасном пути тоже.
+    const response = await safeGet(normalizedUrl, {
       timeout: 30000,
       maxContentLength: 5 * 1024 * 1024,
       headers: {

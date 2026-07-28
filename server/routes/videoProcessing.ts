@@ -17,6 +17,7 @@ const getFontPath = () => {
 };
 import { begetS3VideoService } from '../services/beget-s3-video-service';
 import { directusApi } from '../directus';
+import { safeFetch } from '../utils/safe-http';
 
 const router = express.Router();
 const upload = multer({ dest: 'uploads/temp/' });
@@ -214,8 +215,10 @@ router.post('/process-video-from-url', authMiddleware, async (req, res) => {
       overlays: overlays
     });
 
-    // Скачиваем видео с сервера
-    const videoResponse = await fetch(videoUrl);
+    // Скачиваем видео с сервера. safeFetch, а не fetch: URL приходит из запроса,
+    // и без SSRF-проверки это обращение во внутреннюю сеть от имени сервера
+    // (находка ревью 2026-07-28).
+    const videoResponse = await safeFetch(videoUrl);
     
     if (!videoResponse.ok) {
       throw new Error(`Не удалось скачать видео: ${videoResponse.status}`);

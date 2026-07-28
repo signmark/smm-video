@@ -218,7 +218,12 @@ router.post('/', async (req, res) => {
           params: { access_token: facebookAccessToken }
         });
         
-        log.info(`[Facebook Direct] Доступные страницы: ${JSON.stringify(pagesResponse.data)}`);
+        // Не логируем ответ /me/accounts целиком: у каждой страницы там лежит её
+        // page access token. Для диагностики достаточно id и имени.
+        const pagesSummary = (pagesResponse.data?.data || [])
+          .map((p: any) => `${p.id}${p.name ? ` (${p.name})` : ''}`)
+          .join(', ');
+        log.info(`[Facebook Direct] Доступных страниц: ${(pagesResponse.data?.data || []).length} [${pagesSummary}]`);
         
         // Найти нужную страницу и получить её токен
         let pageToken = facebookAccessToken;

@@ -88,7 +88,53 @@ const SECRET_KEY = /(pass(word)?|secret|token|api[-_]?key|apikey|authorization|c
 const REDACTED = '[REDACTED]';
 const MAX_DEPTH = 6;
 
+/**
+ * Те же имена, но для поиска внутри текста. Отдельная строка, а не SECRET_KEY.source:
+ * здесь нужны невыхватывающие группы, иначе номера групп в шаблонах ниже разъедутся.
+ */
+const SECRET_WORD =
+  '(?:pass(?:word)?|secret|token|api[-_]?key|apikey|authorization|cookie|credential|client[-_]?secret|session)';
+
+/** `"access_token":"..."` — секрет внутри сериализованного JSON. */
+const JSON_PAIR = new RegExp(`("[^"]*${SECRET_WORD}[^"]*"\\s*:\\s*)"(?:\\\\.|[^"\\\\])*"`, 'gi');
+
+/** `access_token=...`, `api-key: ...` — query-строки, формы, произвольный текст. */
+const KV_PAIR = new RegExp(
+  `([A-Za-z0-9_.\\-]*${SECRET_WORD}[A-Za-z0-9_.\\-]*)(\\s*[=:]\\s*)([^\\s&,;"'}\\]]+)`,
+  'gi',
+);
+
+/** `Bearer eyJ...`, `Basic dXNlcjpwYXNz` — схема остаётся, значение уходит. */
+const AUTH_SCHEME = /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi;
+
+/**
+ * Вырезает секреты из готовой строки.
+ *
+ * До этого редакция применялась только к структурированной ошибке, а `msg`
+ * сериализовался как есть — и `access_token=FAKE_SECRET` уезжал в production JSON
+ * целиком. Режем значение, но оставляем имя поля и остальной текст: лог, где всё
+ * превратилось в `[REDACTED]`, бесполезен ровно так же, как лог с секретами опасен.
+ */
+export function redactText(text: string): string {
+  if (!text) return text;
+  return text
+    // Схему обязательно раньше KV_PAIR: в «Authorization: Bearer eyJ...» значением
+    // для KV_PAIR выглядит слово «Bearer» (оно кончается пробелом), и порядок
+    // наоборот вырезал бы именно его, оставив сам токен снаружи.
+    .replace(AUTH_SCHEME, (_m, scheme) => `${scheme} ${REDACTED}`)
+    .replace(JSON_PAIR, (_m, head) => `${head}"${REDACTED}"`)
+    .replace(KV_PAIR, (match, key, sep, value) => {
+      const v = String(value);
+      // Уже вырезанное и схему авторизации второй раз не трогаем.
+      if (v.startsWith('[REDACT') || /^(Bearer|Basic)$/i.test(v)) return match;
+      return `${key}${sep}${REDACTED}`;
+    });
+}
+
 function redact(value: any, depth = 0, seen = new WeakSet<object>()): any {
+  // Секрет может лежать не только в поле с говорящим именем, но и внутри строки —
+  // например, в теле ответа или в тексте ошибки.
+  if (typeof value === 'string') return redactText(value);
   if (value === null || typeof value !== 'object') return value;
   if (depth >= MAX_DEPTH) return '[depth-limit]';
   if (seen.has(value)) return '[circular]';
@@ -112,14 +158,16 @@ function serializeError(err: any): any {
   if (typeof err !== 'object') return String(err);
 
   const out: Record<string, any> = {};
-  if (err.message) out.message = String(err.message);
+  // Текст ошибки и стек тоже проходят редакцию: axios кладёт в message полный URL
+  // запроса вместе с `?access_token=...`.
+  if (err.message) out.message = redactText(String(err.message));
   if (err.name && err.name !== 'Error') out.name = err.name;
   if (err.code) out.code = err.code;
   if (err.response) {
     out.status = err.response.status;
     if (err.response.data !== undefined) out.body = redact(err.response.data);
   }
-  if (err.stack) out.stack = String(err.stack).split('\n').slice(0, 12).join('\n');
+  if (err.stack) out.stack = redactText(String(err.stack).split('\n').slice(0, 12).join('\n'));
   return Object.keys(out).length ? out : redact(err);
 }
 
@@ -136,7 +184,9 @@ function safeStringify(payload: Record<string, any>): string {
 function emit(level: LogLevel, message: string, source: string, err?: any): void {
   if (LEVEL_ORDER[level] < threshold()) return;
 
-  const text = typeof message === 'string' ? message : String(message);
+  // Редакция до сборки строки — иначе секрет попадёт и в вывод, и в кольцевой
+  // буфер recentLogs, который отдаёт /api/debug/logs.
+  const text = redactText(typeof message === 'string' ? message : String(message));
   const details = serializeError(err);
   let line: string;
 

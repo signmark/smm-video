@@ -1,5 +1,6 @@
 import { google } from 'googleapis';
 import { YouTubeConfig } from '../services/global-api-keys';
+import { oauthRedirectUri } from './public-url';
 
 export class YouTubeOAuth {
   private oauth2Client: any;
@@ -36,72 +37,26 @@ export class YouTubeOAuth {
   }
 
   private getDefaultRedirectUri(): string {
-    console.log('[getDefaultRedirectUri] Начинаем определение redirect URI');
-    console.log('[getDefaultRedirectUri] SMM_DOMAIN:', process.env.SMM_DOMAIN || 'НЕ ЗАДАН');
-    console.log('[getDefaultRedirectUri] YOUTUBE_REDIRECT_URI:', process.env.YOUTUBE_REDIRECT_URI || 'НЕ ЗАДАН');
-    console.log('[getDefaultRedirectUri] DIRECTUS_URL:', process.env.DIRECTUS_URL || 'НЕ ЗАДАН');
-    console.log('[getDefaultRedirectUri] VITE_DIRECTUS_URL:', process.env.VITE_DIRECTUS_URL || 'НЕ ЗАДАН');
-    console.log('[getDefaultRedirectUri] REPL_ID:', process.env.REPL_ID || 'НЕ ЗАДАН');
-    console.log('[getDefaultRedirectUri] NODE_ENV:', process.env.NODE_ENV || 'НЕ ЗАДАН');
-    
-    // ПРИОРИТЕТ 0: SMM_DOMAIN - явно заданный домен для production
-    const smmDomain = process.env.SMM_DOMAIN;
-    if (smmDomain) {
-      console.log('[getDefaultRedirectUri] Используем SMM_DOMAIN:', smmDomain);
-      return `https://${smmDomain}/api/youtube/auth/callback`;
+    // Раньше здесь окружение угадывалось по подстроке в DIRECTUS_URL
+    // («если там omemo.tech — значит прод») с четырьмя ветками и мёртвым
+    // дублем nplanner.ru. Теперь адрес берётся из APP_PUBLIC_URL, см.
+    // server/utils/public-url.ts.
+
+    // Явный YOUTUBE_REDIRECT_URI имеет приоритет: в консоли Google этот адрес
+    // прописывается вручную и может не совпадать с публичным доменом.
+    // Игнорируем только протухшие replit-адреса.
+    const explicit = process.env.YOUTUBE_REDIRECT_URI;
+    if (explicit && !explicit.includes('replit.dev')) {
+      console.log('[getDefaultRedirectUri] Используем YOUTUBE_REDIRECT_URI:', explicit);
+      return explicit;
     }
-    
-    // ПРИОРИТЕТ 1: Replit среда - используем REPLIT_DEV_DOMAIN (если есть, значит работаем на Replit)
-    const replitDevDomain = process.env.REPLIT_DEV_DOMAIN;
-    if (replitDevDomain) {
-      const replUrl = `https://${replitDevDomain}`;
-      console.log('[getDefaultRedirectUri] Определена REPLIT среда (REPLIT_DEV_DOMAIN найден):');
-      console.log('[getDefaultRedirectUri] REPLIT_DEV_DOMAIN:', replitDevDomain);
-      console.log('[getDefaultRedirectUri] Полный URL:', replUrl);
-      
-      return `${replUrl}/api/youtube/auth/callback`;
-    }
-    
-    // ПРИОРИТЕТ 2: Определяем продакшен/стейдж по домену Directus
-    const directusUrl = process.env.DIRECTUS_URL || process.env.VITE_DIRECTUS_URL;
-    console.log('[getDefaultRedirectUri] directusUrl для проверки:', directusUrl);
-    
-    if (directusUrl?.includes('omemo.tech')) {
-      // Продакшен среда (omemo.tech домен)
-      console.log('[getDefaultRedirectUri] Определена ПРОДАКШЕН среда (omemo.tech)');
-      return 'https://smm.omemo.tech/api/youtube/auth/callback';
-    }
-    
-    if (directusUrl?.includes('nplanner.ru')) {
-      // Продакшен среда (nplanner.ru домен)
-      console.log('[getDefaultRedirectUri] Определена ПРОДАКШЕН среда (nplanner.ru)');
-      return `https://smm.${process.env.DOMAIN_NAME || 'omemo.tech'}/api/youtube/auth/callback`;
-    }
-    
-    // Если URL Directus содержит nplanner.ru, значит мы в продакшене
-    if (directusUrl?.includes('nplanner.ru')) {
-      return 'https://smm.omemo.tech/api/youtube/auth/callback';
-    }
-    
-    if (directusUrl?.includes('roboflow.space')) {
-      // Стейдж среда (roboflow.space домен)
-      console.log('[getDefaultRedirectUri] Определена СТЕЙДЖ среда (roboflow.space)');
-      return 'https://smm.roboflow.space/api/youtube/auth/callback';
-    }
-    
-    // ПРИОРИТЕТ 3: Если есть устаревший YOUTUBE_REDIRECT_URI, игнорируем только если он от Replit
-    if (process.env.YOUTUBE_REDIRECT_URI && !process.env.YOUTUBE_REDIRECT_URI.includes('replit.dev')) {
-      console.log('[getDefaultRedirectUri] Используем YOUTUBE_REDIRECT_URI (не replit):', process.env.YOUTUBE_REDIRECT_URI);
-      return process.env.YOUTUBE_REDIRECT_URI;
-    }
-    
-    if (process.env.YOUTUBE_REDIRECT_URI) {
+    if (explicit) {
       console.log('[getDefaultRedirectUri] Игнорируем устаревший YOUTUBE_REDIRECT_URI от replit.dev');
     }
-    
-    // Fallback для локальной разработки
-    console.log('[getDefaultRedirectUri] Используем localhost fallback');
-    return 'http://localhost:5000/api/youtube/auth/callback';
+
+    const uri = oauthRedirectUri('/api/youtube/auth/callback');
+    console.log('[getDefaultRedirectUri] redirect URI из публичного домена:', uri);
+    return uri;
   }
 
   getAuthUrl(): string {

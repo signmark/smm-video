@@ -13,6 +13,7 @@ import { fileURLToPath } from 'url';
 import { createServer, request as httpRequest } from 'http';
 import { WebSocketServer } from 'ws';
 import { isWsAllowed } from './utils/ws-gate';
+import { getAllowedOrigins, getPublicOrigin, publicUrl } from './utils/public-url';
 import { broadcastNotification, setNotificationBroadcaster } from './services/notification-bus';
 import { registerRoutes } from "./routes";
 import { registerFalAiImageRoutes } from "./routes-fal-ai-images";
@@ -264,7 +265,7 @@ app.use((req, res, next) => {
   next();
 });
 const corsOrigin = process.env.NODE_ENV === 'production'
-  ? ['https://smm.omemo.tech', 'https://t.me', 'https://vk.needanapp.ru', 'https://needanapp.ru']
+  ? getAllowedOrigins()
   : true;
 
 app.use(cors({
@@ -472,13 +473,13 @@ Disallow: /admin/
 Disallow: /test/
 Disallow: /auth/
 
-Sitemap: https://smm.omemo.tech/sitemap.xml`
+Sitemap: ${publicUrl('/sitemap.xml')}`
   );
 });
 
 // sitemap.xml
 app.get('/sitemap.xml', (req, res) => {
-  const base = 'https://smm.omemo.tech';
+  const base = getPublicOrigin();
   const now = new Date().toISOString().split('T')[0];
   const urls = [
     { loc: '/', priority: '1.0', changefreq: 'weekly' },

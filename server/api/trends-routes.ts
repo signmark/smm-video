@@ -9,6 +9,7 @@ import { apiKeyService, ApiServiceName } from '../services/api-keys';
 import { globalApiKeysService } from '../services/global-api-keys';
 import { getPublicBaseUrl, SCRAPER_BASE, getScraperApiKey } from '../services/trend-collector';
 import { geminiDirect } from '../services/gemini-direct';
+import { getPublicOrigin } from '../utils/public-url';
 
 // ─── AI фоллбэк для поиска каналов ───────────────────────────────────────────
 
@@ -426,7 +427,7 @@ export function registerTrendsRoutes(app: Express) {
 
     const getBaseUrl = () => {
       if (process.env.REPLIT_DEV_DOMAIN) return `https://${process.env.REPLIT_DEV_DOMAIN}`;
-      let url = process.env.API_BASE_URL || process.env.PUBLIC_URL || process.env.APP_URL || 'https://smm.omemo.tech';
+      let url = getPublicOrigin();
       url = url.replace(/\/$/, '');
       if (process.env.NODE_ENV === 'production' && !url.startsWith('http')) {
         url = `https://${url}`;
@@ -892,7 +893,7 @@ export function registerTrendsRoutes(app: Express) {
     // Определяем базовый URL для callback (аналогично логике в telegram-bot/index.ts)
     const getBaseUrl = () => {
       if (process.env.REPLIT_DEV_DOMAIN) return `https://${process.env.REPLIT_DEV_DOMAIN}`;
-      let url = process.env.API_BASE_URL || process.env.PUBLIC_URL || process.env.APP_URL || 'https://smm.omemo.tech';
+      let url = getPublicOrigin();
       url = url.replace(/\/$/, '');
       if (process.env.NODE_ENV === 'production' && !url.startsWith('http')) {
         url = `https://${url}`;
@@ -1241,7 +1242,7 @@ export function registerTrendsRoutes(app: Express) {
       }
 
       // Формируем callback_url
-      const baseUrl = process.env.APP_URL || process.env.PUBLIC_URL || 'https://smm.omemo.tech';
+      const baseUrl = getPublicOrigin();
       const callback_url = `${baseUrl}/api/trends/collect-comments-callback`;
 
       const externalApiUrl = 'http://217.26.25.95:3030/api/telegram/collect-comments';

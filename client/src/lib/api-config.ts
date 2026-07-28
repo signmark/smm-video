@@ -3,12 +3,11 @@
  */
 
 export function getApiBaseUrl(): string {
-  // Если мы на продакшене smm.omemo.tech, используем полный URL
-  if (typeof window !== 'undefined' && (window.location.hostname === 'smm.omemo.tech' || window.location.hostname === 'smm.roboflow.space')) {
-    return `https://${window.location.hostname}`;
-  }
-  
-  // Для локальной разработки используем относительные пути
+  // Всегда относительный путь: API живёт на том же origin, что и фронт.
+  // Раньше здесь был список продовых хостов, который возвращал
+  // `https://${window.location.hostname}` — то есть тот же самый origin,
+  // просто записанный явно. Из-за списка сборка знала имена доменов и на
+  // новом домене вела себя иначе, хотя результат был идентичным.
   return '';
 }
 

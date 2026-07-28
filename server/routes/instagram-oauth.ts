@@ -5,6 +5,7 @@ import { log } from '../utils/logger';
 import { authenticateUser } from '../middleware/user-auth';
 import { authorizeCampaignAccess } from '../services/campaign-access';
 import { randomBytes } from 'node:crypto';
+import { publicUrl } from '../utils/public-url';
 
 const router = express.Router();
 
@@ -39,8 +40,8 @@ router.post('/instagram/auth/start', authenticateUser, async (req, res) => {
         // В Replit разработке используем текущий домен
         finalRedirectUri = `${req.protocol}://${host}/instagram-callback`;
       } else {
-        // В продакшене используем фиксированный домен
-        finalRedirectUri = 'https://smm.omemo.tech/instagram-callback';
+        // Публичный домен инсталляции — из APP_PUBLIC_URL, а не хардкод
+        finalRedirectUri = publicUrl('/instagram-callback');
       }
     }
 

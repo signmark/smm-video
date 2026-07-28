@@ -8,6 +8,18 @@ import { CheckCircle, ExternalLink, Loader2, Instagram, ArrowRight, Search, Copy
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 
+/**
+ * Callback URL, который пользователь копирует в консоль Facebook.
+ * Берём origin текущей вкладки: он обязан совпасть с доменом, на котором
+ * человек работает, иначе Facebook отобьёт redirect_uri_mismatch. Раньше
+ * здесь был захардкожен smm.omemo.tech — на любом другом домене инструкция
+ * молча давала неверный адрес.
+ */
+function callbackUrl(path: string): string {
+  return `${window.location.origin}${path}`;
+}
+
+
 interface InstagramSetupWizardProps {
   campaignId: string;
   onComplete: (data?: {
@@ -590,7 +602,7 @@ const InstagramSetupWizardSimple: React.FC<InstagramSetupWizardProps> = ({ campa
         <AlertDescription>
           <div className="mb-3 pb-3 border-b border-blue-200 dark:border-blue-700">
             <a 
-              href="https://smm.omemo.tech/help/tutorials/fb1480e7-68ae-462e-9d47-cf5ec1d0f72e" 
+              href="/help/tutorials/fb1480e7-68ae-462e-9d47-cf5ec1d0f72e" 
               target="_blank" 
               rel="noopener noreferrer"
               className="text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1 font-medium"
@@ -620,11 +632,11 @@ const InstagramSetupWizardSimple: React.FC<InstagramSetupWizardProps> = ({ campa
               <strong>Добавьте callback URLs</strong> в настройках <strong>Facebook Login → Settings</strong>:
               <div className="mt-2 ml-5 space-y-1.5">
                 <div className="bg-white dark:bg-gray-800 p-2 rounded flex items-center justify-between gap-2">
-                  <code className="text-xs break-all">https://smm.omemo.tech/facebook-callback</code>
+                  <code className="text-xs break-all">{callbackUrl('/facebook-callback')}</code>
                   <Button 
                     size="sm" 
                     variant="ghost" 
-                    onClick={() => copyToClipboard('https://smm.omemo.tech/facebook-callback')}
+                    onClick={() => copyToClipboard(callbackUrl('/facebook-callback'))}
                     className="h-6 w-6 p-0 shrink-0"
                     data-testid="button-copy-facebook-callback"
                   >
@@ -632,11 +644,11 @@ const InstagramSetupWizardSimple: React.FC<InstagramSetupWizardProps> = ({ campa
                   </Button>
                 </div>
                 <div className="bg-white dark:bg-gray-800 p-2 rounded flex items-center justify-between gap-2">
-                  <code className="text-xs break-all">https://smm.omemo.tech/instagram-callback</code>
+                  <code className="text-xs break-all">{callbackUrl('/instagram-callback')}</code>
                   <Button 
                     size="sm" 
                     variant="ghost" 
-                    onClick={() => copyToClipboard('https://smm.omemo.tech/instagram-callback')}
+                    onClick={() => copyToClipboard(callbackUrl('/instagram-callback'))}
                     className="h-6 w-6 p-0 shrink-0"
                     data-testid="button-copy-instagram-callback"
                   >

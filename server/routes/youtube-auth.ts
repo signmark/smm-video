@@ -4,6 +4,7 @@
 
 import { Router } from 'express';
 import { YouTubeOAuth } from '../utils/youtube-oauth';
+import { oauthRedirectUri } from '../utils/public-url';
 import { authenticateUser } from '../middleware/user-auth';
 import { GlobalApiKeysService } from '../services/global-api-keys';
 import { authorizeCampaignAccess } from '../services/campaign-access';
@@ -273,25 +274,10 @@ router.post('/youtube/fix-redirect-uri', authenticateUser, async (req, res) => {
 
     console.log('🔧 [youtube-auth] Исправляем redirect URI в базе данных...');
 
-    // Определяем правильный redirect URI для текущей среды
-    const smmDomain = process.env.SMM_DOMAIN;
-    const replitDevDomain = process.env.REPLIT_DEV_DOMAIN;
-    const directusUrl = process.env.DIRECTUS_URL || process.env.VITE_DIRECTUS_URL;
-    let correctRedirectUri;
-
-    if (smmDomain) {
-      // Приоритет 0: SMM_DOMAIN явно задан
-      correctRedirectUri = `https://${smmDomain}/api/youtube/auth/callback`;
-    } else if (replitDevDomain) {
-      // Приоритет 1: Replit среда
-      correctRedirectUri = `https://${replitDevDomain}/api/youtube/auth/callback`;
-    } else if (directusUrl?.includes('omemo.tech')) {
-      correctRedirectUri = 'https://smm.omemo.tech/api/youtube/auth/callback';
-    } else if (directusUrl?.includes('nplanner.ru')) {
-      correctRedirectUri = 'https://smm.omemo.tech/api/youtube/auth/callback';
-    } else {
-      correctRedirectUri = 'http://localhost:5000/api/youtube/auth/callback';
-    }
+    // Раньше домен угадывался цепочкой SMM_DOMAIN → REPLIT_DEV_DOMAIN → подстрока
+    // в DIRECTUS_URL, причём обе последние ветки возвращали один и тот же
+    // omemo.tech. Теперь — публичный домен из .env.
+    const correctRedirectUri = oauthRedirectUri('/api/youtube/auth/callback');
 
     console.log('🔧 [youtube-auth] Правильный redirect URI:', correctRedirectUri);
 

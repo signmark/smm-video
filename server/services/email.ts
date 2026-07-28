@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import { getPublicHost, getPublicOrigin } from '../utils/public-url';
 
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST || 'smtp.beget.com',
@@ -82,7 +83,7 @@ export async function sendSubscriptionRequestEmail(
       <p>Администратор активирует подписку в течение рабочего дня и свяжется с вами.</p>
       <p>По вопросам: <a href="https://t.me/signmark">@signmark</a></p>
       <hr/>
-      <p style="color:#999;font-size:12px">SMM Manager · <a href="https://smm.omemo.tech">smm.omemo.tech</a></p>
+      <p style="color:#999;font-size:12px">SMM Manager · <a href="${getPublicOrigin()}">${getPublicHost()}</a></p>
     `,
   });
 }
@@ -120,7 +121,7 @@ export async function sendSupportEmail(
         <p>Мы ответим в течение рабочего дня.</p>
         <p>По срочным вопросам: <a href="https://t.me/signmark">@signmark</a></p>
         <hr/>
-        <p style="color:#999;font-size:12px">SMM Manager · <a href="https://smm.omemo.tech">smm.omemo.tech</a></p>
+        <p style="color:#999;font-size:12px">SMM Manager · <a href="${getPublicOrigin()}">${getPublicHost()}</a></p>
       `,
     });
   }

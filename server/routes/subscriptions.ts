@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import axios from 'axios';
 import crypto from 'crypto';
 import { sendSubscriptionRequestEmail } from '../services/email';
+import { getAppBaseUrl } from '../utils/app-base-url';
 import { resolvePlanPrice } from '../services/plan-pricing';
 
 // ─── Реестр обработанных заявок (in-memory, TTL 72ч) ───────────────────────
@@ -66,12 +67,6 @@ function makeActionToken(userId: string, plan: string, days: number): string {
   return crypto.createHmac('sha256', secret).update(`${userId}:${plan}:${days}`).digest('hex').slice(0, 32);
 }
 
-function getBaseUrl(req: Request): string {
-  const host = req.get('host') || '';
-  if (host.includes('replit.dev')) return `https://${host}`;
-  if (host.includes('roboflow.space')) return 'https://smm.roboflow.space';
-  return 'https://smm.omemo.tech';
-}
 
 
 export async function sendSubscriptionNotification(
@@ -284,7 +279,7 @@ router.post('/subscriptions/request', async (req: Request, res: Response) => {
     const days = PLAN_DURATIONS[plan] || 30;
     const price = await resolvePlanPriceLabel(plan);
     const actionToken = makeActionToken(user.id, plan, days);
-    const baseUrl = getBaseUrl(req);
+    const baseUrl = getAppBaseUrl(req);
 
     const approveUrl = `${baseUrl}/api/subscriptions/approve?userId=${user.id}&plan=${encodeURIComponent(plan)}&days=${days}&token=${actionToken}`;
     const rejectUrl = `${baseUrl}/api/subscriptions/reject?userId=${user.id}&plan=${encodeURIComponent(plan)}&days=${days}&token=${actionToken}`;

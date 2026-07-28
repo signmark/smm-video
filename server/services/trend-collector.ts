@@ -3,6 +3,7 @@ import { directusCrud } from './directus-crud';
 import { log } from '../utils/logger';
 import { globalApiKeysService } from './global-api-keys';
 import { ApiServiceName } from './api-keys';
+import { getPublicOrigin } from '../utils/public-url';
 
 // Скрейпер-сервер (Telegram, VK, YouTube, Instagram + аналитика).
 // SCRAPER_BASE_URL позволяет переключить интеграцию на HTTPS без изменения кода.
@@ -58,7 +59,7 @@ setInterval(() => {
 // Публичный базовый URL сервера (для callback_url)
 export function getPublicBaseUrl(): string {
   if (process.env.REPLIT_DEV_DOMAIN) return `https://${process.env.REPLIT_DEV_DOMAIN}`;
-  return (process.env.API_BASE_URL || process.env.PUBLIC_URL || process.env.APP_URL || 'https://smm.omemo.tech').replace(/\/$/, '');
+  return getPublicOrigin();
 }
 
 export interface CollectTrendsParams {

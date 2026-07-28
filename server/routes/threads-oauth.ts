@@ -2,6 +2,7 @@ import express from 'express';
 import axios from 'axios';
 import { log } from '../utils/logger';
 import { threadsService } from '../services/social-platforms/threads-service';
+import { oauthRedirectUri, publicUrl } from '../utils/public-url';
 
 const router = express.Router();
 
@@ -18,8 +19,7 @@ router.post('/threads/auth/start', async (req, res) => {
     const host = req.get('host') || '';
     const finalRedirectUri = redirectUri || (() => {
       if (host.includes('replit.dev')) return `https://${host}/api/threads/auth/callback`;
-      if (host.includes('roboflow.space')) return `https://smm.roboflow.space/api/threads/auth/callback`;
-      return 'https://smm.omemo.tech/api/threads/auth/callback';
+      return oauthRedirectUri('/api/threads/auth/callback');
     })();
 
     const userToken = req.headers.authorization?.replace('Bearer ', '') || '';
@@ -150,7 +150,7 @@ router.get('/threads/deauth', (req, res) => {
 router.post('/threads/data-deletion', (req, res) => {
   const confirmationCode = Math.random().toString(36).substring(2, 10);
   res.json({
-    url: `https://smm.omemo.tech/data-deletion-status?code=${confirmationCode}`,
+    url: publicUrl(`/data-deletion-status?code=${confirmationCode}`),
     confirmation_code: confirmationCode
   });
 });

@@ -770,7 +770,7 @@ export default function Dashboard() {
                         asChild
                       >
                         <a 
-                          href="https://smm.omemo.tech/help/tutorials" 
+                          href="/help/tutorials" 
                           target="_blank" 
                           rel="noopener noreferrer"
                           className="gap-2"

@@ -1,4 +1,5 @@
 import swaggerJSDoc from 'swagger-jsdoc';
+import { getPublicOrigin, publicUrl } from '../utils/public-url';
 
 const options: swaggerJSDoc.Options = {
   definition: {
@@ -13,7 +14,7 @@ const options: swaggerJSDoc.Options = {
       },
       license: {
         name: 'Proprietary',
-        url: 'https://smm.omemo.tech/terms',
+        url: publicUrl('/terms'),
       },
     },
     servers: [
@@ -22,7 +23,7 @@ const options: swaggerJSDoc.Options = {
         description: 'Development server',
       },
       {
-        url: 'https://smm.omemo.tech',
+        url: getPublicOrigin(),
         description: 'Production server',
       },
       {

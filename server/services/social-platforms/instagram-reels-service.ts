@@ -8,6 +8,7 @@ import axios from 'axios';
 import { log } from '../../utils/logger';
 import { directusApi } from '../../directus';
 import { TokenValidationResult } from './base-service';
+import { publicUrl } from '../../utils/public-url';
 
 const LOG_PREFIX = 'instagram-reels';
 
@@ -247,17 +248,8 @@ export class InstagramReelsService {
       const urlParts = originalUrl.split('/');
       const videoFileName = urlParts[urlParts.length - 1]; // abc123.mp4
       
-      // Получаем домен нашего сервера
-      // Production: SMM_DOMAIN (smm.omemo.tech), Dev: REPLIT_DEV_DOMAIN
-      const serverDomain = process.env.SMM_DOMAIN || process.env.REPLIT_DEV_DOMAIN || process.env.REPLIT_DOMAINS?.split(',')[0];
-      
-      if (!serverDomain) {
-        log(`Домен сервера не найден, используем оригинальный URL`, LOG_PREFIX);
-        return originalUrl;
-      }
-      
-      // Формируем прокси URL
-      const proxyUrl = `https://${serverDomain}/api/instagram-video-proxy/${videoFileName}`;
+      // Публичный домен инсталляции — один на всё приложение (APP_PUBLIC_URL).
+      const proxyUrl = publicUrl(`/api/instagram-video-proxy/${videoFileName}`);
       log(`Сформирован прокси URL: ${proxyUrl}`, LOG_PREFIX);
       
       return proxyUrl;

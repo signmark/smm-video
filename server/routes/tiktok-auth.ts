@@ -6,6 +6,7 @@ import { Router } from 'express';
 import { TikTokOAuth, TikTokConfig } from '../utils/tiktok-oauth';
 import { authMiddleware } from '../middleware/auth';
 import axios from 'axios';
+import { oauthRedirectUri } from '../utils/public-url';
 
 const router = Router();
 
@@ -37,7 +38,7 @@ async function getTikTokConfig(): Promise<TikTokConfig | null> {
     return {
       clientKey: envClientKey,
       clientSecret: envClientSecret,
-      redirectUri: process.env.TIKTOK_REDIRECT_URI || 'https://smm.omemo.tech/api/tiktok/auth/callback'
+      redirectUri: process.env.TIKTOK_REDIRECT_URI || oauthRedirectUri('/api/tiktok/auth/callback')
     };
   }
 
@@ -64,7 +65,7 @@ async function getTikTokConfig(): Promise<TikTokConfig | null> {
     return {
       clientKey: apiKey.client_id,
       clientSecret: apiKey.client_secret,
-      redirectUri: apiKey.redirect_uri || 'https://smm.omemo.tech/api/tiktok/auth/callback'
+      redirectUri: apiKey.redirect_uri || oauthRedirectUri('/api/tiktok/auth/callback')
     };
   } catch (error) {
     console.error('[tiktok-auth] Error fetching TikTok config:', error);
@@ -92,7 +93,7 @@ router.post('/tiktok/auth/start', authMiddleware, async (req, res) => {
       tiktokConfig = {
         clientKey: bodyClientKey,
         clientSecret: bodyClientSecret,
-        redirectUri: process.env.TIKTOK_REDIRECT_URI || 'https://smm.omemo.tech/api/tiktok/auth/callback'
+        redirectUri: process.env.TIKTOK_REDIRECT_URI || oauthRedirectUri('/api/tiktok/auth/callback')
       };
     } else {
       tiktokConfig = await getTikTokConfig();
@@ -193,7 +194,7 @@ router.get('/tiktok/auth/callback', async (req, res) => {
       tiktokConfig = {
         clientKey: savedClientKey,
         clientSecret: savedClientSecret,
-        redirectUri: process.env.TIKTOK_REDIRECT_URI || 'https://smm.omemo.tech/api/tiktok/auth/callback'
+        redirectUri: process.env.TIKTOK_REDIRECT_URI || oauthRedirectUri('/api/tiktok/auth/callback')
       };
     } else {
       tiktokConfig = await getTikTokConfig();
@@ -669,7 +670,7 @@ router.post('/tiktok/test-publish', authMiddleware, async (req, res) => {
 /**
  * TikTok Webhook endpoint — verification (GET) + events (POST)
  * Use this URL in TikTok Developer Portal → Configure → Event subscriptions:
- *   https://smm.omemo.tech/api/tiktok/webhook
+ *   https://<APP_PUBLIC_URL>/api/tiktok/webhook
  */
 router.get('/tiktok/webhook', (req, res) => {
   // TikTok sends challenge param to verify the endpoint

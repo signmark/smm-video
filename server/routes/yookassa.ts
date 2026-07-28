@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { sendPurchasePostback } from '../services/partner-postback';
+import { getAppBaseUrl } from '../utils/app-base-url';
+import { getPublicHost } from '../utils/public-url';
 import { resolvePlanPrice, PlanPriceKey } from '../services/plan-pricing';
 import { validatePromoCode, applyPromoDiscount } from '../services/promo-validation';
 import {
@@ -47,13 +49,6 @@ const PLAN_DURATIONS: Record<string, number> = {
   'Базовый': 30,
   'Профессиональный': 30,
 };
-
-function getBaseUrl(req: Request): string {
-  const host = req.get('host') || '';
-  if (host.includes('replit.dev')) return `https://${host}`;
-  if (host.includes('roboflow.space')) return 'https://smm.roboflow.space';
-  return 'https://smm.omemo.tech';
-}
 
 export function isConfigured(): boolean {
   return !!(SHOP_ID && SECRET_KEY);
@@ -238,7 +233,7 @@ router.post('/payments/create', async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Не удалось определить пользователя' });
     }
 
-    const baseUrl = getBaseUrl(req);
+    const baseUrl = getAppBaseUrl(req);
     const returnUrl = `${baseUrl}/payment/success?plan=${encodeURIComponent(plan)}&userId=${userId}`;
 
     // Получаем email пользователя для чека (54-ФЗ)
@@ -324,7 +319,7 @@ router.post('/payments/create', async (req: Request, res: Response) => {
         ...(appliedPromo ? { promo_code: appliedPromo.code, promo_id: appliedPromo.id } : {}),
       },
       receipt: {
-        customer: { email: userEmail || 'noreply@smm.omemo.tech' },
+        customer: { email: userEmail || `noreply@${getPublicHost()}` },
         items: [
           {
             description: `Подписка SMM Manager — ${plan}`,

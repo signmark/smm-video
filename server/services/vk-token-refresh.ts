@@ -2,6 +2,7 @@ import axios from 'axios';
 import crypto from 'crypto';
 import { log } from '../utils/logger';
 import { sendEmail } from './email';
+import { getPublicOrigin } from '../utils/public-url';
 
 /**
  * Выставляет authExpired=true для VK в настройках кампании.
@@ -62,7 +63,7 @@ async function sendVkExpiredNotification(
   }
 
   const campaignName: string = campaignData.title || campaignData.name || campaignId;
-  const appUrl = (process.env.APP_URL || process.env.PUBLIC_URL || 'https://smm.omemo.tech').replace(/\/$/, '');
+  const appUrl = getPublicOrigin();
   const reconnectUrl = `${appUrl}/campaigns/${campaignId}/`;
 
   // Проверяем настройки Telegram кампании (наличие канала/бота в social_media_settings)

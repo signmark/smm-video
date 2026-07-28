@@ -4,6 +4,7 @@
  */
 
 import axios from 'axios';
+import { oauthRedirectUri } from './public-url';
 
 export interface TikTokConfig {
   clientKey: string;
@@ -51,27 +52,10 @@ export class TikTokOAuth {
   }
 
   private getDefaultRedirectUri(): string {
-    const directusUrl = process.env.DIRECTUS_URL || process.env.VITE_DIRECTUS_URL;
-
-    if (directusUrl?.includes('nplanner.ru')) {
-      return `https://smm.${process.env.DOMAIN_NAME || 'omemo.tech'}/api/tiktok/auth/callback`;
-    }
-    
-    if (directusUrl?.includes('nplanner.ru')) {
-      return 'https://smm.omemo.tech/api/tiktok/auth/callback';
-    }
-    
-    if (directusUrl?.includes('roboflow.space')) {
-      return 'https://smm.roboflow.space/api/tiktok/auth/callback';
-    }
-
-    const replId = process.env.REPL_ID;
-    if (replId && replId !== '${REPL_ID}' && !replId.includes('$')) {
-      const replUrl = `https://${replId}-00-m8pxe5e85z61.worf.replit.dev`;
-      return `${replUrl}/api/tiktok/auth/callback`;
-    }
-
-    return 'http://localhost:5000/api/tiktok/auth/callback';
+    // Было: угадывание домена по подстроке в DIRECTUS_URL, причём ветка
+    // nplanner.ru дублировалась и вторая копия была недостижима. Теперь адрес
+    // берётся из APP_PUBLIC_URL, см. server/utils/public-url.ts.
+    return oauthRedirectUri('/api/tiktok/auth/callback');
   }
 
   /**

@@ -6,8 +6,15 @@ import { log } from '../utils/logger';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
-import { execSync } from 'child_process';
 import { v4 as uuidv4 } from 'uuid';
+import { pipeline } from 'stream/promises';
+import {
+  isFfmpegAvailable,
+  runFfmpeg,
+  runFfprobe,
+  safeTempFileName,
+} from '../utils/media-exec';
+import { safeGet } from '../utils/safe-http';
 
 export interface VideoMetadata {
   width?: number;
@@ -225,17 +232,24 @@ export class BegetS3VideoService {
   private async generateThumbnail(videoPath: string, thumbnailPath: string): Promise<void> {
     try {
       // Проверяем наличие ffmpeg
-      this.checkFfmpegInstalled();
-      
+      await this.checkFfmpegInstalled();
+
       // Получаем длительность видео для выбора средней точки
       const metadata = await this.getVideoMetadata(videoPath);
-      const duration = metadata.duration || 0;
-      
+      const duration = Number.isFinite(metadata.duration) ? Number(metadata.duration) : 0;
+
       // Выбираем точку для создания превью (30% от длительности видео или 3 секунды)
       const thumbnailTime = duration > 10 ? Math.floor(duration * 0.3) : 3;
-      
+
       // Генерируем превью с помощью ffmpeg
-      execSync(`ffmpeg -i "${videoPath}" -ss ${thumbnailTime} -vframes 1 -q:v 2 "${thumbnailPath}" -y`);
+      await runFfmpeg([
+        '-i', videoPath,
+        '-ss', String(thumbnailTime),
+        '-vframes', '1',
+        '-q:v', '2',
+        thumbnailPath,
+        '-y',
+      ], { timeout: 120_000 });
       
       log.info(`Thumbnail generated at ${thumbnailPath}`, this.logPrefix);
     } catch (error) {
@@ -248,10 +262,8 @@ export class BegetS3VideoService {
    * Проверяет наличие ffmpeg в системе
    * @throws Error если ffmpeg не установлен
    */
-  private checkFfmpegInstalled(): void {
-    try {
-      execSync('ffmpeg -version');
-    } catch (error) {
+  private async checkFfmpegInstalled(): Promise<void> {
+    if (!(await isFfmpegAvailable())) {
       log.error('ffmpeg is not installed', this.logPrefix);
       throw new Error('ffmpeg is not installed or not in PATH');
     }
@@ -264,12 +276,18 @@ export class BegetS3VideoService {
    */
   private async getVideoMetadata(videoPath: string): Promise<VideoMetadata> {
     try {
-      this.checkFfmpegInstalled(); // ffprobe обычно устанавливается вместе с ffmpeg
-      
-      const cmd = `ffprobe -v error -show_entries format=duration -show_entries stream=width,height,codec_name -show_entries format=bit_rate -of json "${videoPath}"`;
-      const output = execSync(cmd).toString();
-      
-      const result = JSON.parse(output);
+      await this.checkFfmpegInstalled(); // ffprobe обычно устанавливается вместе с ffmpeg
+
+      const { stdout } = await runFfprobe([
+        '-v', 'error',
+        '-show_entries', 'format=duration',
+        '-show_entries', 'stream=width,height,codec_name',
+        '-show_entries', 'format=bit_rate',
+        '-of', 'json',
+        videoPath,
+      ], { timeout: 60_000 });
+
+      const result = JSON.parse(stdout);
       
       const format = result.format || {};
       const streams = Array.isArray(result.streams) ? result.streams : [];
@@ -307,28 +325,18 @@ export class BegetS3VideoService {
         fs.mkdirSync(tempDir, { recursive: true });
       }
       
-      // Определяем расширение файла из URL
-      let fileExt = path.extname(url);
-      if (!fileExt) {
-        // Если расширение не определено, используем .mp4 по умолчанию
-        fileExt = '.mp4';
-      }
-      
-      // Создаем имя временного файла
-      const tempFilePath = path.join(tempDir, `video_${uuidv4()}${fileExt}`);
-      
-      // Скачиваем видео с помощью curl или wget
-      try {
-        execSync(`curl -L "${url}" -o "${tempFilePath}"`);
-      } catch (curlError) {
-        log.warn(`Failed to download with curl: ${(curlError as Error).message}`, this.logPrefix);
-        try {
-          execSync(`wget "${url}" -O "${tempFilePath}"`);
-        } catch (wgetError) {
-          throw new Error('Failed to download video using both curl and wget');
-        }
-      }
-      
+      // Имя временного файла собираем сами: расширение из URL проходит allowlist,
+      // иначе оно попадало бы в путь, а путь — в командную строку ffprobe.
+      const tempFilePath = path.join(tempDir, safeTempFileName(`video_${uuidv4()}`, url));
+
+      // Скачиваем через safeGet вместо curl/wget: shell не участвует (URL из тела
+      // запроса давал выполнение команд), а SSRF-проверка идёт заодно.
+      const response = await safeGet(url, {
+        responseType: 'stream',
+        timeout: 120_000,
+      });
+      await pipeline(response.data, fs.createWriteStream(tempFilePath));
+
       // Проверяем размер файла
       const fileSize = fs.statSync(tempFilePath).size;
       if (fileSize === 0) {

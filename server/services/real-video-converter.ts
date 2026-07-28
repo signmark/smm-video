@@ -1,11 +1,14 @@
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import path from 'path';
 import fs from 'fs';
-import axios from 'axios';
 import FormData from 'form-data';
-
-const execAsync = promisify(exec);
+import {
+  isFfmpegAvailable,
+  resolveLocalMediaPath,
+  runFfmpeg,
+  runFfprobe,
+  safeMediaExtension,
+} from '../utils/media-exec';
+import { safeGet } from '../utils/safe-http';
 
 interface VideoConversionResult {
   success: boolean;
@@ -79,9 +82,9 @@ export class RealVideoConverter {
 
       console.log('[real-video-converter] Downloading video from:', videoUrl);
       
-      const response = await axios({
-        method: 'GET',
-        url: videoUrl,
+      // safeGet, а не axios: URL приходит из запроса, и без SSRF-проверки это
+      // обращение к внутренней сети от имени сервера.
+      const response = await safeGet(videoUrl, {
         responseType: 'stream',
         timeout: 120000 // 2 минуты для скачивания
       });
@@ -158,8 +161,13 @@ export class RealVideoConverter {
    * Получает информацию о видео файле
    */
   private async getVideoInfo(filePath: string): Promise<any> {
-    const command = `ffprobe -v quiet -print_format json -show_format -show_streams "${filePath}"`;
-    const { stdout } = await execAsync(command);
+    const { stdout } = await runFfprobe([
+      '-v', 'quiet',
+      '-print_format', 'json',
+      '-show_format',
+      '-show_streams',
+      filePath,
+    ], { timeout: 60_000 });
     const info = JSON.parse(stdout);
     
     const videoStream = info.streams.find((s: any) => s.codec_type === 'video');
@@ -189,27 +197,29 @@ export class RealVideoConverter {
     
     // INSTAGRAM STORIES РАБОЧИЕ ПАРАМЕТРЫ
     // Используем H.264 Main профиль - протестировано и работает!
-    const ffmpegCommand = `ffmpeg -i "${inputPath}" ` +
-      `-vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,fps=30" ` +
-      `-c:v libx264 ` +                    // H.264 видео кодек
-      `-profile:v main ` +                 // MAIN профиль (протестировано - работает!)
-      `-level 4.0 ` +                      // Level 4.0 (стандартный)
-      `-pix_fmt yuv420p ` +                // YUV420p обязательно
-      `-b:v 3M ` +                         // 3 Мбит/с видео битрейт
-      `-maxrate 4M ` +                     // Максимум 4 Мбит/с
-      `-bufsize 8M ` +                     // Буфер 8M
-      `-c:a aac ` +                        // AAC аудио
-      `-ar 44100 ` +                       // 44.1 kHz частота
-      `-ac 2 ` +                           // 2 канала стерео
-      `-b:a 128k ` +                       // 128 кбит/с аудио
-      `-movflags +faststart ` +            // Web-оптимизация
-      `-f mp4 ` +                          // MP4 контейнер
-      `-y "${outputPath}"`;                // Перезапись
+    // Аргументы массивом: шелл не участвует, кавычки вокруг фильтра не нужны.
+    const ffmpegArgs = [
+      '-i', inputPath,
+      '-vf', 'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,fps=30',
+      '-c:v', 'libx264',                   // H.264 видео кодек
+      '-profile:v', 'main',                // MAIN профиль (протестировано - работает!)
+      '-level', '4.0',                     // Level 4.0 (стандартный)
+      '-pix_fmt', 'yuv420p',               // YUV420p обязательно
+      '-b:v', '3M',                        // 3 Мбит/с видео битрейт
+      '-maxrate', '4M',                    // Максимум 4 Мбит/с
+      '-bufsize', '8M',                    // Буфер 8M
+      '-c:a', 'aac',                       // AAC аудио
+      '-ar', '44100',                      // 44.1 kHz частота
+      '-ac', '2',                          // 2 канала стерео
+      '-b:a', '128k',                      // 128 кбит/с аудио
+      '-movflags', '+faststart',           // Web-оптимизация
+      '-f', 'mp4',                         // MP4 контейнер
+      '-y', outputPath,                    // Перезапись
+    ];
 
     console.log('[real-video-converter] Running FFmpeg conversion...');
-    console.log('[real-video-converter] Command:', ffmpegCommand);
-    
-    const { stdout, stderr } = await execAsync(ffmpegCommand, { 
+
+    const { stderr } = await runFfmpeg(ffmpegArgs, {
       timeout: 600000 // 10 минут максимум
     });
 
@@ -269,19 +279,9 @@ export class RealVideoConverter {
    * Получает расширение файла из URL
    */
   private getFileExtension(url: string): string {
-    try {
-      const urlObj = new URL(url);
-      const pathname = urlObj.pathname;
-      const lastDotIndex = pathname.lastIndexOf('.');
-      
-      if (lastDotIndex > 0) {
-        return pathname.substring(lastDotIndex);
-      }
-      
-      return '.mp4'; // По умолчанию
-    } catch {
-      return '.mp4';
-    }
+    // Только из allowlist: `pathname` не энкодит `$ ( ) ; &`, поэтому «расширение»
+    // из URL — это произвольная строка, а она попадает в имя временного файла.
+    return safeMediaExtension(url);
   }
 
   /**
@@ -306,10 +306,15 @@ export class RealVideoConverter {
   async convertLocalFile(localPath: string, forceConvert: boolean = false): Promise<VideoConversionResult> {
     console.log('[real-video-converter] Converting local file:', localPath);
 
-    if (!fs.existsSync(localPath)) {
+    // Путь приходит из тела запроса. Без этой проверки `ffmpeg -i` читал бы любой
+    // файл на диске, а результат уезжал в S3 и возвращался ссылкой наружу.
+    let safePath: string;
+    try {
+      safePath = resolveLocalMediaPath(localPath);
+    } catch (pathError: any) {
       return {
         success: false,
-        error: 'Local file not found',
+        error: pathError?.message || 'Local file not found',
         originalUrl: localPath,
         convertedUrl: undefined,
         duration: 0,
@@ -328,32 +333,34 @@ export class RealVideoConverter {
       console.log('[real-video-converter] Converting local file to:', outputFile);
 
       // Получаем размер исходного файла
-      const originalStats = fs.statSync(localPath);
+      const originalStats = fs.statSync(safePath);
       const originalSize = originalStats.size;
 
       // ТОЧНЫЕ ПАРАМЕТРЫ GOOGLE (ForBiggerEscapes.mp4) - проверенные Instagram
-      const ffmpegCommand = `ffmpeg -i "${localPath}" ` +
-        `-t 10 ` +                           // Короткое видео
-        `-vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black" ` +
-        `-c:v libx264 ` +                    // H.264 видео кодек
-        `-profile:v high ` +                 // HIGH профиль (точно как у Google)
-        `-level:v 3.1 ` +                    // Level 3.1 (точно как у Google)
-        `-pix_fmt yuv420p ` +                // YUV420p пиксели
-        `-crf 23 ` +                         // CRF 23 стандартное качество
-        `-maxrate 1000k ` +                  // Точный битрейт как у Google (~1027k)
-        `-bufsize 2000k ` +                  // Маленький буфер как у оригинала
-        `-g 24 ` +                           // GOP 24 (как 24 FPS)
-        `-r 24 ` +                           // 24 FPS как у Google оригинала
-        `-c:a aac ` +                        // AAC аудио
-        `-b:a 192k ` +                       // 192k аудио битрейт (как у Google)
-        `-ar 44100 ` +                       // 44.1kHz частота
-        `-ac 2 ` +                           // Stereo
-        `-movflags +faststart ` +            // Быстрый старт
-        `-f mp4 ` +                          // MP4 контейнер
-        `-y "${outputFile}"`;                // Перезапись
+      const ffmpegArgs = [
+        '-i', safePath,
+        '-t', '10',                          // Короткое видео
+        '-vf', 'scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black',
+        '-c:v', 'libx264',                   // H.264 видео кодек
+        '-profile:v', 'high',                // HIGH профиль (точно как у Google)
+        '-level:v', '3.1',                   // Level 3.1 (точно как у Google)
+        '-pix_fmt', 'yuv420p',               // YUV420p пиксели
+        '-crf', '23',                        // CRF 23 стандартное качество
+        '-maxrate', '1000k',                 // Точный битрейт как у Google (~1027k)
+        '-bufsize', '2000k',                 // Маленький буфер как у оригинала
+        '-g', '24',                          // GOP 24 (как 24 FPS)
+        '-r', '24',                          // 24 FPS как у Google оригинала
+        '-c:a', 'aac',                       // AAC аудио
+        '-b:a', '192k',                      // 192k аудио битрейт (как у Google)
+        '-ar', '44100',                      // 44.1kHz частота
+        '-ac', '2',                          // Stereo
+        '-movflags', '+faststart',           // Быстрый старт
+        '-f', 'mp4',                         // MP4 контейнер
+        '-y', outputFile,                    // Перезапись
+      ];
 
       console.log('[real-video-converter] Executing FFmpeg command...');
-      const { stdout } = await execAsync(ffmpegCommand);
+      await runFfmpeg(ffmpegArgs, { timeout: 600000 });
 
       // Проверяем что файл создан
       if (!fs.existsSync(outputFile)) {
@@ -419,12 +426,7 @@ export class RealVideoConverter {
    * Проверяет доступность FFmpeg
    */
   async checkFFmpegAvailable(): Promise<boolean> {
-    try {
-      const { stdout } = await execAsync('ffmpeg -version');
-      return stdout.includes('ffmpeg version');
-    } catch (error) {
-      return false;
-    }
+    return isFfmpegAvailable();
   }
 
   /**

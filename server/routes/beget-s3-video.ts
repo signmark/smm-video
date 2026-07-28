@@ -10,6 +10,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 import { authMiddleware } from '../middleware/auth';
+import { safeTempFileName } from '../utils/media-exec';
 
 const router = Router();
 const logPrefix = 'beget-s3-video-api';
@@ -28,8 +29,9 @@ const storage = multer.diskStorage({
     cb(null, tempDir);
   },
   filename: (req, file, cb) => {
-    const uniqueName = `${uuidv4()}-${file.originalname}`;
-    cb(null, uniqueName);
+    // Имя от клиента в путь не попадает: этот путь уходит в ffprobe/ffmpeg, а
+    // `a$(id).mp4` давал выполнение команд, `../../` — запись вне temp.
+    cb(null, safeTempFileName(uuidv4(), file.originalname));
   }
 });
 

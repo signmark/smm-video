@@ -10,6 +10,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { v4 as uuidv4 } from 'uuid';
 import { authMiddleware } from '../middleware/auth';
+import { safeTempFileName, sanitizeFileLabel } from '../utils/media-exec';
 
 const router = Router();
 const logPrefix = 'beget-s3-api';
@@ -28,8 +29,8 @@ const storage = multer.diskStorage({
     cb(null, tempDir);
   },
   filename: (req, file, cb) => {
-    const uniqueName = `${uuidv4()}-${file.originalname}`;
-    cb(null, uniqueName);
+    // Имя от клиента в путь не попадает — см. beget-s3-video.ts.
+    cb(null, safeTempFileName(uuidv4(), file.originalname));
   }
 });
 
@@ -43,7 +44,8 @@ router.post('/upload', authMiddleware, upload.single('file'), async (req, res) =
     }
 
     const filePath = req.file.path;
-    const fileName = req.body.fileName || req.file.originalname;
+    // Имя уходит в ключ S3 — `../` в нём вывел бы объект за пределы папки.
+    const fileName = sanitizeFileLabel(req.body.fileName || req.file.originalname);
     const folder = req.body.folder;
 
     const uploadResult = await begetS3StorageAws.uploadLocalFile(

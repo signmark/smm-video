@@ -1,7 +1,7 @@
 import type { Express, Request, Response } from 'express';
-import axios from 'axios';
 import { log } from '../utils/logger';
 import { isSafeHttpUrl } from '../utils/ssrf-guard';
+import { safeGet, BlockedUrlError } from '../utils/safe-http';
 
 /**
  * Публичный прокси картинок для тегов <img src="/api/proxy-image?url=...">.
@@ -26,6 +26,8 @@ export function registerProxyImageRoute(app: Express): void {
     let decoded: string;
     try { decoded = decodeURIComponent(String(url)); } catch { return res.status(400).send('Bad URL'); }
 
+    // Быстрый отказ по литералу; полная проверка (DNS + все адреса + каждый
+    // Location) делается внутри safeGet.
     const safe = isSafeProxyImageUrl(decoded);
     if (!safe.ok) {
       log(`[ProxyImage] Отклонён URL (${safe.reason}): ${decoded.slice(0, 120)}`, 'warn');
@@ -33,11 +35,10 @@ export function registerProxyImageRoute(app: Express): void {
     }
 
     try {
-      const response = await axios.get(safe.url.toString(), {
+      const response = await safeGet(safe.url.toString(), {
         responseType: 'arraybuffer',
         timeout: 15000,
         maxContentLength: 25 * 1024 * 1024,
-        maxRedirects: 2,
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
         },
@@ -47,6 +48,10 @@ export function registerProxyImageRoute(app: Express): void {
       res.setHeader('Cache-Control', 'public, max-age=86400');
       res.send(Buffer.from(response.data));
     } catch (e: any) {
+      if (e instanceof BlockedUrlError) {
+        log(`[ProxyImage] Отклонён URL (${e.reason}): ${decoded.slice(0, 120)}`, 'warn');
+        return res.status(400).send('Bad or blocked URL');
+      }
       log(`[ProxyImage] Ошибка проксирования: ${e.message}`, 'error');
       res.status(502).send('Error proxying image');
     }

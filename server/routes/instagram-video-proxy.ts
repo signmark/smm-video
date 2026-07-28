@@ -5,7 +5,8 @@
 import { Router, Request, Response } from 'express';
 import { log } from '../utils/logger';
 import sharp from 'sharp';
-import { isSafeHttpUrl } from '../utils/ssrf-guard';
+import { resolveSafeUrl } from '../utils/ssrf-guard';
+import { safeFetch } from '../utils/safe-http';
 
 const router = Router();
 
@@ -306,7 +307,7 @@ router.get('/video-proxy/:encodedUrl', async (req: Request, res: Response) => {
     const videoUrl = Buffer.from(encodedUrl, 'base64').toString('utf-8');
     const rangeHeader = req.headers.range;
     
-    const videoUrlCheck = isSafeHttpUrl(videoUrl);
+    const videoUrlCheck = await resolveSafeUrl(videoUrl);
     if (!videoUrlCheck.ok) {
       log(`[Video Proxy] Отклонён URL (${videoUrlCheck.reason}): ${videoUrl}`, 'video-proxy');
       return res.status(400).json({
@@ -412,7 +413,7 @@ router.get('/video-proxy/:encodedUrl', async (req: Request, res: Response) => {
         headers['Range'] = rangeHeader;
       }
 
-      const sourceResponse = await fetch(videoUrl, { headers, signal: AbortSignal.timeout(OUTBOUND_FETCH_TIMEOUT_MS) });
+      const sourceResponse = await safeFetch(videoUrl, { headers, signal: AbortSignal.timeout(OUTBOUND_FETCH_TIMEOUT_MS) });
 
       if (!sourceResponse.ok) {
         log(`[Video Proxy] Ошибка источника: ${sourceResponse.status}`, 'video-proxy');
@@ -490,7 +491,7 @@ router.get('/video-stream-proxy', async (req: Request, res: Response) => {
       });
     }
 
-    const streamUrlCheck = isSafeHttpUrl(videoUrl);
+    const streamUrlCheck = await resolveSafeUrl(videoUrl);
     if (!streamUrlCheck.ok) {
       log(`[Video Stream Proxy] Отклонён URL (${streamUrlCheck.reason}): ${videoUrl}`, 'video-proxy');
       return res.status(400).json({ error: 'Invalid or blocked URL' });
@@ -500,7 +501,7 @@ router.get('/video-stream-proxy', async (req: Request, res: Response) => {
     log(`[Video Stream Proxy] Range header: ${rangeHeader || 'отсутствует'}`, 'video-proxy');
 
     // Делаем запрос к источнику
-    const sourceResponse = await fetch(videoUrl, {
+    const sourceResponse = await safeFetch(videoUrl, {
       headers: rangeHeader ? { 'Range': rangeHeader } : {},
       signal: AbortSignal.timeout(OUTBOUND_FETCH_TIMEOUT_MS)
     });
@@ -597,7 +598,7 @@ router.get('/media-proxy/:encodedUrl', async (req: Request, res: Response) => {
     const mediaUrl = Buffer.from(encodedUrl, 'base64').toString('utf-8');
     const rangeHeader = req.headers.range;
     
-    const mediaUrlCheck = isSafeHttpUrl(mediaUrl);
+    const mediaUrlCheck = await resolveSafeUrl(mediaUrl);
     if (!mediaUrlCheck.ok) {
       log(`[Media Proxy] Отклонён URL (${mediaUrlCheck.reason}): ${mediaUrl}`, 'media-proxy');
       return res.status(400).json({
@@ -745,7 +746,7 @@ router.get('/media-proxy/:encodedUrl', async (req: Request, res: Response) => {
         headers['Range'] = rangeHeader;
       }
 
-      const sourceResponse = await fetch(mediaUrl, { headers, signal: AbortSignal.timeout(OUTBOUND_FETCH_TIMEOUT_MS) });
+      const sourceResponse = await safeFetch(mediaUrl, { headers, signal: AbortSignal.timeout(OUTBOUND_FETCH_TIMEOUT_MS) });
 
       if (!sourceResponse.ok) {
         log(`[Media Proxy] Ошибка источника: ${sourceResponse.status}`, 'media-proxy');
@@ -846,14 +847,14 @@ router.head('/video-stream-proxy', async (req: Request, res: Response) => {
       return res.status(400).end();
     }
 
-    if (!isSafeHttpUrl(videoUrl).ok) {
+    if (!(await resolveSafeUrl(videoUrl)).ok) {
       log(`[Video Stream Proxy HEAD] Отклонён URL: ${videoUrl}`, 'video-proxy');
       return res.status(400).end();
     }
 
     log(`[Video Stream Proxy HEAD] Запрос метаданных: ${videoUrl}`, 'video-proxy');
 
-    const headResponse = await fetch(videoUrl, { method: 'HEAD', signal: AbortSignal.timeout(OUTBOUND_FETCH_TIMEOUT_MS) });
+    const headResponse = await safeFetch(videoUrl, { method: 'HEAD', signal: AbortSignal.timeout(OUTBOUND_FETCH_TIMEOUT_MS) });
 
     if (!headResponse.ok) {
       return res.status(headResponse.status).end();

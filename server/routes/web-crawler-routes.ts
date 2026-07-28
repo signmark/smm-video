@@ -2,7 +2,7 @@
 import { Router, Request, Response } from 'express';
 import { webCrawlerAgent } from '../services/web-crawler-agent';
 import { authMiddleware } from '../middleware/auth';
-import { isSafeHttpUrl } from '../utils/ssrf-guard';
+import { resolveSafeUrl } from '../utils/ssrf-guard';
 
 const router = Router();
 
@@ -28,8 +28,10 @@ router.post('/api/web-crawler/crawl', authMiddleware, async (req: Request, res: 
       });
     }
     
-    // Валидация URL + SSRF-защита (протокол + блок приватных/loopback/metadata хостов)
-    if (!isSafeHttpUrl(url).ok) {
+    // Валидация URL + SSRF-защита: протокол, хост и ВСЕ адреса, в которые он
+    // резолвится. Проверки одного лишь литерала мало — домен злоумышленника
+    // спокойно резолвится в 127.0.0.1.
+    if (!(await resolveSafeUrl(url)).ok) {
       return res.status(400).json({
         success: false,
         error: 'Некорректный или заблокированный URL'
@@ -73,8 +75,8 @@ router.post('/api/web-crawler/intelligent-crawl', authMiddleware, async (req: Re
       });
     }
 
-    // SSRF-защита: протокол + блок приватных/loopback/metadata хостов
-    if (!isSafeHttpUrl(url).ok) {
+    // SSRF-защита: протокол, хост и все адреса, в которые он резолвится
+    if (!(await resolveSafeUrl(url)).ok) {
       return res.status(400).json({
         success: false,
         error: 'Некорректный или заблокированный URL'

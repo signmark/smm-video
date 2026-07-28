@@ -104,7 +104,7 @@ const KV_PAIR = new RegExp(
   'gi',
 );
 
-/** `Bearer eyJ...`, `Basic dXNlcjpwYXNz` — схема остаётся, значение уходит. */
+/** `Bearer <токен>`, `Basic <креды>` — схема остаётся, значение уходит. */
 const AUTH_SCHEME = /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi;
 
 /**
@@ -118,7 +118,7 @@ const AUTH_SCHEME = /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi;
 export function redactText(text: string): string {
   if (!text) return text;
   return text
-    // Схему обязательно раньше KV_PAIR: в «Authorization: Bearer eyJ...» значением
+    // Схему обязательно раньше KV_PAIR: в «Authorization: Bearer <токен>» значением
     // для KV_PAIR выглядит слово «Bearer» (оно кончается пробелом), и порядок
     // наоборот вырезал бы именно его, оставив сам токен снаружи.
     .replace(AUTH_SCHEME, (_m, scheme) => `${scheme} ${REDACTED}`)

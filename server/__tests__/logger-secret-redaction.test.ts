@@ -71,15 +71,19 @@ describe('redactText — строковые сообщения', () => {
     expect(out).toContain('[REDACTED]');
   });
 
+  // Фикстуры намеренно НЕ похожи на настоящие креды: base64-подобная строка вида
+  // «Bearer eyJ...» ловится секрет-сканерами как утёкший JWT. Инцидент был бы ложным,
+  // но регулярно повторяющийся ложный алерт приучает не смотреть на алерты вообще.
   it('вырезает Bearer-токен, оставляя схему', () => {
-    const out = redactText('Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.PAYLOAD.SIG');
-    expect(out).not.toContain('eyJhbGciOiJIUzI1NiJ9');
+    const out = redactText('Authorization: Bearer FAKE-BEARER-FOR-TEST-000000');
+    expect(out).not.toContain('FAKE-BEARER-FOR-TEST');
     expect(out).toContain('Bearer [REDACTED]');
   });
 
   it('вырезает Basic-креды', () => {
-    const out = redactText('Authorization: Basic dXNlcjpwYXNzd29yZA==');
-    expect(out).not.toContain('dXNlcjpwYXNzd29yZA');
+    const out = redactText('Authorization: Basic FAKE-BASIC-FOR-TEST-000000');
+    expect(out).not.toContain('FAKE-BASIC-FOR-TEST');
+    expect(out).toContain('Basic [REDACTED]');
   });
 
   it('вырезает секрет из JSON-строки', () => {

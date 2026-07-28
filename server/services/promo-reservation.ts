@@ -73,7 +73,9 @@ async function query(path: string): Promise<any[]> {
   });
   if (!res.ok) throw new PromoReservationUnavailableError(`чтение броней → ${res.status}`);
   const data = await res.json();
-  return data?.data ?? [];
+  // Строго массив: Directus на некоторых ответах отдаёт объект, а вызывающие
+  // перебирают результат — молчаливый `{}` здесь ронял бы создание платежа.
+  return Array.isArray(data?.data) ? data.data : [];
 }
 
 /** Готова ли коллекция броней. Без неё скидочные коды в оплате запрещены. */
@@ -95,13 +97,41 @@ export async function getReservationByPayment(paymentId: string): Promise<any | 
   return rows[0] ?? null;
 }
 
-/** Сколько слотов кода занято сейчас (брони и погашения; освобождённые не считаются). */
-async function activeUses(promoId: string): Promise<number> {
+/**
+ * Номера слотов, занятых прямо сейчас (брони и погашения; освобождённые — нет).
+ *
+ * Раньше здесь считалось только КОЛИЧЕСТВО занятых, и претендент стартовал с
+ * него, двигаясь только вверх. Освобождённый слот с номером ниже верхней границы
+ * не пробовался никогда: при `max_uses=3` и одном сорвавшемся платеже код
+ * отвечал «исчерпан», хотя занято было 2 из 3 (находка ревью 2026-07-28).
+ */
+async function occupiedSlots(promoId: string): Promise<Set<number>> {
   const rows = await query(
     `?filter[promo_code_id][_eq]=${encodeURIComponent(promoId)}`
     + `&filter[status][_in]=reserved,completed&limit=-1&fields=slot_index,status`,
   );
-  return rows.length;
+
+  const occupied = new Set<number>();
+  for (const row of rows) {
+    const index = Number(row?.slot_index);
+    if (Number.isInteger(index) && index >= 0) occupied.add(index);
+  }
+  return occupied;
+}
+
+/**
+ * Минимальный свободный номер слота из [0, maxUses) — то есть «дыра» в нумерации
+ * переиспользуется. `null` означает, что свободных номеров не осталось.
+ *
+ * Для кодов без `max_uses` номера не ограничены сверху: ищем первую дыру, а её
+ * заведомо найдём не позже чем за `occupied.size + 1` шагов.
+ */
+function nextFreeSlot(occupied: Set<number>, maxUses: number | null): number | null {
+  const limit = maxUses ?? occupied.size + 1;
+  for (let n = 0; n < limit; n++) {
+    if (!occupied.has(n)) return n;
+  }
+  return null;
 }
 
 async function releaseRow(rowId: string, reason: string): Promise<void> {
@@ -173,11 +203,13 @@ export async function reservePromo(params: {
     return { ok: true, reservationId: existing.id, slotIndex: existing.slot_index ?? -1 };
   }
 
-  let slot = await activeUses(promoId);
+  let occupied = await occupiedSlots(promoId);
   let reclaimTried = false;
 
   for (let attempt = 0; attempt < MAX_SLOT_ATTEMPTS; attempt++) {
-    if (maxUses !== null && slot >= maxUses) {
+    const slot = nextFreeSlot(occupied, maxUses);
+
+    if (slot === null) {
       // Прежде чем объявить код исчерпанным, освобождаем слоты, которые держат
       // платежи, уже точно не состоявшиеся. Без этого брошенная оплата сжигала бы
       // промокод навсегда — а проверка «мёртв ли держатель» до сюда просто не
@@ -186,7 +218,7 @@ export async function reservePromo(params: {
         reclaimTried = true;
         const freed = await reclaimDeadReservations(promoId, isSlotHolderDead);
         if (freed > 0) {
-          slot = await activeUses(promoId);
+          occupied = await occupiedSlots(promoId);
           continue;
         }
       }
@@ -220,7 +252,23 @@ export async function reservePromo(params: {
 
     // Конфликт уникальности. Выясняем, какой именно замок занят.
     const byUser = await query(`?filter[user_lock][_eq]=${encodeURIComponent(userLock)}&limit=1`);
-    if (byUser.length > 0) {
+    const userHolder = byUser[0];
+    if (userHolder) {
+      // Замок держит бронь ЭТОГО же пользователя. Если её платёж не состоится,
+      // освобождаем и пробуем снова: иначе брошенная оплата запирала бы код за
+      // пользователем навсегда — повторить попытку он не мог никогда, а для кодов
+      // без max_uses сюда не доходил и общий reclaim (находка ревью 2026-07-28).
+      if (userHolder.status === 'reserved' && isSlotHolderDead) {
+        try {
+          if (await isSlotHolderDead(userHolder)) {
+            await releaseRow(userHolder.id, `платёж брони ${userHolder.payment_id} не состоится`);
+            occupied = await occupiedSlots(promoId);
+            continue;
+          }
+        } catch (err: any) {
+          log(`[promo] Не удалось проверить бронь ${userHolder.payment_id}: ${err?.message}`, 'promo', 'warn');
+        }
+      }
       return { ok: false, reason: 'already-used', message: 'Вы уже использовали этот промокод' };
     }
 
@@ -228,11 +276,12 @@ export async function reservePromo(params: {
     const holder = bySlot[0];
 
     // Слот держит бронь под платёж, который уже отменён — освобождаем и пробуем снова
-    // этот же номер. Иначе просто берём следующий.
+    // этот же номер. Иначе помечаем номер занятым и берём следующий свободный.
     if (holder && holder.status === 'reserved' && isSlotHolderDead) {
       try {
         if (await isSlotHolderDead(holder)) {
           await releaseRow(holder.id, `платёж брони ${holder.payment_id} не состоится`);
+          occupied = await occupiedSlots(promoId);
           continue;
         }
       } catch (err: any) {
@@ -240,7 +289,7 @@ export async function reservePromo(params: {
       }
     }
 
-    slot++;
+    occupied.add(slot);
   }
 
   throw new PromoReservationUnavailableError('не удалось занять слот за отведённое число попыток');
@@ -266,15 +315,37 @@ export async function completePromoReservation(paymentId: string): Promise<{ com
   return { completed: true, promoId: row.promo_code_id, userId: row.user_id };
 }
 
-/** Привязывает к брони id платежа ЮКассы — по нему потом сверяется её судьба. */
+/**
+ * Привязывает к брони id платежа ЮКассы — по нему потом сверяется её судьба.
+ *
+ * Сбой здесь НЕ проглатывается. Бронь без `yookassa_payment_id` через 30 минут
+ * считается брошенной и реклеймится, а платёж при этом может быть настоящим:
+ * деньги списаны, скидка отдана другому — расхождение, которое чинится только
+ * руками (находка ревью 2026-07-28). Пара повторов покрывает сетевой всплеск,
+ * дальше вызывающий обязан узнать об ошибке.
+ */
 export async function attachPaymentId(orderId: string, yookassaPaymentId: string): Promise<void> {
   const row = await getReservationByPayment(orderId);
   if (!row) return;
-  await fetch(`${directusUrl()}/items/${COLLECTION}/${row.id}`, {
-    method: 'PATCH',
-    headers: headers(),
-    body: JSON.stringify({ yookassa_payment_id: yookassaPaymentId }),
-  }).catch(() => {});
+
+  let lastError = '';
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(`${directusUrl()}/items/${COLLECTION}/${row.id}`, {
+        method: 'PATCH',
+        headers: headers(),
+        body: JSON.stringify({ yookassa_payment_id: yookassaPaymentId }),
+      });
+      if (res.ok) return;
+      lastError = `HTTP ${res.status}`;
+    } catch (err: any) {
+      lastError = err?.message || 'network error';
+    }
+  }
+
+  throw new PromoReservationUnavailableError(
+    `не удалось привязать платёж ${yookassaPaymentId} к брони ${row.id}: ${lastError}`,
+  );
 }
 
 /** Освобождает бронь: платёж не состоялся, код должен остаться доступным. */

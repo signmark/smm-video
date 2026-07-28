@@ -340,7 +340,18 @@ router.post('/payments/create', async (req: Request, res: Response) => {
 
     if (appliedPromo) {
       // Теперь у брони есть с чем сверяться, если платёж бросят.
-      await attachPaymentId(orderId, payment.id);
+      try {
+        await attachPaymentId(orderId, payment.id);
+      } catch (attachErr: any) {
+        // Платёж в ЮКассе уже создан — ронять запрос нельзя, пользователь должен
+        // получить ссылку на оплату. Но и молчать нельзя: без yookassa_payment_id
+        // бронь через 30 минут посчитают брошенной и отдадут скидку другому, пока
+        // этот платёж живой. Оставляем след для ручной сверки.
+        console.error(
+          `[yookassa] СВЕРКА: не удалось привязать платёж ${payment.id} к брони промокода `
+          + `order=${orderId} promo=${appliedPromo.code} userId=${userId}: ${attachErr?.message}`,
+        );
+      }
     }
 
     console.log(
@@ -442,6 +453,13 @@ async function activateVerifiedPayment(
       // перехватываем — без CAS два процесса выдали бы подписку дважды.
       console.warn(`[yookassa/${source}] Платёж ${paymentId} требует ручной сверки`);
       return { status: 409, body: { error: 'Платёж требует ручной сверки, обратитесь в поддержку', needsReconciliation: true } };
+    }
+    if (claim.reason === 'in-progress') {
+      // Обработка идёт. Успехом отвечать нельзя: подписки может ещё не быть, а
+      // клиент по alreadyProcessed прекращал поллинг и показывал «Тариф активирован».
+      // Для вебхука 409 означает «повтори уведомление позже» — это и нужно.
+      console.log(`[yookassa/${source}] Платёж ${paymentId} уже в обработке — просим повтор`);
+      return { status: 409, body: { error: 'Платёж обрабатывается, повторите через минуту', inProgress: true, retryable: true } };
     }
     console.log(`[yookassa/${source}] Платёж ${paymentId} уже обработан — активация пропущена`);
     return { status: 200, body: { ok: true, plan: meta.plan, alreadyProcessed: true } };
@@ -589,6 +607,31 @@ router.post('/yookassa/webhook', async (req: Request, res: Response) => {
       const result = await activateVerifiedPayment(verified, 'webhook');
       if (result.status !== 200) {
         console.warn(`[yookassa/webhook] Платёж ${paymentObj.id} отклонён: ${result.body.error}`);
+      }
+    }
+
+    // Отмена платежа освобождает бронь промокода СРАЗУ. Без этой ветки бронь висела
+    // до реклейма следующим претендентом, а для кодов без max_uses — навсегда: сам
+    // пользователь повторить попытку уже не мог (находка ревью 2026-07-28).
+    if ((eventType === 'payment.canceled' || eventType === 'payment.expired') && paymentObj?.id) {
+      if (!isConfigured()) {
+        console.warn('[yookassa/webhook] ЮКасса не настроена, пропускаем освобождение брони');
+        return res.json({ ok: true });
+      }
+
+      // Статус подтверждаем у ЮКассы: тело вебхука приходит извне, и по нему нельзя
+      // освобождать бронь живого платежа.
+      const verified = await yookassaRequest('GET', `/${paymentObj.id}`);
+      const status = verified?.status;
+      const orderId = verified?.metadata?.order_id;
+
+      if (status !== 'canceled' && status !== 'expired') {
+        console.warn(`[yookassa/webhook] Платёж ${paymentObj.id} не отменён (${status}) — бронь не трогаем`);
+      } else if (!orderId) {
+        console.warn(`[yookassa/webhook] У платежа ${paymentObj.id} нет order_id — бронь не находим`);
+      } else {
+        await releasePromoReservation(orderId, `платёж ${paymentObj.id} отменён (${status})`);
+        console.log(`[yookassa/webhook] Бронь промокода по ${orderId} освобождена: платёж ${status}`);
       }
     }
 

@@ -276,8 +276,14 @@ describe('зависший захват', () => {
 
     const res = await activate();
 
-    expect(res.status).toBe(200);
-    expect(res.body.alreadyProcessed).toBe(true);
+    // 409 «идёт обработка», а НЕ 200 alreadyProcessed: свежая запись в processing
+    // означает, что подписки может ещё не быть — например, POST журнала оборвался
+    // по сети уже после коммита строки, и владельца у неё нет. Успех здесь врал
+    // плательщику и гасил поллинг клиента (находка ревью 2026-07-28).
+    expect(res.status).toBe(409);
+    expect(res.body.inProgress).toBe(true);
+    expect(res.body.alreadyProcessed).toBeUndefined();
+    // Главный инвариант прежний: второй подписки не выдано.
     expect(userPatches).toHaveLength(0);
   });
 });
@@ -301,8 +307,10 @@ describe('сбой между выдачей подписки и отметко�
     fetchMock.mockImplementation(realFetch);
     const second = await activate();
 
-    // Запись осталась в processing и свежая → повтор не выдаёт вторую подписку
-    expect(second.body.alreadyProcessed).toBe(true);
+    // Запись осталась в processing и свежая → повтор не выдаёт вторую подписку.
+    // Ответ — «идёт обработка»: отметки completed нет, значит успех не подтверждён.
+    expect(second.status).toBe(409);
+    expect(second.body.inProgress).toBe(true);
     expect(userPatches).toHaveLength(1);
   });
 

@@ -308,5 +308,128 @@ describe('хранилище броней недоступно', () => {
     expect(res.body.reason).toBe('promo-store-unavailable');
     // Платёж со скидкой не создан
     expect(Object.keys(yookassaPayments)).toHaveLength(0);
+
+    // Реализацию надо вернуть руками: vi.clearAllMocks() в beforeEach чистит
+    // вызовы, но не mockImplementation — иначе «недоступное хранилище» протекает
+    // во все следующие тесты файла и они зеленеют/краснеют по чужой причине.
+    fetchMock.mockImplementation(realFetch);
+  });
+});
+
+/**
+ * Освобождение брони — вторая волна ревью (2026-07-28).
+ *
+ * Механизм захвата был атомарным, а пути освобождения — неполными:
+ *  - конфликт по user_lock отвечал «вы уже использовали» не проверяя, жив ли
+ *    держатель, поэтому брошенная оплата запирала код за пользователем навсегда;
+ *  - претендент стартовал с количества занятых слотов и двигался только вверх,
+ *    поэтому освобождённый слот ниже верхней границы не пробовался никогда;
+ *  - `payment.canceled` не обрабатывался вовсе.
+ */
+describe('брошенный платёж не сжигает промокод', () => {
+  it('после отмены платежа тот же пользователь берёт код снова', async () => {
+    const first = await create('user-1');
+    expect(first.status).toBe(200);
+
+    // Платёж отменён в ЮКассе.
+    const payment: any = Object.values(yookassaPayments)[0];
+    paymentStatus[payment.id] = 'canceled';
+
+    const second = await create('user-1');
+
+    expect(second.status).toBe(200);
+    expect(second.body.confirmationUrl).toBeTruthy();
+  });
+
+  it('живой платёж по-прежнему держит код за пользователем', async () => {
+    await create('user-1');
+    // Платёж в pending — держатель жив, освобождать нечего.
+    const second = await create('user-1');
+
+    expect(second.status).toBe(400);
+    expect(second.body.error).toMatch(/уже использовали/);
+  });
+
+  it('вебхук payment.canceled освобождает бронь сразу', async () => {
+    await create('user-1');
+    const payment: any = Object.values(yookassaPayments)[0];
+    paymentStatus[payment.id] = 'canceled';
+
+    const hook = await request(app)
+      .post('/api/yookassa/webhook')
+      .send({ event: 'payment.canceled', object: { id: payment.id } });
+
+    expect(hook.status).toBe(200);
+    expect(reservations()[0].status).toBe('released');
+    expect(reservations()[0].user_lock).toBeNull();
+    expect(reservations()[0].slot_lock).toBeNull();
+  });
+
+  it('вебхук не освобождает бронь живого платежа', async () => {
+    await create('user-1');
+    const payment: any = Object.values(yookassaPayments)[0];
+    // Статус в ЮКассе — pending, что бы ни было написано в теле вебхука.
+    const hook = await request(app)
+      .post('/api/yookassa/webhook')
+      .send({ event: 'payment.canceled', object: { id: payment.id } });
+
+    expect(hook.status).toBe(200);
+    expect(reservations()[0].status).toBe('reserved');
+  });
+});
+
+describe('дыры в нумерации слотов переиспользуются', () => {
+  it('освобождённый слот в середине не съедает ёмкость max_uses', async () => {
+    promo.max_uses = 3;
+
+    await create('user-1');
+    await create('user-2');
+    await create('user-3');
+    expect(reservations()).toHaveLength(3);
+
+    // Средний платёж отменён — слот #1 освобождается.
+    const second: any = Object.values(yookassaPayments)[1];
+    paymentStatus[second.id] = 'canceled';
+
+    const fourth = await create('user-4');
+
+    // Раньше: занято 2 из 3, но претендент стартовал с 2 и шёл вверх, поэтому
+    // упирался в max_uses и получал «исчерпан».
+    expect(fourth.status).toBe(200);
+    const active = reservations().filter(r => r.status === 'reserved');
+    expect(active).toHaveLength(3);
+    expect(active.map(r => r.slot_index).sort()).toEqual([0, 1, 2]);
+  });
+
+  it('когда свободных слотов действительно нет — код исчерпан', async () => {
+    promo.max_uses = 2;
+
+    await create('user-1');
+    await create('user-2');
+    const third = await create('user-3');
+
+    expect(third.status).toBe(400);
+    expect(third.body.error).toMatch(/исчерпал/);
+  });
+});
+
+describe('привязка платежа к брони', () => {
+  it('сбой привязки не роняет создание платежа', async () => {
+    // PATCH брони с yookassa_payment_id падает — платёж в ЮКассе уже создан,
+    // пользователь обязан получить ссылку на оплату.
+    const realFetch = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation((url: any, init?: any) => {
+      if (String(url).includes('/items/promo_reservations/') && init?.method === 'PATCH'
+          && JSON.parse(init.body).yookassa_payment_id) {
+        return jsonResponse({ errors: [{ message: 'boom' }] }, false, 500);
+      }
+      return realFetch(url, init);
+    });
+
+    const res = await create('user-1');
+
+    expect(res.status).toBe(200);
+    expect(res.body.confirmationUrl).toBeTruthy();
+    fetchMock.mockImplementation(realFetch);
   });
 });

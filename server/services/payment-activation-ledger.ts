@@ -68,6 +68,13 @@ export interface PaymentClaimInfo {
 export type ClaimResult =
   | { claimed: true; recordId: string }
   | { claimed: false; reason: 'already-processed' }
+  /**
+   * Захват свежий и ещё в работе: либо прямо сейчас активирует параллельный запрос,
+   * либо POST оборвался по сети уже после коммита строки и владельца у неё нет.
+   * Отвечать «уже обработан» нельзя — подписки может не быть; правильный ответ
+   * вызывающему «идёт обработка, повторите позже».
+   */
+  | { claimed: false; reason: 'in-progress' }
   /** Захват висит слишком долго: активацию мог оборвать умерший инстанс. Разбор вручную. */
   | { claimed: false; reason: 'needs-reconciliation' };
 
@@ -201,7 +208,10 @@ export async function claimPaymentActivation(info: PaymentClaimInfo): Promise<Cl
     return { claimed: false, reason: 'needs-reconciliation' };
   }
 
-  return { claimed: false, reason: 'already-processed' };
+  // Свежий processing — обработка идёт (или строка осиротела из-за оборванного
+  // POST). Раньше здесь возвращалось already-processed, и плательщик получал
+  // «уже обработан» без подписки (находка ревью 2026-07-28).
+  return { claimed: false, reason: 'in-progress' };
 }
 
 /**

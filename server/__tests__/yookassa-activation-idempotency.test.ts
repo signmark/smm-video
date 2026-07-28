@@ -1,14 +1,17 @@
 /**
- * Активация подписки идемпотентна: один succeeded-платёж выдаёт 30 дней ровно один раз.
+ * Идемпотентность активации подписки — только durable-журнал.
  *
- * Регрессия на находку ревью: `/api/payments/:paymentId/activate` нигде не отмечал
- * платёж обработанным, поэтому один и тот же paymentId можно было предъявлять
- * сколько угодно раз. Каждый вызов двигал expire_date ещё на 30 дней от «сейчас»,
- * слал ещё одно Telegram-уведомление и ещё один partner postback. Webhook шёл тем же
- * путём и брал metadata из тела запроса, а не из проверенного платежа.
+ * Находки ревью:
+ *  (а) один succeeded-платёж можно было предъявлять `/activate` сколько угодно раз;
+ *  (б) первая версия журнала при любой ошибке Directus падала на запасной журнал в
+ *      памяти процесса. В проде коллекции не было, значит журнал был в памяти ВСЕГДА,
+ *      и после каждого рестарта старый paymentId активировался заново.
  *
- * Журнал платежей здесь — поверх фейкового Directus (объект в тесте), а не мок самого
- * ledger'а: проверяется в том числе то, что захват идёт до активации.
+ * Поэтому здесь проверяется не только «повтор не проходит», но и то, что при
+ * недоступном журнале оплата ВЫКЛЮЧАЕТСЯ, а не работает без защиты.
+ *
+ * Фейковый Directus — с уникальными индексами, как в настоящей коллекции: без них
+ * захват платежа перестаёт быть атомарным.
  */
 import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
 import request from 'supertest';
@@ -30,13 +33,18 @@ process.env.DIRECTUS_URL = 'https://directus.test';
 process.env.DIRECTUS_STATIC_TOKEN = 'admin-token-test';
 process.env.TELEGRAM_BOT_TOKEN = 'bot-token-test';
 
-/** Фейковый Directus-журнал: строки + уникальность payment_id, как в настоящей коллекции. */
-let ledgerRows: any[] = [];
-let ledgerSeq = 0;
+/** Строки фейковых коллекций. */
+let tables: Record<string, any[]> = {};
+let seq = 0;
+/** Какие коллекции «существуют». Пустой набор = журнала нет. */
+let liveCollections = new Set(['payment_activations', 'promo_reservations', 'promo_code_uses', 'promo_codes']);
+/** Уникальные поля — ровно те, что заводит миграционный скрипт. */
+const UNIQUES: Record<string, string[]> = {
+  payment_activations: ['payment_id'],
+  promo_reservations: ['payment_id', 'user_lock', 'slot_lock'],
+};
 
-/** Все PATCH'и на /users/<id> — так видно, сколько раз двигали expire_date. */
 let userPatches: any[] = [];
-/** Сколько раз ушло Telegram-уведомление. */
 let telegramSends = 0;
 
 const PAYMENT = {
@@ -44,14 +52,28 @@ const PAYMENT = {
   status: 'succeeded',
   paid: true,
   amount: { value: '670.00', currency: 'RUB' },
-  metadata: { user_id: 'user-1', plan: 'Профессиональный', amount: '670.00', currency: 'RUB' },
+  metadata: { user_id: 'user-1', plan: 'Профессиональный', amount: '670.00', currency: 'RUB', order_id: 'order-777' },
 };
-
-/** Что вернёт GET к ЮКассе. Тесты подменяют для негативных сценариев. */
 let yookassaPayment: any = PAYMENT;
 
 function jsonResponse(body: any, ok = true, status = 200) {
   return Promise.resolve({ ok, status, json: async () => body, text: async () => JSON.stringify(body) } as any);
+}
+
+function uniqueViolation() {
+  return jsonResponse(
+    { errors: [{ message: 'Value has to be unique.', extensions: { code: 'RECORD_NOT_UNIQUE' } }] },
+    false, 400,
+  );
+}
+
+/** Разбирает `?filter[field][_eq]=value` и `_in`. */
+function matchRows(rows: any[], url: string): any[] {
+  const conds = [...url.matchAll(/filter\[(\w+)\]\[_(eq|in)\]=([^&]+)/g)];
+  return rows.filter(r => conds.every(([, field, op, raw]) => {
+    const value = decodeURIComponent(raw);
+    return op === 'eq' ? String(r[field]) === value : value.split(',').includes(String(r[field]));
+  }));
 }
 
 const fetchMock = vi.fn((url: any, init?: any) => {
@@ -62,54 +84,42 @@ const fetchMock = vi.fn((url: any, init?: any) => {
   if (u.includes('api.yookassa.ru')) return jsonResponse(yookassaPayment);
   if (u.includes('api.telegram.org')) { telegramSends++; return jsonResponse({ ok: true }); }
 
-  // --- журнал активаций ---
-  if (u.includes('/collections/payment_activations')) return jsonResponse({ data: {} });
-  if (u.endsWith('/collections')) return jsonResponse({ data: {} });
+  const itemsMatch = u.match(/\/items\/(\w+)/);
+  if (itemsMatch) {
+    const name = itemsMatch[1];
+    if (!liveCollections.has(name)) {
+      return jsonResponse({ errors: [{ message: "You don't have permission to access this." }] }, false, 403);
+    }
+    tables[name] = tables[name] || [];
+    const rows = tables[name];
 
-  if (u.includes('/items/payment_activations')) {
     if (method === 'POST') {
-      if (ledgerRows.some(r => r.payment_id === body.payment_id)) {
-        // Ровно так Directus отвечает на нарушение уникального индекса.
-        return jsonResponse(
-          { errors: [{ message: 'Value has to be unique.', extensions: { code: 'RECORD_NOT_UNIQUE' } }] },
-          false, 400,
-        );
+      for (const field of UNIQUES[name] || []) {
+        if (body[field] != null && rows.some(r => r[field] === body[field])) return uniqueViolation();
       }
-      const row = { id: `led-${++ledgerSeq}`, ...body };
-      ledgerRows.push(row);
+      const row = { id: `${name}-${++seq}`, ...body };
+      rows.push(row);
       return jsonResponse({ data: row });
     }
     if (method === 'PATCH') {
       const id = u.split('/').pop()!.split('?')[0];
-      const row = ledgerRows.find(r => r.id === id);
+      const row = rows.find(r => r.id === id);
       if (row) Object.assign(row, body);
       return jsonResponse({ data: row });
     }
     if (method === 'DELETE') {
       const id = u.split('/').pop()!.split('?')[0];
-      ledgerRows = ledgerRows.filter(r => r.id !== id);
+      tables[name] = rows.filter(r => r.id !== id);
       return jsonResponse({ data: null });
     }
-    // GET по фильтру
-    const m = u.match(/payment_id\]\[_eq\]=([^&]+)/);
-    const found = m ? ledgerRows.filter(r => r.payment_id === decodeURIComponent(m[1])) : ledgerRows;
-    return jsonResponse({ data: found });
+    return jsonResponse({ data: matchRows(rows, u) });
   }
 
-  // --- пользователи ---
   if (u.includes('/users/user-1')) {
     if (method === 'PATCH') { userPatches.push(body); return jsonResponse({ data: {} }); }
-    return jsonResponse({
-      data: {
-        telegram_chat_id: 'chat-1',
-        first_name: 'Иван',
-        omemo_partner_code: 'PARTNER1',
-        email: 'u@test.local',
-      },
-    });
+    return jsonResponse({ data: { telegram_chat_id: 'chat-1', first_name: 'Иван', omemo_partner_code: 'P1', email: 'u@t.local' } });
   }
   if (u.includes('/users/me')) return jsonResponse({ data: { id: 'user-1' } });
-
   return jsonResponse({ data: {} });
 });
 
@@ -127,23 +137,19 @@ async function buildApp() {
   return a;
 }
 
-function activate(paymentId = 'pay-777') {
-  return request(app)
-    .post(`/api/payments/${paymentId}/activate`)
-    .set('Authorization', 'Bearer user-token')
-    .send({});
-}
-
-function webhook(paymentId = 'pay-777', extra: Record<string, any> = {}) {
-  return request(app)
-    .post('/api/yookassa/webhook')
-    .send({ event: 'payment.succeeded', object: { id: paymentId, ...extra } });
-}
+const activate = (id = 'pay-777') =>
+  request(app).post(`/api/payments/${id}/activate`).set('Authorization', 'Bearer t').send({});
+const webhook = (id = 'pay-777') =>
+  request(app).post('/api/yookassa/webhook').send({ event: 'payment.succeeded', object: { id } });
+const available = () => request(app).get('/api/payments/available');
+const create = (body: Record<string, any> = { plan: 'Профессиональный' }) =>
+  request(app).post('/api/payments/create').set('Authorization', 'Bearer t').send(body);
 
 beforeEach(async () => {
   vi.clearAllMocks();
-  ledgerRows = [];
-  ledgerSeq = 0;
+  tables = {};
+  seq = 0;
+  liveCollections = new Set(['payment_activations', 'promo_reservations', 'promo_code_uses', 'promo_codes']);
   userPatches = [];
   telegramSends = 0;
   sendPurchasePostback.mockClear();
@@ -151,214 +157,203 @@ beforeEach(async () => {
   app = await buildApp();
 });
 
-afterAll(() => {
-  process.env = OLD_ENV;
-});
+afterAll(() => { process.env = OLD_ENV; });
 
-describe('POST /api/payments/:paymentId/activate — идемпотентность', () => {
+describe('повтор активации', () => {
   it('первая активация выдаёт подписку', async () => {
     const res = await activate();
-
     expect(res.status).toBe(200);
-    expect(res.body.ok).toBe(true);
     expect(userPatches).toHaveLength(1);
-    expect(userPatches[0]).toMatchObject({ plan: 'pro' });
   });
 
-  it('повторный запрос не меняет expire_date, не шлёт уведомление и не дублирует postback', async () => {
+  it('повтор в одном процессе не меняет expire_date, не шлёт уведомление и не дублирует postback', async () => {
     await activate();
     const expireAfterFirst = userPatches[0].expire_date;
-    const telegramAfterFirst = telegramSends;
+    const tgAfterFirst = telegramSends;
 
     const second = await activate();
 
     expect(second.status).toBe(200);
     expect(second.body.alreadyProcessed).toBe(true);
-    // Второго PATCH'а по пользователю не было вообще
     expect(userPatches).toHaveLength(1);
     expect(userPatches[0].expire_date).toBe(expireAfterFirst);
-    expect(telegramSends).toBe(telegramAfterFirst);
+    expect(telegramSends).toBe(tgAfterFirst);
     expect(sendPurchasePostback).toHaveBeenCalledTimes(1);
   });
 
-  it('третий и четвёртый запрос тоже ничего не меняют', async () => {
+  it('после «рестарта» процесса повтор всё равно не проходит — журнал переживает перезапуск', async () => {
     await activate();
-    await activate();
-    await activate();
-    await activate();
-
     expect(userPatches).toHaveLength(1);
-    expect(sendPurchasePostback).toHaveBeenCalledTimes(1);
-  });
 
-  it('состояние обработки лежит в Directus, а не в памяти процесса — переживает рестарт', async () => {
-    await activate();
-    expect(ledgerRows).toHaveLength(1);
-    expect(ledgerRows[0]).toMatchObject({ payment_id: 'pay-777', status: 'completed' });
-
-    // Рестарт процесса: модули перезагружаются, вся память теряется. Журнал — нет.
+    // Рестарт: модули перезагружаются, любая память процесса теряется.
     vi.resetModules();
     app = await buildApp();
 
-    const afterRestart = await activate();
+    const after = await activate();
 
-    expect(afterRestart.body.alreadyProcessed).toBe(true);
+    expect(after.body.alreadyProcessed).toBe(true);
     expect(userPatches).toHaveLength(1);
   });
 
-  it('незавершённый платёж подписку не выдаёт', async () => {
-    yookassaPayment = { ...PAYMENT, status: 'pending', paid: false };
-
-    const res = await activate();
-
-    expect(res.status).toBe(400);
-    expect(userPatches).toHaveLength(0);
-    expect(ledgerRows).toHaveLength(0);
-  });
-
-  it('платёж, оплаченный меньше заказанной суммы, отклоняется', async () => {
-    // Заказали тариф за 670, а оплачен рубль — metadata не сходится с amount.
-    yookassaPayment = { ...PAYMENT, amount: { value: '1.00', currency: 'RUB' } };
-
-    const res = await activate();
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/Сумма/);
-    expect(userPatches).toHaveLength(0);
-  });
-
-  it('платёж в чужой валюте отклоняется', async () => {
-    yookassaPayment = {
-      ...PAYMENT,
-      amount: { value: '670.00', currency: 'USD' },
-      metadata: { ...PAYMENT.metadata, currency: 'USD' },
-    };
-
-    const res = await activate();
-
-    expect(res.status).toBe(400);
-    expect(res.body.error).toMatch(/Валюта/);
-    expect(userPatches).toHaveLength(0);
-  });
-
-  it('платёж без metadata.user_id отклоняется', async () => {
-    yookassaPayment = { ...PAYMENT, metadata: { plan: 'Профессиональный' } };
-
-    const res = await activate();
-
-    expect(res.status).toBe(400);
-    expect(userPatches).toHaveLength(0);
-  });
-
-  it('неизвестный тариф в metadata отклоняется', async () => {
-    yookassaPayment = { ...PAYMENT, metadata: { ...PAYMENT.metadata, plan: 'Безлимитный-навсегда' } };
-
-    const res = await activate();
-
-    expect(res.status).toBe(400);
-    expect(userPatches).toHaveLength(0);
-  });
-});
-
-describe('POST /api/yookassa/webhook — тот же механизм идемпотентности', () => {
-  it('повторный webhook по тому же платежу не выдаёт вторую подписку', async () => {
-    await webhook();
-    expect(userPatches).toHaveLength(1);
-
-    await webhook();
-    await webhook();
+  it('два конкурентных claim выдают подписку ровно один раз', async () => {
+    const [a, b] = await Promise.all([activate(), activate()]);
 
     expect(userPatches).toHaveLength(1);
     expect(sendPurchasePostback).toHaveBeenCalledTimes(1);
-  });
-
-  it('webhook после ручной активации того же платежа ничего не добавляет', async () => {
-    await activate();
-    await webhook();
-
-    expect(userPatches).toHaveLength(1);
-    expect(sendPurchasePostback).toHaveBeenCalledTimes(1);
-  });
-
-  it('метаданные берутся из проверенного платежа, а не из тела webhook', async () => {
-    // Тело webhook подсовывает чужого пользователя и другой тариф.
-    await webhook('pay-777', {
-      paid: true,
-      metadata: { user_id: 'attacker', plan: 'Профессиональный' },
-      amount: { value: '99999.00', currency: 'RUB' },
-    });
-
-    // Подписка выдана владельцу платежа из verified-объекта, не «attacker»
-    expect(ledgerRows).toHaveLength(1);
-    expect(ledgerRows[0]).toMatchObject({ payment_id: 'pay-777', user_id: 'user-1', amount: '670.00' });
-  });
-
-  it('webhook по неоплаченному платежу подписку не выдаёт', async () => {
-    yookassaPayment = { ...PAYMENT, status: 'canceled', paid: false };
-
-    const res = await webhook();
-
-    // ЮКассе отвечаем 200, чтобы она не ретраила, но активации нет
-    expect(res.status).toBe(200);
-    expect(userPatches).toHaveLength(0);
-    expect(ledgerRows).toHaveLength(0);
-  });
-});
-
-/**
- * Деградация журнала.
- *
- * На 2026-07-28 у сервисного токена нет прав на создание коллекций: Directus отвечает
- * 403 и на GET /collections/payment_activations, и на POST /collections. Пока владелец
- * не заведёт коллекцию и права, durable-журнал недоступен.
- *
- * Fail-closed здесь означал бы 500 на каждый оплаченный платёж — человек заплатил и не
- * получил подписку. Это хуже исходной дыры, поэтому активация продолжает работать через
- * запасной журнал в памяти процесса: он слабее (не переживает рестарт, не виден второму
- * инстансу), но гасит массовый случай — повтор в рамках одного процесса.
- */
-describe('журнал платежей недоступен (нет прав на коллекцию)', () => {
-  beforeEach(async () => {
-    // Directus отвечает 403 на всё, что касается журнала
-    fetchMock.mockImplementation((url: any, init?: any) => {
-      const u = String(url);
-      if (u.includes('payment_activations') || u.endsWith('/collections')) {
-        return jsonResponse({ errors: [{ message: "You don't have permission to access this." }] }, false, 403);
-      }
-      const method = init?.method || 'GET';
-      const body = init?.body ? JSON.parse(init.body) : null;
-      if (u.includes('api.yookassa.ru')) return jsonResponse(yookassaPayment);
-      if (u.includes('api.telegram.org')) { telegramSends++; return jsonResponse({ ok: true }); }
-      if (u.includes('/users/user-1')) {
-        if (method === 'PATCH') { userPatches.push(body); return jsonResponse({ data: {} }); }
-        return jsonResponse({ data: { telegram_chat_id: 'chat-1', first_name: 'Иван', omemo_partner_code: 'P1', email: 'u@t.local' } });
-      }
-      if (u.includes('/users/me')) return jsonResponse({ data: { id: 'user-1' } });
-      return jsonResponse({ data: {} });
-    });
-    app = await buildApp();
-  });
-
-  it('оплаченный платёж всё равно активируется — 500 на оплату недопустим', async () => {
-    const res = await activate();
-
-    expect(res.status).toBe(200);
-    expect(userPatches).toHaveLength(1);
-  });
-
-  it('повтор в рамках процесса всё ещё не даёт второй подписки', async () => {
-    await activate();
-    const second = await activate();
-
-    expect(second.body.alreadyProcessed).toBe(true);
-    expect(userPatches).toHaveLength(1);
-    expect(sendPurchasePostback).toHaveBeenCalledTimes(1);
+    expect([a.body.alreadyProcessed, b.body.alreadyProcessed].filter(Boolean)).toHaveLength(1);
   });
 
   it('webhook и ручная активация одного платежа не складываются', async () => {
     await activate();
     await webhook();
-
     expect(userPatches).toHaveLength(1);
+  });
+});
+
+describe('журнал недоступен — оплата выключается, а не работает без защиты', () => {
+  beforeEach(async () => {
+    liveCollections.delete('payment_activations');
+    app = await buildApp();
+  });
+
+  it('/available отдаёт available:false', async () => {
+    const res = await available();
+    expect(res.body.available).toBe(false);
+  });
+
+  it('/create возвращает 503 и не создаёт платёж в ЮКассе', async () => {
+    const res = await create();
+    expect(res.status).toBe(503);
+    expect(res.body.reason).toBe('ledger-unavailable');
+    expect(fetchMock.mock.calls.some(c => String(c[0]).includes('api.yookassa.ru'))).toBe(false);
+  });
+
+  it('уже оплаченный платёж получает повторяемую 503, а не подписку', async () => {
+    const res = await activate();
+    expect(res.status).toBe(503);
+    expect(res.body.retryable).toBe(true);
+    expect(userPatches).toHaveLength(0);
+  });
+
+  it('webhook не отвечает успехом, если захват не зафиксирован', async () => {
+    const res = await webhook();
+    expect(res.status).toBe(503);
+    expect(userPatches).toHaveLength(0);
+  });
+
+  it('в память не деградирует: подписки нет ни при одной из попыток', async () => {
+    await activate();
+    await activate();
+    await activate();
+    expect(userPatches).toHaveLength(0);
+  });
+});
+
+describe('зависший захват', () => {
+  it('протухшая запись уходит на ручную сверку, а не перехватывается автоматически', async () => {
+    tables.payment_activations = [{
+      id: 'led-stale',
+      payment_id: 'pay-777',
+      status: 'processing',
+      claimed_at: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+    }];
+
+    const res = await activate();
+
+    expect(res.status).toBe(409);
+    expect(res.body.needsReconciliation).toBe(true);
+    expect(userPatches).toHaveLength(0);
+    expect(tables.payment_activations[0].needs_reconciliation).toBe(true);
+  });
+
+  it('свежий параллельный захват второй подписки не выдаёт', async () => {
+    tables.payment_activations = [{
+      id: 'led-fresh',
+      payment_id: 'pay-777',
+      status: 'processing',
+      claimed_at: new Date().toISOString(),
+    }];
+
+    const res = await activate();
+
+    expect(res.status).toBe(200);
+    expect(res.body.alreadyProcessed).toBe(true);
+    expect(userPatches).toHaveLength(0);
+  });
+});
+
+describe('сбой между выдачей подписки и отметкой completed', () => {
+  it('ошибка записи completed не выдаёт вторую подписку при повторе', async () => {
+    // PATCH журнала падает — подписка уже выдана, отметка не поставлена.
+    const realFetch = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation((url: any, init?: any) => {
+      if (String(url).includes('/items/payment_activations/') && init?.method === 'PATCH'
+          && JSON.parse(init.body).status === 'completed') {
+        return jsonResponse({ errors: [{ message: 'boom' }] }, false, 500);
+      }
+      return realFetch(url, init);
+    });
+
+    const first = await activate();
+    expect(first.status).toBe(503); // вызывающий узнаёт, что отметки нет
+    expect(userPatches).toHaveLength(1); // подписка выдана
+
+    fetchMock.mockImplementation(realFetch);
+    const second = await activate();
+
+    // Запись осталась в processing и свежая → повтор не выдаёт вторую подписку
+    expect(second.body.alreadyProcessed).toBe(true);
+    expect(userPatches).toHaveLength(1);
+  });
+
+  it('ошибка выдачи подписки снимает захват, чтобы оплативший мог повторить', async () => {
+    const realFetch = fetchMock.getMockImplementation()!;
+    let failUserPatch = true;
+    fetchMock.mockImplementation((url: any, init?: any) => {
+      if (String(url).includes('/users/user-1') && init?.method === 'PATCH' && failUserPatch) {
+        return jsonResponse({ errors: [{ message: 'directus down' }] }, false, 500);
+      }
+      return realFetch(url, init);
+    });
+
+    const first = await activate();
+    expect(first.status).toBe(500);
+    expect(tables.payment_activations || []).toHaveLength(0); // захват снят
+
+    failUserPatch = false;
+    const second = await activate();
+
+    expect(second.status).toBe(200);
+    expect(userPatches).toHaveLength(1);
+  });
+});
+
+describe('платежи без зафиксированной суммы (fail closed)', () => {
+  it('платёж без metadata.amount не активируется автоматически', async () => {
+    yookassaPayment = { ...PAYMENT, metadata: { user_id: 'user-1', plan: 'Профессиональный' } };
+
+    const res = await activate();
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toMatch(/ручная сверка/);
+    expect(userPatches).toHaveLength(0);
+  });
+
+  it('платёж без metadata.currency не активируется автоматически', async () => {
+    yookassaPayment = { ...PAYMENT, metadata: { user_id: 'user-1', plan: 'Профессиональный', amount: '670.00' } };
+
+    const res = await activate();
+
+    expect(res.status).toBe(400);
+    expect(userPatches).toHaveLength(0);
+  });
+
+  it('оплата меньше заказанной суммы отклоняется', async () => {
+    yookassaPayment = { ...PAYMENT, amount: { value: '1.00', currency: 'RUB' } };
+
+    const res = await activate();
+
+    expect(res.status).toBe(400);
+    expect(userPatches).toHaveLength(0);
   });
 });

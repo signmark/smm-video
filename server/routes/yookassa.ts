@@ -7,7 +7,18 @@ import {
   claimPaymentActivation,
   completePaymentActivation,
   releasePaymentActivation,
+  isLedgerReady,
+  LedgerUnavailableError,
 } from '../services/payment-activation-ledger';
+import {
+  reservePromo,
+  completePromoReservation,
+  releasePromoReservation,
+  attachPaymentId,
+  getReservationByPayment,
+  isReservationStoreReady,
+  PromoReservationUnavailableError,
+} from '../services/promo-reservation';
 
 const router = Router();
 
@@ -20,6 +31,9 @@ const YOOKASSA_API = 'https://api.yookassa.ru/v3/payments';
 
 /** Единственная поддерживаемая валюта. Платёж в любой другой к активации не принимается. */
 const CURRENCY = 'RUB';
+
+/** Через сколько бронь без привязанного платежа считается брошенной. */
+const ORPHAN_RESERVATION_MS = 30 * 60 * 1000;
 
 // Русское название тарифа → ключ для резолвера цены (pro/basic).
 // Сумма платежа больше НЕ хардкодится здесь: базовую цену берём из resolvePlanPrice
@@ -61,6 +75,74 @@ async function yookassaRequest(method: string, path: string, body?: object): Pro
     throw new Error(`YooKassa ${method} ${path} → ${res.status}: ${text}`);
   }
   return res.json();
+}
+
+/**
+ * Держит ли слот промокода платёж, который уже точно не состоится.
+ *
+ * Освобождаем чужую бронь только по подтверждённому статусу от ЮКассы. Единственное
+ * исключение — бронь, к которой так и не привязался платёж: значит процесс умер между
+ * бронированием и созданием платежа, и висеть ей незачем.
+ */
+async function isSlotHolderDead(holder: { yookassa_payment_id?: string | null; reserved_at?: string | null }): Promise<boolean> {
+  if (!holder.yookassa_payment_id) {
+    const reservedAt = holder.reserved_at ? new Date(holder.reserved_at).getTime() : 0;
+    return Number.isFinite(reservedAt) && Date.now() - reservedAt > ORPHAN_RESERVATION_MS;
+  }
+  try {
+    const payment = await yookassaRequest('GET', `/${holder.yookassa_payment_id}`);
+    return payment?.status === 'canceled' || payment?.status === 'expired';
+  } catch {
+    // Не смогли выяснить — считаем бронь живой. Ошибиться в эту сторону значит не дать
+    // лишнюю скидку, в обратную — раздать её дважды.
+    return false;
+  }
+}
+
+/**
+ * Пишет использование промокода в историю для админки и двигает счётчик показа.
+ *
+ * Источник истины по расходу кода — брони (`promo_reservations`), а не `used_count`:
+ * счётчик читается-и-пишется, то есть на гонке теряет использования. Здесь он нужен
+ * только для отображения в админке, поэтому ошибки не критичны.
+ */
+async function recordPromoUse(promoId: string, userId: string, paymentId: string, plan: string): Promise<void> {
+  try {
+    const existing = await fetch(
+      `${DIRECTUS_URL}/items/promo_code_uses?filter[payment_id][_eq]=${encodeURIComponent(paymentId)}&limit=1`,
+      { headers: { Authorization: `Bearer ${ADMIN_TOKEN}` } },
+    );
+    if (existing.ok) {
+      const { data } = await existing.json();
+      if (data?.length) return; // уже записано — повторный вызов ничего не добавляет
+    }
+
+    await fetch(`${DIRECTUS_URL}/items/promo_code_uses`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${ADMIN_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        promo_code_id: promoId,
+        user_id: userId,
+        used_at: new Date().toISOString(),
+        payment_id: paymentId,
+        plan_before: plan,
+      }),
+    });
+
+    const promoResp = await fetch(`${DIRECTUS_URL}/items/promo_codes/${promoId}?fields=used_count`, {
+      headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
+    });
+    if (promoResp.ok) {
+      const { data } = await promoResp.json();
+      await fetch(`${DIRECTUS_URL}/items/promo_codes/${promoId}`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${ADMIN_TOKEN}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ used_count: (data?.used_count || 0) + 1 }),
+      });
+    }
+  } catch (err: any) {
+    console.error('[yookassa] Не удалось записать использование промокода:', err?.message);
+  }
 }
 
 async function activateSubscription(userId: string, plan: string): Promise<void> {
@@ -130,6 +212,19 @@ router.post('/payments/create', async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Неверный тариф' });
   }
 
+  // Готовность журнала проверяем ДО обращения к ЮКассе. Создать платёж, зная, что
+  // отметить его обработанным будет нечем, — значит взять деньги без защиты от
+  // повторной активации.
+  if (!(await isLedgerReady())) {
+    return res.status(503).json({
+      error: 'Онлайн-оплата временно недоступна. Пожалуйста, отправьте заявку.',
+      reason: 'ledger-unavailable',
+    });
+  }
+
+  // Виден и в catch: если платёж не создался, бронь надо снять.
+  let createdOrderId: string | null = null;
+
   try {
     const meResp = await fetch(`${DIRECTUS_URL}/users/me?fields=id`, {
       headers: { 'Authorization': `Bearer ${userToken}` },
@@ -167,6 +262,11 @@ router.post('/payments/create', async (req: Request, res: Response) => {
     let appliedPromo: { id: string; code: string; percent: number } | null = null;
     let finalAmount = baseAmount;
 
+    // Собственный идентификатор заказа. Бронь промокода берётся ДО обращения к
+    // ЮКассе, когда её payment_id ещё не существует, поэтому якорем служит order_id;
+    // ЮКасса возвращает его в metadata неизменным.
+    const orderId = uuidv4();
+
     if (promoCode) {
       const check = await validatePromoCode(String(promoCode), userId);
       if (!check.valid) {
@@ -175,8 +275,29 @@ router.post('/payments/create', async (req: Request, res: Response) => {
         return res.status(400).json({ error: check.message, promoRejected: true });
       }
       const priced = applyPromoDiscount(baseAmount, check.promo);
-      finalAmount = priced.amount;
+
       if (priced.discountPercent > 0) {
+        // Скидка выдаётся только под бронь. Без атомарного резервирования один код
+        // давал бы неограниченную скидку: проверка без захвата — это гонка.
+        if (!(await isReservationStoreReady())) {
+          return res.status(503).json({
+            error: 'Скидочные промокоды временно недоступны. Попробуйте позже или оплатите без кода.',
+            reason: 'promo-store-unavailable',
+          });
+        }
+
+        const reservation = await reservePromo({
+          promo: check.promo,
+          userId,
+          paymentId: orderId,
+          isSlotHolderDead,
+        });
+        if (!reservation.ok) {
+          return res.status(400).json({ error: reservation.message, promoRejected: true });
+        }
+
+        createdOrderId = orderId;
+        finalAmount = priced.amount;
         appliedPromo = { id: check.promo.id, code: check.promo.code, percent: priced.discountPercent };
       }
     }
@@ -199,6 +320,7 @@ router.post('/payments/create', async (req: Request, res: Response) => {
         plan,
         amount,
         currency: CURRENCY,
+        order_id: orderId,
         ...(appliedPromo ? { promo_code: appliedPromo.code, promo_id: appliedPromo.id } : {}),
       },
       receipt: {
@@ -216,6 +338,11 @@ router.post('/payments/create', async (req: Request, res: Response) => {
       },
     });
 
+    if (appliedPromo) {
+      // Теперь у брони есть с чем сверяться, если платёж бросят.
+      await attachPaymentId(orderId, payment.id);
+    }
+
     console.log(
       `[yookassa] Платёж создан: id=${payment.id} userId=${userId} plan=${plan} `
       + `amount=${amount} ${CURRENCY} base=${baseAmount}`
@@ -227,6 +354,14 @@ router.post('/payments/create', async (req: Request, res: Response) => {
       confirmationUrl: payment.confirmation?.confirmation_url,
     });
   } catch (err: any) {
+    // Платёж не создался — бронь промокода держать незачем, иначе код сгорит впустую.
+    if (createdOrderId) {
+      await releasePromoReservation(createdOrderId, 'создание платежа не удалось').catch(() => {});
+    }
+    if (err instanceof PromoReservationUnavailableError) {
+      console.error('[yookassa] Хранилище броней недоступно:', err?.message);
+      return res.status(503).json({ error: 'Оплата временно недоступна, попробуйте позже', reason: 'promo-store-unavailable' });
+    }
     console.error('[yookassa] Ошибка создания платежа:', err?.message);
     return res.status(500).json({ error: 'Не удалось создать платёж', details: err?.message });
   }
@@ -253,20 +388,23 @@ function verifyPayment(payment: any): { ok: true } | { ok: false; status: number
     return { ok: false, status: 400, error: 'Неизвестный тариф в платеже' };
   }
 
+  // Платёж без зафиксированных сервером суммы и валюты автоматически не активируется.
+  // Раньше это считалось «legacy-случаем» и проверка суммы пропускалась — то есть
+  // дешёвые платежи, созданные до фикса подделки amount, оставались рабочими.
+  // Легитимные старые платежи проводятся вручную (см. docs/prompts/), а не этой ручкой.
+  if (!meta.amount || !meta.currency) {
+    return { ok: false, status: 400, error: 'Платёж создан до фиксации суммы на сервере — требуется ручная сверка' };
+  }
+
   const paidCurrency = payment.amount?.currency;
-  const expectedCurrency = meta.currency || CURRENCY;
-  if (paidCurrency !== expectedCurrency || paidCurrency !== CURRENCY) {
+  if (paidCurrency !== meta.currency || paidCurrency !== CURRENCY) {
     return { ok: false, status: 400, error: 'Валюта платежа не совпадает' };
   }
 
-  // Платежи, созданные до появления metadata.amount, сверять не с чем — для них
-  // проверка суммы пропускается, всё остальное проверяется как обычно.
-  if (meta.amount !== undefined && meta.amount !== null && meta.amount !== '') {
-    const paid = Number(payment.amount?.value);
-    const expected = Number(meta.amount);
-    if (!Number.isFinite(paid) || !Number.isFinite(expected) || Math.abs(paid - expected) > 0.01) {
-      return { ok: false, status: 400, error: 'Сумма платежа не совпадает с заказанной' };
-    }
+  const paid = Number(payment.amount?.value);
+  const expected = Number(meta.amount);
+  if (!Number.isFinite(paid) || !Number.isFinite(expected) || Math.abs(paid - expected) > 0.01) {
+    return { ok: false, status: 400, error: 'Сумма платежа не совпадает с заказанной' };
   }
 
   return { ok: true };
@@ -299,8 +437,28 @@ async function activateVerifiedPayment(
   });
 
   if (!claim.claimed) {
+    if (claim.reason === 'needs-reconciliation') {
+      // Захват завис: активацию мог оборвать умерший инстанс. Автоматически не
+      // перехватываем — без CAS два процесса выдали бы подписку дважды.
+      console.warn(`[yookassa/${source}] Платёж ${paymentId} требует ручной сверки`);
+      return { status: 409, body: { error: 'Платёж требует ручной сверки, обратитесь в поддержку', needsReconciliation: true } };
+    }
     console.log(`[yookassa/${source}] Платёж ${paymentId} уже обработан — активация пропущена`);
     return { status: 200, body: { ok: true, plan: meta.plan, alreadyProcessed: true } };
+  }
+
+  // Скидочный платёж активируется только под существующую бронь. Нет брони — значит
+  // скидка не была захвачена атомарно, и активировать такой платёж нельзя.
+  if (meta.promo_id) {
+    if (!meta.order_id) {
+      await releasePaymentActivation(claim.recordId);
+      return { status: 400, body: { error: 'Платёж со скидкой без привязки к брони — требуется ручная сверка' } };
+    }
+    const reservation = await getReservationByPayment(meta.order_id);
+    if (!reservation || reservation.status === 'released') {
+      await releasePaymentActivation(claim.recordId);
+      return { status: 400, body: { error: 'Бронь промокода не найдена — требуется ручная сверка' } };
+    }
   }
 
   try {
@@ -313,6 +471,19 @@ async function activateVerifiedPayment(
   }
 
   await completePaymentActivation(claim.recordId);
+
+  // Промокод расходуется ровно один раз: повторный вызов по уже погашенной броне
+  // ничего не меняет, поэтому /activate и webhook друг друга не дублируют.
+  if (meta.promo_id && meta.order_id) {
+    try {
+      const redeemed = await completePromoReservation(meta.order_id);
+      if (redeemed.completed) {
+        await recordPromoUse(meta.promo_id, meta.user_id, paymentId, meta.plan);
+      }
+    } catch (err: any) {
+      console.error('[yookassa] Не удалось погасить бронь промокода:', err?.message);
+    }
+  }
 
   // Postback — после отметки об обработке: повторный запрос сюда уже не дойдёт.
   try {
@@ -353,6 +524,15 @@ router.post('/payments/:paymentId/activate', async (req: Request, res: Response)
     const result = await activateVerifiedPayment(payment, 'activate');
     return res.status(result.status).json(result.body);
   } catch (err: any) {
+    // Журнал недоступен — платёж уже оплачен, поэтому отвечаем повторяемой ошибкой:
+    // клиент вправе попробовать снова, а мы не выдаём подписку без защиты.
+    if (err instanceof LedgerUnavailableError || err instanceof PromoReservationUnavailableError) {
+      console.error('[yookassa/activate] Защита недоступна:', err?.message);
+      return res.status(503).json({
+        error: 'Не удалось подтвердить платёж, попробуйте через минуту',
+        retryable: true,
+      });
+    }
     console.error('[yookassa/activate] Ошибка:', err?.message);
     return res.status(500).json({ error: err?.message });
   }
@@ -412,17 +592,27 @@ router.post('/yookassa/webhook', async (req: Request, res: Response) => {
       }
     }
 
-    // ЮКассе всегда отвечаем 200: иначе она будет ретраить уже обработанный платёж.
+    // 200 отдаём только когда платёж действительно обработан (или осознанно отклонён):
+    // иначе ЮКасса будет ретраить уже проведённый платёж.
     return res.json({ ok: true });
   } catch (err: any) {
+    // Захват не зафиксирован — успехом отвечать нельзя. 500 заставит ЮКассу повторить
+    // уведомление позже, когда журнал вернётся.
+    if (err instanceof LedgerUnavailableError || err instanceof PromoReservationUnavailableError) {
+      console.error('[yookassa/webhook] Защита недоступна, просим повтор:', err?.message);
+      return res.status(503).json({ error: 'Хранилище недоступно, повторите уведомление', retryable: true });
+    }
     console.error('[yookassa/webhook] Ошибка:', err?.message);
     return res.status(500).json({ error: err?.message });
   }
 });
 
-// GET /api/payments/available — проверяет, настроена ли ЮКасса
-router.get('/payments/available', (_req: Request, res: Response) => {
-  res.json({ available: isConfigured() });
+// GET /api/payments/available — можно ли сейчас принимать онлайн-оплату
+router.get('/payments/available', async (_req: Request, res: Response) => {
+  // Не только «настроена ЮКасса», но и «есть чем защититься от повторной активации».
+  // Без журнала оплата обязана быть выключена, а не работать без защиты.
+  const ledgerReady = isConfigured() ? await isLedgerReady() : false;
+  res.json({ available: isConfigured() && ledgerReady });
 });
 
 export default router;

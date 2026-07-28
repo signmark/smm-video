@@ -42,9 +42,11 @@ describe('listAccessibleCampaignIds', () => {
     // Мок такое поймать не может — регрессию нашли только прогоном по проду.
     // Канонический GET /api/campaigns фильтрует так же.
     expect(JSON.parse(config.params.filter)).toEqual({ user_id: { _eq: USER } });
-    // Сервисный токен, а не пользовательский: сама выборка кампаний не должна
-    // зависеть от прав пользователя в Directus.
-    expect(config.headers.Authorization).toBe('Bearer service-token');
+    // UI-поток ходит ТОКЕНОМ ПОЛЬЗОВАТЕЛЯ, а не статическим: изоляцию обеспечивает
+    // RBAC (user_campaigns read: user_id = $CURRENT_USER), и обычный пользователь
+    // не должен дёргать статический токен. Фильтр по user_id оставлен как явная
+    // подстраховка поверх RBAC.
+    expect(config.headers.Authorization).toBe('Bearer user-token');
   });
 
   it('без userId возвращает пустой список и в Directus не ходит', async () => {

@@ -1,4 +1,5 @@
 import { directusApi } from '../directus';
+import { adminTokenManager } from './admin-token-manager';
 
 export class CampaignAccessError extends Error {
   constructor(
@@ -9,11 +10,15 @@ export class CampaignAccessError extends Error {
   }
 }
 
-function resolveServiceToken(userToken: string): string {
-  return process.env.DIRECTUS_STATIC_TOKEN
-    || process.env.DIRECTUS_ADMIN_TOKEN
-    || process.env.DIRECTUS_TOKEN
-    || userToken;
+// Служебный токен для чтения кампании через код-проверку владельца (нужен,
+// т.к. админ должен видеть чужие кампании, а у campaign_content_sources/keywords
+// нет своего user_id). Через adminTokenManager: он валидирует статический токен
+// и при протухании входит по email/паролю. Раньше здесь брался сырой
+// process.env.DIRECTUS_STATIC_TOKEN — когда он протух, чтение кампании падало
+// 401 → 503 «Кампания не найдена или нет прав», хотя кампания своя.
+async function resolveServiceToken(userToken: string): Promise<string> {
+  const adminToken = await adminTokenManager.getAdminToken();
+  return adminToken || userToken;
 }
 
 /**
@@ -36,8 +41,11 @@ export async function listAccessibleCampaignIds(
   if (!userId) return [];
 
   try {
+    // UI-поток: читаем токеном пользователя. RBAC user_campaigns
+    // (read: user_id = $CURRENT_USER) сам ограничивает выборку своими
+    // кампаниями — статический токен здесь не нужен и не используется.
     const response = await directusApi.get('/items/user_campaigns', {
-      headers: { Authorization: `Bearer ${resolveServiceToken(userToken)}` },
+      headers: { Authorization: `Bearer ${userToken}` },
       params: {
         // Только user_id. Фильтр по user_created живой Directus отвергает с 403
         // («no permission to access field user_created ... or it does not exist»):
@@ -67,21 +75,49 @@ export async function authorizeCampaignAccess(
 ): Promise<any> {
   if (!userId) throw new CampaignAccessError(404, 'CAMPAIGN_NOT_FOUND');
 
-  const serviceToken = resolveServiceToken(userToken);
-
+  // UI-поток: сначала читаем кампанию ТОКЕНОМ ПОЛЬЗОВАТЕЛЯ. RBAC user_campaigns
+  // (read: user_id = $CURRENT_USER) отдаёт кампанию только владельцу, чужую —
+  // 403/404. Изоляцию обеспечивает Directus, без обращения к статическому токену.
   try {
+    const response = await directusApi.get(`/items/user_campaigns/${encodeURIComponent(campaignId)}`, {
+      headers: { Authorization: `Bearer ${userToken}` },
+      params: { fields: ['*'] },
+    });
+    const campaign = response.data?.data;
+    if (campaign) {
+      // RBAC уже должен был отсечь чужую кампанию, но проверяем владельца и в
+      // коде — defense-in-depth: если RBAC когда-то ослабят или токен окажется
+      // шире ожидаемого, изоляция всё равно устоит.
+      const ownerId = typeof campaign.user_id === 'object' ? campaign.user_id?.id : campaign.user_id;
+      const creatorId = typeof campaign.user_created === 'object' ? campaign.user_created?.id : campaign.user_created;
+      if (isAdmin || ownerId === userId || creatorId === userId) return campaign;
+      throw new CampaignAccessError(404, 'CAMPAIGN_NOT_FOUND');
+    }
+  } catch (error: any) {
+    if (error instanceof CampaignAccessError) throw error;
+    const st = error?.response?.status;
+    // 401 = проблема пользовательской сессии, пусть её разбирает вызывающий хендлер.
+    if (st === 401) throw new CampaignAccessError(503, 'CAMPAIGN_ACCESS_UNAVAILABLE');
+    // 403/404 своим токеном — не владелец. Для обычного пользователя это отказ.
+    if ((st === 403 || st === 404) && !isAdmin) {
+      throw new CampaignAccessError(404, 'CAMPAIGN_NOT_FOUND');
+    }
+    if (st !== 403 && st !== 404) throw new CampaignAccessError(503, 'CAMPAIGN_ACCESS_UNAVAILABLE');
+    // isAdmin + 403/404 → падаем в служебное чтение ниже
+  }
+
+  if (!isAdmin) throw new CampaignAccessError(404, 'CAMPAIGN_NOT_FOUND');
+
+  // Только для админа (не UI-пользователь): просмотр чужой кампании служебным
+  // токеном. adminTokenManager валидирует статический токен / входит логином.
+  try {
+    const serviceToken = await resolveServiceToken(userToken);
     const response = await directusApi.get(`/items/user_campaigns/${encodeURIComponent(campaignId)}`, {
       headers: { Authorization: `Bearer ${serviceToken}` },
       params: { fields: ['*'] },
     });
     const campaign = response.data?.data;
     if (!campaign) throw new CampaignAccessError(404, 'CAMPAIGN_NOT_FOUND');
-
-    const ownerId = typeof campaign.user_id === 'object' ? campaign.user_id?.id : campaign.user_id;
-    const creatorId = typeof campaign.user_created === 'object' ? campaign.user_created?.id : campaign.user_created;
-    if (!isAdmin && ownerId !== userId && creatorId !== userId) {
-      throw new CampaignAccessError(404, 'CAMPAIGN_NOT_FOUND');
-    }
     return campaign;
   } catch (error: any) {
     if (error instanceof CampaignAccessError) throw error;

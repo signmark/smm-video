@@ -134,3 +134,59 @@ describe('formatMskLabel', () => {
     expect(formatMskLabel('2026-07-28T07:00:00.000Z')).toContain('10:00');
   });
 });
+
+/**
+ * Календарная валидация (регрессия ревью 2026-07-28).
+ *
+ * `31.02.2027 в 12:00` нормализовалось в 03.03.2027: проверялось только `day <= 31`,
+ * а Date.UTC молча переносит несуществующую дату в соседний месяц. Публикация уезжала
+ * на другой день, и пользователь об этом не узнавал.
+ */
+describe('parseRussianSchedule — несуществующие даты', () => {
+  const now = new Date('2026-07-28T09:00:00Z');
+
+  it.each([
+    '31.02.2027 в 12:00',
+    '30.02.2027 в 12:00',
+    '31.04.2027 в 12:00',
+    '31.06.2027 в 12:00',
+    '31.09.2027 в 12:00',
+    '31.11.2027 в 12:00',
+  ])('%s не разбирается (возвращает null, а не другую дату)', (input) => {
+    expect(parseRussianSchedule(input, now)).toBeNull();
+  });
+
+  it('31 февраля словами тоже отклоняется', () => {
+    expect(parseRussianSchedule('31 февраля 2027 в 12:00', now)).toBeNull();
+  });
+
+  it('31 апреля словами отклоняется', () => {
+    expect(parseRussianSchedule('31 апреля 2027 в 10:00', now)).toBeNull();
+  });
+
+  it('29 февраля високосного года разбирается', () => {
+    const result = parseRussianSchedule('29.02.2028 в 12:00', now);
+    expect(result).not.toBeNull();
+    expect(result!.iso).toBe('2028-02-29T09:00:00.000Z'); // 12:00 МСК
+  });
+
+  it('29 февраля невисокосного года отклоняется', () => {
+    expect(parseRussianSchedule('29.02.2027 в 12:00', now)).toBeNull();
+  });
+
+  it('29 февраля словами: високосный — да, невисокосный — нет', () => {
+    expect(parseRussianSchedule('29 февраля 2028 в 12:00', now)).not.toBeNull();
+    expect(parseRussianSchedule('29 февраля 2027 в 12:00', now)).toBeNull();
+  });
+
+  it('1900 не високосный (правило столетий), 2000 високосный', () => {
+    expect(parseRussianSchedule('29.02.2100 в 12:00', now)).toBeNull();
+    expect(parseRussianSchedule('29.02.2400 в 12:00', now)).not.toBeNull();
+  });
+
+  it('последние дни месяцев остаются валидными', () => {
+    expect(parseRussianSchedule('31.12.2027 в 12:00', now)).not.toBeNull();
+    expect(parseRussianSchedule('30.04.2027 в 12:00', now)).not.toBeNull();
+    expect(parseRussianSchedule('28.02.2027 в 12:00', now)).not.toBeNull();
+  });
+});

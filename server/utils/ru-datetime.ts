@@ -126,11 +126,39 @@ function isBeforeDate(candidate: { year: number; month: number; day: number }, t
     < Date.UTC(today.year, today.month, today.day);
 }
 
-/** Ищет дату (без времени) по МСК. Возвращает null, если дата в тексте не названа. */
-function parseDatePart(text: string, todayMsk: MskParts): DateMatch | null {
+/** Сколько дней в месяце. День 0 следующего месяца — это последний день текущего. */
+function daysInMonth(year: number, month: number): number {
+  return new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+}
+
+/**
+ * Существует ли такая дата в календаре.
+ *
+ * Проверки `day <= 31` мало: Date.UTC молча нормализует несуществующую дату в
+ * соседний месяц, и «31.02.2027 в 12:00» превращалось в 3 марта 2027. Публикация
+ * уезжала на другой день, и пользователь об этом не узнавал.
+ */
+function isValidCalendarDate(year: number, month: number, day: number): boolean {
+  if (month < 0 || month > 11) return false;
+  if (day < 1) return false;
+  return day <= daysInMonth(year, month);
+}
+
+/**
+ * Результат разбора даты. `invalid` отличается от `none` намеренно: «даты не назвали»
+ * означает «возьми сегодняшнюю», а «назвали несуществующую» обязано провалить разбор
+ * целиком, иначе 31 февраля тихо станет каким-нибудь другим днём.
+ */
+type DateParse =
+  | { kind: 'none' }
+  | { kind: 'invalid' }
+  | { kind: 'date'; value: DateMatch };
+
+/** Ищет дату (без времени) по МСК. */
+function parseDatePart(text: string, todayMsk: MskParts): DateParse {
   for (const [stem, offset] of [['послезавтра', 2], ['завтра', 1], ['сегодня', 0]] as Array<[string, number]>) {
     const match = text.match(word(stem));
-    if (match) return { ...shiftDays(todayMsk, offset), matched: match[0] };
+    if (match) return { kind: 'date', value: { ...shiftDays(todayMsk, offset), matched: match[0] } };
   }
 
   // «05.08», «05.08.2026» — проверяем раньше словесной формы, чтобы точки не утекли в разбор времени
@@ -146,7 +174,11 @@ function parseDatePart(text: string, todayMsk: MskParts): DateMatch | null {
       }
       const candidate = { year, month, day };
       if (!numeric[3] && isBeforeDate(candidate, todayMsk)) candidate.year += 1;
-      return { ...candidate, matched: numeric[0] };
+      // Проверяем после подбора года: 29.02 валидно только в високосный.
+      if (!isValidCalendarDate(candidate.year, candidate.month, candidate.day)) {
+        return { kind: 'invalid' };
+      }
+      return { kind: 'date', value: { ...candidate, matched: numeric[0] } };
     }
   }
 
@@ -160,7 +192,10 @@ function parseDatePart(text: string, todayMsk: MskParts): DateMatch | null {
     const candidate = { year: explicitYear ?? todayMsk.year, month: monthIndex, day };
     // Без указания года «5 января», сказанное в декабре, означает следующий год.
     if (!explicitYear && isBeforeDate(candidate, todayMsk)) candidate.year += 1;
-    return { ...candidate, matched: match[0] };
+    if (!isValidCalendarDate(candidate.year, candidate.month, candidate.day)) {
+      return { kind: 'invalid' };
+    }
+    return { kind: 'date', value: { ...candidate, matched: match[0] } };
   }
 
   // «в понедельник», «во вторник» — ближайший будущий такой день
@@ -170,10 +205,10 @@ function parseDatePart(text: string, todayMsk: MskParts): DateMatch | null {
     if (!match) continue;
     let delta = (weekday - currentWeekday + 7) % 7;
     if (delta === 0) delta = 7; // «в понедельник», сказанное в понедельник, — это следующий
-    return { ...shiftDays(todayMsk, delta), matched: match[0] };
+    return { kind: 'date', value: { ...shiftDays(todayMsk, delta), matched: match[0] } };
   }
 
-  return null;
+  return { kind: 'none' };
 }
 
 /** Ищет час и минуту. Возвращает null, если время в тексте не названо. */
@@ -250,7 +285,12 @@ export function parseRussianSchedule(input: string, now: Date = new Date()): Par
   }
 
   const todayMsk = toMskParts(now);
-  const datePart = parseDatePart(text, todayMsk);
+  const parsedDate = parseDatePart(text, todayMsk);
+
+  // Названа несуществующая дата — это отказ, а не повод молча взять соседний день.
+  if (parsedDate.kind === 'invalid') return null;
+
+  const datePart = parsedDate.kind === 'date' ? parsedDate.value : null;
 
   // Дату вырезаем, иначе «05.08.2026» прочитается разбором времени как 05:08.
   const textForTime = datePart ? text.replace(datePart.matched, ' ') : text;

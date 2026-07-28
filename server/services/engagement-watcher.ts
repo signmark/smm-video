@@ -10,6 +10,12 @@
  * памяти процесса. При перезапуске оно теряется — и это осознанный выбор: первый цикл
  * после старта только запоминает baseline и ничего не шлёт, поэтому рестарт приводит
  * к молчанию, а не к пачке уведомлений о старых событиях.
+ *
+ * Состояние ведётся ПО ПОЛУЧАТЕЛЯМ, а не по каналам: один канал может быть подключён
+ * к нескольким кампаниям, и каждая должна получить своё уведомление об одном и том же
+ * событии. Опрос канала при этом остаётся один на цикл. Подтверждается состояние
+ * только после успешной доставки — иначе временная ошибка Telegram съедала бы событие
+ * навсегда.
  */
 
 import { log } from '../utils/logger';
@@ -37,8 +43,22 @@ interface PostState {
   views: number;
 }
 
-/** channelId → platform_post_id → последнее увиденное состояние. */
+/**
+ * `получатель::канал` → platform_post_id → последнее ПОДТВЕРЖДЁННОЕ состояние.
+ *
+ * Ключ обязан включать получателя. Раньше состояние жило по одному channelId, и если
+ * канал был подключён к двум кампаниям, первая забирала событие и переписывала
+ * состояние, а вторая на том же цикле видела дельту 0 и не получала ничего.
+ *
+ * «Подтверждённое» — значит доставленное. Состояние двигается только после успешной
+ * отправки: раньше checkpoint обновлялся до доставки, и одна временная ошибка
+ * Telegram съедала уведомление навсегда.
+ */
 const seenState = new Map<string, Map<string, PostState>>();
+
+function stateKey(recipientKey: string, channelId: string): string {
+  return `${recipientKey}::${channelId}`;
+}
 
 let timer: NodeJS.Timeout | null = null;
 let running = false;
@@ -72,30 +92,43 @@ export interface EngagementEvent {
   delta: number;
 }
 
+/** Состояние, посчитанное но ещё не подтверждённое: применяется только после доставки. */
+export interface PendingState {
+  recipientKey: string;
+  channelId: string;
+  state: Map<string, PostState>;
+}
+
 /**
- * Сравнивает свежую динамику с запомненным состоянием и возвращает, о чём стоит сообщить.
- * Побочный эффект — обновление состояния: событие про один и тот же рост не повторится.
+ * Сравнивает свежую динамику с подтверждённым состоянием получателя.
  *
- * Экспортируется ради тестов: это единственное место, где живёт вся логика решения.
+ * Побочных эффектов НЕТ: возвращает и события, и новое состояние, которое вызывающий
+ * обязан зафиксировать через `commitEvents` — но только после того, как уведомление
+ * действительно доставлено. Пока не зафиксировано, следующий цикл посчитает те же
+ * события заново, то есть временный сбой Telegram больше не съедает уведомление.
  */
-export function diffAndUpdateState(
+export function computeEvents(
+  recipientKey: string,
   channelId: string,
   posts: PostDynamics[],
   options?: { spikePercent?: number; minViews?: number },
-): EngagementEvent[] {
+): { events: EngagementEvent[]; pending: PendingState } {
   const spikePercent = options?.spikePercent ?? VIEWS_SPIKE_PERCENT;
   const minViews = options?.minViews ?? MIN_VIEWS_FOR_SPIKE;
 
-  const isFirstRun = !seenState.has(channelId);
-  const channelState = seenState.get(channelId) || new Map<string, PostState>();
+  const key = stateKey(recipientKey, channelId);
+  const isFirstRun = !seenState.has(key);
+  const confirmed = seenState.get(key);
+  // Копия, а не сам Map: до подтверждения трогать состояние нельзя.
+  const next = new Map<string, PostState>(confirmed ?? []);
   const events: EngagementEvent[] = [];
 
   for (const post of posts) {
     const current = latestPoint(post);
     if (!current) continue;
 
-    const previous = channelState.get(post.platform_post_id);
-    channelState.set(post.platform_post_id, { comments: current.comments, views: current.views });
+    const previous = confirmed?.get(post.platform_post_id);
+    next.set(post.platform_post_id, { comments: current.comments, views: current.views });
 
     // Первый прогон (или первый раз видим пост) — только запоминаем baseline.
     if (isFirstRun || !previous) continue;
@@ -113,7 +146,26 @@ export function diffAndUpdateState(
     }
   }
 
-  seenState.set(channelId, channelState);
+  return { events, pending: { recipientKey, channelId, state: next } };
+}
+
+/** Подтверждает состояние получателя. Вызывается только после успешной доставки. */
+export function commitEvents(pending: PendingState): void {
+  seenState.set(stateKey(pending.recipientKey, pending.channelId), pending.state);
+}
+
+/**
+ * Посчитать и сразу подтвердить. Годится там, где доставки нет (запоминание baseline)
+ * и в тестах; в рабочем цикле подтверждение всегда идёт отдельно, после отправки.
+ */
+export function diffAndUpdateState(
+  recipientKey: string,
+  channelId: string,
+  posts: PostDynamics[],
+  options?: { spikePercent?: number; minViews?: number },
+): EngagementEvent[] {
+  const { events, pending } = computeEvents(recipientKey, channelId, posts, options);
+  commitEvents(pending);
   return events;
 }
 
@@ -226,24 +278,50 @@ export async function runEngagementCheck(): Promise<{
   let checked = 0;
   let notified = 0;
 
+  /**
+   * Динамика канала за цикл забирается ОДИН раз, даже если канал подключён к
+   * нескольким кампаниям: опрос общий, а состояние и доставка — на каждого
+   * получателя свои.
+   */
+  const dynamicsCache = new Map<string, PostDynamics[] | null>();
+  async function loadChannel(channelId: string): Promise<PostDynamics[] | null> {
+    if (dynamicsCache.has(channelId)) return dynamicsCache.get(channelId)!;
+    let posts: PostDynamics[] | null = null;
+    try {
+      const dynamics = await getChannelPostsDynamics(channelId, { days: DYNAMICS_DAYS });
+      posts = dynamics?.posts?.length ? dynamics.posts : null;
+    } catch (err: any) {
+      log(`[ENGAGEMENT] Канал ${channelId}: ${err.message}`, 'engagement', 'warn');
+    }
+    dynamicsCache.set(channelId, posts);
+    return posts;
+  }
+
   for (const campaign of campaigns) {
     const channels = getCampaignAnalyticsChannels(campaign.social_media_settings, monitoredIndex);
     if (channels.length === 0 || !campaign.user_id) continue;
 
     checked++;
+
+    // Получатель — кампания: у одного пользователя их может быть несколько, и каждая
+    // ведёт свой счёт по своим каналам.
+    const recipientKey = campaign.id;
     const events: EngagementEvent[] = [];
+    const pendings: PendingState[] = [];
 
     for (const channel of channels) {
-      try {
-        const dynamics = await getChannelPostsDynamics(channel.channelId, { days: DYNAMICS_DAYS });
-        if (!dynamics?.posts?.length) continue;
-        events.push(...diffAndUpdateState(channel.channelId, dynamics.posts));
-      } catch (err: any) {
-        log(`[ENGAGEMENT] Канал ${channel.channelId}: ${err.message}`, 'engagement', 'warn');
-      }
+      const posts = await loadChannel(channel.channelId);
+      if (!posts) continue;
+      const result = computeEvents(recipientKey, channel.channelId, posts);
+      events.push(...result.events);
+      pendings.push(result.pending);
     }
 
-    if (events.length === 0) continue;
+    // Событий нет — подтверждаем сразу: это запоминание baseline, доставлять нечего.
+    if (events.length === 0) {
+      pendings.forEach(commitEvents);
+      continue;
+    }
 
     // Комментарии важнее всплеска просмотров: на них можно ответить.
     const ordered = [
@@ -252,15 +330,29 @@ export async function runEngagementCheck(): Promise<{
     ].slice(0, MAX_NOTIFICATIONS_PER_CAMPAIGN);
 
     const campaignName = campaign.name || 'Кампания';
-    const channel = await notifyUser({
-      userId: campaign.user_id,
-      telegramText: buildNotificationText(campaignName, ordered),
-    });
 
-    if (channel !== 'none') {
-      notified++;
-      log(`[ENGAGEMENT] Кампания ${campaign.id}: отправлено ${ordered.length} событий через ${channel}`, 'engagement');
+    // Сбой доставки одному получателю не должен обрывать цикл: остальные кампании
+    // ждут своих уведомлений о тех же самых событиях.
+    let delivery: string;
+    try {
+      delivery = await notifyUser({
+        userId: campaign.user_id,
+        telegramText: buildNotificationText(campaignName, ordered),
+      });
+    } catch (err: any) {
+      log(`[ENGAGEMENT] Кампания ${campaign.id}: доставка упала — ${err.message}`, 'engagement', 'warn');
+      continue; // без подтверждения: событие повторится на следующем цикле
     }
+
+    if (delivery === 'none') {
+      // Не доставлено — состояние не двигаем, чтобы событие не пропало насовсем.
+      log(`[ENGAGEMENT] Кампания ${campaign.id}: уведомление не доставлено, повторим позже`, 'engagement', 'warn');
+      continue;
+    }
+
+    pendings.forEach(commitEvents);
+    notified++;
+    log(`[ENGAGEMENT] Кампания ${campaign.id}: отправлено ${ordered.length} событий через ${delivery}`, 'engagement');
   }
 
   return {

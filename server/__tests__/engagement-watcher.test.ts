@@ -44,15 +44,15 @@ beforeEach(() => {
 
 describe('diffAndUpdateState — первый прогон', () => {
   it('на первом проходе молчит: запоминает baseline, не уведомляет о старых постах', () => {
-    const events = diffAndUpdateState('channel-1', [
+    const events = diffAndUpdateState('campaign-1', 'channel-1', [
       post('1', [{ views: 5000, comments: 42 }]),
     ]);
     expect(events).toEqual([]);
   });
 
   it('пост, впервые увиденный на втором проходе, тоже не даёт события', () => {
-    diffAndUpdateState('channel-1', [post('1', [{ views: 1000, comments: 0 }])]);
-    const events = diffAndUpdateState('channel-1', [
+    diffAndUpdateState('campaign-1', 'channel-1', [post('1', [{ views: 1000, comments: 0 }])]);
+    const events = diffAndUpdateState('campaign-1', 'channel-1', [
       post('1', [{ views: 1000, comments: 0 }]),
       post('2', [{ views: 9000, comments: 100 }]), // новый пост с кучей комментариев
     ]);
@@ -62,8 +62,8 @@ describe('diffAndUpdateState — первый прогон', () => {
 
 describe('diffAndUpdateState — комментарии', () => {
   it('рост числа комментариев даёт событие с разницей, а не с полным числом', () => {
-    diffAndUpdateState('channel-1', [post('1', [{ views: 1000, comments: 3 }])]);
-    const events = diffAndUpdateState('channel-1', [post('1', [{ views: 1000, comments: 8 }])]);
+    diffAndUpdateState('campaign-1', 'channel-1', [post('1', [{ views: 1000, comments: 3 }])]);
+    const events = diffAndUpdateState('campaign-1', 'channel-1', [post('1', [{ views: 1000, comments: 8 }])]);
 
     expect(events).toHaveLength(1);
     expect(events[0].kind).toBe('comments');
@@ -71,16 +71,16 @@ describe('diffAndUpdateState — комментарии', () => {
   });
 
   it('одно и то же число комментариев не уведомляет повторно', () => {
-    diffAndUpdateState('channel-1', [post('1', [{ views: 1000, comments: 3 }])]);
-    diffAndUpdateState('channel-1', [post('1', [{ views: 1000, comments: 8 }])]);
-    const third = diffAndUpdateState('channel-1', [post('1', [{ views: 1000, comments: 8 }])]);
+    diffAndUpdateState('campaign-1', 'channel-1', [post('1', [{ views: 1000, comments: 3 }])]);
+    diffAndUpdateState('campaign-1', 'channel-1', [post('1', [{ views: 1000, comments: 8 }])]);
+    const third = diffAndUpdateState('campaign-1', 'channel-1', [post('1', [{ views: 1000, comments: 8 }])]);
 
     expect(third).toEqual([]);
   });
 
   it('удалённые комментарии не превращаются в отрицательное событие', () => {
-    diffAndUpdateState('channel-1', [post('1', [{ views: 1000, comments: 10 }])]);
-    const events = diffAndUpdateState('channel-1', [post('1', [{ views: 1000, comments: 4 }])]);
+    diffAndUpdateState('campaign-1', 'channel-1', [post('1', [{ views: 1000, comments: 10 }])]);
+    const events = diffAndUpdateState('campaign-1', 'channel-1', [post('1', [{ views: 1000, comments: 4 }])]);
 
     expect(events).toEqual([]);
   });
@@ -88,8 +88,8 @@ describe('diffAndUpdateState — комментарии', () => {
 
 describe('diffAndUpdateState — охват', () => {
   it('рост выше порога даёт событие с процентом', () => {
-    diffAndUpdateState('channel-1', [post('1', [{ views: 1000, comments: 0 }])]);
-    const events = diffAndUpdateState('channel-1', [post('1', [{ views: 1500, comments: 0 }])]);
+    diffAndUpdateState('campaign-1', 'channel-1', [post('1', [{ views: 1000, comments: 0 }])]);
+    const events = diffAndUpdateState('campaign-1', 'channel-1', [post('1', [{ views: 1500, comments: 0 }])]);
 
     expect(events).toHaveLength(1);
     expect(events[0].kind).toBe('views');
@@ -97,23 +97,23 @@ describe('diffAndUpdateState — охват', () => {
   });
 
   it('рост ниже порога молчит', () => {
-    diffAndUpdateState('channel-1', [post('1', [{ views: 1000, comments: 0 }])]);
-    const events = diffAndUpdateState('channel-1', [post('1', [{ views: 1100, comments: 0 }])]);
+    diffAndUpdateState('campaign-1', 'channel-1', [post('1', [{ views: 1000, comments: 0 }])]);
+    const events = diffAndUpdateState('campaign-1', 'channel-1', [post('1', [{ views: 1100, comments: 0 }])]);
 
     expect(events).toEqual([]);
   });
 
   it('пост с малым числом просмотров не всплывает: +100% от 10 просмотров — шум', () => {
-    diffAndUpdateState('channel-1', [post('1', [{ views: 10, comments: 0 }])]);
-    const events = diffAndUpdateState('channel-1', [post('1', [{ views: 20, comments: 0 }])]);
+    diffAndUpdateState('campaign-1', 'channel-1', [post('1', [{ views: 10, comments: 0 }])]);
+    const events = diffAndUpdateState('campaign-1', 'channel-1', [post('1', [{ views: 20, comments: 0 }])]);
 
     expect(events).toEqual([]);
   });
 
   it('порог и минимум просмотров настраиваются', () => {
-    diffAndUpdateState('channel-1', [post('1', [{ views: 100, comments: 0 }])], { minViews: 50 });
+    diffAndUpdateState('campaign-1', 'channel-1', [post('1', [{ views: 100, comments: 0 }])], { minViews: 50 });
     const events = diffAndUpdateState(
-      'channel-1',
+      'campaign-1', 'channel-1',
       [post('1', [{ views: 110, comments: 0 }])],
       { spikePercent: 5, minViews: 50 },
     );
@@ -125,9 +125,9 @@ describe('diffAndUpdateState — охват', () => {
 
 describe('diffAndUpdateState — изоляция каналов', () => {
   it('состояние одного канала не влияет на другой', () => {
-    diffAndUpdateState('channel-1', [post('1', [{ views: 1000, comments: 0 }])]);
+    diffAndUpdateState('campaign-1', 'channel-1', [post('1', [{ views: 1000, comments: 0 }])]);
     // channel-2 видим впервые — молчит, даже если id поста совпадает
-    const events = diffAndUpdateState('channel-2', [post('1', [{ views: 9000, comments: 50 }])]);
+    const events = diffAndUpdateState('campaign-1', 'channel-2', [post('1', [{ views: 9000, comments: 50 }])]);
 
     expect(events).toEqual([]);
   });

@@ -372,10 +372,11 @@ export default function PricingPage() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
+        // Сумму не шлём: её считает сервер по тарифу и промокоду. Раньше `amount`
+        // отсюда принимался как есть, и подделанное тело давало полный тариф за рубль.
         body: JSON.stringify({
           plan: selectedPlan.name,
           promoCode: appliedPromo?.code || null,
-          amount: finalPrice || selectedPlan.price,
         }),
       });
 

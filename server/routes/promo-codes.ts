@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { validatePromoCode } from '../services/promo-validation';
 
 const router = Router();
 
@@ -262,31 +263,16 @@ router.post('/promo/validate', async (req: Request, res: Response) => {
     const meData = await meRes.json();
     const userId = meData.data?.id;
 
-    const codeRes = await fetch(
-      `${DIRECTUS_URL}/items/promo_codes?filter[code][_eq]=${encodeURIComponent(code.toUpperCase().trim())}&limit=1`,
-      { headers: { 'Authorization': `Bearer ${ADMIN_TOKEN}` } }
-    );
-    const codeData = await codeRes.json();
-    const promo = codeData.data?.[0];
-
-    if (!promo) return res.status(404).json({ valid: false, error: 'Промокод не найден' });
-    if (!promo.is_active) return res.status(400).json({ valid: false, error: 'Промокод деактивирован' });
-    if (promo.expires_at && new Date(promo.expires_at) < new Date()) {
-      return res.status(400).json({ valid: false, error: 'Срок действия промокода истёк' });
-    }
-    if (promo.max_uses !== null && promo.used_count >= promo.max_uses) {
-      return res.status(400).json({ valid: false, error: 'Промокод исчерпал лимит использований' });
+    // Те же правила, что применяются при создании платежа (services/promo-validation.ts).
+    // Дублировать их здесь нельзя: разошедшись, витрина покажет скидку, которой платёж
+    // не даст — или наоборот.
+    const check = await validatePromoCode(code, userId);
+    if (!check.valid) {
+      const status = check.reason === 'not-found' ? 404 : 400;
+      return res.status(status).json({ valid: false, error: check.message });
     }
 
-    const usesRes = await fetch(
-      `${DIRECTUS_URL}/items/promo_code_uses?filter[promo_code_id][_eq]=${promo.id}&filter[user_id][_eq]=${userId}&limit=1`,
-      { headers: { 'Authorization': `Bearer ${ADMIN_TOKEN}` } }
-    );
-    const usesData = await usesRes.json();
-    if (usesData.data?.length > 0) {
-      return res.status(400).json({ valid: false, error: 'Вы уже использовали этот промокод' });
-    }
-
+    const promo = check.promo;
     return res.json({
       valid: true,
       promo: {

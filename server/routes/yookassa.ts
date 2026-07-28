@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { sendPurchasePostback } from '../services/partner-postback';
 import { resolvePlanPrice, PlanPriceKey } from '../services/plan-pricing';
+import { validatePromoCode, applyPromoDiscount } from '../services/promo-validation';
 
 const router = Router();
 
@@ -11,6 +12,9 @@ const DIRECTUS_URL = process.env.DIRECTUS_URL || '';
 const ADMIN_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN || '';
 
 const YOOKASSA_API = 'https://api.yookassa.ru/v3/payments';
+
+/** Единственная поддерживаемая валюта. Платёж в любой другой к активации не принимается. */
+const CURRENCY = 'RUB';
 
 // Русское название тарифа → ключ для резолвера цены (pro/basic).
 // Сумма платежа больше НЕ хардкодится здесь: базовую цену берём из resolvePlanPrice
@@ -115,7 +119,8 @@ router.post('/payments/create', async (req: Request, res: Response) => {
   }
   const userToken = authHeader.substring(7);
 
-  const { plan, amount: clientAmount } = req.body as { plan: string; amount?: number };
+  // `amount` из тела запроса сознательно НЕ читается: сумма считается сервером.
+  const { plan, promoCode } = req.body as { plan: string; promoCode?: string | null };
   if (!plan || !PLAN_KEYS[plan]) {
     return res.status(400).json({ error: 'Неверный тариф' });
   }
@@ -148,30 +153,56 @@ router.post('/payments/create', async (req: Request, res: Response) => {
       }
     } catch (_) {}
 
-    // Базовая (фактическая) цена тарифа — из общего резолвера, как на витрине.
-    // Сумму с фронта (с учётом промокода) берём, только если она не больше базовой.
+    // Цена — только серверная. Базовая из общего резолвера (та же, что на витрине),
+    // скидка — только из промокода, перепроверенного здесь и сейчас. Сумма с фронта
+    // не участвует в расчёте вообще: клиентская проверка не может быть границей
+    // безопасности, иначе `amount: 1` покупает полный тариф.
     const baseAmount = (await resolvePlanPrice(PLAN_KEYS[plan])).price;
-    const finalAmount = (clientAmount && clientAmount > 0 && clientAmount <= baseAmount)
-      ? clientAmount
-      : baseAmount;
+
+    let appliedPromo: { id: string; code: string; percent: number } | null = null;
+    let finalAmount = baseAmount;
+
+    if (promoCode) {
+      const check = await validatePromoCode(String(promoCode), userId);
+      if (!check.valid) {
+        // Невалидный код не «просто не даёт скидку» молча: пользователь рассчитывал
+        // на одну сумму, поэтому платёж не создаём и объясняем причину.
+        return res.status(400).json({ error: check.message, promoRejected: true });
+      }
+      const priced = applyPromoDiscount(baseAmount, check.promo);
+      finalAmount = priced.amount;
+      if (priced.discountPercent > 0) {
+        appliedPromo = { id: check.promo.id, code: check.promo.code, percent: priced.discountPercent };
+      }
+    }
+
     const amount = finalAmount.toFixed(2);
 
     const payment = await yookassaRequest('POST', '', {
-      amount: { value: amount, currency: 'RUB' },
+      amount: { value: amount, currency: CURRENCY },
       capture: true,
       confirmation: {
         type: 'redirect',
         return_url: returnUrl,
       },
       description: `Подписка SMM Manager — ${plan}`,
-      metadata: { user_id: userId, plan },
+      // Метаданные — это то, с чем платёж потом сверяется при активации: план, сумма,
+      // валюта и промокод, зафиксированные сервером в момент создания. ЮКасса отдаёт
+      // их обратно неизменными, подделать их, минуя эту ручку, нельзя.
+      metadata: {
+        user_id: userId,
+        plan,
+        amount,
+        currency: CURRENCY,
+        ...(appliedPromo ? { promo_code: appliedPromo.code, promo_id: appliedPromo.id } : {}),
+      },
       receipt: {
         customer: { email: userEmail || 'noreply@smm.omemo.tech' },
         items: [
           {
             description: `Подписка SMM Manager — ${plan}`,
             quantity: '1.00',
-            amount: { value: amount, currency: 'RUB' },
+            amount: { value: amount, currency: CURRENCY },
             vat_code: 1,
             payment_mode: 'full_payment',
             payment_subject: 'service',
@@ -180,7 +211,11 @@ router.post('/payments/create', async (req: Request, res: Response) => {
       },
     });
 
-    console.log(`[yookassa] Платёж создан: id=${payment.id} userId=${userId} plan=${plan}`);
+    console.log(
+      `[yookassa] Платёж создан: id=${payment.id} userId=${userId} plan=${plan} `
+      + `amount=${amount} ${CURRENCY} base=${baseAmount}`
+      + (appliedPromo ? ` promo=${appliedPromo.code} -${appliedPromo.percent}%` : ''),
+    );
 
     return res.json({
       paymentId: payment.id,

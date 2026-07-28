@@ -3,6 +3,11 @@ import { v4 as uuidv4 } from 'uuid';
 import { sendPurchasePostback } from '../services/partner-postback';
 import { resolvePlanPrice, PlanPriceKey } from '../services/plan-pricing';
 import { validatePromoCode, applyPromoDiscount } from '../services/promo-validation';
+import {
+  claimPaymentActivation,
+  completePaymentActivation,
+  releasePaymentActivation,
+} from '../services/payment-activation-ledger';
 
 const router = Router();
 
@@ -227,7 +232,113 @@ router.post('/payments/create', async (req: Request, res: Response) => {
   }
 });
 
-// POST /api/payments/:paymentId/activate — активация подписки после успешного платежа (резерв для webhook)
+/**
+ * Проверяет платёж, полученный из ЮКассы, перед выдачей подписки.
+ *
+ * Смотрим только на объект, повторно запрошенный у ЮКассы, — никогда на тело
+ * входящего запроса. Сумма и валюта сверяются с тем, что сервер сам записал в
+ * metadata при создании платежа: без этой сверки оплата «на рубль» по чужому
+ * сценарию всё ещё давала бы полный тариф.
+ */
+function verifyPayment(payment: any): { ok: true } | { ok: false; status: number; error: string } {
+  if (payment?.status !== 'succeeded' || payment?.paid !== true) {
+    return { ok: false, status: 400, error: 'Платёж не завершён' };
+  }
+
+  const meta = payment.metadata || {};
+  if (!meta.user_id || !meta.plan) {
+    return { ok: false, status: 400, error: 'Нет данных пользователя в платеже' };
+  }
+  if (!PLAN_KEYS[meta.plan]) {
+    return { ok: false, status: 400, error: 'Неизвестный тариф в платеже' };
+  }
+
+  const paidCurrency = payment.amount?.currency;
+  const expectedCurrency = meta.currency || CURRENCY;
+  if (paidCurrency !== expectedCurrency || paidCurrency !== CURRENCY) {
+    return { ok: false, status: 400, error: 'Валюта платежа не совпадает' };
+  }
+
+  // Платежи, созданные до появления metadata.amount, сверять не с чем — для них
+  // проверка суммы пропускается, всё остальное проверяется как обычно.
+  if (meta.amount !== undefined && meta.amount !== null && meta.amount !== '') {
+    const paid = Number(payment.amount?.value);
+    const expected = Number(meta.amount);
+    if (!Number.isFinite(paid) || !Number.isFinite(expected) || Math.abs(paid - expected) > 0.01) {
+      return { ok: false, status: 400, error: 'Сумма платежа не совпадает с заказанной' };
+    }
+  }
+
+  return { ok: true };
+}
+
+/**
+ * Единственный путь выдачи подписки по платежу — и для `/activate`, и для webhook.
+ * Захват платежа в журнале идёт ДО активации: повторный вызов не двигает expire_date,
+ * не шлёт второе уведомление и не дублирует partner postback.
+ */
+async function activateVerifiedPayment(
+  payment: any,
+  source: 'activate' | 'webhook',
+): Promise<{ status: number; body: Record<string, any> }> {
+  const verdict = verifyPayment(payment);
+  if (!verdict.ok) {
+    return { status: verdict.status, body: { error: verdict.error, status: payment?.status } };
+  }
+
+  const meta = payment.metadata;
+  const paymentId = payment.id;
+
+  const claim = await claimPaymentActivation({
+    paymentId,
+    userId: meta.user_id,
+    plan: meta.plan,
+    amount: String(payment.amount?.value ?? ''),
+    currency: String(payment.amount?.currency ?? CURRENCY),
+    source,
+  });
+
+  if (!claim.claimed) {
+    console.log(`[yookassa/${source}] Платёж ${paymentId} уже обработан — активация пропущена`);
+    return { status: 200, body: { ok: true, plan: meta.plan, alreadyProcessed: true } };
+  }
+
+  try {
+    await activateSubscription(meta.user_id, meta.plan);
+  } catch (err) {
+    // Подписку выдать не удалось — снимаем захват, иначе человек, который заплатил,
+    // упрётся в «уже обработано» из-за нашей же ошибки.
+    await releasePaymentActivation(claim.recordId);
+    throw err;
+  }
+
+  await completePaymentActivation(claim.recordId);
+
+  // Postback — после отметки об обработке: повторный запрос сюда уже не дойдёт.
+  try {
+    const userResp = await fetch(
+      `${DIRECTUS_URL}/users/${meta.user_id}?fields=omemo_partner_code,email,telegram_chat_id`,
+      { headers: { 'Authorization': `Bearer ${ADMIN_TOKEN}` } },
+    );
+    if (userResp.ok) {
+      const { data: ud } = await userResp.json();
+      if (ud?.omemo_partner_code) {
+        sendPurchasePostback({
+          partnerCode: ud.omemo_partner_code,
+          userId: meta.user_id,
+          paymentId,
+          amount: parseFloat(payment.amount?.value || '0'),
+          email: ud.email,
+          telegramId: ud.telegram_chat_id,
+        }).catch(() => {});
+      }
+    }
+  } catch (_) {}
+
+  return { status: 200, body: { ok: true, plan: meta.plan } };
+}
+
+// POST /api/payments/:paymentId/activate — активация подписки после успешного платежа
 router.post('/payments/:paymentId/activate', async (req: Request, res: Response) => {
   if (!isConfigured()) return res.status(503).json({ error: 'ЮКасса не настроена' });
 
@@ -239,39 +350,8 @@ router.post('/payments/:paymentId/activate', async (req: Request, res: Response)
 
   try {
     const payment = await yookassaRequest('GET', `/${paymentId}`);
-    if (payment.status !== 'succeeded' || !payment.paid) {
-      return res.status(400).json({ error: 'Платёж не завершён', status: payment.status });
-    }
-
-    const metaUserId = payment.metadata?.user_id;
-    const metaPlan = payment.metadata?.plan;
-    if (!metaUserId || !metaPlan) {
-      return res.status(400).json({ error: 'Нет данных пользователя в платеже' });
-    }
-
-    await activateSubscription(metaUserId, metaPlan);
-
-    // Отправляем purchase postback если у пользователя есть партнёрский код
-    try {
-      const userResp2 = await fetch(`${DIRECTUS_URL}/users/${metaUserId}?fields=omemo_partner_code,email,telegram_chat_id`, {
-        headers: { 'Authorization': `Bearer ${ADMIN_TOKEN}` },
-      });
-      if (userResp2.ok) {
-        const { data: ud } = await userResp2.json();
-        if (ud?.omemo_partner_code) {
-          sendPurchasePostback({
-            partnerCode: ud.omemo_partner_code,
-            userId: metaUserId,
-            paymentId,
-            amount: parseFloat(payment.amount?.value || '0'),
-            email: ud.email,
-            telegramId: ud.telegram_chat_id,
-          }).catch(() => {});
-        }
-      }
-    } catch (_) {}
-
-    return res.json({ ok: true, plan: metaPlan });
+    const result = await activateVerifiedPayment(payment, 'activate');
+    return res.status(result.status).json(result.body);
   } catch (err: any) {
     console.error('[yookassa/activate] Ошибка:', err?.message);
     return res.status(500).json({ error: err?.message });
@@ -316,51 +396,23 @@ router.post('/yookassa/webhook', async (req: Request, res: Response) => {
 
     console.log(`[yookassa/webhook] Событие: ${eventType} paymentId=${paymentObj?.id} status=${paymentObj?.status}`);
 
-    if (eventType === 'payment.succeeded' && paymentObj?.paid === true) {
-      const paymentId = paymentObj.id;
-      const metaUserId = paymentObj.metadata?.user_id;
-      const metaPlan = paymentObj.metadata?.plan;
-
-      if (!metaUserId || !metaPlan) {
-        console.warn('[yookassa/webhook] Нет metadata.user_id или metadata.plan');
-        return res.json({ ok: true });
-      }
-
+    if (eventType === 'payment.succeeded' && paymentObj?.id) {
       if (!isConfigured()) {
         console.warn('[yookassa/webhook] ЮКасса не настроена, пропускаем активацию');
         return res.json({ ok: true });
       }
 
-      // Верифицируем платёж через API (защита от фейковых вебхуков)
-      const verified = await yookassaRequest('GET', `/${paymentId}`);
-      if (verified.status !== 'succeeded' || !verified.paid) {
-        console.warn(`[yookassa/webhook] Платёж ${paymentId} не подтверждён (status=${verified.status})`);
-        return res.json({ ok: true });
+      // Единственное, что берём из тела запроса, — идентификатор платежа. Всё
+      // остальное (сумма, валюта, metadata, статус) читаем из объекта, повторно
+      // запрошенного у ЮКассы: тело вебхука приходит извне и доверия не имеет.
+      const verified = await yookassaRequest('GET', `/${paymentObj.id}`);
+      const result = await activateVerifiedPayment(verified, 'webhook');
+      if (result.status !== 200) {
+        console.warn(`[yookassa/webhook] Платёж ${paymentObj.id} отклонён: ${result.body.error}`);
       }
-
-      await activateSubscription(metaUserId, metaPlan);
-
-      // Отправляем purchase postback если у пользователя есть партнёрский код
-      try {
-        const userResp2 = await fetch(`${DIRECTUS_URL}/users/${metaUserId}?fields=omemo_partner_code,email,telegram_chat_id`, {
-          headers: { 'Authorization': `Bearer ${ADMIN_TOKEN}` },
-        });
-        if (userResp2.ok) {
-          const { data: ud } = await userResp2.json();
-          if (ud?.omemo_partner_code) {
-            sendPurchasePostback({
-              partnerCode: ud.omemo_partner_code,
-              userId: metaUserId,
-              paymentId,
-              amount: parseFloat(paymentObj.amount?.value || '0'),
-              email: ud.email,
-              telegramId: ud.telegram_chat_id,
-            }).catch(() => {});
-          }
-        }
-      } catch (_) {}
     }
 
+    // ЮКассе всегда отвечаем 200: иначе она будет ретраить уже обработанный платёж.
     return res.json({ ok: true });
   } catch (err: any) {
     console.error('[yookassa/webhook] Ошибка:', err?.message);

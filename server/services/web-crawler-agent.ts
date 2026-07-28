@@ -5,6 +5,25 @@ import { execSync } from 'child_process';
 import { aiService } from './ai-service';
 
 // Puppeteer опционален — если не установлен, работаем через Axios
+import { resolveSafeUrl } from '../utils/ssrf-guard';
+import { safeGet } from "../utils/safe-http";
+
+/**
+ * Браузерный обход выключен по умолчанию.
+ *
+ * Chromium резолвит имена сам, поэтому наша предварительная проверка адреса на него не
+ * распространяется: домен, прошедший валидацию, внутри браузера может отрезолвиться в
+ * 127.0.0.1 или 169.254.169.254 — и то же касается любого подресурса и редиректа на
+ * странице. Перехват запросов (`setRequestInterception`) отдаёт URL, но не адрес, в
+ * который он развернётся, поэтому rebinding им не закрывается. Надёжной изоляции без
+ * пиннинга резолвера всего браузера нет, а значит preflight-проверка была бы
+ * самообманом: включать её и считать защищённым нельзя.
+ *
+ * Пока изоляция не сделана, обход идёт HTTP-клиентом с пиннингом адреса и проверкой
+ * каждого редиректа. JS на странице при этом не исполняется — осознанный размен.
+ */
+const BROWSER_CRAWL_ENABLED = process.env.WEB_CRAWLER_BROWSER_ENABLED === 'true';
+
 let puppeteer: any = null;
 try {
   puppeteer = (await import('puppeteer')).default;
@@ -59,8 +78,35 @@ export class WebCrawlerAgent {
   async crawlSite(options: CrawlerOptions): Promise<CrawlerResult> {
     const startTime = Date.now();
 
-    // Если Puppeteer не установлен — сразу Axios fallback
-    if (!puppeteer) {
+    // Защита стоит ЗДЕСЬ, а не в роуте: у агента есть и другие вызывающие
+    // (ai-service, autonomous-ai, campaigns), и проверка только на входе HTTP их
+    // не покрывала бы.
+    const urlCheck = await resolveSafeUrl(options.url);
+    if (!urlCheck.ok) {
+      return {
+        success: false,
+        url: options.url,
+        error: `Некорректный или заблокированный URL (${urlCheck.reason})`,
+        loadTime: Date.now() - startTime,
+      } as CrawlerResult;
+    }
+
+    // Адрес формы логина проверяется отдельно: раньше он не проверялся вовсе, и через
+    // него можно было увести браузер на metadata-сервис.
+    if (options.needsAuth && options.credentials?.loginUrl) {
+      const loginCheck = await resolveSafeUrl(options.credentials.loginUrl);
+      if (!loginCheck.ok) {
+        return {
+          success: false,
+          url: options.url,
+          error: `Некорректный или заблокированный loginUrl (${loginCheck.reason})`,
+          loadTime: Date.now() - startTime,
+        } as CrawlerResult;
+      }
+    }
+
+    // Если Puppeteer не установлен или браузерный обход выключен — безопасный HTTP-путь
+    if (!puppeteer || !BROWSER_CRAWL_ENABLED) {
       console.log(`[WEB-CRAWLER] Puppeteer недоступен, Axios fallback для: ${options.url}`);
       return await this.fallbackAxios(options, startTime);
     }
@@ -218,7 +264,9 @@ export class WebCrawlerAgent {
 
   private async fallbackAxios(options: CrawlerOptions, startTime: number): Promise<CrawlerResult> {
     try {
-      const response = await axios.get(options.url, {
+      // safeGet: соединение уходит на уже проверенный адрес (pinned lookup), а каждый
+      // Location валидируется заново. Обычный axios.get резолвил бы имя сам.
+      const response = await safeGet(options.url, {
         timeout: 30000,
         maxContentLength: 5 * 1024 * 1024,
         headers: {

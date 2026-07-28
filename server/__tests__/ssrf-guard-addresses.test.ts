@@ -7,6 +7,7 @@
  * Плюс DNS не резолвился вовсе, а axios сам ходил по redirect'ам.
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
+import { Readable } from 'stream';
 import { isBlockedIp, isBlockedHost, isSafeHttpUrl, resolveSafeUrl } from '../utils/ssrf-guard';
 
 describe('isBlockedIp — IPv4-mapped IPv6 (регрессия)', () => {
@@ -278,5 +279,78 @@ describe('safeGet — redirect проверяется заново', () => {
       safeGet('http://cdn.example.com/img.png', {}, { maxRedirects: 2 }),
     ).rejects.toBeInstanceOf(BlockedUrlError);
     expect(requests).toHaveLength(3);
+  });
+});
+
+/**
+ * DNS rebinding и защита внутри транспорта (регрессия ревью 2026-07-28, вторая волна).
+ *
+ * Прежний safeFetch вызывал resolveSafeUrl, а потом глобальный fetch резолвил имя
+ * ЗАНОВО — между проверкой и соединением адрес успевал смениться, и предварительная
+ * валидация ничего не давала. Теперь соединение идёт через http.request с `lookup`,
+ * куда передаётся уже проверенный адрес.
+ */
+describe('safeFetch — соединение только на проверенный адрес', () => {
+  afterEach(() => {
+    vi.resetModules();
+    vi.doUnmock('dns');
+    vi.doUnmock('http');
+  });
+
+  /**
+   * DNS отдаёт публичный адрес на первый запрос и loopback на второй — классический
+   * rebinding. Проверяется, что второй ответ DNS на соединение уже не влияет.
+   */
+  async function moduleWithRebindingDns(first: string, second: string) {
+    vi.resetModules();
+    let call = 0;
+    const lookupCalls: string[] = [];
+    vi.doMock('dns', () => ({
+      default: {
+        promises: {
+          lookup: vi.fn(async () => {
+            call++;
+            return [{ address: call === 1 ? first : second, family: 4 }];
+          }),
+        },
+      },
+    }));
+
+    const connected: string[] = [];
+    vi.doMock('http', () => {
+      const request = vi.fn((url: any, opts: any, cb: any) => {
+        // Спрашиваем pinned lookup ровно так, как это сделал бы Node при соединении.
+        opts.lookup('any-host', {}, (_e: any, address: string) => {
+          connected.push(address);
+          lookupCalls.push(address);
+        });
+        const res: any = Readable.from([Buffer.from('OK')]);
+        res.statusCode = 200;
+        res.headers = {};
+        setImmediate(() => cb(res));
+        return { on: vi.fn(), end: vi.fn() };
+      });
+      return { default: { request }, request, IncomingMessage: class {} };
+    });
+
+    const mod = await import('../utils/safe-http');
+    return { ...mod, connected };
+  }
+
+  it('соединение уходит на адрес из проверки, а не на подменённый вторым ответом DNS', async () => {
+    const { safeFetch, connected } = await moduleWithRebindingDns('93.184.216.34', '127.0.0.1');
+
+    await safeFetch('http://rebind.example.com/x');
+
+    // Проверенным был публичный адрес — на него и соединились
+    expect(connected).toEqual(['93.184.216.34']);
+    expect(connected).not.toContain('127.0.0.1');
+  });
+
+  it('если проверка сразу видит приватный адрес, запрос не уходит вовсе', async () => {
+    const { safeFetch, BlockedUrlError, connected } = await moduleWithRebindingDns('127.0.0.1', '127.0.0.1');
+
+    await expect(safeFetch('http://evil.example.com/x')).rejects.toBeInstanceOf(BlockedUrlError);
+    expect(connected).toHaveLength(0);
   });
 });

@@ -17,6 +17,9 @@
  */
 
 import axios, { AxiosRequestConfig, AxiosResponse } from 'axios';
+import http, { IncomingMessage } from 'http';
+import https from 'https';
+import { Readable } from 'stream';
 import { resolveSafeUrl } from './ssrf-guard';
 
 /** Сколько Location подряд готовы проверить и пройти. */
@@ -99,25 +102,34 @@ export async function safeGet(
 }
 
 /**
+ * Минимум от `Response`, который реально используют потребители: статус, заголовки,
+ * тело потоком и разовое чтение целиком.
+ */
+export interface SafeResponse {
+  ok: boolean;
+  status: number;
+  headers: { get(name: string): string | null };
+  body: ReadableStream<Uint8Array> | null;
+  arrayBuffer(): Promise<ArrayBuffer>;
+}
+
+/**
  * То же для потребителей на `fetch` (video/media proxy): они стримят `response.body`
- * и разбирают Range-заголовки, переводить их на axios ради одной проверки — переписать
- * всю обработку диапазонов. Здесь тот же цикл: каждый URL и каждый Location проходят
- * `resolveSafeUrl`, автоматические redirect'ы выключены.
+ * и разбирают Range-заголовки.
  *
- * **Чем отличается от `safeGet`:** здесь нет pinned lookup. Node'овский `fetch` не
- * принимает `lookup` — его умеет только http.request, на котором работает axios.
- * Прикрутить пиннинг можно было через undici-dispatcher, но undici в зависимостях
- * проекта не объявлен (лежит транзитивно), а объявление тянет за собой обновление
- * lock-файла. Осознанный размен: остаётся узкое окно DNS rebinding между проверкой и
- * соединением — но только для эндпоинтов за `authenticateUser` (video/media proxy,
- * crawler). Публичный `/api/proxy-image`, ради которого находка и заведена, ходит
- * через `safeGet` и запиннен полностью.
+ * Соединение идёт через `node:http`/`node:https` с `lookup`, а не через глобальный
+ * `fetch`. Это принципиально: `fetch` резолвит имя заново уже после нашей проверки,
+ * поэтому одна лишь предварительная валидация от DNS rebinding не защищает — между
+ * проверкой и соединением адрес успевает смениться. `http.request` принимает `lookup`,
+ * и мы отдаём в него ровно тот адрес, который проверили.
+ *
+ * Redirect'ы не следуются автоматически: каждый `Location` валидируется заново.
  */
 export async function safeFetch(
   rawUrl: string,
-  init: RequestInit = {},
+  init: { method?: string; headers?: Record<string, string>; signal?: AbortSignal } = {},
   options: SafeRequestOptions = {},
-): Promise<Response> {
+): Promise<SafeResponse> {
   const maxRedirects = options.maxRedirects ?? DEFAULT_MAX_REDIRECTS;
   let currentUrl = rawUrl;
 
@@ -125,16 +137,79 @@ export async function safeFetch(
     const checked = await resolveSafeUrl(currentUrl);
     if (!checked.ok) throw new BlockedUrlError(checked.reason, currentUrl);
 
-    const response = await fetch(checked.url.toString(), { ...init, redirect: 'manual' });
+    const res = await requestPinned(checked.url, checked.addresses, init);
 
-    const location = response.headers.get('location');
-    if (response.status < 300 || response.status >= 400 || !location) return response;
+    const location = res.headers.location;
+    const status = res.statusCode ?? 0;
+    if (status < 300 || status >= 400 || !location) {
+      return toSafeResponse(res, status);
+    }
 
-    // Тело редиректа не нужно, но его надо закрыть, иначе соединение висит.
-    await response.body?.cancel().catch(() => {});
-
-    currentUrl = new URL(location, checked.url).toString();
+    // Тело редиректа не нужно; поток надо закрыть, иначе сокет останется висеть.
+    res.resume();
+    currentUrl = new URL(String(location), checked.url).toString();
   }
 
   throw new BlockedUrlError('too-many-redirects', currentUrl);
+}
+
+/** Один запрос строго на проверенный адрес. Имя хоста сохраняется — SNI и TLS как обычно. */
+function requestPinned(
+  url: URL,
+  addresses: Array<{ address: string; family: number }>,
+  init: { method?: string; headers?: Record<string, string>; signal?: AbortSignal },
+): Promise<IncomingMessage> {
+  return new Promise((resolve, reject) => {
+    const transport = url.protocol === 'https:' ? https : http;
+    const req = transport.request(
+      url,
+      {
+        method: init.method || 'GET',
+        headers: init.headers,
+        signal: init.signal,
+        lookup: pinnedNodeLookup(addresses),
+      } as any,
+      resolve,
+    );
+    req.on('error', reject);
+    req.end();
+  });
+}
+
+function toSafeResponse(res: IncomingMessage, status: number): SafeResponse {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: {
+      get(name: string) {
+        const v = res.headers[name.toLowerCase()];
+        if (v === undefined) return null;
+        return Array.isArray(v) ? v.join(', ') : String(v);
+      },
+    },
+    // Лениво: `Readable.toWeb` переводит поток в web-режим и блокирует его, поэтому
+    // жадное создание `body` ломало бы последующий `arrayBuffer()` — потребитель
+    // пользуется чем-то одним.
+    get body() {
+      return Readable.toWeb(res) as ReadableStream<Uint8Array>;
+    },
+    async arrayBuffer() {
+      const chunks: Buffer[] = [];
+      for await (const chunk of res) chunks.push(Buffer.from(chunk));
+      const buf = Buffer.concat(chunks);
+      return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength) as ArrayBuffer;
+    },
+  };
+}
+
+/** lookup для http.request: отдаёт только проверенные адреса. */
+function pinnedNodeLookup(addresses: Array<{ address: string; family: number }>) {
+  return (_hostname: string, opts: any, cb: any) => {
+    const callback = typeof opts === 'function' ? opts : cb;
+    const o = typeof opts === 'function' ? {} : (opts || {});
+    const wanted = o.family ? addresses.filter(a => a.family === o.family) : addresses;
+    const usable = wanted.length ? wanted : addresses;
+    if (o.all) return callback(null, usable.map(a => ({ address: a.address, family: a.family })));
+    return callback(null, usable[0].address, usable[0].family);
+  };
 }

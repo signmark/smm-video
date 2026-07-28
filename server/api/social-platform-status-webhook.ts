@@ -8,6 +8,7 @@ import { Router, Request, Response } from 'express';
 import axios from 'axios';
 import log from '../utils/logger';
 import { DirectusAuthManager } from '../services/directus-auth-manager';
+import { requireWebhookSecret } from '../middleware/webhook-auth';
 
 const router = Router();
 const DIRECTUS_URL = process.env.DIRECTUS_URL;
@@ -161,8 +162,9 @@ function getPlatformNames(socialPlatforms: any): string[] {
   return Object.keys(socialPlatforms);
 }
 
-// Универсальный вебхук для обновления статуса публикации в любой социальной сети
-router.post('/update-status/:platform', async (req: Request, res: Response) => {
+// Универсальный вебхук для обновления статуса публикации в любой социальной сети.
+// Секрет обязателен: маршрут висит вне /api, пользовательской авторизации здесь нет.
+router.post('/update-status/:platform', requireWebhookSecret('status-webhook'), async (req: Request, res: Response) => {
   const requestId = generateRequestId();
   const { platform } = req.params;
   const { contentId, status, postUrl, postId, publishedAt, error } = req.body;
@@ -181,27 +183,29 @@ router.post('/update-status/:platform', async (req: Request, res: Response) => {
   }
 
   try {
-    // Получаем токен администратора из DirectusAuthManager
-    const adminToken = DirectusAuthManager.getAdminToken();
-    
-    if (!adminToken) {
-      log.error(`[${requestId}] Не найден токен администратора. Используем токен из запроса.`);
-    }
-    
-    // Используем токен администратора или токен из запроса
-    const token = adminToken || req.body.token;
-    
+    // Токен строго свой, серверный. Фолбэк на `req.body.token` убран: он позволял
+    // вызывающему подсунуть собственный токен Directus и работать им.
+    const token = DirectusAuthManager.getAdminToken();
+
     if (!token) {
-      log.error(`[${requestId}] Нет доступного токена авторизации`);
-      return res.status(401).json({ error: 'Требуется авторизация' });
+      log.error(`[${requestId}] Нет токена администратора Directus — обновление статуса невозможно`);
+      return res.status(503).json({ error: 'Сервис временно недоступен' });
     }
 
     // 1. Получаем текущие данные контента
     log.info(`[${requestId}] Получение текущих данных контента ${contentId}`);
     const contentData = await getContentData(contentId, token);
-    
+
     if (!contentData) {
       log.error(`[${requestId}] Не удалось получить данные контента ${contentId}`);
+      return res.status(404).json({ error: 'Контент не найден' });
+    }
+
+    // Если вызывающий назвал кампанию — контент обязан ей принадлежать. Защита от
+    // перепутанного или подставленного contentId поверх проверки секрета.
+    const claimedCampaignId = req.body.campaignId || req.body.campaign_id;
+    if (claimedCampaignId && String(contentData.campaign_id) !== String(claimedCampaignId)) {
+      log.warn(`[${requestId}] Контент ${contentId} не принадлежит кампании ${claimedCampaignId}`);
       return res.status(404).json({ error: 'Контент не найден' });
     }
 

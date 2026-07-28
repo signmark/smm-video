@@ -291,6 +291,14 @@ describe('POST /api/publish/mark-as-published — статус и дата од�
 // ─── 3. Вебхук статусов платформ ──────────────────────────────────────────────
 
 describe('вебхук статусов платформ — общий статус пишется snake_case', () => {
+  // Вебхук закрыт секретом (см. status-webhook-auth.test.ts); здесь он нужен
+  // лишь чтобы дойти до проверяемой логики.
+  const WEBHOOK_SECRET = 'test-webhook-secret';
+
+  beforeEach(() => {
+    process.env.STATUS_WEBHOOK_SECRET = WEBHOOK_SECRET;
+  });
+
   const makeApp = () => {
     const app = express();
     app.use(express.json());
@@ -310,6 +318,7 @@ describe('вебхук статусов платформ — общий стат
 
     await request(makeApp())
       .post('/api/social/update-status/telegram')
+      .set('x-webhook-secret', WEBHOOK_SECRET)
       .send({ contentId: 'c-1', status: 'published', postUrl: 'https://t.me/c/1' });
 
     const publishedPatches = H.axiosPatch.mock.calls

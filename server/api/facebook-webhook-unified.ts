@@ -11,6 +11,7 @@ import { authenticateUser } from '../middleware/user-auth';
 import { authorizeCampaignAccess } from '../services/campaign-access';
 import { assertContentBelongsToRequester } from '../services/content-access';
 import { resolvePlatformToken } from '../services/campaign-token-resolver';
+import { requireWebhookSecret } from '../middleware/webhook-auth';
 
 const router = Router();
 
@@ -219,8 +220,10 @@ router.post('/', authenticateUser, async (req, res) => {
   }
 });
 
-// Маршрут для обновления статуса публикации
-router.post('/update-status', async (req, res) => {
+// Маршрут для обновления статуса публикации.
+// Секрет обязателен: роутер смонтирован в корень, пользовательской авторизации нет,
+// а статус правится по произвольному contentId служебным доступом.
+router.post('/update-status', requireWebhookSecret('facebook-status-webhook'), async (req, res) => {
   try {
     const { contentId, status, postUrl, postId } = req.body;
     

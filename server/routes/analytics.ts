@@ -16,7 +16,22 @@ import { sanitizeOAuthSecrets } from '../services/oauth-response-sanitizer';
  * IG/YT: taken_at/published_at и т.п.). Возвращает ISO-строку или null.
  * Unix-секунды и миллисекунды различаются по величине; строки парсим через Date.
  */
-function extractPostDate(rawSourceData: any): string | null {
+/**
+ * Превращает миллисекунды в ISO, если такая дата вообще существует.
+ *
+ * `Number.isFinite` пропускает 1e300: число конечное и положительное, но Date из него
+ * получается Invalid, и `toISOString()` бросает RangeError. Раньше это исключение
+ * улетало из `.map()` в catch роута и роняло весь `/api/campaign-trends` в 500 —
+ * одна битая запись убивала всю выдачу кампании.
+ */
+function msToIso(ms: number): string | null {
+  if (!Number.isFinite(ms) || ms <= 0) return null;
+  const date = new Date(ms);
+  if (!Number.isFinite(date.getTime())) return null;
+  return date.toISOString();
+}
+
+export function extractPostDate(rawSourceData: any): string | null {
   if (!rawSourceData) return null;
 
   let raw: any = rawSourceData;
@@ -33,18 +48,21 @@ function extractPostDate(rawSourceData: any): string | null {
   for (const c of candidates) {
     if (c == null || c === '') continue;
     if (typeof c === 'number') {
-      const ms = c < 1e12 ? c * 1000 : c;
-      if (Number.isFinite(ms) && ms > 0) return new Date(ms).toISOString();
+      const iso = msToIso(c < 1e12 ? c * 1000 : c);
+      if (iso) return iso;
       continue;
     }
     if (typeof c === 'string') {
       const num = Number(c);
       if (!Number.isNaN(num) && c.trim() !== '') {
-        const ms = num < 1e12 ? num * 1000 : num;
-        if (Number.isFinite(ms) && ms > 0) return new Date(ms).toISOString();
+        const iso = msToIso(num < 1e12 ? num * 1000 : num);
+        if (iso) return iso;
       }
-      const t = new Date(c).getTime();
-      if (!Number.isNaN(t)) return new Date(t).toISOString();
+      // Разбор строковой даты («2026-07-20T10:00:00Z»): здесь важна только
+      // валидность, знак не проверяем — эпоха до 1970 это законная дата, просто
+      // не встречающаяся у постов.
+      const parsed = new Date(c);
+      if (Number.isFinite(parsed.getTime())) return parsed.toISOString();
     }
   }
   return null;

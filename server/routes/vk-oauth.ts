@@ -194,11 +194,15 @@ router.get('/vk/oauth2/callback', async (req, res) => {
  * Body: { campaignId, clientId, refreshToken, deviceId }
  * Обновляет токен и сохраняет обратно в кампанию
  */
-router.post('/vk/oauth2/refresh', async (req, res) => {
+router.post('/vk/oauth2/refresh', authenticateUser, async (req, res) => {
   const { campaignId, clientId, refreshToken, deviceId } = req.body;
   if (!campaignId || !clientId || !refreshToken) {
     return res.status(400).json({ error: 'campaignId, clientId и refreshToken обязательны' });
   }
+
+  // Ручка писала VK-настройки в ЛЮБУЮ кампанию по её id и возвращала accessToken
+  // вызывающему — без авторизации вообще (находка ревью 2026-07-28).
+  if (!(await ensureCampaignAccess(req, res, String(campaignId)))) return;
 
   try {
     const { refreshVkToken } = await import('../services/vk-token-refresh');
@@ -231,7 +235,9 @@ router.post('/vk/oauth2/refresh', async (req, res) => {
     }, { headers: { Authorization: `Bearer ${adminToken}` } });
 
     log(`[VK-OAUTH2] Token refreshed for campaign ${campaignId}`, 'vk-oauth');
-    res.json({ success: true, accessToken: result.accessToken });
+    // Сам токен наружу не отдаём: он уже сохранён в настройках кампании, а
+    // клиенту достаточно знать, что обновление прошло.
+    res.json({ success: true });
 
   } catch (err: any) {
     log(`[VK-OAUTH2] Refresh error: ${err.message}`, 'vk-oauth', 'error');

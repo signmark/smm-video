@@ -1,13 +1,19 @@
 import express from 'express';
 import axios from 'axios';
+import { authenticateUser } from '../middleware/user-auth';
+import { assertContentBelongsToRequester } from '../services/content-access';
 
 const router = express.Router();
 
 /**
  * Удаление публикации из социальных сетей и перевод в черновики
  * POST /api/content/:id/unpublish
+ *
+ * Проверка владения обязательна: ручка достаёт токены соцсетей кампании и
+ * РЕАЛЬНО удаляет посты на платформах — по чужому id это удаление чужих
+ * публикаций (находка ревью 2026-07-28).
  */
-router.post('/content/:id/unpublish', async (req, res) => {
+router.post('/content/:id/unpublish', authenticateUser, async (req, res) => {
   const { id } = req.params;
   const userToken = req.headers.authorization?.replace('Bearer ', '');
 
@@ -18,6 +24,8 @@ router.post('/content/:id/unpublish', async (req, res) => {
         error: 'Требуется авторизация'
       });
     }
+
+    if (!(await assertContentBelongsToRequester(id, req, res))) return;
 
     // Получаем данные контента
     const contentResponse = await axios.get(

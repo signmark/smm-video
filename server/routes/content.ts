@@ -23,6 +23,57 @@ const IMMUTABLE_CONTENT_FIELDS = new Set([
 ]);
 
 /**
+ * Проверяет владение записью campaign_content перед мутацией.
+ *
+ * Находка ревью 2026-07-28: PATCH/PUT/DELETE правили запись по чужому `id`, хотя
+ * у соседнего GET проверка владения есть — значит права Directus эту коллекцию
+ * не закрывают, и полагаться на них нельзя.
+ *
+ * При отказе САМ пишет ответ (404 — не подтверждаем существование чужой записи)
+ * и возвращает false.
+ */
+async function assertOwnsContentItem(id: string, req: Request, res: Response): Promise<boolean> {
+  const user = (req as any).user;
+  const token = user?.token;
+  const userId = user?.id;
+  if (!userId || !token) {
+    res.status(401).json({ error: "Unauthorized" });
+    return false;
+  }
+
+  const notFound = () => {
+    res.status(404).json({ error: "Content item not found" });
+    return false;
+  };
+
+  let item: any;
+  try {
+    const response = await directusApi.get(`/items/campaign_content/${id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      params: { fields: 'id,user_id' },
+    });
+    item = response.data?.data;
+  } catch (error: any) {
+    const status = error.response?.status;
+    if (status === 404 || status === 403) return notFound();
+    if (status === 401) {
+      res.status(401).json({ error: "Сессия истекла. Пожалуйста, войдите заново.", sessionExpired: true });
+      return false;
+    }
+    // Сбой Directus — fail-closed: доступ не выдаём, но и не врём про «не найдено».
+    res.status(503).json({ error: "Проверка доступа временно недоступна" });
+    return false;
+  }
+
+  if (!item) return notFound();
+
+  const isAdmin = user?.is_smm_admin === true;
+  if (!isAdmin && item.user_id && item.user_id !== userId) return notFound();
+
+  return true;
+}
+
+/**
  * Маппинг camelCase полей от фронтенда в snake_case для Directus campaign_content
  */
 function mapContentFieldsToDirectus(body: Record<string, any>): Record<string, any> {
@@ -546,6 +597,8 @@ export function registerContentRoutes(app: Express) {
       const token = req.user?.token;
       const userId = req.user?.id || '';
       const data = mapContentFieldsToDirectus(req.body);
+      // Форма запроса проверяется до похода в Directus: 400 за нестроковый title
+      // не зависит от того, чья это запись, и ничего о ней не раскрывает.
       if (data.title !== undefined && data.title !== null) {
         const titleCheck = validateTitle(data.title);
         if (!titleCheck.ok) {
@@ -553,6 +606,7 @@ export function registerContentRoutes(app: Express) {
         }
         data.title = titleCheck.value;
       }
+      if (!(await assertOwnsContentItem(id, req, res))) return;
       const response = await directusApi.patch(`/items/campaign_content/${id}`, data, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -571,6 +625,8 @@ export function registerContentRoutes(app: Express) {
       const token = req.user?.token;
       const userId = req.user?.id || '';
       const data = mapContentFieldsToDirectus(req.body);
+      // Форма запроса проверяется до похода в Directus: 400 за нестроковый title
+      // не зависит от того, чья это запись, и ничего о ней не раскрывает.
       if (data.title !== undefined && data.title !== null) {
         const titleCheck = validateTitle(data.title);
         if (!titleCheck.ok) {
@@ -578,6 +634,7 @@ export function registerContentRoutes(app: Express) {
         }
         data.title = titleCheck.value;
       }
+      if (!(await assertOwnsContentItem(id, req, res))) return;
       const response = await directusApi.patch(`/items/campaign_content/${id}`, data, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -594,6 +651,7 @@ export function registerContentRoutes(app: Express) {
       const { id } = req.params;
       const token = req.user?.token;
       const userId = req.user?.id || '';
+      if (!(await assertOwnsContentItem(id, req, res))) return;
       await directusApi.delete(`/items/campaign_content/${id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });

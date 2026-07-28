@@ -1,10 +1,15 @@
 import { Express, Request, Response } from 'express';
 import axios from 'axios';
+import { authenticateUser } from './middleware/user-auth';
+import { authorizeCampaignAccess, CampaignAccessError } from './services/campaign-access';
 
 export function registerSimpleAnalyticsAPI(app: Express) {
   console.log('[Simple Analytics] 🚀 Регистрируем API эндпоинт /server-api/analytics');
-  
-  app.get('/server-api/analytics', async (req: Request, res: Response) => {
+
+  // authenticateUser нужен явно: путь начинается с /server-api, то есть не попадает
+  // даже под гейт /api. Раньше здесь хватало любого заголовка Authorization, и
+  // ручка отдавала настоящий контент ЛЮБОЙ кампании (находка ревью 2026-07-28).
+  app.get('/server-api/analytics', authenticateUser, async (req: Request, res: Response) => {
     console.log('[Simple Analytics] 🎯 МАРШРУТ СРАБОТАЛ! Получен запрос на /server-api/analytics');
     
     try {
@@ -23,6 +28,23 @@ export function registerSimpleAnalyticsAPI(app: Express) {
       if (!authHeader) {
         console.log(`[Simple Analytics] Нет токена авторизации`);
         return res.status(401).json({ success: false, error: 'Требуется авторизация' });
+      }
+
+      // Доступ к кампании проверяем явно: фильтр по campaign_id сам по себе
+      // ничего не ограничивает — id чужой кампании отдал бы чужой контент.
+      try {
+        await authorizeCampaignAccess(
+          String(campaignId),
+          (req as any).user?.id,
+          (req as any).user?.token || '',
+          (req as any).user?.is_smm_admin === true,
+        );
+      } catch (accessErr: any) {
+        if (accessErr instanceof CampaignAccessError && accessErr.status === 503) {
+          return res.status(503).json({ success: false, error: 'Проверка доступа временно недоступна' });
+        }
+        // 404, а не 403: не подтверждаем существование чужой кампании.
+        return res.status(404).json({ success: false, error: 'Кампания не найдена' });
       }
 
       const token = authHeader.replace('Bearer ', '');

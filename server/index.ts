@@ -299,6 +299,9 @@ const globalApiLimiter = rateLimit({
 });
 
 app.use('/api/auth/login', sensitiveLimiter);
+// Второй путь входа мимо лимитера был оракулом перебора паролей: тот же
+// email/password, но без ограничения попыток, да ещё и с выдачей сессии.
+app.use('/api/system/auth/login', sensitiveLimiter);
 app.use('/api/auth/register', sensitiveLimiter);
 app.use('/api/auth/password-reset', sensitiveLimiter);
 app.use('/api/auth/email-change', sensitiveLimiter);

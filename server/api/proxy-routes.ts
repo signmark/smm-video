@@ -11,22 +11,33 @@
 
 import { Router, Request, Response } from 'express';
 import { directusProxy } from '../services/directus-proxy';
+import { authenticateUser } from '../middleware/user-auth';
 
 export const proxyRouter = Router();
 
+// Своя авторизация, а не по счастливому порядку монтирования: до этой строки
+// весь /api гейтился тем, что facebookGroupsRouter подключён раньше.
+proxyRouter.use(authenticateUser);
+
 /**
- * Извлечение auth данных из заголовков
- * @throws Error если заголовки отсутствуют
+ * Извлечение auth данных запроса.
+ *
+ * `userId` берётся ТОЛЬКО из проверенной сессии. Раньше он читался из заголовка
+ * `x-user-id`, который никто не сверял с токеном: подставив чужой id, можно было
+ * читать и править чужие кампании, источники и тренды (находка ревью 2026-07-28).
+ *
+ * @throws Error если сессия или токен отсутствуют
  */
 const extractAuth = (req: Request) => {
-  const token = req.headers.authorization?.replace('Bearer ', '');
-  const userId = req.headers['x-user-id'] as string;
-  
+  const user = (req as any).user;
+  const token = user?.token || req.headers.authorization?.replace('Bearer ', '');
+  const userId = user?.id;
+
   if (!token || !userId) {
     throw new Error('Missing authentication headers');
   }
-  
-  return { token, userId };
+
+  return { token, userId: String(userId) };
 };
 
 /**

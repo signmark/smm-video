@@ -141,24 +141,31 @@ export function registerCampaignRoutes(app: Express) {
       }
       
       try {
+        // Читаем СВОИ кампании токеном пользователя, а не админским. RBAC-политика
+        // «SMM Manager User» уже ограничивает read по user_id = $CURRENT_USER, поэтому
+        // изоляция обеспечивается Directus'ом, а не тем, что мы не забыли фильтр в коде.
+        // Раньше здесь стоял useAdminToken: true — он обходил RBAC и завязывал выдачу
+        // кампаний на живость служебного токена (протух → у всех падал список).
         const campaignsData = await directusCrud.list<any>('user_campaigns', {
           filter: { user_id: { _eq: userId } },
           sort: ['-created_at'],
           limit: 500,
-          useAdminToken: true,
+          authToken: token,
         });
         const responseData = campaignsData ?? [];
-        
+
         log(`[CAMPAIGNS] Directus response: ${responseData.length} campaigns found`, 'info');
-        
-        // Получаем активные автономные сессии для этого пользователя
+
+        // Активные автономные сессии — тоже токеном пользователя. RBAC autonomous_sessions
+        // фильтрует по user_id, так что фильтр по campaign не нужен: юзер и так видит
+        // только свои сессии (прежний admin-путь читал сессии ВСЕХ пользователей).
         let activeSessionIds = new Set<string>();
         try {
           const sessionsResp = await directusCrud.list<{ campaign_id: string }>('autonomous_sessions', {
             filter: { is_active: { _eq: true } },
             fields: ['campaign_id'],
             limit: 500,
-            useAdminToken: true,
+            authToken: token,
           });
           (sessionsResp ?? []).forEach(s => s.campaign_id && activeSessionIds.add(s.campaign_id));
         } catch (_) {}

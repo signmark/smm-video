@@ -71,7 +71,11 @@ n8n_data/
 traefik_data/
 pgadmin_data/
 postgres/
-.claude/
+# .claude/* целиком, кроме скиллов: их версионируем, личный settings.local.json — нет.
+# Именно `.claude/*`, а не `.claude/`: в исключённый каталог git не заходит и негативные
+# правила внутри него не срабатывают.
+.claude/*
+!.claude/skills/
 backup_settings/
 docker-compose.local.yml
 all_databases_*.sql

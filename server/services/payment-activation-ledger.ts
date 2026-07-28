@@ -62,8 +62,53 @@ export type ClaimResult =
 let ensurePromise: Promise<void> | null = null;
 
 /**
- * Создаёт коллекцию, если её нет. Проверено на текущей схеме: на 2026-07-28 таких
- * коллекций в Directus нет, создание аддитивное — существующие данные не трогает.
+ * Запасной журнал в памяти процесса.
+ *
+ * Нужен ровно на один случай: durable-журнал недоступен. На 2026-07-28 это реальное
+ * состояние прода — у сервисного токена нет прав на создание коллекций (Directus
+ * отвечает 403 и на GET /collections/payment_activations, и на POST /collections),
+ * а коллекции `payment_activations` в схеме нет. Права выдаёт владелец, см.
+ * docs/prompts/claude-codex-review-fixes-2026-07-28.md.
+ *
+ * Почему не «падать»: fail-closed здесь означает 500 на КАЖДЫЙ платёж — человек
+ * заплатил и не получил подписку. Это хуже исходной дыры. Память процесса слабее
+ * durable-журнала (не переживает рестарт, не видна второму инстансу), но она гасит
+ * массовый случай — повтор в рамках одного процесса: обновление страницы успеха,
+ * гонка webhook'а с ручной активацией, ретрай ЮКассы. Каждое обращение к запасному
+ * пути логируется уровнем error, чтобы деградация не осталась незамеченной.
+ */
+const memoryLedger = new Map<string, { status: 'processing' | 'completed'; claimedAt: number }>();
+let degradedWarned = false;
+
+function noteDegraded(reason: string): void {
+  if (!degradedWarned) {
+    degradedWarned = true;
+    log(
+      `[payments] ЖУРНАЛ ПЛАТЕЖЕЙ НЕДОСТУПЕН (${reason}). Идемпотентность работает только в рамках `
+      + `процесса и не переживёт рестарт. Нужна коллекция ${COLLECTION} в Directus и права на неё `
+      + `сервисной роли — см. docs/prompts/claude-codex-review-fixes-2026-07-28.md`,
+      'payments',
+      'error',
+    );
+  }
+}
+
+/** Захват через память процесса — используется только при недоступном Directus-журнале. */
+function claimInMemory(info: PaymentClaimInfo): ClaimResult {
+  const existing = memoryLedger.get(info.paymentId);
+  if (existing) {
+    if (existing.status === 'completed') return { claimed: false, reason: 'already-processed' };
+    if (Date.now() - existing.claimedAt <= STALE_CLAIM_MS) {
+      return { claimed: false, reason: 'already-processed' };
+    }
+  }
+  memoryLedger.set(info.paymentId, { status: 'processing', claimedAt: Date.now() });
+  return { claimed: true, recordId: `memory:${info.paymentId}` };
+}
+
+/**
+ * Создаёт коллекцию, если её нет. Проверено на текущей схеме: на 2026-07-28 такой
+ * коллекции в Directus нет, создание аддитивное — существующие данные не трогает.
  * Тот же приём уже работает для `promo_codes`/`promo_code_uses`.
  */
 export async function ensureLedgerCollection(): Promise<void> {
@@ -135,8 +180,19 @@ async function findClaim(paymentId: string): Promise<any | null> {
  * не делать, ответить успехом.
  */
 export async function claimPaymentActivation(info: PaymentClaimInfo): Promise<ClaimResult> {
-  await ensureLedgerCollection();
+  try {
+    await ensureLedgerCollection();
+    return await claimInDirectus(info);
+  } catch (err: any) {
+    // Журнал недоступен: нет коллекции, нет прав на неё, Directus не отвечает.
+    // Падать нельзя — это 500 на оплаченный платёж; переходим на запасной путь.
+    noteDegraded(err?.message || 'ledger unavailable');
+    return claimInMemory(info);
+  }
+}
 
+/** Захват через durable-журнал. Бросает, если журнал недоступен. */
+async function claimInDirectus(info: PaymentClaimInfo): Promise<ClaimResult> {
   const now = new Date().toISOString();
   const res = await fetch(`${directusUrl()}/items/${COLLECTION}`, {
     method: 'POST',
@@ -203,6 +259,14 @@ export async function claimPaymentActivation(info: PaymentClaimInfo): Promise<Cl
 /** Отмечает платёж окончательно обработанным. */
 export async function completePaymentActivation(recordId: string): Promise<void> {
   if (!recordId) return;
+
+  const memoryId = recordId.startsWith('memory:') ? recordId.slice('memory:'.length) : null;
+  if (memoryId) {
+    const row = memoryLedger.get(memoryId);
+    if (row) row.status = 'completed';
+    return;
+  }
+
   const res = await fetch(`${directusUrl()}/items/${COLLECTION}/${recordId}`, {
     method: 'PATCH',
     headers: { Authorization: `Bearer ${adminToken()}`, 'Content-Type': 'application/json' },
@@ -222,6 +286,12 @@ export async function completePaymentActivation(recordId: string): Promise<void>
  */
 export async function releasePaymentActivation(recordId: string): Promise<void> {
   if (!recordId) return;
+
+  if (recordId.startsWith('memory:')) {
+    memoryLedger.delete(recordId.slice('memory:'.length));
+    return;
+  }
+
   try {
     await fetch(`${directusUrl()}/items/${COLLECTION}/${recordId}`, {
       method: 'DELETE',
@@ -235,4 +305,6 @@ export async function releasePaymentActivation(recordId: string): Promise<void> 
 /** Только для тестов: сбрасывает памятку о созданной коллекции. */
 export function resetLedgerCache(): void {
   ensurePromise = null;
+  memoryLedger.clear();
+  degradedWarned = false;
 }

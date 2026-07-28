@@ -304,3 +304,61 @@ describe('POST /api/yookassa/webhook — тот же механизм идемп
     expect(ledgerRows).toHaveLength(0);
   });
 });
+
+/**
+ * Деградация журнала.
+ *
+ * На 2026-07-28 у сервисного токена нет прав на создание коллекций: Directus отвечает
+ * 403 и на GET /collections/payment_activations, и на POST /collections. Пока владелец
+ * не заведёт коллекцию и права, durable-журнал недоступен.
+ *
+ * Fail-closed здесь означал бы 500 на каждый оплаченный платёж — человек заплатил и не
+ * получил подписку. Это хуже исходной дыры, поэтому активация продолжает работать через
+ * запасной журнал в памяти процесса: он слабее (не переживает рестарт, не виден второму
+ * инстансу), но гасит массовый случай — повтор в рамках одного процесса.
+ */
+describe('журнал платежей недоступен (нет прав на коллекцию)', () => {
+  beforeEach(async () => {
+    // Directus отвечает 403 на всё, что касается журнала
+    fetchMock.mockImplementation((url: any, init?: any) => {
+      const u = String(url);
+      if (u.includes('payment_activations') || u.endsWith('/collections')) {
+        return jsonResponse({ errors: [{ message: "You don't have permission to access this." }] }, false, 403);
+      }
+      const method = init?.method || 'GET';
+      const body = init?.body ? JSON.parse(init.body) : null;
+      if (u.includes('api.yookassa.ru')) return jsonResponse(yookassaPayment);
+      if (u.includes('api.telegram.org')) { telegramSends++; return jsonResponse({ ok: true }); }
+      if (u.includes('/users/user-1')) {
+        if (method === 'PATCH') { userPatches.push(body); return jsonResponse({ data: {} }); }
+        return jsonResponse({ data: { telegram_chat_id: 'chat-1', first_name: 'Иван', omemo_partner_code: 'P1', email: 'u@t.local' } });
+      }
+      if (u.includes('/users/me')) return jsonResponse({ data: { id: 'user-1' } });
+      return jsonResponse({ data: {} });
+    });
+    app = await buildApp();
+  });
+
+  it('оплаченный платёж всё равно активируется — 500 на оплату недопустим', async () => {
+    const res = await activate();
+
+    expect(res.status).toBe(200);
+    expect(userPatches).toHaveLength(1);
+  });
+
+  it('повтор в рамках процесса всё ещё не даёт второй подписки', async () => {
+    await activate();
+    const second = await activate();
+
+    expect(second.body.alreadyProcessed).toBe(true);
+    expect(userPatches).toHaveLength(1);
+    expect(sendPurchasePostback).toHaveBeenCalledTimes(1);
+  });
+
+  it('webhook и ручная активация одного платежа не складываются', async () => {
+    await activate();
+    await webhook();
+
+    expect(userPatches).toHaveLength(1);
+  });
+});

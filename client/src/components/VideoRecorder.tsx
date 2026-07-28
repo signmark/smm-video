@@ -12,7 +12,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Video, Square, Pause, Play, Download, Mic, MicOff, Monitor, Camera, BookOpen, Upload } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
-import { ObjectUploader } from './ObjectUploader';
 import { useAuthStore } from '@/lib/store';
 import { useQuery } from '@tanstack/react-query';
 

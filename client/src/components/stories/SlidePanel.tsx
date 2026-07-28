@@ -30,7 +30,8 @@ export default function SlidePanel({
     mutationFn: (slideData: any) => 
       apiRequest(`/api/stories/${storyId}/slides`, {
         method: 'POST',
-        body: JSON.stringify(slideData)
+        // apiRequest принимает `data`, а не `body` — иначе тело теряется.
+        data: slideData,
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['story', storyId] });

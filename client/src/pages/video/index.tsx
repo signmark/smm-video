@@ -107,7 +107,19 @@ export default function VideoEditor() {
     }));
   };
 
-  const handleSave = async () => {
+  /**
+   * Сохраняет видео как единицу контента кампании и ВОЗВРАЩАЕТ сохранённую запись.
+   *
+   * Возврат обязателен: `handlePublish` проверяет результат перед публикацией, а
+   * без него `if (!savedVideo) return` срабатывал всегда и запрос на публикацию
+   * не отправлялся вовсе (находка ревью 2026-07-28). Файлы загружаются РОВНО
+   * один раз — раньше одни и те же видео и превью уезжали в S3 до трёх раз за
+   * попытку.
+   *
+   * Эндпоинты — те же, которыми пользуется остальное приложение
+   * (`POST /api/campaign-content`); прежние `/api/video` на сервере не существует.
+   */
+  const handleSave = async (): Promise<{ id: string } | null> => {
     try {
       if (!videoContent.title.trim()) {
         toast({
@@ -115,42 +127,28 @@ export default function VideoEditor() {
           description: 'Необходимо указать название видео',
           variant: 'destructive'
         });
-        return;
+        return null;
       }
 
-      // Подготавливаем данные для сохранения
-      const contentData = {
-        campaign_id: campaignId,
-        content_type: 'video-text',
-        title: videoContent.title,
-        content: videoContent.description,
-        video_url: videoContent.videoFile ? await uploadVideoToS3(videoContent.videoFile) : null,
-        thumbnail_url: videoContent.thumbnail ? await uploadImageToS3(videoContent.thumbnail) : null,
-        platforms: JSON.stringify(videoContent.platforms),
-        scheduled_time: videoContent.scheduling.scheduledDate?.toISOString() || null,
-        metadata: JSON.stringify({
-          tags: videoContent.tags,
-          duration: videoContent.duration,
-          id: videoContent.id
-        }),
-        status: 'draft'
-      };
+      const videoUrl = videoContent.videoFile ? await uploadVideoToS3(videoContent.videoFile) : null;
+      const thumbnailUrl = videoContent.thumbnail ? await uploadImageToS3(videoContent.thumbnail) : null;
 
-      const response = await fetch('/api/video', {
+      const response = await fetch('/api/campaign-content', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('auth_token') || localStorage.getItem('authToken')}`
         },
         body: JSON.stringify({
+          campaignId,
+          contentType: 'video-text',
           title: videoContent.title,
-          description: videoContent.description,
-          campaignId: campaignId,
-          videoUrl: videoContent.videoFile ? await uploadVideoToS3(videoContent.videoFile) : null,
-          thumbnailUrl: videoContent.thumbnail ? await uploadImageToS3(videoContent.thumbnail) : null,
-          platforms: videoContent.platforms,
-          tags: videoContent.tags,
-          scheduling: videoContent.scheduling
+          content: videoContent.description,
+          videoUrl,
+          imageUrl: thumbnailUrl,
+          keywords: videoContent.tags,
+          scheduledAt: videoContent.scheduling.scheduledDate?.toISOString() || null,
+          status: 'draft'
         })
       });
 
@@ -159,13 +157,18 @@ export default function VideoEditor() {
       }
 
       const result = await response.json();
-      
+      const saved = result?.data ?? result;
+
+      if (!saved?.id) {
+        throw new Error('Сервер не вернул сохранённую запись');
+      }
+
       toast({
         title: 'Сохранено',
         description: 'Видео контент успешно сохранен'
       });
-      
-      console.log('Видео контент сохранен:', result);
+
+      return saved;
     } catch (error) {
       console.error('Ошибка сохранения:', error);
       toast({
@@ -173,6 +176,7 @@ export default function VideoEditor() {
         description: 'Не удалось сохранить видео контент',
         variant: 'destructive'
       });
+      return null;
     }
   };
 
@@ -274,34 +278,25 @@ export default function VideoEditor() {
     }
 
     try {
-      // Сначала сохраняем контент
-      await handleSave();
-      
-      // Затем планируем публикацию
-      const publishData = {
-        contentType: 'video-text',
-        campaignId: campaignId,
-        title: videoContent.title,
-        description: videoContent.description,
-        videoUrl: videoContent.videoFile ? await uploadVideoToS3(videoContent.videoFile) : null,
-        thumbnailUrl: videoContent.thumbnail ? await uploadImageToS3(videoContent.thumbnail) : null,
-        platforms: selectedPlatforms,
-        tags: videoContent.tags,
-        scheduling: videoContent.scheduling
-      };
-
+      // Сохраняем ровно один раз: и запись, и загрузка файлов в S3 внутри.
       const savedVideo = await handleSave();
       if (!savedVideo) return;
 
-      const response = await fetch(`/api/video/${savedVideo.id}/publish`, {
+      // Форма social_platforms — та же, что у остального контента: ключ платформы
+      // и её состояние. Эту структуру потом дополняет вебхук статусов.
+      const socialPlatforms = Object.fromEntries(
+        selectedPlatforms.map((platform) => [platform, { selected: true, status: 'pending' }])
+      );
+
+      const response = await fetch(`/api/content/${savedVideo.id}/publish`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${localStorage.getItem('auth_token') || localStorage.getItem('authToken')}`
         },
         body: JSON.stringify({
-          platforms: selectedPlatforms,
-          scheduledAt: videoContent.scheduling.scheduledDate?.toISOString()
+          socialPlatforms,
+          status: videoContent.scheduling.scheduledDate ? 'scheduled' : 'publishing'
         })
       });
 

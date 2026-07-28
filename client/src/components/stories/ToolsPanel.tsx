@@ -35,7 +35,8 @@ export default function ToolsPanel({ currentSlide, storyId, onElementAdd }: Tool
     mutationFn: (elementData: any) =>
       apiRequest(`/api/stories/${storyId}/slides/${currentSlide?.id}/elements`, {
         method: 'POST',
-        body: JSON.stringify(elementData)
+        // apiRequest принимает `data`, а не `body` — иначе тело теряется.
+        data: elementData,
       }),
     onSuccess: () => {
       onElementAdd();
@@ -58,7 +59,7 @@ export default function ToolsPanel({ currentSlide, storyId, onElementAdd }: Tool
     mutationFn: (backgroundData: any) =>
       apiRequest(`/api/stories/${storyId}/slides/${currentSlide?.id}`, {
         method: 'PUT',
-        body: JSON.stringify({ background: backgroundData })
+        data: { background: backgroundData },
       }),
     onSuccess: () => {
       onElementAdd(); // Refresh slide data

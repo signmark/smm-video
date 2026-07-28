@@ -114,9 +114,14 @@ export default function ScheduledPublications() {
   const getAuthToken = useAuthStore((state) => state.getAuthToken);
   
   // Получаем список кампаний пользователя (для отображения названия кампании)
+  // /api/campaigns отвечает {success, data}, а дефолтный queryFn кладёт ответ как
+  // есть. Без select сюда попадал объект-обёртка вместо массива, Array.isArray
+  // давал false, и имя кампании всегда было «Неизвестная кампания»
+  // (находка ревью 2026-07-28).
   const { data: campaigns = [] } = useQuery<Campaign[]>({
     queryKey: ['/api/campaigns'],
     enabled: !!userId,
+    select: (raw: any) => (Array.isArray(raw) ? raw : raw?.data ?? []),
   });
   
   // Получаем запланированные публикации ТОЛЬКО для выбранной кампании

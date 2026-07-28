@@ -19,13 +19,19 @@ export default function PaymentSuccessPage() {
       || '';
     setPlan(planParam);
 
-    // Очищаем после считывания
-    localStorage.removeItem('pending_payment_id');
-    localStorage.removeItem('pending_payment_plan');
+    // Ключи из localStorage НЕ чистим здесь: раньше они стирались до исхода
+    // поллинга, и перезагрузка страницы посреди проверки оставляла пользователя
+    // без paymentId — повторить активацию было уже нечем (находка ревью
+    // 2026-07-28). Чистим только когда тариф действительно активирован.
+    const clearPendingPayment = () => {
+      localStorage.removeItem('pending_payment_id');
+      localStorage.removeItem('pending_payment_plan');
+    };
 
     const token = localStorage.getItem('auth_token');
 
     if (!paymentId) {
+      clearPendingPayment();
       setStatus('ok');
       return;
     }
@@ -48,9 +54,12 @@ export default function PaymentSuccessPage() {
           // Инвалидируем кэш профиля чтобы фронт подхватил новый тариф
           queryClient.invalidateQueries({ queryKey: ['/api/user/profile'] });
           queryClient.invalidateQueries({ queryKey: ['/api/auth/me'] });
+          clearPendingPayment();
           setStatus('ok');
           return true;
         }
+        // 409 «идёт обработка» — не отказ: активация выполняется параллельно
+        // (например, по вебхуку), надо просто подождать и повторить.
       } catch (_) {}
       return false;
     };
@@ -64,10 +73,14 @@ export default function PaymentSuccessPage() {
         if (res.ok) {
           const data = await res.json();
           if (data.status === 'succeeded' || data.paid) {
-            clearInterval(interval);
             const activated = await tryActivate(paymentId, token);
-            if (!activated) setStatus('ok');
-            return;
+            if (activated) {
+              clearInterval(interval);
+              return;
+            }
+            // Оплата прошла, но активация ещё не подтверждена. Раньше здесь
+            // показывался успех — пользователь видел «Тариф активирован» без
+            // тарифа. Продолжаем попытки до maxAttempts, потом честное «ожидает».
           }
         }
       } catch (_) {}

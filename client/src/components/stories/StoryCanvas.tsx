@@ -63,7 +63,9 @@ export default function StoryCanvas({ slide, storyId, onSlideUpdate }: StoryCanv
     mutationFn: ({ elementId, data }: { elementId: string; data: any }) =>
       apiRequest(`/api/stories/${storyId}/slides/${slide?.id}/elements/${elementId}`, {
         method: 'PUT',
-        body: JSON.stringify(data)
+        // Именно `data`: опции `body` у apiRequest нет, с ней запрос уходил
+        // без тела (находка ревью 2026-07-28).
+        data,
       }),
     onSuccess: () => {
       onSlideUpdate();

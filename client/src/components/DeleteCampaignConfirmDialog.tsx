@@ -85,7 +85,11 @@ export function DeleteCampaignConfirmDialog({
             
             if (keywordsCheckResponse.ok) {
               const keywordsData = await keywordsCheckResponse.json();
-              relatedDataCounts.keywords = keywordsData.data?.length || 0;
+              // /api/keywords отдаёт ГОЛЫЙ массив, а не {data}. Чтение .data давало
+              // ноль всегда, и предупреждение перед удалением кампании молчало о
+              // ключевых словах (находка ревью 2026-07-28). Терпим обе формы.
+              const keywordsList = Array.isArray(keywordsData) ? keywordsData : keywordsData?.data;
+              relatedDataCounts.keywords = Array.isArray(keywordsList) ? keywordsList.length : 0;
               if (relatedDataCounts.keywords > 0) hasRelatedData = true;
 
             }

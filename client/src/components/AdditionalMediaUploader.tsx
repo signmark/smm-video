@@ -2,7 +2,6 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { VideoUploader } from "./VideoUploader";
 import { Plus, Trash2, ImageIcon } from "lucide-react";
-import { MediaUploader } from "./MediaUploader";
 import { useState } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";

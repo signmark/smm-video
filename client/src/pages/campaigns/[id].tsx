@@ -670,6 +670,12 @@ export default function CampaignDetails() {
           refresh_token: localStorage.getItem('refresh_token'),
         }),
       });
+      // 5xx и 404 (чужая кампания) без этой проверки проходили как успех
+      // (находка ревью 2026-07-28).
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || 'Не удалось запустить автономный режим');
+      }
       return res.json();
     },
     onSuccess: (data) => {
@@ -679,6 +685,9 @@ export default function CampaignDetails() {
         toast({ description: '🤖 Автономный режим запущен' });
         queryClient.invalidateQueries({ queryKey: ['/api/autonomous/status', id] });
       }
+    },
+    onError: (err: any) => {
+      toast({ variant: 'destructive', description: err?.message || 'Ошибка запуска' });
     },
   });
 
@@ -690,11 +699,18 @@ export default function CampaignDetails() {
         headers: { 'Content-Type': 'application/json', Authorization: token ? `Bearer ${token}` : '' },
         body: JSON.stringify({ campaignId: id }),
       });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || 'Не удалось остановить автономный режим');
+      }
       return res.json();
     },
     onSuccess: () => {
       toast({ description: '⛔ Автономный режим остановлен' });
       queryClient.invalidateQueries({ queryKey: ['/api/autonomous/status', id] });
+    },
+    onError: (err: any) => {
+      toast({ variant: 'destructive', description: err?.message || 'Ошибка остановки' });
     },
   });
 

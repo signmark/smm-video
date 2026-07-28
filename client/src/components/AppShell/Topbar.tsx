@@ -13,6 +13,7 @@ import { useCampaignStore } from "@/lib/campaignStore";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { useTranslation } from 'react-i18next';
 import { Link } from "wouter";
+import { useToast } from "@/hooks/use-toast";
 
 type PipelineMode = 'full_auto' | 'controlled' | 'mixed';
 
@@ -37,6 +38,7 @@ interface UserProfile {
 export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfile, onOpenAIChat, onOpenTGBot, location }: TopbarProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
+  const { toast } = useToast();
   const [showModeDialog, setShowModeDialog] = useState(false);
   const [selectedMode, setSelectedMode] = useState<PipelineMode>('full_auto');
   
@@ -120,11 +122,25 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
           refresh_token: localStorage.getItem('refresh_token'),
         }),
       });
+      // Без этой проверки 5xx проходил как успех: диалог закрывался, статус
+      // инвалидировался, пользователь считал, что режим запущен
+      // (находка ревью 2026-07-28).
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || 'Не удалось запустить автономный режим');
+      }
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/autonomous/status', selectedCampaignId] });
       setShowModeDialog(false);
+    },
+    onError: (err: any) => {
+      toast({
+        title: 'Ошибка',
+        description: err?.message || 'Не удалось запустить автономный режим',
+        variant: 'destructive',
+      });
     },
   });
 
@@ -135,10 +151,21 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
         headers: { 'Content-Type': 'application/json', Authorization: token ? `Bearer ${token}` : '' },
         body: JSON.stringify({ campaignId: selectedCampaignId }),
       });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || 'Не удалось остановить автономный режим');
+      }
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/autonomous/status', selectedCampaignId] });
+    },
+    onError: (err: any) => {
+      toast({
+        title: 'Ошибка',
+        description: err?.message || 'Не удалось остановить автономный режим',
+        variant: 'destructive',
+      });
     },
   });
 

@@ -13,7 +13,21 @@ interface InstagramSetupWizardProps {
   onCancel: () => void;
 }
 
+/**
+ * Шаги мастера. Разметка ниже обращается к ним по индексу (`currentStep - 1`),
+ * поэтому порядок здесь и есть порядок прохождения.
+ */
+const steps = [
+  { title: 'Данные приложения', description: 'App ID и App Secret вашего Facebook приложения' },
+  { title: 'Авторизация', description: 'Вход через Facebook в отдельном окне' },
+  { title: 'Готово', description: 'Instagram подключён к кампании' },
+];
+
 const InstagramSetupWizard: React.FC<InstagramSetupWizardProps> = ({ campaignId, onComplete, onCancel }) => {
+  // Без этого состояния страница /settings/instagram-setup падала с
+  // ReferenceError прямо при рендере: currentStep и steps использовались в
+  // разметке, но нигде не объявлялись (находка ревью 2026-07-28).
+  const [currentStep, setCurrentStep] = useState(1);
   const [isProcessing, setIsProcessing] = useState(false);
   const [formData, setFormData] = useState({
     appId: '',
@@ -54,7 +68,10 @@ const InstagramSetupWizard: React.FC<InstagramSetupWizardProps> = ({ campaignId,
       if (data.success && data.authUrl) {
         // Открываем окно авторизации точно как VK
         window.open(data.authUrl, 'instagram-auth', 'width=600,height=600');
-        
+
+        // Окно открыто — мастер переходит на шаг ожидания авторизации.
+        setCurrentStep(2);
+
         toast({
           title: "OAuth авторизация",
           description: "Откроется окно для авторизации Instagram"

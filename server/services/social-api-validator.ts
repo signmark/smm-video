@@ -63,6 +63,19 @@ export async function validateTelegramToken(token: string): Promise<ApiKeyValida
 }
 
 /**
+ * Достаёт сообщество из ответа `groups.getById` независимо от версии API.
+ *
+ * v5.131 отдаёт `{ response: [ {...} ] }`, v5.199 — `{ response: { groups: [ {...} ] } }`.
+ * Возвращает undefined, если сообщества в ответе нет (ошибка или пустой список).
+ */
+function extractVkGroup(body: any): any | undefined {
+  const payload = body?.response;
+  if (Array.isArray(payload)) return payload[0];
+  if (Array.isArray(payload?.groups)) return payload.groups[0];
+  return undefined;
+}
+
+/**
  * Проверяет токен доступа VK
  * @param token Токен доступа VK API
  * @param groupId ID группы (опционально)
@@ -105,8 +118,13 @@ export async function validateVkToken(token: string, groupId?: string): Promise<
             timeout: 10000
           });
           
-          if (groupResponse.data && groupResponse.data.response && Array.isArray(groupResponse.data.response)) {
-            const groupInfo = groupResponse.data.response[0];
+          // Форма ответа groups.getById зависит от версии API:
+          //   v5.131 → { response: [ {...} ] }            — массив
+          //   v5.199 → { response: { groups: [ {...} ] } } — объект с `groups`
+          // Проверка ждала только массив, поэтому после перехода на v5.199 для
+          // vk2-токенов живая группа опознавалась как «неожиданный ответ».
+          const groupInfo = extractVkGroup(groupResponse.data);
+          if (groupInfo) {
             return {
               isValid: true,
               message: `Токен валиден. Пользователь: ${userInfo.first_name} ${userInfo.last_name}, Группа: ${groupInfo.name}`,

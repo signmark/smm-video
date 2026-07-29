@@ -145,3 +145,67 @@ describe('validateVkToken — проверка группы', () => {
     expect(JSON.stringify(result)).not.toContain(token);
   });
 });
+
+/**
+ * Форма ответа groups.getById зависит от версии API, а версия — от типа токена:
+ *   v5.131 (старые токены) → { response: [ {...} ] }
+ *   v5.199 (vk2-токены)    → { response: { groups: [ {...} ] } }
+ * Проверка ждала только массив, и после перехода на v5.199 живая группа
+ * опознавалась как «неожиданный ответ» — прод 29.07.2026, сразу после
+ * успешного переподключения.
+ */
+describe('validateVkToken — формы ответа по версиям API', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('v5.199: response.groups[] → isValid true', async () => {
+    stubVk(
+      { data: { response: [USER] } },
+      { data: { response: { groups: [GROUP] } } },
+    );
+
+    const result = await validateVkToken('vk2.токен', '777');
+
+    expect(result.isValid).toBe(true);
+    expect(result.details.group).toEqual(GROUP);
+  });
+
+  it('v5.131: response[] по-прежнему работает', async () => {
+    stubVk(
+      { data: { response: [USER] } },
+      { data: { response: [GROUP] } },
+    );
+
+    expect((await validateVkToken('старый-токен', '777')).isValid).toBe(true);
+  });
+
+  it('пустой список сообществ → isValid false', async () => {
+    stubVk(
+      { data: { response: [USER] } },
+      { data: { response: { groups: [] } } },
+    );
+
+    expect((await validateVkToken('vk2.токен', '777')).isValid).toBe(false);
+  });
+
+  it('vk2-токен уходит Bearer-заголовком с v5.199, без access_token в query', async () => {
+    stubVk({ data: { response: [USER] } }, { data: { response: { groups: [GROUP] } } });
+
+    await validateVkToken('vk2.секрет', '777');
+
+    const call = (axios.get as any).mock.calls.find((c: any[]) => c[0] === USERS_GET);
+    expect(call[1].headers.Authorization).toBe('Bearer vk2.секрет');
+    expect(call[1].params.v).toBe('5.199');
+    expect(call[1].params.access_token).toBeUndefined();
+  });
+
+  it('старый токен уходит параметром access_token с v5.131', async () => {
+    stubVk({ data: { response: [USER] } });
+
+    await validateVkToken('старый-токен');
+
+    const call = (axios.get as any).mock.calls.find((c: any[]) => c[0] === USERS_GET);
+    expect(call[1].headers).toBeUndefined();
+    expect(call[1].params.v).toBe('5.131');
+    expect(call[1].params.access_token).toBe('старый-токен');
+  });
+});

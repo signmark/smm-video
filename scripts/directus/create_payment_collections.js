@@ -88,6 +88,12 @@ const COLLECTIONS = [
       { field: 'reserved_at', type: 'timestamp', schema: { is_nullable: true } },
       { field: 'completed_at', type: 'timestamp', schema: { is_nullable: true } },
       { field: 'released_at', type: 'timestamp', schema: { is_nullable: true } },
+      // Заполняется, когда автоматика не смогла довести бронь до однозначного
+      // состояния: платёж создан, но связать его с бронью не удалось, а отмену
+      // платежа в ЮКассе подтвердить не получилось. Такую бронь НЕ освобождаем
+      // (иначе скидку получат дважды) и разбираем руками.
+      { field: 'needs_reconciliation', type: 'boolean', schema: { is_nullable: true, default_value: false } },
+      { field: 'last_error', type: 'text', schema: { is_nullable: true } },
     ],
   },
 ];

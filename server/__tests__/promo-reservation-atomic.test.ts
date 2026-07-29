@@ -41,6 +41,8 @@ let paymentSeq = 0;
 /** Статусы, которые ЮКасса отдаёт по своим платежам. */
 let paymentStatus: Record<string, string> = {};
 let userPatches: any[] = [];
+/** true → ЮКасса не подтверждает отмену платежа. */
+let cancelFails = false;
 
 function jsonResponse(body: any, ok = true, status = 200) {
   return Promise.resolve({ ok, status, json: async () => body, text: async () => JSON.stringify(body) } as any);
@@ -62,6 +64,15 @@ const fetchMock = vi.fn((url: any, init?: any) => {
   const body = init?.body ? JSON.parse(init.body) : null;
 
   if (u.includes('api.yookassa.ru')) {
+    // Отмена платежа: POST /payments/{id}/cancel
+    const cancelMatch = u.match(/payments\/([^/]+)\/cancel$/);
+    if (cancelMatch) {
+      const cancelId = cancelMatch[1];
+      if (cancelFails) return jsonResponse({ errors: [] }, false, 500);
+      paymentStatus[cancelId] = 'canceled';
+      return jsonResponse({ id: cancelId, status: 'canceled' });
+    }
+
     if (method === 'POST') {
       const id = `pay-${++paymentSeq}`;
       const payment = {
@@ -99,6 +110,29 @@ const fetchMock = vi.fn((url: any, init?: any) => {
       return jsonResponse({ data: row });
     }
     if (method === 'PATCH') {
+      // Update-by-query: PATCH /items/<коллекция> с {query:{filter}, data}.
+      // Именно на нём держится CAS-переход состояния брони: условие проверяется
+      // той же операцией, что и запись, поэтому гонку выигрывает ровно один.
+      if (body && body.query && body.data) {
+        const filter = body.query.filter || {};
+        const matched = rows.filter(r =>
+          Object.entries(filter).every(([field, cond]: [string, any]) => {
+            const expected = cond?._eq;
+            return expected === undefined || String(r[field]) === String(expected);
+          }),
+        );
+        for (const row of matched) {
+          for (const f of UNIQUES[name] || []) {
+            // Обнуление замка конфликтом не считается.
+            if (body.data[f] != null && rows.some(o => o !== row && o[f] === body.data[f])) {
+              return uniqueViolation();
+            }
+          }
+          Object.assign(row, body.data);
+        }
+        return jsonResponse({ data: matched });
+      }
+
       const id = u.split('/').pop()!.split('?')[0];
       const row = rows.find(r => r.id === id);
       if (row) Object.assign(row, body);
@@ -107,7 +141,13 @@ const fetchMock = vi.fn((url: any, init?: any) => {
     return jsonResponse({ data: matchRows(rows, u) });
   }
 
-  if (u.includes('/users/me')) return jsonResponse({ data: { id: currentUser } });
+  if (u.includes('/users/me')) {
+    // Пользователя берём из токена запроса, а не из общей переменной: при
+    // Promise.all все параллельные вызовы иначе видели бы последнего.
+    const auth = String(init?.headers?.Authorization || init?.headers?.authorization || '');
+    const fromToken = auth.startsWith('Bearer user-') ? auth.slice('Bearer '.length) : null;
+    return jsonResponse({ data: { id: fromToken || currentUser } });
+  }
   if (u.match(/\/users\/[\w-]+/)) {
     if (method === 'PATCH') { userPatches.push(body); return jsonResponse({ data: {} }); }
     return jsonResponse({ data: { email: 'u@t.local' } });
@@ -116,6 +156,13 @@ const fetchMock = vi.fn((url: any, init?: any) => {
 });
 
 vi.stubGlobal('fetch', fetchMock);
+
+/**
+ * Эталонная реализация мока. Тесты, которые ломают отдельные запросы, подменяют
+ * реализацию — и если такой тест падает, подмена утекала во все следующие, и они
+ * краснели по чужой причине. Восстанавливаем её централизованно в beforeEach.
+ */
+const PRISTINE_FETCH = fetchMock.getMockImplementation()!;
 
 let app: express.Express;
 async function buildApp() {
@@ -130,7 +177,8 @@ async function buildApp() {
 
 const create = (user = 'user-1', code = 'HALF') => {
   currentUser = user;
-  return request(app).post('/api/payments/create').set('Authorization', 'Bearer t')
+  // Токен несёт имя пользователя — так параллельные запросы не путаются.
+  return request(app).post('/api/payments/create').set('Authorization', `Bearer ${user}`)
     .send({ plan: 'Профессиональный', promoCode: code });
 };
 const activate = (paymentId: string) =>
@@ -149,12 +197,14 @@ const reservations = () => tables.promo_reservations || [];
 
 beforeEach(async () => {
   vi.clearAllMocks();
+  fetchMock.mockImplementation(PRISTINE_FETCH);
   tables = {};
   seq = 0;
   paymentSeq = 0;
   yookassaPayments = {};
   paymentStatus = {};
   userPatches = [];
+  cancelFails = false;
   currentUser = 'user-1';
   promo = { id: 'promo-50', code: 'HALF', type: 'discount', value: 50, is_active: true, expires_at: null, max_uses: null, used_count: 0 };
   app = await buildApp();
@@ -312,7 +362,6 @@ describe('хранилище броней недоступно', () => {
     // Реализацию надо вернуть руками: vi.clearAllMocks() в beforeEach чистит
     // вызовы, но не mockImplementation — иначе «недоступное хранилище» протекает
     // во все следующие тесты файла и они зеленеют/краснеют по чужой причине.
-    fetchMock.mockImplementation(realFetch);
   });
 });
 
@@ -414,10 +463,9 @@ describe('дыры в нумерации слотов переиспользую
 });
 
 describe('привязка платежа к брони', () => {
-  it('сбой привязки не роняет создание платежа', async () => {
-    // PATCH брони с yookassa_payment_id падает — платёж в ЮКассе уже создан,
-    // пользователь обязан получить ссылку на оплату.
-    const realFetch = fetchMock.getMockImplementation()!;
+  /** Ломает PATCH, который проставляет броне yookassa_payment_id. */
+  const breakAttach = () => {
+    const realFetch = PRISTINE_FETCH;
     fetchMock.mockImplementation((url: any, init?: any) => {
       if (String(url).includes('/items/promo_reservations/') && init?.method === 'PATCH'
           && JSON.parse(init.body).yookassa_payment_id) {
@@ -425,11 +473,202 @@ describe('привязка платежа к брони', () => {
       }
       return realFetch(url, init);
     });
+    return realFetch;
+  };
+
+  it('сбой привязки → ссылка на оплату НЕ выдаётся', async () => {
+    // Иначе пользователь платит по платежу, о котором приложение не знает:
+    // бронь без yookassa_payment_id через 30 минут посчитают брошенной.
+    breakAttach();
 
     const res = await create('user-1');
 
-    expect(res.status).toBe(200);
-    expect(res.body.confirmationUrl).toBeTruthy();
-    fetchMock.mockImplementation(realFetch);
+    expect(res.status).toBe(503);
+    expect(res.body.confirmationUrl).toBeUndefined();
+    expect(res.body.retryable).toBe(true);
+    // Наружу не должно уезжать ничего про устройство внутренностей.
+    expect(JSON.stringify(res.body)).not.toMatch(/directus|promo_reservations|boom/i);
+
   });
+
+  it('подтверждённая отмена в ЮКассе освобождает бронь', async () => {
+    breakAttach();
+
+    await create('user-1');
+
+    const row = reservations()[0];
+    expect(row.status).toBe('released');
+    expect(row.user_lock).toBeNull();
+    expect(row.slot_lock).toBeNull();
+
+  });
+
+  it('неподтверждённая отмена оставляет бронь занятой и помечает на разбор', async () => {
+    // Платёж, возможно, жив. Освободить слот значило бы выдать скидку дважды.
+    cancelFails = true;
+    breakAttach();
+
+    const res = await create('user-1');
+
+    expect(res.status).toBe(503);
+    const row = reservations()[0];
+    expect(row.status).toBe('reserved');
+    expect(row.user_lock).not.toBeNull();
+    expect(row.needs_reconciliation).toBe(true);
+    expect(String(row.last_error)).toMatch(/отмена не подтверждена/);
+
+  });
+});
+
+describe('переходы состояния брони атомарны', () => {
+  it('одновременные погашение и освобождение — побеждает ровно один', async () => {
+    await create('user-1');
+    const payment: any = Object.values(yookassaPayments)[0];
+    paymentStatus[payment.id] = 'succeeded';
+
+    const { completePromoReservation, releasePromoReservation } = await import('../services/promo-reservation');
+    const orderId = reservations()[0].payment_id;
+
+    const [completed] = await Promise.all([
+      completePromoReservation(orderId),
+      releasePromoReservation(orderId, 'гонка реклеймера'),
+    ]);
+
+    const row = reservations()[0];
+    // Оба перехода из reserved: выиграть может только один, статус однозначен.
+    expect(['completed', 'released']).toContain(row.status);
+    if (row.status === 'completed') {
+      expect(completed.completed).toBe(true);
+      // Погашенная бронь замки не теряет — иначе слот выглядел бы свободным.
+      expect(row.user_lock).not.toBeNull();
+    }
+  });
+
+  it('погашенную бронь освободить нельзя', async () => {
+    await create('user-1');
+    const orderId = reservations()[0].payment_id;
+
+    const { completePromoReservation, releasePromoReservation } = await import('../services/promo-reservation');
+    await completePromoReservation(orderId);
+    await releasePromoReservation(orderId, 'поздний реклеймер');
+
+    const row = reservations()[0];
+    expect(row.status).toBe('completed');
+    expect(row.user_lock).not.toBeNull();
+    expect(row.slot_lock).not.toBeNull();
+  });
+
+  it('гонка: чтение увидело reserved, а к записи бронь уже погашена', async () => {
+    // Настоящий TOCTOU. Раньше release читал статус, а потом писал безусловно —
+    // между этими шагами вебхук успевал погасить бронь, и оплаченная скидка
+    // обнулялась. Здесь чтение намеренно врёт «reserved», а в таблице уже
+    // completed: спасти может только условие внутри самой операции записи.
+    await create('user-1');
+    const orderId = reservations()[0].payment_id;
+    reservations()[0].status = 'completed';
+
+    const realFetch = PRISTINE_FETCH;
+    fetchMock.mockImplementation((url: any, init?: any) => {
+      const u = String(url);
+      const isReadOfThisRow = u.includes('/items/promo_reservations?')
+        && u.includes(encodeURIComponent(orderId))
+        && (init?.method || 'GET') === 'GET';
+      if (isReadOfThisRow) {
+        return jsonResponse({ data: [{ ...reservations()[0], status: 'reserved' }] });
+      }
+      return realFetch(url, init);
+    });
+
+    const { releasePromoReservation } = await import('../services/promo-reservation');
+    await releasePromoReservation(orderId, 'реклеймер по устаревшему чтению');
+
+    const row = reservations()[0];
+    expect(row.status).toBe('completed');
+    expect(row.user_lock).not.toBeNull();
+    expect(row.slot_lock).not.toBeNull();
+  });
+
+  it('повторное погашение подписку второй раз не выдаёт', async () => {
+    await create('user-1');
+    const paymentId = markPaid();
+
+    const first = await activate(paymentId);
+    expect(first.status).toBe(200);
+    const afterFirst = userPatches.length;
+
+    const second = await webhookFor(paymentId);
+    expect(second.status).toBe(200);
+
+    expect(userPatches).toHaveLength(afterFirst);
+    expect(reservations()[0].status).toBe('completed');
+  });
+
+  it('повтор доводит погашение, если первый проход его не завершил', async () => {
+    await create('user-1');
+    const paymentId = markPaid();
+
+    // Первый проход: выдаём подписку, но погашение брони падает.
+    const realFetch = fetchMock.getMockImplementation()!;
+    fetchMock.mockImplementation((url: any, init?: any) => {
+      const b = init?.body ? JSON.parse(init.body) : null;
+      if (String(url).includes('/items/promo_reservations') && init?.method === 'PATCH'
+          && b?.data?.status === 'completed') {
+        return jsonResponse({ errors: [{ message: 'boom' }] }, false, 500);
+      }
+      return realFetch(url, init);
+    });
+
+    const first = await activate(paymentId);
+    expect(first.status).toBe(200);
+    expect(reservations()[0].status).toBe('reserved');
+    const afterFirst = userPatches.length;
+
+    // Повтор по тому же платежу: подписка уже выдана, а бронь догашается.
+    fetchMock.mockImplementation(realFetch);
+    const second = await webhookFor(paymentId);
+
+    expect(second.status).toBe(200);
+    expect(reservations()[0].status).toBe('completed');
+    expect(userPatches).toHaveLength(afterFirst);
+  });
+});
+
+describe('конкурентные резервирования', () => {
+  it('50 параллельных запросов по коду без лимита — все получают слот', async () => {
+    promo.max_uses = null;
+
+    const users = Array.from({ length: 50 }, (_, i) => `user-c${i}`);
+    const results = await Promise.all(users.map(u => create(u)));
+
+    const ok = results.filter(r => r.status === 200);
+    // Раньше жёсткие 25 попыток давали ложный отказ на 26-м и далее.
+    expect(ok).toHaveLength(50);
+
+    const slots = reservations().map(r => r.slot_index);
+    expect(new Set(slots).size).toBe(slots.length); // ни одного повтора номера
+  }, 30_000);
+
+  it('max_uses не превышается при гонке', async () => {
+    promo.max_uses = 5;
+
+    const users = Array.from({ length: 30 }, (_, i) => `user-m${i}`);
+    const results = await Promise.all(users.map(u => create(u)));
+
+    const ok = results.filter(r => r.status === 200);
+    expect(ok).toHaveLength(5);
+
+    const active = reservations().filter(r => r.status === 'reserved');
+    expect(active).toHaveLength(5);
+    expect(active.every(r => r.slot_index < 5)).toBe(true);
+  }, 30_000);
+
+  it('один пользователь не получает скидку дважды при параллельных запросах', async () => {
+    promo.max_uses = null;
+
+    const results = await Promise.all([create('user-1'), create('user-1'), create('user-1')]);
+
+    const ok = results.filter(r => r.status === 200);
+    expect(ok).toHaveLength(1);
+    expect(reservations().filter(r => r.status === 'reserved')).toHaveLength(1);
+  }, 30_000);
 });

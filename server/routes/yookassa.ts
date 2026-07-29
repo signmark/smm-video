@@ -17,6 +17,7 @@ import {
   completePromoReservation,
   releasePromoReservation,
   attachPaymentId,
+  flagReservationReconciliation,
   getReservationByPayment,
   isReservationStoreReady,
   PromoReservationUnavailableError,
@@ -70,6 +71,122 @@ async function yookassaRequest(method: string, path: string, body?: object): Pro
     throw new Error(`YooKassa ${method} ${path} → ${res.status}: ${text}`);
   }
   return res.json();
+}
+
+/**
+ * Настройка платежа не доведена до конца — ссылку на оплату отдавать нельзя.
+ *
+ * Отдельный класс, чтобы обработчик отличил этот случай от прочих сбоев и
+ * ответил повторяемой ошибкой без внутренних подробностей.
+ */
+class PaymentSetupFailedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PaymentSetupFailedError';
+  }
+}
+
+/**
+ * Отзывает созданный платёж, если связать его с бронью промокода не удалось.
+ *
+ * Порядок принципиален: бронь освобождается ТОЛЬКО после того, как ЮКасса
+ * подтвердила отмену. Если отмену подтвердить нельзя — слот остаётся занятым и
+ * бронь помечается на ручной разбор. Ошибиться в эту сторону значит придержать
+ * одну скидку; в обратную — выдать её дважды по живому платежу.
+ */
+async function cancelPaymentAndReleaseReservation(params: {
+  paymentId: string;
+  orderId: string;
+  promoCode: string;
+  userId: string;
+  reason: string;
+}): Promise<void> {
+  const { paymentId, orderId, promoCode, userId, reason } = params;
+
+  let cancelled = false;
+  try {
+    const result = await yookassaRequest('POST', `/${paymentId}/cancel`);
+    cancelled = result?.status === 'canceled';
+    if (!cancelled) {
+      // Ответ пришёл, но статус не тот — считаем отмену неподтверждённой.
+      console.error(`[yookassa] Отмена платежа ${paymentId} вернула статус ${result?.status}`);
+    }
+  } catch (cancelErr: any) {
+    console.error(`[yookassa] Не удалось отменить платёж ${paymentId}: ${cancelErr?.message}`);
+  }
+
+  if (!cancelled) {
+    // Платёж, возможно, жив. Бронь держим и помечаем на разбор.
+    console.error(
+      `[yookassa] СВЕРКА: платёж ${paymentId} создан, привязать к брони не удалось (${reason}), `
+      + `отмена не подтверждена. Бронь order=${orderId} promo=${promoCode} userId=${userId} остаётся занятой.`,
+    );
+    await flagReservationReconciliation(
+      orderId,
+      `платёж ${paymentId} создан, привязка не удалась (${reason}), отмена не подтверждена`,
+    ).catch(() => {});
+    return;
+  }
+
+  // Отмена подтверждена — платёж мёртв, слот можно вернуть в оборот.
+  console.warn(`[yookassa] Платёж ${paymentId} отменён после сбоя привязки; освобождаем бронь ${orderId}`);
+  try {
+    await releasePromoReservation(orderId, `платёж ${paymentId} отменён: ${reason}`);
+  } catch (releaseErr: any) {
+    await flagReservationReconciliation(
+      orderId,
+      `платёж ${paymentId} отменён, но бронь не освободилась: ${releaseErr?.message}`,
+    ).catch(() => {});
+  }
+}
+
+/**
+ * Догашает промокод по уже оплаченному платежу.
+ *
+ * Вынесено отдельным шагом, потому что вызывается ДВАЖДЫ по разным поводам:
+ *
+ *  - сразу после выдачи подписки (основной путь);
+ *  - при ПОВТОРНОМ обращении по тому же платежу, когда журнал уже отвечает
+ *    «обработан». Раньше повтор в этом месте просто разворачивался, и бронь,
+ *    не погасившаяся с первого раза, оставалась в `reserved` навсегда.
+ *
+ * Подписку этот шаг не трогает — значит повтор не может выдать её второй раз.
+ * Идемпотентность самого погашения обеспечивает CAS внутри
+ * `completePromoReservation`: выигрывает ровно один вызов.
+ */
+async function finalizePromoRedemption(meta: any, paymentId: string): Promise<void> {
+  if (!meta?.promo_id || !meta?.order_id) return;
+
+  try {
+    const redeemed = await completePromoReservation(meta.order_id);
+
+    if (redeemed.completed) {
+      await recordPromoUse(meta.promo_id, meta.user_id, paymentId, meta.plan);
+      return;
+    }
+
+    if (redeemed.releasedBeforeCompletion) {
+      // Бронь успели освободить: скидка могла уйти другому. Подписка выдана и
+      // отбирать её нельзя — фиксируем расхождение, повтор тут не поможет.
+      console.error(
+        `[yookassa] СВЕРКА: платёж ${paymentId} успешен, но бронь ${meta.order_id} освобождена раньше погашения`,
+      );
+      await flagReservationReconciliation(
+        meta.order_id,
+        `платёж ${paymentId} успешен, бронь освобождена раньше погашения`,
+      ).catch(() => {});
+    }
+    // alreadyCompleted — нормальный повтор: гасит первый вызов, второй молчит.
+  } catch (err: any) {
+    // Не бросаем: подписка уже выдана, и ронять ответ незачем. Бронь остаётся в
+    // reserved, помечена на разбор, а следующий вебхук/activate по этому же
+    // платежу пройдёт сюда снова и доведёт погашение.
+    console.error(`[yookassa] Погашение брони ${meta.order_id} не завершено: ${err?.message}`);
+    await flagReservationReconciliation(
+      meta.order_id,
+      `погашение не завершено после успешного платежа ${paymentId}: ${err?.message}`,
+    ).catch(() => {});
+  }
 }
 
 /**
@@ -338,14 +455,24 @@ router.post('/payments/create', async (req: Request, res: Response) => {
       try {
         await attachPaymentId(orderId, payment.id);
       } catch (attachErr: any) {
-        // Платёж в ЮКассе уже создан — ронять запрос нельзя, пользователь должен
-        // получить ссылку на оплату. Но и молчать нельзя: без yookassa_payment_id
-        // бронь через 30 минут посчитают брошенной и отдадут скидку другому, пока
-        // этот платёж живой. Оставляем след для ручной сверки.
-        console.error(
-          `[yookassa] СВЕРКА: не удалось привязать платёж ${payment.id} к брони промокода `
-          + `order=${orderId} promo=${appliedPromo.code} userId=${userId}: ${attachErr?.message}`,
-        );
+        // Связь «платёж ↔ бронь» не сохранилась. Отдать сейчас ссылку на оплату
+        // нельзя: приложение о таком платеже не знает, а бронь без
+        // yookassa_payment_id через 30 минут посчитают брошенной и отдадут
+        // скидку другому — при том что пользователь уже платит.
+        //
+        // Поэтому платёж отзываем. Бронь освобождаем ТОЛЬКО после подтверждённой
+        // отмены; если отмену подтвердить не удалось, слот остаётся занятым —
+        // лучше придержать одну скидку, чем выдать её дважды.
+        await cancelPaymentAndReleaseReservation({
+          paymentId: payment.id,
+          orderId,
+          promoCode: appliedPromo.code,
+          userId,
+          reason: attachErr?.message || 'attach failed',
+        });
+
+        // Дальше по общему обработчику ошибок: клиент получает 503 и повторяет.
+        throw new PaymentSetupFailedError('не удалось связать платёж с бронью промокода');
       }
     }
 
@@ -361,8 +488,22 @@ router.post('/payments/create', async (req: Request, res: Response) => {
     });
   } catch (err: any) {
     // Платёж не создался — бронь промокода держать незачем, иначе код сгорит впустую.
-    if (createdOrderId) {
+    //
+    // Исключение — PaymentSetupFailedError: там судьба брони уже решена
+    // (освобождена после подтверждённой отмены либо намеренно оставлена занятой
+    // и помечена на разбор). Освобождать её здесь значит переиграть это решение
+    // и отдать скидку второй раз по живому платежу.
+    if (createdOrderId && !(err instanceof PaymentSetupFailedError)) {
       await releasePromoReservation(createdOrderId, 'создание платежа не удалось').catch(() => {});
+    }
+    if (err instanceof PaymentSetupFailedError) {
+      // Платёж уже отозван (или помечен на разбор) внутри обработчика выше.
+      // Клиенту — повторяемая ошибка без внутренних подробностей.
+      console.error('[yookassa] Настройка платежа не завершена:', err?.message);
+      return res.status(503).json({
+        error: 'Не удалось подготовить оплату, попробуйте ещё раз через минуту',
+        retryable: true,
+      });
     }
     if (err instanceof PromoReservationUnavailableError) {
       console.error('[yookassa] Хранилище броней недоступно:', err?.message);
@@ -457,6 +598,12 @@ async function activateVerifiedPayment(
       return { status: 409, body: { error: 'Платёж обрабатывается, повторите через минуту', inProgress: true, retryable: true } };
     }
     console.log(`[yookassa/${source}] Платёж ${paymentId} уже обработан — активация пропущена`);
+
+    // Подписку повторно не выдаём, а вот незавершённое погашение промокода
+    // доводим до конца. Именно здесь раньше терялась бронь: первый проход не
+    // смог её погасить, а все следующие разворачивались на этой строке.
+    await finalizePromoRedemption(meta, paymentId);
+
     return { status: 200, body: { ok: true, plan: meta.plan, alreadyProcessed: true } };
   }
 
@@ -485,18 +632,12 @@ async function activateVerifiedPayment(
 
   await completePaymentActivation(claim.recordId);
 
-  // Промокод расходуется ровно один раз: повторный вызов по уже погашенной броне
-  // ничего не меняет, поэтому /activate и webhook друг друга не дублируют.
-  if (meta.promo_id && meta.order_id) {
-    try {
-      const redeemed = await completePromoReservation(meta.order_id);
-      if (redeemed.completed) {
-        await recordPromoUse(meta.promo_id, meta.user_id, paymentId, meta.plan);
-      }
-    } catch (err: any) {
-      console.error('[yookassa] Не удалось погасить бронь промокода:', err?.message);
-    }
-  }
+  // Промокод гасится отдельным шагом, который умеет доделываться повторным
+  // вызовом. Раньше ошибка здесь просто проглатывалась: платёж уже помечен
+  // completed, повторный вебхук получал already-processed и ничего не
+  // доводил — при успешной оплате бронь оставалась в reserved навсегда
+  // (находка ревью 2026-07-29).
+  await finalizePromoRedemption(meta, paymentId);
 
   // Postback — после отметки об обработке: повторный запрос сюда уже не дойдёт.
   try {

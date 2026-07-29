@@ -30,8 +30,24 @@ import type { PromoRecord } from './promo-validation';
 
 const COLLECTION = 'promo_reservations';
 
-/** Сколько попыток занять слот подряд, прежде чем сдаться. */
-const MAX_SLOT_ATTEMPTS = 25;
+/**
+ * Запас попыток СВЕРХ ёмкости кода.
+ *
+ * Раньше здесь стояло жёсткое 25, и при 26 одновременных покупателях промокод
+ * ложно отвечал «исчерпан» или 503, хотя свободные слоты были: каждый проигрыш
+ * в гонке съедал попытку (находка ревью 2026-07-29). Теперь лимит считается от
+ * фактической ёмкости, а запас покрывает конкурентные конфликты.
+ */
+const SLOT_ATTEMPT_MARGIN = 100;
+
+/** Потолок попыток для кодов без max_uses: столько параллельных гонок хватит с запасом. */
+const UNLIMITED_SLOT_ATTEMPTS = 200;
+
+/** Сколько попыток допустимо для кода такой ёмкости. */
+function slotAttemptBudget(maxUses: number | null): number {
+  if (maxUses === null) return UNLIMITED_SLOT_ATTEMPTS;
+  return maxUses + SLOT_ATTEMPT_MARGIN;
+}
 
 function directusUrl(): string {
   return process.env.DIRECTUS_URL || '';
@@ -89,6 +105,33 @@ export async function isReservationStoreReady(): Promise<boolean> {
   }
 }
 
+/**
+ * Помечает бронь как требующую ручного разбора и оставляет причину.
+ *
+ * Нужна там, где автоматика не смогла привести систему к однозначному
+ * состоянию: платёж в ЮКассе создан, связать его с бронью не удалось, а отмену
+ * платежа подтвердить не получилось. Такую бронь освобождать НЕЛЬЗЯ — иначе
+ * скидку получат дважды. Пусть слот останется занятым, а расхождение будет
+ * видно.
+ *
+ * Ошибку записи глушим: это диагностика поверх уже случившегося сбоя, ронять
+ * из-за неё вызывающего незачем — он и так идёт по ветке отказа.
+ */
+export async function flagReservationReconciliation(paymentId: string, reason: string): Promise<void> {
+  try {
+    const row = await getReservationByPayment(paymentId);
+    if (!row) return;
+    await fetch(`${directusUrl()}/items/${COLLECTION}/${row.id}`, {
+      method: 'PATCH',
+      headers: headers(),
+      body: JSON.stringify({ needs_reconciliation: true, last_error: reason.slice(0, 500) }),
+    });
+    log(`[promo] Бронь ${row.id} помечена на ручной разбор: ${reason}`, 'promo', 'error');
+  } catch (err: any) {
+    log(`[promo] Не удалось пометить бронь на разбор (${paymentId}): ${err?.message}`, 'promo', 'error');
+  }
+}
+
 /** Бронь по платежу, если есть. */
 export async function getReservationByPayment(paymentId: string): Promise<any | null> {
   const rows = await query(`?filter[payment_id][_eq]=${encodeURIComponent(paymentId)}&limit=1`);
@@ -132,20 +175,76 @@ function nextFreeSlot(occupied: Set<number>, maxUses: number | null): number | n
   return null;
 }
 
-async function releaseRow(rowId: string, reason: string): Promise<void> {
-  const res = await fetch(`${directusUrl()}/items/${COLLECTION}/${rowId}`, {
+/**
+ * Условный переход состояния брони — единственный способ её менять.
+ *
+ * Раньше и `releaseRow`, и погашение делали read-then-PATCH по id: прочитали
+ * статус, потом безусловно записали новый. Между чтением и записью реклеймер
+ * успевал освободить бронь, которую в этот же момент погашал вебхук, — и
+ * оплаченная скидка исчезала, либо, наоборот, погашенная бронь обнулялась
+ * (находка ревью 2026-07-29).
+ *
+ * Здесь используется update-by-query Directus: фильтр включает и `id`, и
+ * ОЖИДАЕМЫЙ статус, поэтому условие проверяется той же операцией, что и запись.
+ * Проигравший гонку получает пустой массив изменённых строк, а не «успех».
+ *
+ * @returns изменённая строка, либо `null` если переход не состоялся (кто-то
+ *          успел раньше и статус уже не `from`).
+ */
+async function transitionReservation(
+  rowId: string,
+  from: 'reserved' | 'completed',
+  patch: Record<string, any>,
+): Promise<any | null> {
+  const res = await fetch(`${directusUrl()}/items/${COLLECTION}`, {
     method: 'PATCH',
     headers: headers(),
     body: JSON.stringify({
-      status: 'released',
-      released_at: new Date().toISOString(),
-      // Обнуление замков и есть освобождение: NULL уникальному индексу не мешает.
-      user_lock: null,
-      slot_lock: null,
+      query: {
+        filter: {
+          id: { _eq: rowId },
+          // Условие перехода. Directus применит изменение только к строкам,
+          // которые ему удовлетворяют ПРЯМО СЕЙЧАС.
+          status: { _eq: from },
+        },
+      },
+      data: patch,
     }),
   });
-  if (!res.ok) throw new PromoReservationUnavailableError(`освобождение брони → ${res.status}`);
+
+  if (!res.ok) {
+    throw new PromoReservationUnavailableError(`переход брони ${from} → ${patch.status} → ${res.status}`);
+  }
+
+  const body = await res.json();
+  const updated = Array.isArray(body?.data) ? body.data : [];
+  // Пустой массив означает «условие не выполнилось»: строка уже в другом
+  // состоянии. Это штатный исход гонки, а не ошибка.
+  return updated.length > 0 ? updated[0] : null;
+}
+
+/**
+ * Освобождает бронь. Только из `reserved`: погашенную бронь освободить нельзя
+ * никаким путём — иначе оплаченная скидка пропадала бы.
+ *
+ * @returns true, если освободили именно мы.
+ */
+async function releaseRow(rowId: string, reason: string): Promise<boolean> {
+  const updated = await transitionReservation(rowId, 'reserved', {
+    status: 'released',
+    released_at: new Date().toISOString(),
+    // Обнуление замков и есть освобождение: NULL уникальному индексу не мешает.
+    user_lock: null,
+    slot_lock: null,
+  });
+
+  if (!updated) {
+    log(`[promo] Бронь ${rowId} освободить не удалось: уже не в состоянии reserved (${reason})`, 'promo', 'warn');
+    return false;
+  }
+
   log(`[promo] Бронь ${rowId} освобождена: ${reason}`, 'promo', 'warn');
+  return true;
 }
 
 /**
@@ -204,7 +303,9 @@ export async function reservePromo(params: {
   let occupied = await occupiedSlots(promoId);
   let reclaimTried = false;
 
-  for (let attempt = 0; attempt < MAX_SLOT_ATTEMPTS; attempt++) {
+  const attemptBudget = slotAttemptBudget(maxUses);
+
+  for (let attempt = 0; attempt < attemptBudget; attempt++) {
     const slot = nextFreeSlot(occupied, maxUses);
 
     if (slot === null) {
@@ -287,30 +388,63 @@ export async function reservePromo(params: {
       }
     }
 
+    // Гонку за этот номер мы проиграли. Локальной пометки мало: пока мы ходили
+    // в Directus, соседние запросы могли и занять, и освободить другие слоты.
+    // Перечитываем фактическое состояние — иначе на конкурентной нагрузке
+    // претендент бегает по уже занятым номерам и впустую жжёт попытки.
+    occupied = await occupiedSlots(promoId);
     occupied.add(slot);
   }
 
-  throw new PromoReservationUnavailableError('не удалось занять слот за отведённое число попыток');
+  throw new PromoReservationUnavailableError(
+    `не удалось занять слот за ${attemptBudget} попыток (ёмкость ${maxUses ?? 'без лимита'})`,
+  );
 }
 
 /**
  * Погашает бронь после успешной активации подписки. Идемпотентно: повторный вызов по
  * уже погашенной броне ничего не меняет.
  */
-export async function completePromoReservation(paymentId: string): Promise<{ completed: boolean; promoId?: string; userId?: string }> {
+export async function completePromoReservation(paymentId: string): Promise<{
+  completed: boolean;
+  /** Бронь уже погашена — этим же платежом, повторным вызовом. Финализация не нужна. */
+  alreadyCompleted?: boolean;
+  /** Бронь освобождена раньше, чем платёж дошёл: расхождение, чинится вручную. */
+  releasedBeforeCompletion?: boolean;
+  promoId?: string;
+  userId?: string;
+}> {
   const row = await getReservationByPayment(paymentId);
   if (!row) return { completed: false };
-  if (row.status === 'completed') return { completed: false, promoId: row.promo_code_id, userId: row.user_id };
-  if (row.status === 'released') return { completed: false };
 
-  const res = await fetch(`${directusUrl()}/items/${COLLECTION}/${row.id}`, {
-    method: 'PATCH',
-    headers: headers(),
-    body: JSON.stringify({ status: 'completed', completed_at: new Date().toISOString() }),
+  // Переход условный: `reserved → completed` выигрывает ровно один вызов.
+  // Реклеймер, дошедший до этой строки одновременно, увидит статус completed и
+  // освободить её уже не сможет — releaseRow тоже ходит через CAS.
+  const updated = await transitionReservation(row.id, 'reserved', {
+    status: 'completed',
+    completed_at: new Date().toISOString(),
   });
-  if (!res.ok) throw new PromoReservationUnavailableError(`погашение брони → ${res.status}`);
 
-  return { completed: true, promoId: row.promo_code_id, userId: row.user_id };
+  if (updated) {
+    return { completed: true, promoId: row.promo_code_id, userId: row.user_id };
+  }
+
+  // Условие не выполнилось — перечитываем, чтобы отличить «уже погашено» от
+  // «успели освободить». Второе означает, что скидку мог получить кто-то другой.
+  const current = await getReservationByPayment(paymentId);
+  if (current?.status === 'completed') {
+    return { completed: false, alreadyCompleted: true, promoId: current.promo_code_id, userId: current.user_id };
+  }
+  if (current?.status === 'released') {
+    log(
+      `[promo] СВЕРКА: платёж ${paymentId} успешен, но бронь ${row.id} была освобождена раньше погашения`,
+      'promo',
+      'error',
+    );
+    return { completed: false, releasedBeforeCompletion: true, promoId: current.promo_code_id, userId: current.user_id };
+  }
+
+  return { completed: false };
 }
 
 /**

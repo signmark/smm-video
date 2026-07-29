@@ -4,6 +4,7 @@ import ffmpeg from 'fluent-ffmpeg';
 import path from 'path';
 import fs from 'fs';
 import { authMiddleware } from '../middleware/auth';
+import { safeTempFileName } from '../utils/media-exec';
 
 /**
  * Получает путь к шрифту, поддерживающему кириллицу
@@ -47,7 +48,9 @@ router.post('/process-video', authMiddleware, upload.single('video'), async (req
     const overlays: TextOverlay[] = JSON.parse(textOverlays || '[]');
     
     const inputPath = req.file.path;
-    const outputFileName = `processed_${Date.now()}_${req.file.originalname}`;
+    // Имя от клиента в путь не попадает: этот путь уходит в fluent-ffmpeg как
+    // выходной файл. См. server/utils/media-exec.ts.
+    const outputFileName = safeTempFileName(`processed_${Date.now()}`, req.file.originalname);
     const outputPath = path.join('uploads/processed/', outputFileName);
 
     // Ensure output directory exists

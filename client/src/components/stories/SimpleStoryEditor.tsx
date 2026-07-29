@@ -182,12 +182,12 @@ const SimpleStoryEditor: React.FC<SimpleStoryEditorProps> = ({
       const formData = new FormData();
       formData.append('video', file);
 
-      const response = await axios.post('/api/beget-s3/upload-video', formData);
+      const response = await axios.post('/api/beget-s3-video/upload', formData);
       
-      if (response.data?.url) {
+      if (response.data?.videoUrl) {
         setStory(prev => ({
           ...prev,
-          backgroundVideoUrl: response.data.url,
+          backgroundVideoUrl: response.data.videoUrl,
           mediaType: 'video'
         }));
 

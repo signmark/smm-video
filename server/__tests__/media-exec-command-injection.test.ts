@@ -23,9 +23,28 @@ import {
 } from '../utils/media-exec';
 
 let workDir: string;
+/**
+ * Файл ЗАВЕДОМО вне разрешённых каталогов — портируемая замена /etc/passwd.
+ *
+ * Прежде «чужой файл» изображался литералом `/etc/passwd`. На Windows такого
+ * пути нет, поэтому resolveLocalMediaPath отвечал «Файл не найден» вместо
+ * «вне разрешённого каталога», и проверки сообщения падали не по делу
+ * (находка ревью 2026-07-29).
+ *
+ * Здесь вместо этого создаётся настоящий файл, а разрешённым корнем объявляется
+ * ВЛОЖЕННЫЙ подкаталог. «Снаружи» тогда доказуемо снаружи на любой ОС, и
+ * проверяется именно граница каталога, а не наличие системного файла.
+ */
+let outsideFile: string;
+/** Разрешённый корень: подкаталог внутри workDir. */
+let allowedRoot: string;
 
 beforeEach(() => {
   workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'media-exec-test-'));
+  allowedRoot = path.join(workDir, 'allowed');
+  fs.mkdirSync(allowedRoot);
+  outsideFile = path.join(workDir, 'outside.mp4');
+  fs.writeFileSync(outsideFile, 'x');
 });
 
 afterEach(() => {
@@ -93,20 +112,29 @@ describe('resolveLocalMediaPath', () => {
   });
 
   it('отказывает в файле вне разрешённых каталогов', () => {
-    expect(() => resolveLocalMediaPath('/etc/passwd')).toThrow(UnsafeMediaPathError);
-    expect(() => resolveLocalMediaPath('/etc/passwd')).toThrow(/вне разрешённого каталога/);
+    expect(() => resolveLocalMediaPath(outsideFile, [allowedRoot])).toThrow(UnsafeMediaPathError);
+    expect(() => resolveLocalMediaPath(outsideFile, [allowedRoot])).toThrow(/вне разрешённого каталога/);
   });
 
-  it('отказывает в traversal через временный каталог', () => {
-    expect(() => resolveLocalMediaPath(path.join(workDir, '..', '..', 'etc', 'passwd')))
-      .toThrow(UnsafeMediaPathError);
+  it('отказывает в traversal за пределы разрешённого каталога', () => {
+    // `allowed/../outside.mp4` — файл существует, но лежит выше корня.
+    const traversal = path.join(allowedRoot, '..', 'outside.mp4');
+    expect(() => resolveLocalMediaPath(traversal, [allowedRoot])).toThrow(/вне разрешённого каталога/);
   });
 
   it('раскрывает симлинк до проверки', () => {
-    // Иначе ссылка внутри temp на /etc/passwd прошла бы проверку каталога.
-    const link = path.join(workDir, 'link.mp4');
-    fs.symlinkSync('/etc/passwd', link);
-    expect(() => resolveLocalMediaPath(link)).toThrow(/вне разрешённого каталога/);
+    // Иначе ссылка ИЗНУТРИ разрешённого каталога наружу прошла бы проверку:
+    // путь-то формально внутри.
+    const link = path.join(allowedRoot, 'link.mp4');
+    try {
+      fs.symlinkSync(outsideFile, link);
+    } catch (err: any) {
+      // Windows без developer mode симлинки создавать не даёт (EPERM). Смысла
+      // «раскрываем ссылку» это не отменяет, просто здесь его не проверить.
+      if (err?.code === 'EPERM' || err?.code === 'ENOSYS') return;
+      throw err;
+    }
+    expect(() => resolveLocalMediaPath(link, [allowedRoot])).toThrow(/вне разрешённого каталога/);
   });
 
   it('отказывает в каталоге и несуществующем пути', () => {
@@ -116,7 +144,8 @@ describe('resolveLocalMediaPath', () => {
 
   it('отказывает в пустом пути и нулевом байте', () => {
     expect(() => resolveLocalMediaPath('')).toThrow(UnsafeMediaPathError);
-    expect(() => resolveLocalMediaPath('/tmp/a\0.mp4')).toThrow(/Недопустимый путь/);
+    // Путь строим от workDir, а не от литерала /tmp: на Windows его нет.
+    expect(() => resolveLocalMediaPath(path.join(workDir, 'a\0.mp4'))).toThrow(/Недопустимый путь/);
   });
 });
 

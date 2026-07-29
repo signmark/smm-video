@@ -95,8 +95,8 @@ export function VideoUploader({
 
 
 
-        if (response.data && response.data.success && (response.data.url || response.data.videoUrl)) {
-          const videoUrl = response.data.url || response.data.videoUrl;
+        if (response.data && response.data.success && response.data.videoUrl) {
+          const videoUrl = response.data.videoUrl;
           onChange(videoUrl);
           setPreviewUrl(videoUrl);
           setShowPreview(true);

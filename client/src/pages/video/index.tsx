@@ -184,12 +184,14 @@ export default function VideoEditor() {
   const uploadVideoToS3 = async (file: File): Promise<string> => {
     try {
       console.log('Uploading video to S3:', file.name, file.type);
+      // Канон загрузки видео: /api/beget-s3-video/upload, поле формы `video`,
+      // в ответе `videoUrl`. Раньше здесь стоял путь /api/beget-s3/upload-video,
+      // которого на сервере нет вовсе, и поле `file` от ручки картинок — то есть
+      // загрузка видео отсюда не работала никогда.
       const formData = new FormData();
-      formData.append('file', file);
-      formData.append('folder', 'videos');
-      formData.append('contentType', file.type);
-      
-      const response = await fetch('/api/beget-s3/upload-video', {
+      formData.append('video', file);
+
+      const response = await fetch('/api/beget-s3-video/upload', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('auth_token') || localStorage.getItem('authToken')}`
@@ -204,8 +206,8 @@ export default function VideoEditor() {
       }
       
       const result = await response.json();
-      console.log('Video uploaded successfully:', result.url);
-      return result.url;
+      console.log('Video uploaded successfully:', result.videoUrl);
+      return result.videoUrl;
     } catch (error) {
       console.error('Video upload error:', error);
       throw error;

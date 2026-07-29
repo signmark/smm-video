@@ -140,7 +140,7 @@ export const uploadVideoToS3 = async (videoUrl: string): Promise<string> => {
     const fileName = `story_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.mp4`;
     formData.append('video', videoBlob, fileName);
 
-    const response = await fetch('/api/beget-s3/upload-video', {
+    const response = await fetch('/api/beget-s3-video/upload', {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${authToken}`
@@ -155,12 +155,12 @@ export const uploadVideoToS3 = async (videoUrl: string): Promise<string> => {
 
     const result = await response.json();
     
-    if (!result.success || !result.url) {
+    if (!result.success || !result.videoUrl) {
       throw new Error(result.error || 'Не удалось загрузить видео в S3');
     }
 
-    console.log('[STORIES-VIDEO] Видео загружено в S3:', result.url);
-    return result.url;
+    console.log('[STORIES-VIDEO] Видео загружено в S3:', result.videoUrl);
+    return result.videoUrl;
 
   } catch (error) {
     console.error('[STORIES-VIDEO] Ошибка загрузки в S3:', error);

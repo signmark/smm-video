@@ -3,6 +3,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { authMiddleware } from '../middleware/auth';
+import { safeTempFileName, sanitizeFileLabel } from '../utils/media-exec';
 
 const router = express.Router();
 const upload = multer({ dest: 'uploads/temp/' });
@@ -24,7 +25,11 @@ router.post('/process', authMiddleware, upload.single('video'), async (req, res)
 
     // Пока просто сохраняем файл и возвращаем успех
     // В будущем здесь будет FFmpeg обработка
-    const outputFileName = `video_${Date.now()}_${req.file.originalname}`;
+    // Имя от клиента в путь не попадает. Каталоги из него busboy срезает сам,
+    // но `$( )`, `;`, пробелы и переводы строки доезжают как есть — а этот путь
+    // потом уходит в файловые операции и в ссылку. Уникальную часть задаём мы,
+    // от клиента остаётся только расширение из allowlist.
+    const outputFileName = safeTempFileName(`video_${Date.now()}`, req.file.originalname);
     const outputPath = path.join('uploads/processed/', outputFileName);
 
     // Создаем папку если не существует
@@ -55,9 +60,22 @@ router.post('/process', authMiddleware, upload.single('video'), async (req, res)
 
 // Раздача обработанных видео файлов
 router.get('/uploads/processed/:filename', (req, res) => {
-  const filename = req.params.filename;
-  const filePath = path.join(__dirname, '../../uploads/processed', filename);
-  
+  // Express не даст сегменту содержать «/», но `%2e%2e%2f` он декодирует ПОСЛЕ
+  // сопоставления маршрута — в обработчик приходит уже `../`. Поэтому имя
+  // приводится к безопасному виду, а результат дополнительно проверяется на
+  // принадлежность каталогу раздачи: одной санитизации мало, если она когда-то
+  // ослабнет.
+  const filename = sanitizeFileLabel(req.params.filename, '');
+  if (!filename) {
+    return res.status(400).json({ error: 'Недопустимое имя файла' });
+  }
+
+  const baseDir = path.resolve(__dirname, '../../uploads/processed');
+  const filePath = path.resolve(baseDir, filename);
+  if (filePath !== baseDir && !filePath.startsWith(baseDir + path.sep)) {
+    return res.status(400).json({ error: 'Недопустимое имя файла' });
+  }
+
   // Проверяем существование файла
   if (!fs.existsSync(filePath)) {
     return res.status(404).json({ error: 'Файл не найден' });

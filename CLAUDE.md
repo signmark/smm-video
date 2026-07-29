@@ -261,6 +261,26 @@ Token через `Authorization: Bearer`. Схема `Basic email:token` из Ji
 - Клиентский тайпчек 102 → 17 ошибок, удалено 7 мёртвых сломанных файлов.
 - SM-9 (время публикации по Москве), SM-10 (закладки трендов).
 
+### Новые release blockers из ревью Codex 29.07.2026
+
+Повторное ревью диапазона `c3f85c069~1..745fcf568` нашло три незакрытых P1:
+
+1. `/api/publish/cancel/:contentId` может изменить чужой контент через
+   cross-user fallback в `storage.getCampaignContentById` и последующий
+   `storage.updateCampaignContent` без пользовательского токена.
+2. `collect-comments`, `collect-comments-single` и `analyze-comments` проверяют
+   переданный `campaignId`, но затем служебным токеном работают с произвольным
+   `trendId`, не связанным с проверенной кампанией.
+3. Бронь промокода с `needs_reconciliation`, оставленная после неоднозначной
+   отмены платежа, через 30 минут всё равно попадает под orphan-reclaim, потому
+   что `isSlotHolderDead` видит пустой `yookassa_payment_id`.
+
+Также остались ложное `exhausted` на TOCTOU слота, фиксированный потолок 200
+попыток безлимитного промокода и локальные границы дня в календаре/метриках
+после SM-9. Полный разбор и сценарии:
+`docs/reviews/codex-review-2026-07-29-release-blockers.md`. Исполнительский
+handoff: `docs/prompts/claude-fix-codex-review-2026-07-29.md`.
+
 ### Известные незакрытые (приоритет сверху вниз)
 
 1. **Публичные callbacks трендов пишут в любую кампанию без авторизации.**

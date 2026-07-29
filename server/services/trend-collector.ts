@@ -1,3 +1,4 @@
+import { trendsCallbackUrl } from '../middleware/webhook-auth';
 import axios from 'axios';
 import { directusCrud } from './directus-crud';
 import { log } from '../utils/logger';
@@ -230,7 +231,8 @@ async function findGroups(
   campaignId?: string
 ): Promise<TgGroup[] | VkGroup[]> {
   const batchEndpoint = platform === 'telegram' ? '/api/telegram/find-groups-batch' : '/api/vk/find-groups-batch';
-  const callbackUrl = `${getPublicBaseUrl()}/api/trends/${platform === 'telegram' ? 'tg' : 'vk'}-find-groups-webhook`;
+  const findGroupsLabel = platform === 'telegram' ? 'tg-find-groups-webhook' : 'vk-find-groups-webhook';
+  const callbackUrl = trendsCallbackUrl(getPublicBaseUrl(), `/api/trends/${findGroupsLabel}`, findGroupsLabel);
 
   // Для Telegram генерируем короткие поисковые запросы через ИИ
   const searchQueries = platform === 'telegram'
@@ -935,7 +937,7 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
       // + ОБЯЗАТЕЛЬНЫЙ callback_url; результаты приходят колбэками на /api/trends/tg-webhook.
       // Лимит скрейпера: max 50 каналов на один запрос → режем на чанки по 50.
       if (channelIds.length > 5) {
-        const callbackUrl = `${getPublicBaseUrl()}/api/trends/tg-webhook`;
+        const callbackUrl = trendsCallbackUrl(getPublicBaseUrl(), '/api/trends/tg-webhook', 'tg-webhook');
         const CHUNK_SIZE = 50;
         const chunks: string[][] = [];
         for (let i = 0; i < channelIds.length; i += CHUNK_SIZE) {
@@ -1046,7 +1048,7 @@ export async function collectTrendsForCampaign(params: CollectTrendsParams): Pro
 
       log(`[TrendCollector][VK] Сбор трендов из ${vkIds.length} групп (async+callback)`, 'info');
       const postsPerGroup = Math.max(Math.ceil(limit / vkIds.length), 3);
-      const callbackUrl = `${getPublicBaseUrl()}/api/trends/vk-webhook`;
+      const callbackUrl = trendsCallbackUrl(getPublicBaseUrl(), '/api/trends/vk-webhook', 'vk-webhook');
       const vkBody = {
         group_ids: vkIds.map(String),
         limit: postsPerGroup, // лимит постов НА ГРУППУ

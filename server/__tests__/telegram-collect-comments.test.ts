@@ -1,7 +1,7 @@
 /**
  * Тесты сбора комментариев Telegram (polling flow, post_comment)
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import request from 'supertest';
 import express from 'express';
 
@@ -21,9 +21,24 @@ vi.mock('../services/directus-crud', () => ({
   directusCrud: {
     list: vi.fn(),
     create: vi.fn(),
-    update: vi.fn()
+    update: vi.fn(),
+    // Через getById ходит проверка принадлежности тренда арендатору
+    // (ревью 2026-07-29): комментарии читаются служебным токеном, поэтому
+    // граница обязана стоять в коде.
+    getById: vi.fn()
   }
 }));
+
+vi.mock('../services/campaign-access', () => {
+  class CampaignAccessError extends Error {
+    constructor(public readonly status: 404 | 503, public readonly code: string) { super(code); }
+  }
+  return {
+    CampaignAccessError,
+    authorizeCampaignAccess: vi.fn(async () => ({ id: 'campaign-1' })),
+    listAccessibleCampaignIds: vi.fn(async () => ['campaign-1']),
+  };
+});
 
 vi.mock('../services/global-api-keys', () => ({
   globalApiKeysService: {
@@ -59,9 +74,21 @@ app.use(express.json());
 registerTrendsRoutes(app);
 
 describe('Telegram collect comments', () => {
+  // Колбэк перестал быть анонимным (ревью 2026-07-29): у него собственный
+  // секрет, и без него ручка отвечает 503. Тесты бизнес-логики обязаны его
+  // выставлять — иначе они проверяли бы только гейт.
+  const CALLBACK_SECRET = 'trends-secret-for-tests';
+
   beforeEach(() => {
     vi.clearAllMocks();
+    process.env.TRENDS_WEBHOOK_SECRET = CALLBACK_SECRET;
     vi.mocked(globalApiKeysService.getGlobalApiKey).mockResolvedValue('test-api-key');
+    // Тренд принадлежит своей кампании — эти тесты про бизнес-логику, не про границу.
+    vi.mocked(directusCrud.getById).mockResolvedValue({ id: 'trend-1', campaign_id: 'campaign-1' } as any);
+  });
+
+  afterEach(() => {
+    delete process.env.TRENDS_WEBHOOK_SECRET;
   });
 
   describe('POST /api/telegram/collect-comments-direct', () => {
@@ -156,6 +183,7 @@ describe('Telegram collect comments', () => {
 
       const res = await request(app)
         .post('/api/trends/collect-comments-callback')
+        .set('x-webhook-secret', CALLBACK_SECRET)
         .send({
           post_url: 'https://t.me/ch/123',
           comments: [

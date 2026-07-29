@@ -1,6 +1,7 @@
 import { Express, Request, Response } from 'express';
 import { authenticateUser } from '../middleware/user-auth';
 import { authorizeCampaignAccess, CampaignAccessError } from '../services/campaign-access';
+import { requireTrendsWebhookSecret, trendsCallbackUrl } from '../middleware/webhook-auth';
 
 /**
  * Доступ к кампании для ручек трендов.
@@ -30,6 +31,160 @@ async function ensureTrendsCampaignAccess(req: any, res: any, campaignId: string
     }
     res.status(404).json({ success: false, error: 'Кампания не найдена' });
     return false;
+  }
+}
+
+/**
+ * Принадлежность ОБЪЕКТА арендатору — канонические проверки трендов и источников.
+ *
+ * Находка ревью 2026-07-29: `ensureTrendsCampaignAccess` выше проверяет кампанию
+ * из ТЕЛА запроса, а `trendId`/`sourceId` после этого читались и правились
+ * служебным токеном независимо от неё. Пользователь передавал свою кампанию и
+ * чужой тренд — и проверка честно пропускала, потому что смотрела не на тот
+ * объект. Три ручки (`trend-comments`, `trend-sentiment`, `sources/:id/analyze`)
+ * не имели проверки вовсе.
+ *
+ * Правило: источник истины — `campaign_id` ЗАГРУЖЕННОЙ записи. `campaignId` из
+ * запроса, если он есть в контракте, обязан точно совпасть с ним, иначе отказ.
+ *
+ * Ответы: 404 на «нет записи / чужая / не совпало» — одинаково, чтобы ручка не
+ * работала оракулом существования чужих объектов. 503 — Directus недоступен,
+ * fail-closed: догадка «наверное, своё» здесь означала бы утечку.
+ */
+
+/** Коллекции, у которых арендатор определяется полем `campaign_id`. */
+const OWNED_COLLECTIONS = {
+  trend: 'campaign_trend_topics',
+  source: 'campaign_content_sources',
+} as const;
+
+/** Инфраструктурный сбой при проверке принадлежности — отличается от «чужое». */
+class OwnershipUnavailableError extends Error {}
+
+/**
+ * `campaign_id` записи, либо null если записи нет (или она без кампании —
+ * такую тоже считаем недоступной: без арендатора проверить нечего).
+ *
+ * Бросает `OwnershipUnavailableError`, если Directus не ответил: молчаливое
+ * превращение сбоя в «не найдено» скрыло бы аварию, а в «найдено» — открыло бы дыру.
+ */
+async function loadOwningCampaignId(collection: string, recordId: string): Promise<string | null> {
+  let row: any;
+  try {
+    row = await directusCrud.getById<any>(collection, String(recordId), { useAdminToken: true });
+  } catch (err: any) {
+    throw new OwnershipUnavailableError(err?.message || 'directus unavailable');
+  }
+  if (!row) return null;
+
+  const campaignId = row.campaign_id ?? row.campaignId ?? null;
+  return typeof campaignId === 'string' && campaignId ? campaignId : null;
+}
+
+/** Есть ли у запросившего доступ к кампании. Бросает `OwnershipUnavailableError` на 503. */
+async function requesterHasCampaign(req: any, campaignId: string): Promise<boolean> {
+  try {
+    await authorizeCampaignAccess(
+      campaignId,
+      req.user?.id,
+      req.user?.token || '',
+      req.user?.is_smm_admin === true,
+    );
+    return true;
+  } catch (err: any) {
+    if (err instanceof CampaignAccessError && err.status === 503) {
+      throw new OwnershipUnavailableError('campaign access unavailable');
+    }
+    return false;
+  }
+}
+
+/** Единый отказ: 404 без подробностей либо 503 при инфраструктурном сбое. */
+function denyOwnership(res: any, err?: unknown): false {
+  if (err instanceof OwnershipUnavailableError) {
+    res.status(503).json({ success: false, error: 'Проверка доступа временно недоступна' });
+  } else {
+    res.status(404).json({ success: false, error: 'Не найдено' });
+  }
+  return false;
+}
+
+/**
+ * Тренды принадлежат кампании запросившего.
+ *
+ * @param expectedCampaignId если контракт ручки требует `campaignId` — он обязан
+ *        совпасть с `campaign_id` каждой загруженной записи. Смешанный набор из
+ *        разных кампаний отклоняется целиком: частично выполненный сбор оставил
+ *        бы побочные эффекты по чужим объектам.
+ * @returns записи трендов при успехе, `null` при отказе (ответ уже отправлен).
+ */
+async function assertTrendsBelongToRequester(
+  req: any,
+  res: any,
+  trendIds: string[],
+  expectedCampaignId?: string,
+): Promise<any[] | null> {
+  const uniqueIds = Array.from(new Set(trendIds.map((id) => String(id)).filter(Boolean)));
+  if (uniqueIds.length === 0) {
+    res.status(404).json({ success: false, error: 'Не найдено' });
+    return null;
+  }
+
+  try {
+    const rows: any[] = [];
+    const campaigns = new Set<string>();
+
+    for (const id of uniqueIds) {
+      const row = await directusCrud.getById<any>(OWNED_COLLECTIONS.trend, id, { useAdminToken: true })
+        .catch((err: any) => { throw new OwnershipUnavailableError(err?.message || 'directus unavailable'); });
+      if (!row) return (denyOwnership(res), null);
+
+      const campaignId = row.campaign_id ?? row.campaignId ?? null;
+      if (typeof campaignId !== 'string' || !campaignId) return (denyOwnership(res), null);
+      if (expectedCampaignId && campaignId !== String(expectedCampaignId)) return (denyOwnership(res), null);
+
+      campaigns.add(campaignId);
+      rows.push(row);
+    }
+
+    // Каждая уникальная кампания проверяется отдельно: набор может быть смешан
+    // и без expectedCampaignId.
+    for (const campaignId of campaigns) {
+      if (!(await requesterHasCampaign(req, campaignId))) return (denyOwnership(res), null);
+    }
+
+    return rows;
+  } catch (err) {
+    denyOwnership(res, err);
+    return null;
+  }
+}
+
+/** Один тренд. Возвращает запись либо null (ответ уже отправлен). */
+async function assertTrendBelongsToRequester(
+  req: any,
+  res: any,
+  trendId: string,
+  expectedCampaignId?: string,
+): Promise<any | null> {
+  const rows = await assertTrendsBelongToRequester(req, res, [trendId], expectedCampaignId);
+  return rows ? rows[0] : null;
+}
+
+/** Источник контента. Возвращает запись либо null (ответ уже отправлен). */
+async function assertSourceBelongsToRequester(
+  req: any,
+  res: any,
+  sourceId: string,
+): Promise<any | null> {
+  try {
+    const campaignId = await loadOwningCampaignId(OWNED_COLLECTIONS.source, String(sourceId));
+    if (!campaignId) return (denyOwnership(res), null);
+    if (!(await requesterHasCampaign(req, campaignId))) return (denyOwnership(res), null);
+    return { id: String(sourceId), campaign_id: campaignId };
+  } catch (err) {
+    denyOwnership(res, err);
+    return null;
   }
 }
 import { directusApi } from '../directus';
@@ -470,7 +625,7 @@ export function registerTrendsRoutes(app: Express) {
     };
 
     const baseUrl = getBaseUrl();
-    const callback_url = `${baseUrl}/api/trends/collect-trends-callback`;
+    const callback_url = trendsCallbackUrl(baseUrl, '/api/trends/collect-trends-callback', 'collect-trends-callback');
     const externalApiUrl = 'http://217.26.25.95:3030/api/telegram/trending-posts';
 
     const requestPayload = {
@@ -510,7 +665,7 @@ export function registerTrendsRoutes(app: Express) {
    * Формат скрейпера: { task_id, status, result: { posts: [...] }, error }
    * Задача была зарегистрирована в pendingTgTasks в trend-collector.ts.
    */
-  app.post("/api/trends/tg-webhook", async (req: Request, res: Response) => {
+  app.post(["/api/trends/tg-webhook", "/api/trends/tg-webhook/:callbackToken"], requireTrendsWebhookSecret("tg-webhook"), async (req: Request, res: Response) => {
     // Сразу отвечаем 200 — скрейпер не должен ждать пока мы сохраняем
     res.json({ success: true });
 
@@ -587,7 +742,7 @@ export function registerTrendsRoutes(app: Express) {
    * Формат: { task_id, status, result: { posts: [...] }, error }
    * Задача была зарегистрирована в pendingVkTasks в trend-collector.ts.
    */
-  app.post("/api/trends/vk-webhook", async (req: Request, res: Response) => {
+  app.post(["/api/trends/vk-webhook", "/api/trends/vk-webhook/:callbackToken"], requireTrendsWebhookSecret("vk-webhook"), async (req: Request, res: Response) => {
     res.json({ success: true });
 
     try {
@@ -656,7 +811,7 @@ export function registerTrendsRoutes(app: Express) {
    * Легаси-эндпоинт (для старых вызовов через callTelegramTrendsCollectDirect).
    * Поддерживает как старый формат { posts, metadata } так и новый { task_id, status, result }.
    */
-  app.post("/api/trends/collect-trends-callback", async (req: Request, res: Response) => {
+  app.post(["/api/trends/collect-trends-callback", "/api/trends/collect-trends-callback/:callbackToken"], requireTrendsWebhookSecret("collect-trends-callback"), async (req: Request, res: Response) => {
     // Отвечаем сразу
     res.json({ success: true });
 
@@ -701,7 +856,7 @@ export function registerTrendsRoutes(app: Express) {
    * POST /api/trends/tg-find-groups-webhook
    * Колбэк от find-groups-batch для Telegram — скрейпер присылает найденные каналы.
    */
-  app.post("/api/trends/tg-find-groups-webhook", async (req: Request, res: Response) => {
+  app.post(["/api/trends/tg-find-groups-webhook", "/api/trends/tg-find-groups-webhook/:callbackToken"], requireTrendsWebhookSecret("tg-find-groups-webhook"), async (req: Request, res: Response) => {
     res.json({ success: true });
     try {
       const body = req.body;
@@ -758,7 +913,7 @@ export function registerTrendsRoutes(app: Express) {
               unified: false,
               strict_min_members: true,
               async_mode: true,
-              callback_url: `${getPublicBaseUrl()}/api/trends/tg-find-groups-webhook`,
+              callback_url: trendsCallbackUrl(getPublicBaseUrl(), '/api/trends/tg-find-groups-webhook', 'tg-find-groups-webhook'),
               max_days_since_last_post: 30,
               include_channels_without_data: false,
               check_missing_activity: true,
@@ -801,7 +956,7 @@ export function registerTrendsRoutes(app: Express) {
    * POST /api/trends/vk-find-groups-webhook
    * Колбэк от find-groups-batch для VK — скрейпер присылает найденные группы.
    */
-  app.post("/api/trends/vk-find-groups-webhook", async (req: Request, res: Response) => {
+  app.post(["/api/trends/vk-find-groups-webhook", "/api/trends/vk-find-groups-webhook/:callbackToken"], requireTrendsWebhookSecret("vk-find-groups-webhook"), async (req: Request, res: Response) => {
     res.json({ success: true });
     try {
       const body = req.body;
@@ -857,7 +1012,7 @@ export function registerTrendsRoutes(app: Express) {
               unified: false,
               strict_min_members: true,
               async_mode: true,
-              callback_url: `${getPublicBaseUrl()}/api/trends/vk-find-groups-webhook`,
+              callback_url: trendsCallbackUrl(getPublicBaseUrl(), '/api/trends/vk-find-groups-webhook', 'vk-find-groups-webhook'),
             };
             const retryResponse = await axios.post(url, retryBody, {
               headers: { 'Content-Type': 'application/json', 'api-key': apiKey },
@@ -936,7 +1091,7 @@ export function registerTrendsRoutes(app: Express) {
     };
 
     const baseUrl = getBaseUrl();
-    const callback_url = `${baseUrl}/api/trends/collect-comments-callback`;
+    const callback_url = trendsCallbackUrl(baseUrl, '/api/trends/collect-comments-callback', 'collect-comments-callback');
     const externalApiUrl = 'http://217.26.25.95:3030/api/telegram/collect-comments';
 
     const requestPayload = {
@@ -1123,7 +1278,7 @@ export function registerTrendsRoutes(app: Express) {
       : `${COMMENT_SCRAPER_BASE}/api/vk/collect-comments-batch`;
 
     // callback_url оставляем как запасной вариант — вдруг заработает
-    const callback_url = `${getPublicBaseUrl()}/api/trends/collect-comments-callback`;
+    const callback_url = trendsCallbackUrl(getPublicBaseUrl(), '/api/trends/collect-comments-callback', 'collect-comments-callback');
     const payload = { post_urls, limit: 1000, download_media: false, callback_url };
 
     console.log(`[CommentCollector] ${platform.toUpperCase()} batch: ${post_urls.length} posts → ${endpoint}`);
@@ -1171,15 +1326,12 @@ export function registerTrendsRoutes(app: Express) {
       if (!campaignId) {
         return res.status(400).json({ success: false, error: "campaignId обязателен" });
       }
-      if (!(await ensureTrendsCampaignAccess(req, res, campaignId))) return;
+      // Проверяется КАЖДЫЙ тренд по своей же записи, а не campaignId из тела:
+      // пара «своя кампания + чужой тренд» иначе проходила насквозь.
+      const trends = await assertTrendsBelongToRequester(req, res, trendIds, String(campaignId));
+      if (!trends) return;
 
       console.log(`[Trends] collect-comments: ${trendIds.length} trends, campaign=${campaignId}`);
-
-      const trends = await directusCrud.list('campaign_trend_topics', {
-        filter: { id: { _in: trendIds } },
-        limit: -1,
-        useAdminToken: true
-      }) as any[];
 
       const tgTrends: Array<{ id: string; urlPost: string }> = [];
       const vkTrends: Array<{ id: string; urlPost: string }> = [];
@@ -1224,20 +1376,10 @@ export function registerTrendsRoutes(app: Express) {
       if (!campaignId) {
         return res.status(400).json({ success: false, error: "campaignId обязателен" });
       }
-      if (!(await ensureTrendsCampaignAccess(req, res, campaignId))) return;
+      const trend = await assertTrendBelongsToRequester(req, res, String(trendId), String(campaignId));
+      if (!trend) return;
 
       console.log(`[Trends] collect-comments-single: trendId=${trendId} campaign=${campaignId}`);
-
-      const trends = await directusCrud.list('campaign_trend_topics', {
-        filter: { id: { _eq: trendId } },
-        limit: 1,
-        useAdminToken: true
-      }) as any[];
-
-      const trend = trends?.[0];
-      if (!trend) {
-        return res.status(404).json({ success: false, error: "Тренд не найден" });
-      }
 
       const urlPost = (trend.urlPost || trend.url_post || '').trim();
       if (!urlPost) {
@@ -1285,7 +1427,7 @@ export function registerTrendsRoutes(app: Express) {
 
       // Формируем callback_url
       const baseUrl = getPublicOrigin();
-      const callback_url = `${baseUrl}/api/trends/collect-comments-callback`;
+      const callback_url = trendsCallbackUrl(baseUrl, '/api/trends/collect-comments-callback', 'collect-comments-callback');
 
       const externalApiUrl = 'http://217.26.25.95:3030/api/telegram/collect-comments';
 
@@ -1325,7 +1467,7 @@ export function registerTrendsRoutes(app: Express) {
    * Callback от скрейпера — запасной вариант (polling основной).
    * Форматы: { results: [...] } | [...] | { post_url, comments } | { result: {...} }
    */
-  app.post("/api/trends/collect-comments-callback", async (req: Request, res: Response) => {
+  app.post(["/api/trends/collect-comments-callback", "/api/trends/collect-comments-callback/:callbackToken"], requireTrendsWebhookSecret("collect-comments-callback"), async (req: Request, res: Response) => {
     try {
       console.log(`[CommentCallback] Received. body(2000):\n${JSON.stringify(req.body).substring(0, 2000)}`);
 
@@ -1367,6 +1509,9 @@ export function registerTrendsRoutes(app: Express) {
       if (!trendId) {
         return res.status(400).json({ success: false, error: "Отсутствует trendId" });
       }
+
+      // Комментарии читаются служебным токеном — граница обязана стоять здесь.
+      if (!(await assertTrendBelongsToRequester(req, res, String(trendId)))) return;
 
       let comments: any[] = [];
       try {
@@ -1765,6 +1910,10 @@ ${trendsForAi}
     try {
       const { trendId } = req.params;
 
+      // До чтения комментариев, AI-вызова и записи sentiment_analysis: без этой
+      // проверки чужой тренд анализировался и ПЕРЕЗАПИСЫВАЛСЯ админским токеном.
+      if (!(await assertTrendBelongsToRequester(req, res, String(trendId)))) return;
+
       log(`[Trends Route] Анализ настроения для тренда ${trendId}`, 'info');
 
       let comments: any[] = [];
@@ -1809,7 +1958,7 @@ ${trendsForAi}
       if (!campaignId) {
         return res.status(400).json({ success: false, message: "campaignId обязателен" });
       }
-      if (!(await ensureTrendsCampaignAccess(req, res, campaignId))) return;
+      if (!(await assertTrendBelongsToRequester(req, res, String(trendId), String(campaignId)))) return;
 
       log(`[Analyze Comments] Анализ комментариев для тренда ${trendId}, уровень: ${level}`, 'info');
 
@@ -1931,6 +2080,11 @@ ${trendsForAi}
   app.post("/api/sources/:sourceId/analyze", authenticateUser, async (req: Request, res: Response) => {
     try {
       const { sourceId } = req.params;
+
+      // Ручка прогоняет AI по КАЖДОМУ тренду источника и перезаписывает их
+      // sentiment_analysis служебным токеном. Без этой проверки чужой источник
+      // анализировался и правился по одному лишь его id.
+      if (!(await assertSourceBelongsToRequester(req, res, String(sourceId)))) return;
 
       log(`[Source Analyze] Анализ источника ${sourceId}`, 'info');
 

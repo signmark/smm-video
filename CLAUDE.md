@@ -70,8 +70,16 @@ rsync -avz --partial -e 'ssh -o BatchMode=yes' \
 стороны.
 
 Скрипт зеркалит его БД сюда, односторонне, в отдельную базу **`old_prod_sync`**.
-Живая `directus` не участвует и не может пострадать. Запуск по крону раз в два
-часа, прогон ~110 с, снимок ~235 МБ.
+Живая `directus` не участвует и не может пострадать. Прогон ~17 минут (основное
+время — снятие дампа на старом сервере), снимок ~235 МБ.
+
+**Крона нет — запускать вручную.** Раньше здесь было написано «запуск по крону
+раз в два часа»; это неправда, крон не был установлен никогда (проверено
+29.07.2026: `crontab -l` root, `/etc/crontab`, `/etc/cron.d/`, syslog). Пока
+DNS `smm.omemo.tech` не перенесён, правки тестировщиков на старом проде
+зеркалятся только тем, что кто-то руками запустил `/root/sync-old-prod.sh`.
+Готовый файл крона (`15 */2 * * *`) лежит в хендоффе и ждёт разрешения
+владельца на установку.
 
 Устройство: `pg_dump -Fc` выполняется в контейнере старого сервера, результат
 идёт потоком через ssh — на старом проде не меняются ни крон, ни конфиг, ни
@@ -80,8 +88,9 @@ rsync -avz --partial -e 'ssh -o BatchMode=yes' \
 посреди прогона оставляют предыдущее зеркало целым. `DROP DATABASE` ограничен
 префиксом `old_prod_sync*`.
 
-Восемь последних снимков лежат в `/root/restore-old-prod/sync/` — это архив на
-момент, когда старый сервер отключат насовсем.
+Последние снимки лежат в `/root/restore-old-prod/sync/` (скрипт хранит восемь;
+на 29.07.2026 их два — прогонов было столько) — это архив на момент, когда
+старый сервер отключат насовсем.
 
 Логическую репликацию Postgres не используем сознательно: она потребовала бы
 `wal_level=logical` и перезапуска боевого Postgres на временно поднятой машине.
@@ -261,48 +270,52 @@ Token через `Authorization: Bearer`. Схема `Basic email:token` из Ji
 - Клиентский тайпчек 102 → 17 ошибок, удалено 7 мёртвых сломанных файлов.
 - SM-9 (время публикации по Москве), SM-10 (закладки трендов).
 
-### Новые release blockers из ревью Codex 29.07.2026
+### Release blockers ревью Codex 29.07.2026 — закрыты
 
-Повторное ревью диапазона `c3f85c069~1..745fcf568` нашло три незакрытых P1:
+Повторное ревью диапазона `c3f85c069~1..745fcf568` нашло три P1, два P2 и один
+P3. Все закрыты, выкачены на прод и покрыты тестами, краснеющими без правки.
+Разбор находок — `docs/reviews/codex-review-2026-07-29-release-blockers.md`,
+исполнительский handoff — `docs/prompts/claude-fix-codex-review-2026-07-29.md`,
+итог — `docs/prompts/claude-codex-review-closure-2026-07-29.md`.
 
-1. `/api/publish/cancel/:contentId` может изменить чужой контент через
-   cross-user fallback в `storage.getCampaignContentById` и последующий
-   `storage.updateCampaignContent` без пользовательского токена.
-2. `collect-comments`, `collect-comments-single` и `analyze-comments` проверяют
-   переданный `campaignId`, но затем служебным токеном работают с произвольным
-   `trendId`, не связанным с проверенной кампанией.
-3. Бронь промокода с `needs_reconciliation`, оставленная после неоднозначной
-   отмены платежа, через 30 минут всё равно попадает под orphan-reclaim, потому
-   что `isSlotHolderDead` видит пустой `yookassa_payment_id`.
+| находка | коммит | тесты |
+|---|---|---|
+| P1 cross-tenant отмена/чтение публикаций через storage fallback | `541191c35` | `server/__tests__/storage-privilege-escalation.test.ts` (9) |
+| P1 `campaignId` проверен, а действие идёт по чужому `trendId` | `d240dcecb` | `server/__tests__/trends-tenant-boundary.test.ts` (19) |
+| P1 бронь на разборе освобождалась orphan-reclaimer | `167b5ab6f` | `server/__tests__/promo-reservation-atomic.test.ts` |
+| P1 id платежа ЮКассы теперь ложится вместе с пометкой на разбор | `541191c35` | там же, 2 новых теста |
+| P2 TOCTOU слота: свежий `occupiedSlots` перечёркивался stale-пометкой | `167b5ab6f` | `promo-reservation-atomic.test.ts` |
+| P2 остаток SM-9 — локальные границы дня | `701526e04` (календарь, дашборд), `541191c35` (страница публикаций) | `client/src/lib/__tests__/publication-day.test.ts`, `posts-page-day-boundaries.test.ts` |
+| P3 скрытый потолок 200 попыток безлимитного промокода | `541191c35` | `server/__tests__/promo-slot-budget.test.ts` |
 
-Также остались ложное `exhausted` на TOCTOU слота, фиксированный потолок 200
-попыток безлимитного промокода и локальные границы дня в календаре/метриках
-после SM-9. Полный разбор и сценарии:
-`docs/reviews/codex-review-2026-07-29-release-blockers.md`. Исполнительский
-handoff: `docs/prompts/claude-fix-codex-review-2026-07-29.md`.
+Ключевое из P1 по storage: пользовательские `getCampaignContentById` и
+`updateCampaignContent` больше **не эскалируют никогда** — отказ переданного
+токена окончателен. Служебный доступ вынесен в отдельные методы с явными
+именами: `getCampaignContentByIdPrivileged` и `updateCampaignContentPrivileged`.
+Правило на будущее: если в пользовательском пути понадобился служебный токен —
+это ошибка проектирования, а не удобный фолбэк.
+
+Исключение `/api/video-temp/:uuid` перепроверено табличным перебором обходов
+(кодированные `../` и `/`, двойной и хвостовой слэш, UUID с хвостом и без
+дефисов, смешанный регистр, шесть методов, `X-HTTP-Method-Override`) —
+обходов нет, код не менялся.
 
 ### Известные незакрытые (приоритет сверху вниз)
 
-1. **Публичные callbacks трендов пишут в любую кампанию без авторизации.**
-   Проверено на проде: `POST /api/trends/collect-trends-callback`,
-   `/api/trends/collect-comments-callback`, `/api/trends/tg-webhook` отвечают
-   200 без сессии. Причина: `registerTrendsRoutes(app)` в `server/index.ts:355`,
-   а гейт на 393. Чинить осторожно: их зовёт внешний скрейпер, чью конфигурацию
-   мы не видели — нужен секрет и привязка к серверной задаче, а не заплатка.
-2. Оставшиеся cross-tenant ручки трендов: `/api/trend-comments/:trendId`,
-   `/api/trend-sentiment/:trendId`, `/api/sources/:sourceId/analyze`,
-   `/api/trends/collect-direct`, весь блок scraper monitoring.
-3. Страница видео зовёт несуществующий `/api/beget-s3/upload-video`; настоящий
-   путь `/api/beget-s3-video/upload`, и поле ответа `videoUrl`, а не `url`.
-4. Клиентские запросы без авторизации: `SocialMediaSettings.tsx`,
-   `VideoStoryEditor.tsx` (EventSource), `SimpleStoryEditor.tsx`.
-5. Токены соцсетей в query string (`/api/vk/groups?access_token=` и соседние).
-6. `server/routes/video.ts` — декодированный `:filename` идёт в путь;
-   непереносимые тесты `media-exec` с жёстким `/etc/passwd`.
-7. Остальные 17 ошибок `npm run check:client`.
-8. Мёртвые, но исправные компоненты: `Calendar`, `Navbar`,
+Пункты 1, 2 и 5 прежнего списка закрыты 29.07.2026 и проверены на живом проде
+(`401` без сессии): публичные callbacks трендов теперь требуют секрет
+(`server/middleware/webhook-auth.ts`, коммит `d240dcecb`), оставшиеся
+cross-tenant ручки трендов проверяют владение фактическим объектом (там же),
+токены соцсетей ушли из query-строки (`1106390cc`).
+
+1. Мёртвые, но исправные компоненты: `Calendar`, `Navbar`,
    `components/analytics/*`, `InstagramSetupWizardComplete`.
-9. Переезд на `smm.nplanner.ru` как единственный canonical origin
+2. Остальные 15 ошибок `npm run check:client` (было 17; две ушли попутно).
+3. Клиентские запросы без авторизации: `VideoStoryEditor.tsx` (EventSource),
+   `SimpleStoryEditor.tsx`.
+4. `server/routes/video.ts` — непереносимые тесты `media-exec` с жёстким
+   `/etc/passwd`.
+5. Переезд на `smm.nplanner.ru` как единственный canonical origin
    (`APP_PUBLIC_URL`), оба домена в allowlist/CORS.
 
 ### Согласованный следующий шаг

@@ -56,14 +56,29 @@ export interface SocialCredentials {
   }
 }
 
-// Типы статусов публикации контента
-export type ContentStatus = 'draft' | 'scheduled' | 'published' | 'failed' | 'partial';
+// Типы статусов публикации контента.
+//
+// `partially_published` и `error` реально приходят с сервера (см.
+// PUBLISHED_LIKE_STATUSES в server/routes/content.ts и вебхук статусов), но в
+// союзе их не было. Из-за этого TypeScript считал ветки вроде
+// `status === 'partially_published'` заведомо ложными — код в них жил только
+// потому, что в рантайме проверок типов нет.
+export type ContentStatus =
+  | 'draft'
+  | 'scheduled'
+  | 'published'
+  | 'failed'
+  | 'partial'
+  | 'partially_published'
+  | 'error';
 
 // Типы социальных платформ
 export type SocialPlatform = 'instagram' | 'facebook' | 'telegram' | 'vk' | 'youtube' | 'threads' | 'tiktok';
 
-// Типы статусов публикации на платформе
-export type PlatformPublishStatus = 'pending' | 'scheduled' | 'published' | 'failed' | 'cancelled';
+// Типы статусов публикации на платформе. `error` приходит от вебхука статусов
+// наравне с `failed` — оба используются в разметке.
+export type PlatformPublishStatus =
+  | 'pending' | 'scheduled' | 'published' | 'failed' | 'error' | 'cancelled';
 
 // Информация о публикации на платформе
 export interface PlatformPublishInfo {
@@ -84,7 +99,8 @@ export type ContentType = 'text' | 'text-image' | 'video' | 'story';
 // Тип для медиа-файла
 export interface MediaItem {
   url: string;
-  type: 'image' | 'video';
+  // `generated_image` — картинки, созданные ИИ; разметка их отличает от загруженных.
+  type: 'image' | 'video' | 'generated_image';
   title?: string;
   description?: string;
 }

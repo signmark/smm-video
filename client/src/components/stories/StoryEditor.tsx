@@ -26,6 +26,7 @@ import {
   Download
 } from 'lucide-react';
 import DraggableWrapper from './DraggableWrapper';
+import type { DraggableEvent, DraggableData } from 'react-draggable';
 import ElementDialog from './ElementDialog';
 import { useStoryStore } from '@/lib/storyStore';
 import { useCampaignStore } from '@/lib/campaignStore';
@@ -46,7 +47,9 @@ interface StorySlide {
 
 interface StoryElement {
   id: string;
-  type: 'text' | 'image' | 'video' | 'poll' | 'quiz';
+  // 'ai-image' в союзе не было, хотя кнопка «AI фото» создаёт именно такой
+  // элемент, а разметка его отрисовывает — тип отставал от кода.
+  type: 'text' | 'image' | 'video' | 'poll' | 'quiz' | 'ai-image';
   position: { x: number; y: number };
   rotation: number;
   zIndex: number;
@@ -639,7 +642,7 @@ export default function StoryEditor({ campaignId: propCampaignId, storyId: propS
                   <DraggableWrapper
                     key={element.id}
                     position={element.position}
-                    onStop={(e, data) => {
+                    onStop={(e: DraggableEvent, data: DraggableData) => {
                       updateElement(element.id, {
                         position: { x: data.x, y: data.y }
                       });

@@ -14,6 +14,7 @@ import { StoryPublishButton } from './StoryPublishButton';
 import { apiRequest } from '@/lib/queryClient';
 import axios from 'axios';
 import DraggableWrapper from './DraggableWrapper';
+import type { DraggableEvent, DraggableData } from 'react-draggable';
 
 interface TextOverlay {
   id: string;
@@ -746,7 +747,7 @@ const SimpleStoryEditor: React.FC<SimpleStoryEditorProps> = ({
                   <DraggableWrapper
                     key={overlay.id}
                     position={{ x: overlay.x * 0.8, y: overlay.y * 0.8 }}
-                    onStop={(e, data) => handleDrag(overlay.id, data)}
+                    onStop={(e: DraggableEvent, data: DraggableData) => handleDrag(overlay.id, data)}
                     bounds="parent"
                   >
                     <div

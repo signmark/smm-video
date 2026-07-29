@@ -68,7 +68,7 @@
 - **Что делать:** автоматизировать проверки из §1-§6 (отсутствие system-token, admin-only scheduler, tenant-isolated WS, upload 413/415, fail-closed subscription); secret scanning для изменений и истории
 - **Зачем:** без тестов исправления регрессируют при следующем рефакторинге
 - **Effort:** medium
-- **Статус:** 🟡 open (блокирует все следующие шаги)
+- **Статус:** ✅ **CLOSED 2026-07-29** — commit `7c9c311b0`, `.github/workflows/ci.yml`: Node 20, кеш npm, на push и pull_request, пять шагов (`npm ci`, `vitest`, `check`, `check:client`, `build`). Клиентский тайпчек попал в гейт после того, как его довели до нуля в том же коммите. Secret scanning в этот заход не добавлялся — остаётся открытым хвостом §7.
 
 #### §8 — Refresh token в HttpOnly cookie + CSP
 - **Что делать:** refresh token → `HttpOnly; Secure; SameSite` cookie; access token — в памяти; централизованный client auth adapter (без прямого чтения `localStorage`); CSRF-защита; CSP с точечными `connect-src`/`frame-ancestors`
@@ -129,9 +129,9 @@
 
 | Статус | Кол-во | Пункты |
 |---|---|---|
-| ✅ Закрыто | 5 | §1, §2, §4, §5-low, OAuth callback 401 incident (root cause установлен 2026-07-25) |
+| ✅ Закрыто | 6 | §1, §2, §4, §5-low, §7 (CI, 2026-07-29), OAuth callback 401 incident |
 | ⛔ Deferred | 1 | §3 (до августа) |
-| 🟡 Открыто | 10 | §5-medium, §6-§15 |
+| 🟡 Открыто | 9 | §5-medium, §6, §8-§15 |
 | 🔵 Принятый долг | 1 | остаточные P1 инцидента: ранний parser на весь `/api`, callbacks в обход baseline middleware, VK webhook без подписи/tenant binding, нет тестов на wiring |
 
 ## Инцидент: OAuth callback блокировка (2026-07-24)
@@ -207,8 +207,11 @@ Read-only prod smoke 24.07 после pull `bcff975d`: YouTube без params →
 ## Рекомендуемый next-up
 
 ~~**§2 → §4 → §5-low**~~ — выполнено 2026-07-24 (`e102578d`, `34a8ebf4`).
+~~**§7 — CI**~~ — выполнено 2026-07-29 (`7c9c311b0`).
 
-**Актуальный next-up: §7 — security regression suite в CI** (`docs/specs/spec-07-ci-regression.md`). `.github/workflows/` не существует, при этом тесты §1/§2/§4/§5 уже написаны — CI просто нечем их запускать, и следующий рефакторинг отломает их молча. Далее по `docs/context/state.json`: §6 fail-closed → §11 Docker → §10 health/logging.
+**Актуальный next-up: §6 fail-closed subscription → §11 Docker `npm ci` → §10 health/logging** (порядок из `docs/context/state.json`).
+
+Отдельно: релиз-раунд 2026-07-29 закрыл ещё и то, чего в этом списке не было — cross-tenant обход в trends, аутентификацию публичных колбэков трендов, денежный инвариант броней промокода, токены соцсетей в query и доверие заголовку `Host`. Разбор — `docs/followups/2026-07-29-release-closure-handoff.md`.
 
 ## Связи
 

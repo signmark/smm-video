@@ -1,6 +1,6 @@
 # smm-video — project memory for AI agents
 
-**Снимок:** 2026-07-26 (v4 — состав приведён в соответствие с реальностью)
+**Снимок:** 2026-07-29 (v5 — состояние после release-раунда; состав прежний, v4)
 **Для кого:** любая модель, открывшая проект впервые или после паузы.
 
 **Активный состав (с 2026-07-26, v4) — двое:**
@@ -30,9 +30,10 @@ SMM Manager — автоматизация публикации и аналит�
 ## Текущее состояние
 
 - **Repo:** `/root/smm` на прод-хосте, ветка `main`. Он же build context для контейнера `smm`.
+- **Свежие коммиты (2026-07-29, release-раунд):** пять блокеров ревью Codex и весь известный остаток закрыты — `d240dcecb` (граница арендатора в трендах + аутентификация шести публичных колбэков), `167b5ab6f` (денежный инвариант броней промокода и TOCTOU), `701526e04` (московские границы суток в календаре и дашборде), `d5294ce39` (единый контракт загрузки видео и безопасные пути), `1106390cc` (токены соцсетей из query, удалён кластер мёртвых компонентов), `d9584277d` (Host не источник origin, готовность к переезду домена), `7c9c311b0` (`check:client` 17 → 0, CI). Итог и оставшийся blocker — `docs/followups/2026-07-29-release-closure-handoff.md`.
 - **Свежие коммиты (2026-07-26):** полный список за день и разбор граблей — `docs/prompts/claude-session-handoff-2026-07-26.md`. Ключевое: `394c22d8` (**проверка владения в публикующих ручках** — закрытие дыры, открытой `78603a70`), `78603a70` (публикация ходит сервисным токеном во всех путях — `server/services/publishing-token.ts`), `4078ffba`/`472cfe84` (сайдбар и дашборд тянули по 5 МБ на каждой странице ради счётчиков — переведены на `?summary=1`), `bae9adf0` (аккордеон не раскрывает все группы дат при входе), `e2fe7640` (список контента больше не обрывается на лимите молча), `1e1bdf60` (статус «подключено» — только через `client/src/lib/platform-connection.ts`).
 - **Working tree:** в нём постоянно висит чужой WIP — `.mimocode/.cron-lock` (живой lock крона) и `.mimocode/plans/*`. Не трогать, не коммитить. Из-за него `git pull` падает (`pull.rebase=true`) — обновляться через `git merge --ff-only origin/main`.
-- **Tests:** 94/94 файлов, 1016/1016 тестов зелёных (замер 2026-07-26 вечер). Окружение тестов — фиктивный `server/__tests__/.env.test`, реальный `.env` в корне репозитория не нужен и не должен появляться.
+- **Tests:** 146/146 файлов, 1874/1874 тестов зелёных (замер 2026-07-29 вечер). Окружение тестов — фиктивный `server/__tests__/.env.test`, реальный `.env` в корне репозитория не нужен и не должен появляться.
 - **Production:** деплоит Claude, сразу после пуша. Команды — `docs/DEPLOYMENT.md`. Окружение контейнера приходит только из `/root/.env` через `env_file` в `/root/docker-compose.yml`.
 - **Текущий приоритетный план:** `docs/PRIORITIZED_IMPROVEMENT_PLAN_2026-07-23.md` — 15 пунктов, security-first. **Снимок прогресса:** `docs/followups/2026-07-24-security-backlog.md` (§1 closed, §3 deferred, §2/§4-§15 open).
 - **Известные долги:** семь прямых запросов к `items/user_campaigns` в `publish-scheduler.ts` не переведены на `campaign-token-resolver` (токен теперь единый, но дублирование осталось); `connectedPlatforms` в `EditScheduledPublication.tsx` захардкожен как «все подключены».
@@ -40,7 +41,7 @@ SMM Manager — автоматизация публикации и аналит�
 ## Рабочий цикл (v4)
 
 1. **Claude** делает правку: код + тесты. Для многофайловых и security-критичных задач — сначала `docs/prompts/claude-<задача>-<дата>.md` (шаблон: `docs/agents/templates/handoff-template.md`), потом код.
-2. **Проверки перед пушем, все три:** `npx vitest run`, `npm run check` (tsc), `npm run build`. Для правок в `client/` фронт-билд обязателен — `tsconfig.critical.json` клиент не покрывает.
+2. **Проверки перед пушем, все четыре:** `npx vitest run`, `npm run check` (tsc сервера), `npm run check:client`, `npm run build`. Клиентский тайпчек добавлен в обязательные 2026-07-29, когда его довели до нуля: `tsconfig.critical.json` клиент не покрывает, и без отдельной проверки он молча деградировал. Те же четыре шага гоняет CI (`.github/workflows/ci.yml`).
 3. **Новый тест должен краснеть без фикса.** Проверять снятием правки (`git stash push -- <файл>`), а не на глаз. Без этого тест ничего не стережёт.
 4. **Claude** коммитит, пушит в `origin/main`, пересобирает образ и выкатывает на прод — см. `docs/DEPLOYMENT.md`.
 5. **Проверки после выкатки:** контейнер поднялся, Directus health, публичный URL отдаёт 200, и грепом по бандлу — что новый код реально уехал, а не остался в кеше слоёв. Кириллицу грепать бесполезно: esbuild экранирует не-ASCII в `\uXXXX`, ищи ASCII-маркеры.
@@ -88,16 +89,17 @@ cd /root/smm
 git merge --ff-only origin/main      # не git pull: падает на чужом WIP в .mimocode/
 git status --short
 
-# === Проверки перед пушем — все три ===
-npx vitest run                       # 93/93 файлов, 1001/1001 тестов
+# === Проверки перед пушем — все четыре ===
+npx vitest run                       # 146/146 файлов, 1874/1874 тестов
 npm run check                        # tsc -p tsconfig.critical.json (клиент НЕ покрывает)
+npm run check:client                 # клиентский tsc, обязан быть 0
 npm run build                        # обязателен, если менялся client/
 
 # === Деплой === (подробности — docs/DEPLOYMENT.md)
 docker compose -f /root/docker-compose.yml build smm
 docker compose -f /root/docker-compose.yml up -d smm
 docker logs smm --since 3m | grep -E "SERVER SUCCESSFULLY|Directus Health"
-curl -s -o /dev/null -w "%{http_code}\n" https://smm.omemo.tech/
+curl -s -o /dev/null -w "%{http_code}\n" https://smm.nplanner.ru/
 ```
 
 ## Как обновлять этот файл

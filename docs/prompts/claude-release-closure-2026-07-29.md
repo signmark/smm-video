@@ -248,4 +248,138 @@ docker compose -f /root/docker-compose.yml up -d smm
 
 ## Факт выполнения
 
-*Раздел дополняется по мере работы: коммиты, результаты тестов, live-проверки.*
+### Коммиты
+
+Все в `origin/main`, поверх baseline. Baseline по ходу работы сдвинулся: пока шла
+правка, в `origin/main` приехали два чужих коммита (`745fcf568` — владелец,
+`282d63b31` — Hermes Agent), и мои были автоматически перебазированы на них.
+Конфликтов не было.
+
+| commit | назначение |
+|---|---|
+| `f66a8a55e` | docs: этот план — baseline, находки, критерии, процедуры |
+| `d240dcecb` | **блокеры 1+2 и пункт 6**: граница арендатора в трендах, аутентификация шести колбэков |
+| `167b5ab6f` | **блокеры 3+4**: бронь на разборе не реклеймится, TOCTOU не даёт ложного «исчерпан» |
+| `701526e04` | **блокер 5**: календарь и дашборд по московским суткам (SM-9) |
+| `d5294ce39` | **пункты 7+8**: единый контракт загрузки видео, безопасные пути к файлам |
+| `1106390cc` | **пункты 9+12**: токены соцсетей из query, удалён кластер мёртвых компонентов |
+| `d9584277d` | **пункт 10**: Host не источник origin, готовность к переезду домена |
+| `7c9c311b0` | **пункт 11**: тайпчек клиента 17 → 0, CI на Node 20 |
+
+Не мои, приехали в тот же диапазон от параллельного исполнителя: `58afa93db`
+(docs), `541191c35` (`fix(security)` по путям чтения/записи контента).
+
+### Regression-тесты и проверка их «красноты»
+
+Каждый проверен снятием фикса, а не на глаз.
+
+| тест | без фикса |
+|---|---|
+| `server/__tests__/trends-tenant-boundary.test.ts` (19) + `trends-callback-auth.test.ts` (63) | **60 из 82 красных** (`git stash` трёх файлов исходников) |
+| `server/__tests__/promo-reservation-atomic.test.ts` (+8 новых, всего 38) | **4 красных** (`git stash` `promo-reservation.ts` + `yookassa.ts`) |
+| `client/src/lib/__tests__/publication-day.test.ts` (13) | **8 красных** (подмена раскладки на прежнюю локальную) |
+| `server/__tests__/video-upload-contract.test.ts` (6) | **1 красный** (`git stash` четырёх файлов клиента) |
+| `server/__tests__/video-routes-path-safety.test.ts` (7) | **2 красных** (`git stash` `video.ts` + `videoProcessing.ts`) |
+| `server/__tests__/social-tokens-not-in-query.test.ts` (12) | **10 красных** до правки роутов |
+| `server/__tests__/public-origin-multidomain.test.ts` (14) | **6 красных** до `resolveRequestOrigin` |
+
+Две ловушки, из-за которых тесты сначала зеленели, ничего не проверяя, —
+обе исправлены и описаны прямо в тестах:
+
+- `.attach()` из superagent вырезает `../` ещё на клиенте, поэтому traversal до
+  сервера не доезжал. Тело multipart теперь собирается руками.
+- «не 200» на раздаче файлов проходило бы и при полностью снятой защите:
+  несуществующий путь и так даёт 404. Рядом кладутся реальные файлы-зонды
+  внутри и снаружи каталога.
+
+### Результаты четырёх проверок (Linux, прод-хост)
+
+```
+npx vitest run       146 файлов, 1874/1874 тестов — зелено
+npm run check        tsc -p tsconfig.critical.json — чисто
+npm run check:client 0 ошибок  (было 17)
+npm run build        vite + esbuild — успешно
+```
+
+### Деплой
+
+Выкатывался **дважды**: первый раз — критический hotfix сразу после блокеров
+2–4 (не дожидаясь косметики), второй — финальный после всего остатка.
+
+Собирать штатным `docker compose build smm` было нельзя: docker берёт контекст
+из рабочего дерева, а в нём параллельный исполнитель держал незакоммиченные
+правки `publishing-routes.ts`, `social-publishing-router.ts` и `storage.ts`.
+Они уехали бы в прод-образ невыверенными. Поэтому сборка шла из **чистого
+git-worktree** на `origin/main`:
+
+```bash
+git worktree add /root/smm-build-clean origin/main
+docker build -t root-smm -f /root/smm-build-clean/Dockerfile /root/smm-build-clean
+docker compose -f /root/docker-compose.yml up -d --no-build smm
+```
+
+`--no-build` обязателен: без него compose пересобрал бы образ из `/root/smm`,
+то есть вернул бы ровно ту проблему, ради которой заведён отдельный worktree.
+
+Итог: контейнер `smm` поднялся, `RestartCount=0`, restart loop нет, Directus
+health зелёный.
+
+### Live-проверки на `https://smm.nplanner.ru`
+
+```
+GET  /                                   200
+GET  /health                             200
+GET  /api/campaigns|trends|content|sources без сессии   401 (все четыре)
+POST /api/trends/{6 колбэков} без секрета               401 (все шесть)
+POST /api/trends/tg-webhook с секретом в заголовке      200
+POST /api/trends/tg-webhook с токеном в пути            200
+POST /api/trends/tg-webhook с ЧУЖИМ токеном в пути      401
+GET/HEAD /api/video-temp/<uuid> без сессии              404 (доступно, файла нет)
+POST     /api/video-temp                                401 (закрыто)
+```
+
+ASCII-маркеры нового кода в собранном бандле (кириллицу грепать бесполезно —
+esbuild экранирует не-ASCII в `\uXXXX`):
+
+```
+assertTrendsBelongToRequester    3
+assertSourceBelongsToRequester   2
+requireTrendsWebhookSecret       7
+payment_attempt_at               3
+resolveRequestOrigin             7
+safeTempFileName                 6
+```
+
+В клиентском бандле: `beget-s3-video/upload` присутствует, мёртвый
+`beget-s3/upload-video` — **0 файлов из 95**.
+
+Логи за 5 минут после выкатки: `"level":"error"` — 0, утечек токенов
+(`Bearer …`, `access_token=…`) — 0.
+
+`omemo.tech` для проверки не использовался: его DNS смотрит на старый сервер.
+
+### Изменения окружения и инфраструктуры
+
+**`/root/.env`** — добавлена одна переменная (значение не публикуется):
+
+```
+TRENDS_WEBHOOK_SECRET=<32 байта из openssl rand -hex 32>
+```
+
+Резервная копия до правки — `/root/.env.bak-20260729-trends`.
+
+**`/root/docker-compose.yml` — НЕ изменялся.** Многодоменность там уже была
+настроена как надо: `SMM_HOST` / `SMM_HOST_ALT` / `SMM_HOST_ALT2` тремя
+отдельными роутерами. Резервная копия не потребовалась.
+
+**Схема Directus** — в `promo_reservations` добавлено поле `payment_attempt_at`
+(timestamp, nullable) идемпотентным `scripts/directus/create_payment_collections.js`.
+Изменение аддитивное: старый код поле игнорирует, откат приложения безопасен.
+Побочный эффект первого прогона: то же поле создалось и в `payment_activations`,
+где не используется. Колонка nullable и безвредна; удаление — разрушающая
+операция, без запроса владельца не делал.
+
+### Что осталось
+
+Единственный реальный blocker — **конфигурация внешнего скрейпера**, см.
+`docs/followups/2026-07-29-release-closure-handoff.md`.

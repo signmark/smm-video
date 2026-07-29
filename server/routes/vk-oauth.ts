@@ -280,6 +280,33 @@ function webhookUrlFor(req: express.Request, campaignId: string, secret: string)
   return `${getAppBaseUrl(req)}/api/vk/token-webhook/${encodeURIComponent(campaignId)}/submit/${secret}`;
 }
 
+/**
+ * Применяли ли мы уже этот refresh-токен для кампании.
+ *
+ * Признак — в настройках стоит `serverRefreshedAt` (server-side refresh
+ * состоялся), а сохранённый refresh-токен ОТЛИЧАЕТСЯ от присланного: значит VK
+ * уже выдал нам ротацию, а needanapp прислал свой прежний экземпляр повторно.
+ * Применять его второй раз нельзя — VK убьёт сессию.
+ */
+async function vkRefreshTokenAlreadyConsumed(campaignId: string, incomingRefreshToken: string): Promise<boolean> {
+  try {
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+    const directusUrl = process.env.DIRECTUS_URL;
+    if (!adminToken || !directusUrl) return false;
+
+    const resp = await axios.get(`${directusUrl}/items/user_campaigns/${campaignId}`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    const vk = resp.data.data?.social_media_settings?.vk;
+    if (!vk?.serverRefreshedAt || !vk?.refreshToken) return false;
+    return vk.refreshToken !== incomingRefreshToken;
+  } catch (err: any) {
+    // Не смогли проверить — не блокируем реконнект, но и не молчим.
+    log(`[VK-WEBHOOK] Не удалось проверить повторность refresh-токена для ${campaignId}: ${err.message}`, 'vk-oauth', 'warn');
+    return false;
+  }
+}
+
 async function updateVkWebhookSecret(
   campaignId: string,
   mode: 'ensure' | 'rotate' | 'revoke',
@@ -533,8 +560,27 @@ async function processVkTokenWebhookSubmission(
         try {
           const { refreshVkToken } = await import('../services/vk-token-refresh');
           log(`[VK-WEBHOOK] Запускаю server-side refresh для ${campaignId} с device_id (токен привяжется к IP сервера)`, 'vk-oauth');
-          // device_id передаём — VK требует его при refresh, но IP нового токена = IP запроса (наш сервер)
-          const refreshed = await refreshVkToken({ refreshToken: rToken, clientId: cId, deviceId: dId });
+
+          // needanapp хранит ОДИН webhook URL и постит на него по кнопке —
+          // пользователь легко жмёт «Отправить» дважды. Каждый пост запускал
+          // server-side refresh с одним и тем же refresh-токеном, а он
+          // ОДНОРАЗОВЫЙ: второе применение VK трактует как компрометацию и
+          // убивает сессию целиком («session is compromised because refresh
+          // token has already been applied», прод 29.07.2026 08:27:33 — именно
+          // так сломалось только что переподключённое сообщество).
+          //
+          // Лок сериализует посты одной кампании, а внутри него проверяем, не
+          // сожгли ли этот же refresh-токен предыдущим постом.
+          const refreshed = await withVkWebhookCampaignLock(campaignId, async () => {
+            const alreadyUsed = await vkRefreshTokenAlreadyConsumed(campaignId, rToken);
+            if (alreadyUsed) {
+              log(`[VK-WEBHOOK] Пропускаю server-side refresh для ${campaignId}: `
+                + `этот refresh-токен уже применён (повторная отправка из needanapp)`, 'vk-oauth', 'warn');
+              return null;
+            }
+            // device_id передаём — VK требует его при refresh, но IP нового токена = IP запроса (наш сервер)
+            return refreshVkToken({ refreshToken: rToken, clientId: cId, deviceId: dId });
+          });
           if (refreshed) {
             const refreshedVk: Record<string, any> = {
               ...vkUpdate,

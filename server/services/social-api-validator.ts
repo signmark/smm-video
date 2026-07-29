@@ -71,16 +71,24 @@ export async function validateTelegramToken(token: string): Promise<ApiKeyValida
 export async function validateVkToken(token: string, groupId?: string): Promise<ApiKeyValidationResult> {
   try {
     log(`Проверка токена VK: ${token.slice(0, 5)}...${groupId ? ` для группы ${groupId}` : ''}`, 'api-validator');
-    
-    // Запрос к VK API для получения информации о пользователе
+
+    // Токены VK ID (`vk2.…`) авторизуются заголовком Bearer и требуют v≥5.199;
+    // старые сервисные токены передаются параметром access_token с v5.131.
+    // Эндпоинты списка групп это различали, а валидатор — нет: vk2-токен уходил
+    // старым способом, VK отвечал отказом, и живое подключение выглядело
+    // сломанным. Форма запроса теперь одна на все вызовы метода.
+    const isVkId = String(token).startsWith('vk2.');
+    const apiVersion = isVkId ? '5.199' : '5.131';
+    const authHeaders = isVkId ? { Authorization: `Bearer ${token}` } : undefined;
+    const withAuth = (params: Record<string, any>) =>
+      isVkId ? { ...params, v: apiVersion } : { ...params, v: apiVersion, access_token: token };
+
     const response = await axios.get('https://api.vk.com/method/users.get', {
-      params: {
-        access_token: token,
-        v: '5.131'
-      },
+      params: withAuth({}),
+      headers: authHeaders,
       timeout: 10000
     });
-    
+
     if (response.data && response.data.response && Array.isArray(response.data.response)) {
       const userInfo = response.data.response[0];
       
@@ -92,11 +100,9 @@ export async function validateVkToken(token: string, groupId?: string): Promise<
       if (normalizedGroupId) {
         try {
           const groupResponse = await axios.get('https://api.vk.com/method/groups.getById', {
-            params: {
-              group_id: normalizedGroupId,
-              access_token: token,
-              v: '5.131'
-            }
+            params: withAuth({ group_id: normalizedGroupId }),
+            headers: authHeaders,
+            timeout: 10000
           });
           
           if (groupResponse.data && groupResponse.data.response && Array.isArray(groupResponse.data.response)) {

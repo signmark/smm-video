@@ -171,6 +171,9 @@ vi.mock('../services/social-platforms/instagram-reels-service', () => ({
 vi.mock('../services/vk-token-refresh', () => ({
   refreshAndSaveVkToken: vi.fn().mockResolvedValue(null),
   markVkAuthExpired: vi.fn().mockResolvedValue(undefined),
+  // Планировщик гасит кампанию только через неё: провал refresh сам по себе
+  // смерть access-токена не доказывает.
+  markVkAuthExpiredIfTokenDead: vi.fn().mockResolvedValue(false),
 }));
 
 vi.mock('../index', () => ({

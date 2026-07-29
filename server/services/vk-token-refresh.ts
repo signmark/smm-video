@@ -86,6 +86,62 @@ export async function clearVkAuthExpired(campaignId: string): Promise<boolean> {
 }
 
 /**
+ * За сколько до истечения обновляем токен. Крон бежит каждые 30 минут, поэтому
+ * порога «30 минут + запас» достаточно, чтобы поймать токен до смерти и при
+ * этом не дёргать refresh у свежевыданного часового токена.
+ */
+export const VK_REFRESH_LEAD_MS = 40 * 60 * 1000;
+
+/**
+ * Помечает кампанию authExpired ТОЛЬКО если сам access-токен мёртв.
+ *
+ * Провал refresh и смерть access-токена — разные события. Одноразовый
+ * refresh-токен можно сжечь (повторное применение, гонка, реконнект через
+ * needanapp в параллель), при этом выданный access-токен продолжает работать до
+ * своего часа. Раньше любой permanentFailure от refresh сразу гасил кампанию и
+ * слал владельцу письмо/Telegram — ровно это случилось 29.07.2026 в 08:38:13,
+ * когда токен был жив ещё 49 минут.
+ *
+ * Если проверить токен не удалось (VK сам лежит — код 10, сеть, таймаут),
+ * НЕ помечаем: неизвестность не повод гасить рабочую кампанию.
+ */
+export async function markVkAuthExpiredIfTokenDead(
+  campaignId: string,
+  accessToken: string | undefined,
+  refreshFailureReason: string,
+): Promise<boolean> {
+  if (!accessToken) {
+    log(`[VK-REFRESH] Кампания ${campaignId}: refresh провалился (${refreshFailureReason}) `
+      + `и access-токена нет — помечаем authExpired`, 'vk-refresh', 'error');
+    await markVkAuthExpired(campaignId);
+    return true;
+  }
+
+  const { validateVkToken } = await import('./social-api-validator');
+  const { classifyVkError } = await import('./vk-error-classifier');
+
+  const result = await validateVkToken(accessToken);
+  if (result.isValid) {
+    log(`[VK-REFRESH] Кампания ${campaignId}: refresh провалился (${refreshFailureReason}), `
+      + `но access-токен ЖИВ — authExpired не ставим. Понадобится переподключение, `
+      + `когда токен истечёт.`, 'vk-refresh', 'warn');
+    return false;
+  }
+
+  const verdict = classifyVkError(result.details);
+  if (verdict.kind !== 'auth_expired') {
+    log(`[VK-REFRESH] Кампания ${campaignId}: refresh провалился (${refreshFailureReason}), `
+      + `проверка токена неубедительна (${verdict.kind}) — authExpired не ставим`, 'vk-refresh', 'warn');
+    return false;
+  }
+
+  log(`[VK-REFRESH] Кампания ${campaignId}: access-токен мёртв (${verdict.kind}) `
+    + `после провала refresh (${refreshFailureReason}) — ставим authExpired`, 'vk-refresh', 'error');
+  await markVkAuthExpired(campaignId);
+  return true;
+}
+
+/**
  * Отправляет уведомление владельцу кампании о том, что VK-подключение устарело.
  * Сначала пытается отправить через Telegram (если у кампании настроен Telegram
  * или у пользователя есть бот-сессия), иначе — на email.
@@ -257,10 +313,13 @@ export async function refreshAllExpiringVkTokens(): Promise<void> {
       const campaigns: Array<{ id: string; social_media_settings: any }> = resp.data.data || [];
       if (campaigns.length === 0) break;
 
-      // Рефрешим если токен истекает в ближайший 1 час.
-      // Кроп бежит каждые 30 минут → токен всегда поймаем за 30-60 мин до истечения.
-      // Mutex (_refreshLocks) защищает от одновременных refresh одного аккаунта.
-      const threshold = Date.now() + 60 * 60 * 1000; // now + 1 час
+      // Токены VK ID живут РОВНО ЧАС (`expires_in=3600`). Порог «истекает в
+      // ближайший час» под них подходил всегда — свежевыданный токен уже
+      // считался истекающим, и крон обновлял его каждые 30 минут без нужды.
+      // Каждое такое обновление ротирует одноразовый refresh-токен, то есть
+      // множит шансы применить устаревший. Обновляем, когда до истечения
+      // действительно мало: интервал крона (30 мин) плюс запас.
+      const threshold = Date.now() + VK_REFRESH_LEAD_MS;
 
       const toRefresh = campaigns.filter(c => {
         const vk = c.social_media_settings?.vk;
@@ -290,8 +349,11 @@ export async function refreshAllExpiringVkTokens(): Promise<void> {
         } catch (err: any) {
           failed++;
           if (err.permanentFailure) {
-            log(`[VK-CRON] permanentFailure для кампании ${c.id}: ${err.message} — ставим authExpired`, 'vk-refresh', 'error');
-            await markVkAuthExpired(c.id);
+            // Провал refresh НЕ доказывает смерть access-токена: 29.07.2026 крон
+            // пометил кампанию мёртвой и написал владельцу в Telegram, когда
+            // access-токен был жив ещё 49 минут. Спрашиваем сам VK про токен и
+            // помечаем, только если мертв именно он.
+            await markVkAuthExpiredIfTokenDead(c.id, vk.token || vk.accessToken, err.message);
           } else {
             log(`[VK-CRON] Ошибка обновления токена для кампании ${c.id}: ${err.message}`, 'vk-refresh', 'error');
           }
@@ -397,6 +459,22 @@ export async function refreshVkToken(settings: {
  */
 const _refreshLocks = new Map<string, Promise<string | null>>();
 
+/** Читает актуальные VK-настройки кампании (для refresh — источник истины). */
+async function readVkSettings(campaignId: string): Promise<Record<string, any> | null> {
+  try {
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+    const directusUrl = process.env.DIRECTUS_URL;
+    if (!adminToken || !directusUrl) return null;
+    const resp = await axios.get(`${directusUrl}/items/user_campaigns/${campaignId}`, {
+      headers: { Authorization: `Bearer ${adminToken}` }
+    });
+    return resp.data.data?.social_media_settings?.vk || null;
+  } catch (err: any) {
+    log(`[VK-REFRESH] Не удалось прочитать настройки кампании ${campaignId}: ${err.message}`, 'vk-refresh', 'warn');
+    return null;
+  }
+}
+
 /**
  * Обновляет токен и сохраняет обратно в настройки кампании.
  * Возвращает новый access_token или null при неудаче.
@@ -425,7 +503,27 @@ async function _doRefreshAndSave(
   campaignId: string,
   currentSettings: Record<string, any>
 ): Promise<string | null> {
-  const { refreshToken, clientId, deviceId } = currentSettings;
+  // Refresh-токен VK ОДНОРАЗОВЫЙ: успешный refresh ротирует его, а повторное
+  // применение уже использованного VK трактует как компрометацию сессии и
+  // убивает всю цепочку («session is compromised because refresh token has
+  // already been applied», прод 29.07.2026 08:27:33).
+  //
+  // Лок `_refreshLocks` защищает только от ОДНОВРЕМЕННЫХ вызовов. Дыра была в
+  // последовательных: вызывающий читает настройки заранее и приносит сюда свой
+  // снимок `refreshToken`. Крон прочитал R1 → обновил на R2 → через три минуты
+  // публикация вызывает с тем же устаревшим R1 → сессия убита. Поэтому актуальный
+  // токен читаем ЗДЕСЬ, внутри лока, и снимок вызывающего используем только как
+  // фолбэк, если в настройках его нет.
+  const stored = await readVkSettings(campaignId);
+  const refreshToken = stored?.refreshToken || currentSettings.refreshToken;
+  const clientId = stored?.clientId || currentSettings.clientId;
+  const deviceId = stored?.deviceId || currentSettings.deviceId;
+
+  if (stored?.refreshToken && currentSettings.refreshToken
+    && stored.refreshToken !== currentSettings.refreshToken) {
+    log(`[VK-REFRESH] Кампания ${campaignId}: снимок вызывающего устарел — `
+      + `берём refresh_token из настроек (защита от повторного применения)`, 'vk-refresh', 'warn');
+  }
 
   if (!refreshToken) {
     log(`[VK-REFRESH] Пропуск для кампании ${campaignId}: нет refreshToken`, 'vk-refresh', 'warn');

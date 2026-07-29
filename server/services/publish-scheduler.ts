@@ -1003,28 +1003,36 @@ export class PublishScheduler {
       if (!result.success && result.error && this.isAuthError(result.error) && vkSettings.refreshToken && vkClientId) {
         log(`[VK] Auth error после публикации, повторный token refresh для campaign ${campaignId}...`, 'scheduler');
         try {
-          const { refreshAndSaveVkToken, markVkAuthExpired } = await import('./vk-token-refresh');
+          const { refreshAndSaveVkToken, markVkAuthExpiredIfTokenDead } = await import('./vk-token-refresh');
           const newToken = await refreshAndSaveVkToken(campaignId, vkSettings);
           if (newToken) {
             log(`[VK] Token refreshed, retrying publish for ${content.id}`, 'scheduler');
             result = await vkService.publishPost({ ...vkSettings, token: newToken, accessToken: newToken }, vkContent);
           } else {
-            log(`[VK] Token refresh returned null для campaign ${campaignId} — ставим authExpired`, 'scheduler', 'error');
-            await markVkAuthExpired(campaignId);
+            // null = ВРЕМЕННАЯ ошибка refresh (сеть, таймаут, VK лежит).
+            // Раньше здесь безусловно ставился authExpired — сбой сети гасил
+            // рабочую кампанию. Спрашиваем VK про сам access-токен.
+            await markVkAuthExpiredIfTokenDead(campaignId, vkSettings.token || vkSettings.accessToken,
+              'refresh вернул null (временная ошибка)');
           }
         } catch (refreshErr: any) {
           if (refreshErr.permanentFailure) {
-            log(`[VK] permanentFailure при refresh для campaign ${campaignId}: ${refreshErr.message} — ставим authExpired`, 'scheduler', 'error');
-            const { markVkAuthExpired } = await import('./vk-token-refresh');
-            await markVkAuthExpired(campaignId);
+            // Сгоревший одноразовый refresh-токен не означает мёртвый access-токен.
+            const { markVkAuthExpiredIfTokenDead } = await import('./vk-token-refresh');
+            await markVkAuthExpiredIfTokenDead(campaignId, vkSettings.token || vkSettings.accessToken,
+              refreshErr.message);
           } else {
             log(`[VK] Ошибка refresh токена для campaign ${campaignId}: ${refreshErr.message}`, 'scheduler', 'error');
           }
         }
       } else if (!result.success && result.error && this.isAuthError(result.error) && !settings.refreshToken) {
-        log(`[VK] Auth error без refresh_token — токен VK истёк, требуется переподключение ВК в настройках кампании`, 'scheduler', 'error');
-        const { markVkAuthExpired } = await import('./vk-token-refresh');
-        await markVkAuthExpired(campaignId);
+        // Публикация упала с auth-ошибкой и обновиться нечем. isAuthError
+        // разбирает свободный текст, поэтому вердикт всё равно подтверждаем
+        // прямым вопросом к VK — иначе Access denied по одному объекту гасит
+        // всю кампанию.
+        const { markVkAuthExpiredIfTokenDead } = await import('./vk-token-refresh');
+        await markVkAuthExpiredIfTokenDead(campaignId, vkSettings.token || vkSettings.accessToken,
+          `auth-ошибка публикации без refresh_token: ${result.error}`);
       }
 
       if (result.success) {

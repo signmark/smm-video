@@ -35,7 +35,12 @@ import type { Request, Response, NextFunction, RequestHandler } from 'express';
  * обоснованием, а не потому, что «клиент почему-то получает 401» — в этом
  * случае почти всегда прав гейт, а заголовок забыл клиент.
  */
-export const PUBLIC_API_PATHS: Array<{ pattern: RegExp; why: string }> = [
+export const PUBLIC_API_PATHS: Array<{
+  pattern: RegExp;
+  why: string;
+  /** Если задано — публичны только эти методы, остальные требуют сессии. */
+  methods?: string[];
+}> = [
   // Платёжный провайдер шлёт уведомление сам, токена приложения у него нет.
   // Подлинность проверяется перезапросом платежа у ЮКассы внутри обработчика.
   { pattern: /^\/api\/yookassa\/webhook\/?$/, why: 'уведомление ЮКассы' },
@@ -53,12 +58,33 @@ export const PUBLIC_API_PATHS: Array<{ pattern: RegExp; why: string }> = [
 
   // Обязательные коллбэки Meta для проверки приложения.
   { pattern: /^\/api\/threads\/(deauth|data-deletion)\/?$/, why: 'коллбэк соответствия Meta' },
+
+  // Временное видео для публикации в Instagram/Threads: серверы Meta скачивают
+  // его сами, Bearer у них нет. Правило узкое намеренно — только чтение и
+  // только по идентификатору формы UUID, который выдаёт randomUUID() и который
+  // живёт 10 минут (server/utils/temp-video-store.ts). Ни соседние пути, ни
+  // запись сюда не попадают.
+  {
+    pattern: /^\/api\/video-temp\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    why: 'Meta скачивает временное видео при публикации',
+    methods: ['GET', 'HEAD'],
+  },
 ];
 
-/** Публичен ли путь. Query-строка не учитывается. */
-export function isPublicApiPath(pathOrUrl: string): boolean {
+/**
+ * Публичен ли путь для этого метода. Query-строка не учитывается.
+ *
+ * Метод обязателен к учёту: правило может открывать только чтение, и тогда
+ * POST по тому же пути должен по-прежнему требовать сессии.
+ */
+export function isPublicApiPath(pathOrUrl: string, method: string = 'GET'): boolean {
   const path = pathOrUrl.split('?')[0];
-  return PUBLIC_API_PATHS.some(({ pattern }) => pattern.test(path));
+  const upperMethod = method.toUpperCase();
+
+  return PUBLIC_API_PATHS.some(({ pattern, methods }) => {
+    if (!pattern.test(path)) return false;
+    return !methods || methods.includes(upperMethod);
+  });
 }
 
 /**
@@ -72,7 +98,7 @@ export function createApiAuthGate(authenticate: RequestHandler): RequestHandler 
     // Preflight браузер шлёт без заголовков авторизации по определению.
     if (req.method === 'OPTIONS') return next();
 
-    if (isPublicApiPath(req.originalUrl)) return next();
+    if (isPublicApiPath(req.originalUrl, req.method)) return next();
 
     return authenticate(req, res, next);
   };

@@ -142,3 +142,61 @@ describe('гейт на реальном Express', () => {
     expect(res.status).toBe(401);
   });
 });
+
+/**
+ * Временное видео для Meta.
+ *
+ * Instagram и Threads скачивают файл по этой ссылке сами, без Bearer. Гейт
+ * закрыл её вместе со всем остальным — публикация видео в обе платформы
+ * ломалась на проде (найдено ревью Codex, подтверждено запросом к живому
+ * прод-серверу: GET и HEAD отдавали 401).
+ *
+ * Исключение намеренно узкое: только чтение и только по идентификатору формы
+ * UUID, который выдаёт randomUUID() с TTL 10 минут.
+ */
+describe('GET/HEAD /api/video-temp/:id — Meta скачивает видео', () => {
+  const UUID = '3f1a2b4c-5d6e-4f70-8912-abcdef012345';
+
+  it('GET по UUID проходит без токена', async () => {
+    const { app, authenticate } = makeApp();
+
+    const res = await request(app).get(`/api/video-temp/${UUID}`);
+
+    expect(res.status).toBe(200);
+    expect(authenticate).not.toHaveBeenCalled();
+  });
+
+  it('HEAD тоже проходит: Threads сначала проверяет размер', async () => {
+    const { app } = makeApp();
+
+    const res = await request(app).head(`/api/video-temp/${UUID}`);
+
+    expect(res.status).toBe(200);
+  });
+
+  it('POST по тому же пути закрыт — правило только на чтение', async () => {
+    const { app } = makeApp();
+
+    const res = await request(app).post(`/api/video-temp/${UUID}`).send({});
+
+    expect(res.status).toBe(401);
+  });
+
+  it('идентификатор не формы UUID закрыт', async () => {
+    // Иначе правило открыло бы произвольный путь под этим префиксом.
+    const { app } = makeApp();
+
+    for (const bad of ['none', '../campaigns', 'abc', `${UUID}extra`, `${UUID}/../campaigns`]) {
+      const res = await request(app).get(`/api/video-temp/${bad}`);
+      expect(res.status, `${bad} не должен быть публичным`).toBe(401);
+    }
+  });
+
+  it('сам /api/video-temp без идентификатора закрыт', async () => {
+    const { app } = makeApp();
+
+    const res = await request(app).get('/api/video-temp');
+
+    expect(res.status).toBe(401);
+  });
+});

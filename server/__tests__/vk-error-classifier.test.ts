@@ -42,9 +42,12 @@ describe('classifyVkError', () => {
       const v = classifyVkError(REAL_VK_RESPONSES.appBlocked);
       expect(v.kind).toBe('app_blocked');
       expect(v.severity).toBe('error');
-      // Переподключение здесь бесполезно — оно идёт через то же приложение.
+      // Ждать бесполезно — само не пройдёт.
       expect(v.retryable).toBe(false);
-      expect(v.userMessage).toContain('Переподключение не поможет');
+      // Но переподключение помогает: интеграция идёт через needanapp, и новый
+      // токен выпишет его приложение. Код 8 в этом проекте означает наследство —
+      // токен, выданный ДО перехода на needanapp заблокированным приложением.
+      expect(v.userMessage).toContain('Переподключите');
     });
 
     it('код 15 — отказ в доступе, но токен жив', () => {

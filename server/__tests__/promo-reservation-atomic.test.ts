@@ -672,3 +672,287 @@ describe('конкурентные резервирования', () => {
     expect(reservations().filter(r => r.status === 'reserved')).toHaveLength(1);
   }, 30_000);
 });
+
+/**
+ * Бронь на ручном разборе не освобождается автоматикой.
+ *
+ * Находка ревью 2026-07-29 (денежная). Цепочка была такая: платёж создан →
+ * attachPaymentId не смог записать yookassa_payment_id → отмену подтвердить не
+ * удалось → бронь помечена needs_reconciliation и НАМЕРЕННО оставлена занятой.
+ * Через 30 минут isSlotHolderDead видел пустой yookassa_payment_id, объявлял
+ * бронь сиротой, а reclaimDeadReservations освобождал её, не глядя на пометку.
+ *
+ * Цена ошибки: человек платит по живому платежу, а слот скидки уже отдан
+ * другому — активация упирается в released-бронь, и чинится это только руками.
+ */
+describe('needs_reconciliation не реклеймится по таймауту', () => {
+  /**
+   * Ломает PATCH привязки yookassa_payment_id — как в блоке выше.
+   *
+   * Именно ВСЕ попытки, а не первую: attachPaymentId ретраит трижды, и «сломать
+   * один раз» означало бы, что привязка со второго захода проходит и сценарий
+   * вообще не воспроизводится.
+   */
+  const breakAttach = () => {
+    const realFetch = PRISTINE_FETCH;
+    fetchMock.mockImplementation((url: any, init?: any) => {
+      if (String(url).includes('/items/promo_reservations/') && init?.method === 'PATCH'
+          && JSON.parse(init.body).yookassa_payment_id) {
+        return jsonResponse({ errors: [{ message: 'boom' }] }, false, 500);
+      }
+      return realFetch(url, init);
+    });
+  };
+
+  /** Отматывает бронь в прошлое: как будто она висит дольше таймаута сироты. */
+  const ageReservations = (minutes = 45) => {
+    for (const row of reservations()) {
+      row.reserved_at = new Date(Date.now() - minutes * 60 * 1000).toISOString();
+    }
+  };
+
+  it('неподтверждённая отмена + 45 минут + новый покупатель → бронь НЕ освобождается', async () => {
+    promo = { ...promo, max_uses: 1 };
+    cancelFails = true;
+    breakAttach();
+
+    // Первый покупатель: платёж создан, привязка сорвалась, отмена не подтверждена.
+    const first = await create('user-1');
+    expect(first.status).toBe(503);
+    const held = reservations()[0];
+    expect(held.status).toBe('reserved');
+    expect(held.needs_reconciliation).toBe(true);
+
+    ageReservations();
+    fetchMock.mockImplementation(PRISTINE_FETCH);
+    cancelFails = false;
+
+    // Второй покупатель приходит за единственным слотом.
+    const second = await create('user-2');
+
+    // Слот занят живым (возможно) платежом — отдавать его нельзя.
+    expect(reservations()[0].status).toBe('reserved');
+    expect(reservations()[0].needs_reconciliation).toBe(true);
+    expect(second.body.confirmationUrl).toBeUndefined();
+  });
+
+  it('бронь без yookassa_payment_id, но с начатой оплатой, сиротой не считается', async () => {
+    // Именно этот случай automatic reclaim и путал: «пусто, значит процесс умер
+    // до создания платежа». Умер он или платёж всё-таки создан — по одному
+    // пустому полю неотличимо, поэтому решает маркер попытки оплаты.
+    promo = { ...promo, max_uses: 1 };
+    cancelFails = true;
+    breakAttach();
+
+    await create('user-1');
+    const row = reservations()[0];
+    expect(row.payment_attempt_at).toBeTruthy();
+    expect(row.yookassa_payment_id).toBeFalsy();
+
+    ageReservations();
+    fetchMock.mockImplementation(PRISTINE_FETCH);
+    cancelFails = false;
+
+    await create('user-2');
+
+    expect(reservations()[0].status).toBe('reserved');
+  });
+
+  it('подтверждённая отмена после сбоя привязки слот всё-таки освобождает', async () => {
+    // Обратная сторона инварианта: держать слот вечно тоже нельзя. Разница —
+    // в ПОДТВЕРЖДЕНИИ: ЮКасса сказала canceled, значит платёж мёртв.
+    promo = { ...promo, max_uses: 1 };
+    breakAttach();          // cancelFails остаётся false → отмена подтвердится
+
+    const first = await create('user-1');
+    expect(first.status).toBe(503);
+    expect(reservations()[0].status).toBe('released');
+
+    fetchMock.mockImplementation(PRISTINE_FETCH);
+    const second = await create('user-2');
+
+    expect(second.status).toBe(200);
+    expect(second.body.confirmationUrl).toBeTruthy();
+  });
+
+  it('подтверждённые canceled и expired реклеймятся штатно', async () => {
+    promo = { ...promo, max_uses: 1 };
+
+    await create('user-1');
+    const payment: any = Object.values(yookassaPayments)[0];
+
+    // Явный, подтверждённый статус — не догадка.
+    paymentStatus[payment.id] = 'expired';
+    ageReservations();
+
+    const second = await create('user-2');
+
+    expect(second.status).toBe(200);
+    expect(second.body.confirmationUrl).toBeTruthy();
+  });
+
+  it('неизвестный статус платежа мёртвым не считается', async () => {
+    promo = { ...promo, max_uses: 1 };
+    await create('user-1');
+
+    ageReservations();
+    // ЮКасса недоступна: GET по платежу падает.
+    const realFetch = PRISTINE_FETCH;
+    fetchMock.mockImplementation((url: any, init?: any) => {
+      if (String(url).includes('api.yookassa.ru') && (init?.method || 'GET') === 'GET') {
+        return Promise.reject(new Error('network down'));
+      }
+      return realFetch(url, init);
+    });
+
+    const second = await create('user-2');
+
+    expect(reservations()[0].status).toBe('reserved');
+    expect(second.body.confirmationUrl).toBeUndefined();
+  });
+
+  it('успешный платёж не теряет бронь на гонке с реклеймером', async () => {
+    promo = { ...promo, max_uses: 1 };
+    await create('user-1');
+    const paid = markPaid(0);
+
+    ageReservations();
+    await webhookFor(paid);
+
+    // Бронь погашена, а не освобождена: released означал бы, что оплаченная
+    // скидка ушла в никуда.
+    expect(reservations()[0].status).toBe('completed');
+
+    const second = await create('user-2');
+    expect(second.body.confirmationUrl).toBeUndefined();
+  });
+});
+
+/**
+ * Маркер ручного разбора не может отчитаться об успехе после HTTP 500.
+ *
+ * flagReservationReconciliation глушила ошибку записи целиком и писала
+ * «бронь помечена на разбор» независимо от ответа Directus. Расхождение
+ * оставалось невидимым ровно тогда, когда оно и возникало.
+ */
+describe('пометка на ручной разбор честна к ошибкам', () => {
+  it('провал записи маркера не считается успехом, но слот всё равно удержан', async () => {
+    promo = { ...promo, max_uses: 1 };
+    cancelFails = true;
+
+    const realFetch = PRISTINE_FETCH;
+    fetchMock.mockImplementation((url: any, init?: any) => {
+      const u = String(url);
+      if (u.includes('/items/promo_reservations/') && init?.method === 'PATCH') {
+        const patch = JSON.parse(init.body);
+        // Ломаем И привязку платежа, И запись маркера разбора.
+        if (patch.yookassa_payment_id || patch.needs_reconciliation) {
+          return jsonResponse({ errors: [{ message: 'boom' }] }, false, 500);
+        }
+      }
+      return realFetch(url, init);
+    });
+
+    const res = await create('user-1');
+    expect(res.status).toBe(503);
+
+    // Маркер записать не удалось — но денежный инвариант держится не на нём:
+    // бронь остаётся reserved и не реклеймится, потому что попытка оплаты
+    // зафиксирована ДО обращения к ЮКассе.
+    const row = reservations()[0];
+    expect(row.status).toBe('reserved');
+    expect(row.needs_reconciliation).toBeFalsy();
+    expect(row.payment_attempt_at).toBeTruthy();
+
+    for (const r of reservations()) {
+      r.reserved_at = new Date(Date.now() - 45 * 60 * 1000).toISOString();
+    }
+    fetchMock.mockImplementation(PRISTINE_FETCH);
+    cancelFails = false;
+
+    const second = await create('user-2');
+    expect(reservations()[0].status).toBe('reserved');
+    expect(second.body.confirmationUrl).toBeUndefined();
+  });
+});
+
+/**
+ * TOCTOU: победитель успел освободить слот до того, как проигравший перечитал состояние.
+ *
+ * Находка ревью 2026-07-29. После unique-конфликта код перечитывал occupiedSlots,
+ * но потом БЕЗУСЛОВНО делал occupied.add(slot). Если между конфликтом и
+ * перечитыванием держатель слот освободил, фактически он свободен — а искусственная
+ * пометка снова объявляла его занятым. При max_uses=1 свободных номеров больше нет,
+ * и второй запрос получал «промокод исчерпан» на пустом коде.
+ */
+describe('TOCTOU: освобождённый между конфликтом и перечитыванием слот', () => {
+  it('max_uses=1 — проигравший гонку берёт освободившийся слот, а не «исчерпан»', async () => {
+    promo = { ...promo, max_uses: 1 };
+
+    // Победитель занимает единственный слот.
+    const first = await create('user-1');
+    expect(first.status).toBe(200);
+    const winnerRow = reservations()[0];
+    expect(winnerRow.slot_index).toBe(0);
+
+    // Детерминированно воспроизводим гонку тремя шагами.
+    //
+    //  1. Первое чтение занятых слотов у второго покупателя отдаёт ПУСТО —
+    //     это момент, когда бронь победителя ещё не видна. Претендент выбирает
+    //     слот 0.
+    //  2. Его вставка упирается в реальный уникальный индекс: победитель слот
+    //     уже держит. Ровно в этот момент победитель бронь освобождает.
+    //  3. Претендент перечитывает состояние — и слот 0 фактически свободен.
+    //
+    // Старый код на третьем шаге всё равно делал occupied.add(slot), свободных
+    // номеров при max_uses=1 не оставалось, и второй покупатель получал
+    // «промокод исчерпан» на пустом коде.
+    const realFetch = PRISTINE_FETCH;
+    let firstOccupancyRead = true;
+    fetchMock.mockImplementation((url: any, init?: any) => {
+      const u = String(url);
+      const method = init?.method || 'GET';
+
+      if (firstOccupancyRead && method === 'GET' && u.includes('/items/promo_reservations')
+          && u.includes('filter[status][_in]=reserved,completed')) {
+        firstOccupancyRead = false;
+        return jsonResponse({ data: [] });
+      }
+
+      if (method === 'POST' && u.endsWith('/items/promo_reservations')) {
+        const result = realFetch(url, init);
+        return Promise.resolve(result).then((res: any) => {
+          if (!res.ok) {
+            // Конфликт случился — победитель освобождает бронь ровно сейчас.
+            winnerRow.status = 'released';
+            winnerRow.user_lock = null;
+            winnerRow.slot_lock = null;
+          }
+          return res;
+        });
+      }
+
+      return realFetch(url, init);
+    });
+
+    const second = await create('user-2');
+
+    expect(second.status).toBe(200);
+    expect(second.body.confirmationUrl).toBeTruthy();
+    const loserRow = reservations().find((r: any) => r.user_id === 'user-2');
+    expect(loserRow.status).toBe('reserved');
+    // Тот же самый номер, а не следующий: ёмкость кода не съедена впустую.
+    expect(loserRow.slot_index).toBe(0);
+  });
+
+  it('живой держатель слота по-прежнему считается занятым', async () => {
+    // Обратная сторона: перечитанное состояние — источник истины в ОБЕ стороны.
+    promo = { ...promo, max_uses: 1 };
+
+    await create('user-1');
+    const second = await create('user-2');
+
+    expect(second.status).toBe(400);
+    expect(second.body.error).toMatch(/исчерпал/);
+  });
+});

@@ -93,6 +93,10 @@ const COLLECTIONS = [
       // платежа в ЮКассе подтвердить не получилось. Такую бронь НЕ освобождаем
       // (иначе скидку получат дважды) и разбираем руками.
       { field: 'needs_reconciliation', type: 'boolean', schema: { is_nullable: true, default_value: false } },
+      // Отметка «по этой брони уже пошли в платёжную систему». Отличает бронь,
+      // брошенную ДО создания платежа (её можно освободить), от той, где платёж
+      // создан, а привязка сорвалась (слот держим). См. promo-reservation.ts.
+      { field: 'payment_attempt_at', type: 'timestamp', schema: { is_nullable: true } },
       { field: 'last_error', type: 'text', schema: { is_nullable: true } },
     ],
   },

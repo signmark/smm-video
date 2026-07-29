@@ -17,6 +17,7 @@ import {
   completePromoReservation,
   releasePromoReservation,
   attachPaymentId,
+  markPaymentAttempt,
   flagReservationReconciliation,
   getReservationByPayment,
   isReservationStoreReady,
@@ -196,8 +197,22 @@ async function finalizePromoRedemption(meta: any, paymentId: string): Promise<vo
  * исключение — бронь, к которой так и не привязался платёж: значит процесс умер между
  * бронированием и созданием платежа, и висеть ей незачем.
  */
-async function isSlotHolderDead(holder: { yookassa_payment_id?: string | null; reserved_at?: string | null }): Promise<boolean> {
+async function isSlotHolderDead(holder: {
+  yookassa_payment_id?: string | null;
+  reserved_at?: string | null;
+  payment_attempt_at?: string | null;
+  needs_reconciliation?: boolean | null;
+}): Promise<boolean> {
+  // Бронь, отложенная на ручной разбор, мёртвой не считается никогда — её
+  // оставили занятой намеренно, потому что платёж по ней, возможно, жив.
+  if (holder.needs_reconciliation === true) return false;
+
   if (!holder.yookassa_payment_id) {
+    // Обращение к ЮКассе по этой брони уже начиналось, а id не сохранился.
+    // Значит платёж мог быть создан, и «сирота» здесь — догадка ценой в
+    // выданную дважды скидку (находка ревью 2026-07-29). Держим слот.
+    if (holder.payment_attempt_at) return false;
+
     const reservedAt = holder.reserved_at ? new Date(holder.reserved_at).getTime() : 0;
     return Number.isFinite(reservedAt) && Date.now() - reservedAt > ORPHAN_RESERVATION_MS;
   }
@@ -415,6 +430,16 @@ router.post('/payments/create', async (req: Request, res: Response) => {
     }
 
     const amount = finalAmount.toFixed(2);
+
+    if (appliedPromo) {
+      // Фиксируем «по этой брони пошли в ЮКассу» ДО самого обращения. Если
+      // привязка платежа потом сорвётся, именно этот маркер отличит «упали до
+      // создания платежа» (бронь-сирота, можно освободить) от «платёж создан,
+      // связать не смогли» (слот держим). Сбой записи прерывает оплату: без
+      // маркера эти два состояния снова неотличимы, а ошибаться здесь можно
+      // только в сторону удержания слота.
+      await markPaymentAttempt(orderId);
+    }
 
     const payment = await yookassaRequest('POST', '', {
       amount: { value: amount, currency: CURRENCY },

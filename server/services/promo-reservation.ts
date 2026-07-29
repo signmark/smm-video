@@ -106,6 +106,48 @@ export async function isReservationStoreReady(): Promise<boolean> {
 }
 
 /**
+ * Фиксирует, что по этой брони НАЧАТО обращение к платёжной системе.
+ *
+ * Ключ к денежному инварианту (находка ревью 2026-07-29). Бронь без
+ * `yookassa_payment_id` раньше через 30 минут объявлялась сиротой — «процесс
+ * умер между бронированием и созданием платежа, висеть ей незачем». Но ровно
+ * так же выглядит и совсем другой случай: платёж создан, а привязка сорвалась.
+ * По одному пустому полю эти два состояния неотличимы, и автоматика выбирала
+ * то, что дороже: освобождала слот под живым платежом.
+ *
+ * Маркер ставится ДО обращения к ЮКассе и разделяет их однозначно: нет
+ * маркера — до платёжной системы не дошли, сирота; есть маркер и нет
+ * `yookassa_payment_id` — внешний платёж мог быть создан, слот держим.
+ *
+ * Ошибка записи НЕ проглатывается: если маркер не встал, платёж создавать
+ * нельзя — иначе возвращается ровно та неразличимость, ради которой он и нужен.
+ * Вызывающий обязан прервать оплату, а бронь освободится штатным путём.
+ */
+export async function markPaymentAttempt(orderId: string): Promise<void> {
+  const row = await getReservationByPayment(orderId);
+  if (!row) return;
+
+  let lastError = '';
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const res = await fetch(`${directusUrl()}/items/${COLLECTION}/${row.id}`, {
+        method: 'PATCH',
+        headers: headers(),
+        body: JSON.stringify({ payment_attempt_at: new Date().toISOString() }),
+      });
+      if (res.ok) return;
+      lastError = `HTTP ${res.status}`;
+    } catch (err: any) {
+      lastError = err?.message || 'network error';
+    }
+  }
+
+  throw new PromoReservationUnavailableError(
+    `не удалось отметить начало оплаты по брони ${row.id}: ${lastError}`,
+  );
+}
+
+/**
  * Помечает бронь как требующую ручного разбора и оставляет причину.
  *
  * Нужна там, где автоматика не смогла привести систему к однозначному
@@ -114,21 +156,49 @@ export async function isReservationStoreReady(): Promise<boolean> {
  * скидку получат дважды. Пусть слот останется занятым, а расхождение будет
  * видно.
  *
- * Ошибку записи глушим: это диагностика поверх уже случившегося сбоя, ронять
- * из-за неё вызывающего незачем — он и так идёт по ветке отказа.
+ * Ответ Directus проверяется: раньше success-лог «помечена на ручной разбор»
+ * писался и после HTTP 500, то есть расхождение оставалось невидимым ровно
+ * тогда, когда оно и возникало (находка ревью 2026-07-29).
+ *
+ * Бросать наружу всё же не начинаем — вызывающий и так идёт по ветке отказа, —
+ * но денежный инвариант на этот флаг больше не опирается: слот удерживает
+ * `payment_attempt_at`, который встал раньше и по другому пути.
+ *
+ * @returns удалось ли фактически поставить пометку
  */
-export async function flagReservationReconciliation(paymentId: string, reason: string): Promise<void> {
+export async function flagReservationReconciliation(paymentId: string, reason: string): Promise<boolean> {
+  let lastError = '';
   try {
     const row = await getReservationByPayment(paymentId);
-    if (!row) return;
-    await fetch(`${directusUrl()}/items/${COLLECTION}/${row.id}`, {
-      method: 'PATCH',
-      headers: headers(),
-      body: JSON.stringify({ needs_reconciliation: true, last_error: reason.slice(0, 500) }),
-    });
-    log(`[promo] Бронь ${row.id} помечена на ручной разбор: ${reason}`, 'promo', 'error');
+    if (!row) return false;
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const res = await fetch(`${directusUrl()}/items/${COLLECTION}/${row.id}`, {
+          method: 'PATCH',
+          headers: headers(),
+          body: JSON.stringify({ needs_reconciliation: true, last_error: reason.slice(0, 500) }),
+        });
+        if (res.ok) {
+          log(`[promo] Бронь ${row.id} помечена на ручной разбор: ${reason}`, 'promo', 'error');
+          return true;
+        }
+        lastError = `HTTP ${res.status}`;
+      } catch (err: any) {
+        lastError = err?.message || 'network error';
+      }
+    }
+
+    log(
+      `[promo] СВЕРКА: бронь ${row.id} требует разбора (${reason}), но пометку записать не удалось: ${lastError}. `
+      + `Слот остаётся занятым по payment_attempt_at.`,
+      'promo',
+      'error',
+    );
+    return false;
   } catch (err: any) {
     log(`[promo] Не удалось пометить бронь на разбор (${paymentId}): ${err?.message}`, 'promo', 'error');
+    return false;
   }
 }
 
@@ -195,6 +265,7 @@ async function transitionReservation(
   rowId: string,
   from: 'reserved' | 'completed',
   patch: Record<string, any>,
+  extraFilter: Record<string, any> = {},
 ): Promise<any | null> {
   const res = await fetch(`${directusUrl()}/items/${COLLECTION}`, {
     method: 'PATCH',
@@ -206,6 +277,7 @@ async function transitionReservation(
           // Условие перехода. Directus применит изменение только к строкам,
           // которые ему удовлетворяют ПРЯМО СЕЙЧАС.
           status: { _eq: from },
+          ...extraFilter,
         },
       },
       data: patch,
@@ -229,14 +301,22 @@ async function transitionReservation(
  *
  * @returns true, если освободили именно мы.
  */
-async function releaseRow(rowId: string, reason: string): Promise<boolean> {
-  const updated = await transitionReservation(rowId, 'reserved', {
-    status: 'released',
-    released_at: new Date().toISOString(),
-    // Обнуление замков и есть освобождение: NULL уникальному индексу не мешает.
-    user_lock: null,
-    slot_lock: null,
-  });
+async function releaseRow(rowId: string, reason: string, opts: { onlyIfNotFlagged?: boolean } = {}): Promise<boolean> {
+  const updated = await transitionReservation(
+    rowId,
+    'reserved',
+    {
+      status: 'released',
+      released_at: new Date().toISOString(),
+      // Обнуление замков и есть освобождение: NULL уникальному индексу не мешает.
+      user_lock: null,
+      slot_lock: null,
+    },
+    // Автоматический реклейм не имеет права трогать бронь, отложенную на ручной
+    // разбор. Условие идёт В ФИЛЬТР перехода, а не проверяется отдельным чтением:
+    // между чтением и записью пометку могли поставить, и проверка бы её проспала.
+    opts.onlyIfNotFlagged ? { needs_reconciliation: { _neq: true } } : {},
+  );
 
   if (!updated) {
     log(`[promo] Бронь ${rowId} освободить не удалось: уже не в состоянии reserved (${reason})`, 'promo', 'warn');
@@ -245,6 +325,11 @@ async function releaseRow(rowId: string, reason: string): Promise<boolean> {
 
   log(`[promo] Бронь ${rowId} освобождена: ${reason}`, 'promo', 'warn');
   return true;
+}
+
+/** Бронь отложена на ручной разбор — автоматике её трогать нельзя. */
+function isFlaggedForReconciliation(row: any): boolean {
+  return row?.needs_reconciliation === true || row?.needs_reconciliation === 'true';
 }
 
 /**
@@ -259,9 +344,15 @@ async function reclaimDeadReservations(
   );
   let freed = 0;
   for (const row of held) {
+    // Бронь на ручном разборе автоматика не трогает НИКОГДА: её оставили
+    // занятой намеренно, потому что платёж по ней, возможно, жив.
+    if (isFlaggedForReconciliation(row)) {
+      log(`[promo] Бронь ${row.payment_id} на ручном разборе — реклейм пропущен`, 'promo', 'warn');
+      continue;
+    }
     try {
       if (await isSlotHolderDead(row)) {
-        await releaseRow(row.id, `платёж брони ${row.payment_id} не состоится`);
+        await releaseRow(row.id, `платёж брони ${row.payment_id} не состоится`, { onlyIfNotFlagged: true });
         freed++;
       }
     } catch (err: any) {
@@ -357,10 +448,10 @@ export async function reservePromo(params: {
       // освобождаем и пробуем снова: иначе брошенная оплата запирала бы код за
       // пользователем навсегда — повторить попытку он не мог никогда, а для кодов
       // без max_uses сюда не доходил и общий reclaim (находка ревью 2026-07-28).
-      if (userHolder.status === 'reserved' && isSlotHolderDead) {
+      if (userHolder.status === 'reserved' && !isFlaggedForReconciliation(userHolder) && isSlotHolderDead) {
         try {
           if (await isSlotHolderDead(userHolder)) {
-            await releaseRow(userHolder.id, `платёж брони ${userHolder.payment_id} не состоится`);
+            await releaseRow(userHolder.id, `платёж брони ${userHolder.payment_id} не состоится`, { onlyIfNotFlagged: true });
             occupied = await occupiedSlots(promoId);
             continue;
           }
@@ -376,10 +467,10 @@ export async function reservePromo(params: {
 
     // Слот держит бронь под платёж, который уже отменён — освобождаем и пробуем снова
     // этот же номер. Иначе помечаем номер занятым и берём следующий свободный.
-    if (holder && holder.status === 'reserved' && isSlotHolderDead) {
+    if (holder && holder.status === 'reserved' && !isFlaggedForReconciliation(holder) && isSlotHolderDead) {
       try {
         if (await isSlotHolderDead(holder)) {
-          await releaseRow(holder.id, `платёж брони ${holder.payment_id} не состоится`);
+          await releaseRow(holder.id, `платёж брони ${holder.payment_id} не состоится`, { onlyIfNotFlagged: true });
           occupied = await occupiedSlots(promoId);
           continue;
         }
@@ -388,12 +479,21 @@ export async function reservePromo(params: {
       }
     }
 
-    // Гонку за этот номер мы проиграли. Локальной пометки мало: пока мы ходили
-    // в Directus, соседние запросы могли и занять, и освободить другие слоты.
-    // Перечитываем фактическое состояние — иначе на конкурентной нагрузке
-    // претендент бегает по уже занятым номерам и впустую жжёт попытки.
+    // Гонку за этот номер мы проиграли. Пока мы ходили в Directus, соседние
+    // запросы могли и занять, и освободить любые слоты — поэтому перечитываем
+    // фактическое состояние, и оно же единственный источник истины.
+    //
+    // Раньше здесь стоял ещё и безусловный `occupied.add(slot)`. Он ломал
+    // ровно тот случай, ради которого перечитывание и делается: если победитель
+    // успел освободить слот между конфликтом и перечитыванием, слот свободен, а
+    // пометка снова объявляла его занятым. При max_uses=1 свободных номеров
+    // после этого не оставалось, и второй покупатель получал «промокод
+    // исчерпан» на пустом коде (находка ревью 2026-07-29).
+    //
+    // Живой держатель и так присутствует в перечитанном множестве, а
+    // исчезнувший — нет, и тот же номер честно пробуется снова. Цикл при этом
+    // остаётся конечным: его ограничивает attemptBudget.
     occupied = await occupiedSlots(promoId);
-    occupied.add(slot);
   }
 
   throw new PromoReservationUnavailableError(

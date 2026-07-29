@@ -835,7 +835,7 @@ export default function VideoStoryEditor({ storyId }: VideoStoryEditorProps) {
                       onError={(e) => {
                         console.error('Ошибка загрузки видео:', e);
                         console.error('Video URL:', story.backgroundVideoUrl);
-                        console.error('Video element error:', e.target.error);
+                        console.error('Video element error:', (e.target as HTMLVideoElement | null)?.error);
                       }}
                       onLoadStart={() => {
                         console.log('Начало загрузки видео:', story.backgroundVideoUrl);

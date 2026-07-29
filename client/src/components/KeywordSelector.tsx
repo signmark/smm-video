@@ -143,7 +143,7 @@ export function KeywordSelector({
       // Удаляем дубликаты по ключевому слову, оставляя версию с наибольшей частотой
       const keywordMap = new Map<string, typeof formattedResults[0]>();
       
-      formattedResults.forEach(item => {
+      formattedResults.forEach((item: typeof formattedResults[0]) => {
         const lowerKeyword = item.keyword.toLowerCase();
         const existing = keywordMap.get(lowerKeyword);
         

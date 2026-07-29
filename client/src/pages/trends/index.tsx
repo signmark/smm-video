@@ -195,6 +195,10 @@ interface Campaign {
   link: string | null;
   created_at: string;
   updated_at: string;
+  // Настройки анализа трендов уходят в панель комментариев прямо из кампании.
+  // Обе формы имени: Directus отдаёт snake_case, часть кода ждёт camelCase.
+  trend_analysis_settings?: Record<string, any>;
+  trendAnalysisSettings?: Record<string, any>;
 }
 
 interface ContentSource {

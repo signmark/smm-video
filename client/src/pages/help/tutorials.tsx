@@ -815,7 +815,7 @@ export default function TutorialsPage() {
   const isAdmin = adminData?.isAdmin || false;
 
   // Загрузка tutorials - РЕАЛЬНЫЙ запрос к API с авторизацией
-  const { data: tutorialsResponse, isLoading, error: queryError } = useQuery({
+  const { data: tutorialsResponse, isLoading, error: queryError } = useQuery<{ data: VideoTutorial[] }>({
     queryKey: ['/api/tutorials'],
   });
 

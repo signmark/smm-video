@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { DISPLAY_TIME_ZONE } from '@/lib/date-utils';
 import { Calendar } from '@/components/ui/calendar';
 import { format, isSameDay, addDays, startOfMonth, startOfDay, parseISO } from 'date-fns';
 import { formatInTimeZone } from 'date-fns-tz';
@@ -533,7 +534,7 @@ export default function PublicationCalendar({
     
     try {
       // Получаем часовой пояс пользователя
-      const userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const userTimeZone = DISPLAY_TIME_ZONE;
       
       // ИСПРАВЛЕНИЕ: Если строка без timezone (без Z), добавляем Z чтобы парсить как UTC
       let dateStr = typeof date === 'string' ? date : date.toISOString();

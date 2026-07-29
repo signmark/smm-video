@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { DISPLAY_TIME_ZONE } from '@/lib/date-utils';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { CampaignContent, Campaign, SocialPlatform, PlatformPublishInfo } from '@/types';
@@ -322,7 +323,7 @@ export default function ScheduledPublications() {
     
     try {
       // Получаем часовой пояс пользователя
-      const userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const userTimeZone = DISPLAY_TIME_ZONE;
       
       // ИСПРАВЛЕНИЕ: Если строка без timezone (без Z), добавляем Z чтобы парсить как UTC
       let dateStr = typeof date === 'string' ? date : date.toISOString();

@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { DISPLAY_TIME_ZONE } from '@/lib/date-utils';
 import { CampaignContent, SocialPlatform } from '@/types';
 import { formatInTimeZone } from 'date-fns-tz';
 import { ru } from 'date-fns/locale';
@@ -73,7 +74,7 @@ const STATUS_DOT: Record<string, string> = {
 function formatDateBlock(date: string | Date | null | undefined) {
   if (!date) return null;
   try {
-    const userTZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const userTZ = DISPLAY_TIME_ZONE;
     let dateStr = typeof date === 'string' ? date : date.toISOString();
     if (typeof date === 'string' && !date.endsWith('Z') && !date.includes('+')) {
       dateStr += 'Z';
@@ -94,7 +95,7 @@ function formatDateBlock(date: string | Date | null | undefined) {
 function formatTime(date: string | Date | null | undefined): string | null {
   if (!date) return null;
   try {
-    const userTZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const userTZ = DISPLAY_TIME_ZONE;
     let dateStr = typeof date === 'string' ? date : date.toISOString();
     if (typeof date === 'string' && !date.endsWith('Z') && !date.includes('+')) {
       dateStr += 'Z';

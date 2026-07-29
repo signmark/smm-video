@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, createRef } from "react";
+import { toDisplayDateKey } from '@/lib/date-utils';
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useTranslation } from "react-i18next";
@@ -1641,9 +1642,11 @@ export default function ContentPage() {
 
   filteredContent.forEach((content: CampaignContent) => {
     // Получаем дату в локальном часовом поясе пользователя
-    const localDate = new Date(content.publishedAt || content.scheduledAt || content.createdAt || new Date());
-    // Формируем строку даты в формате ISO YYYY-MM-DD для использования в качестве ключа
-    const dateStr = `${localDate.getFullYear()}-${String(localDate.getMonth() + 1).padStart(2, '0')}-${String(localDate.getDate()).padStart(2, '0')}`;
+    // Ключ дня — по московскому календарю: ввод расписания московский, и
+    // группировка обязана совпадать с тем, что видит пользователь (SM-9).
+    const dateStr = toDisplayDateKey(
+      content.publishedAt || content.scheduledAt || content.createdAt || new Date()
+    ) || 'unknown';
 
     if (!contentByDate[dateStr]) {
       contentByDate[dateStr] = [];

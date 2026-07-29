@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { DISPLAY_TIME_ZONE } from '@/lib/date-utils';
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCampaignStore } from "@/lib/campaignStore";
 import { Calendar } from "@/components/ui/calendar";
@@ -174,7 +175,7 @@ export default function Posts() {
   const formatScheduledTime = (dateString: string | Date): string => {
     if (!dateString) return '';
     try {
-      const userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const userTimeZone = DISPLAY_TIME_ZONE;
       const dateObj = typeof dateString === 'string' ? new Date(dateString) : dateString;
       return formatInTimeZone(dateObj, userTimeZone, 'dd MMMM yyyy, HH:mm', { locale: getDateLocale() });
     } catch (error) {
@@ -187,7 +188,7 @@ export default function Posts() {
   const formatPublishedTime = (dateString: string | Date): string => {
     if (!dateString) return '';
     try {
-      const userTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const userTimeZone = DISPLAY_TIME_ZONE;
       const dateObj = typeof dateString === 'string' ? new Date(dateString) : dateString;
       return formatInTimeZone(dateObj, userTimeZone, 'dd MMMM yyyy, HH:mm', { locale: getDateLocale() });
     } catch (error) {

@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { toDisplayDateKey } from '@/lib/date-utils';
 import { authHeaders } from '@/lib/auth-headers';
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -225,30 +226,31 @@ export default function Dashboard() {
   const activityChartData = (() => {
     if (!contentStats?.data) return [];
 
-    const today = new Date();
-    const last7Days = eachDayOfInterval({
-      start: subDays(today, 6),
-      end: today
+    // Сутки считаем по МОСКОВСКОМУ календарю, а не по границам дня в поясе
+    // браузера. Раньше startOfDay брал местную полночь, и у зрителя западнее
+    // Москвы ночная публикация (01:00 МСК = 22:00Z предыдущих суток) попадала
+    // в предыдущий столбец графика (SM-9).
+    const todayKey = toDisplayDateKey(new Date())!;
+    const last7Keys = Array.from({ length: 7 }, (_, i) => {
+      // Арифметика по календарным суткам: ключ уже без времени и без пояса.
+      const d = new Date(`${todayKey}T00:00:00Z`);
+      d.setUTCDate(d.getUTCDate() - (6 - i));
+      return d.toISOString().slice(0, 10);
     });
-    
-    return last7Days.map(day => {
-      const dayStart = startOfDay(day);
-      const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000 - 1);
-      
-      const published = recentContent.filter(item => {
-        if (!item.publishedAt) return false;
-        const publishedDate = new Date(item.publishedAt);
-        return publishedDate >= dayStart && publishedDate <= dayEnd;
-      }).length;
 
-      const scheduled = recentContent.filter(item => {
-        if (!item.scheduledAt || item.status !== 'scheduled') return false;
-        const scheduledDate = new Date(item.scheduledAt);
-        return scheduledDate >= dayStart && scheduledDate <= dayEnd;
-      }).length;
-      
+    return last7Keys.map(dayKey => {
+      const published = recentContent.filter(item =>
+        item.publishedAt && toDisplayDateKey(item.publishedAt) === dayKey
+      ).length;
+
+      const scheduled = recentContent.filter(item =>
+        item.scheduledAt && item.status === 'scheduled'
+          && toDisplayDateKey(item.scheduledAt) === dayKey
+      ).length;
+
+      const [, month, day] = dayKey.split('-');
       return {
-        date: format(day, 'dd.MM', { locale: getDateLocale() }),
+        date: `${day}.${month}`,
         published,
         scheduled,
         total: published + scheduled

@@ -886,10 +886,10 @@ class TelegramBotService {
 
       try {
         const directusUrl = process.env.DIRECTUS_URL;
-        const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
+        const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
 
         if (!adminToken) {
-          await ctx.editMessageText('❌ Ошибка: DIRECTUS_STATIC_TOKEN / DIRECTUS_ADMIN_TOKEN не настроен');
+          await ctx.editMessageText('❌ Ошибка: DIRECTUS_STATIC_TOKEN не настроен');
           return;
         }
 

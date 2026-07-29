@@ -317,7 +317,7 @@ export function registerTrendsRoutes(app: Express) {
         return res.status(400).json({ success: false, error: 'campaignId обязателен' });
       }
 
-      const authToken = req.user?.token || process.env.DIRECTUS_ADMIN_TOKEN || '';
+      const authToken = req.user?.token || process.env.DIRECTUS_STATIC_TOKEN || '';
 
       // Читаем настройки анализа трендов из кампании
       let campaignTrendSettings: Record<string, any> = {};

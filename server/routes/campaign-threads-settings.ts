@@ -22,7 +22,7 @@ router.get('/campaigns/:campaignId/threads-settings', async (req, res) => {
   const userToken = req.headers.authorization?.replace('Bearer ', '');
 
   try {
-    const tokenToUse = userToken || process.env.DIRECTUS_TOKEN;
+    const tokenToUse = userToken || process.env.DIRECTUS_STATIC_TOKEN;
     if (!tokenToUse) {
       return res.status(401).json({ success: false, error: 'Токен авторизации не доступен' });
     }
@@ -46,7 +46,7 @@ router.patch('/campaigns/:campaignId/threads-settings', async (req, res) => {
   const userToken = req.headers.authorization?.replace('Bearer ', '');
 
   try {
-    const tokenToUse = userToken || process.env.DIRECTUS_TOKEN;
+    const tokenToUse = userToken || process.env.DIRECTUS_STATIC_TOKEN;
     if (!tokenToUse) {
       return res.status(401).json({ success: false, error: 'Токен авторизации не доступен' });
     }

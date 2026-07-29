@@ -28,7 +28,7 @@ router.get('/campaigns/:campaignId/instagram-settings', async (req, res) => {
   try {
 
     // Используем системный токен как fallback для доступа к базе данных
-    const tokenToUse = userToken || process.env.DIRECTUS_TOKEN;
+    const tokenToUse = userToken || process.env.DIRECTUS_STATIC_TOKEN;
     
     if (!tokenToUse) {
       return res.status(401).json({
@@ -377,7 +377,7 @@ router.post('/campaigns/:campaignId/fetch-instagram-business-id', async (req, re
       `${process.env.DIRECTUS_URL}/items/user_campaigns/${campaignId}`,
       {
         headers: {
-          Authorization: `Bearer ${process.env.DIRECTUS_TOKEN}`,
+          Authorization: `Bearer ${process.env.DIRECTUS_STATIC_TOKEN}`,
           'Content-Type': 'application/json'
         }
       }
@@ -415,7 +415,7 @@ router.post('/campaigns/:campaignId/fetch-instagram-business-id', async (req, re
       },
       {
         headers: {
-          Authorization: `Bearer ${process.env.DIRECTUS_TOKEN}`,
+          Authorization: `Bearer ${process.env.DIRECTUS_STATIC_TOKEN}`,
           'Content-Type': 'application/json'
         }
       }
@@ -504,7 +504,7 @@ router.post('/campaigns/:campaignId/check-facebook-page', async (req, res) => {
           `${process.env.DIRECTUS_URL}/items/user_campaigns/${campaignId}`,
           {
             headers: {
-              Authorization: `Bearer ${process.env.DIRECTUS_TOKEN}`,
+              Authorization: `Bearer ${process.env.DIRECTUS_STATIC_TOKEN}`,
               'Content-Type': 'application/json'
             }
           }
@@ -535,7 +535,7 @@ router.post('/campaigns/:campaignId/check-facebook-page', async (req, res) => {
           },
           {
             headers: {
-              Authorization: `Bearer ${process.env.DIRECTUS_TOKEN}`,
+              Authorization: `Bearer ${process.env.DIRECTUS_STATIC_TOKEN}`,
               'Content-Type': 'application/json'
             }
           }

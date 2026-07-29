@@ -11,7 +11,7 @@
 
 const DIRECTUS_URL = process.env.DIRECTUS_URL || 'https://directus.roboflow.space';
 const ADMIN_TOKEN =
-  process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
+  process.env.DIRECTUS_STATIC_TOKEN;
 
 export type PromoType = 'discount' | 'extra_days' | 'pro_upgrade';
 

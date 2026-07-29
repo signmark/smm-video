@@ -4,13 +4,13 @@ import { validatePromoCode } from '../services/promo-validation';
 const router = Router();
 
 const DIRECTUS_URL = process.env.DIRECTUS_URL || 'https://directus.roboflow.space';
-const ADMIN_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
+const ADMIN_TOKEN = process.env.DIRECTUS_STATIC_TOKEN;
 
 type PromoType = 'discount' | 'extra_days' | 'pro_upgrade';
 
 async function checkAdminRights(token: string): Promise<boolean> {
   // Если передан сам admin-токен — сразу пропускаем
-  if (token === process.env.DIRECTUS_STATIC_TOKEN || token === process.env.DIRECTUS_ADMIN_TOKEN || token === process.env.DIRECTUS_TOKEN) {
+  if (token === process.env.DIRECTUS_STATIC_TOKEN || token === process.env.DIRECTUS_STATIC_TOKEN || token === process.env.DIRECTUS_STATIC_TOKEN) {
     return true;
   }
   try {

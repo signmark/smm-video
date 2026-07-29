@@ -27,7 +27,7 @@ const router = Router();
 const SHOP_ID = process.env.YOOKASSA_SHOP_ID || '';
 const SECRET_KEY = process.env.YOOKASSA_SECRET_KEY || '';
 const DIRECTUS_URL = process.env.DIRECTUS_URL || '';
-const ADMIN_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN || '';
+const ADMIN_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || '';
 
 const YOOKASSA_API = 'https://api.yookassa.ru/v3/payments';
 

@@ -37,7 +37,7 @@ const BASIC_PLAN_LIMIT = 30;
 
 async function getUserPlanFromDirectus(userId: string): Promise<string> {
   try {
-    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
     const resp = await directusApi.get(`/users/${userId}`, {
       headers: { Authorization: `Bearer ${adminToken}` },
       params: { fields: 'plan,expire_date,is_smm_admin,is_smm_super' }

@@ -63,7 +63,7 @@ export function registerCampaignRoutes(app: Express) {
       // Читаем через admin-токен: пользовательский токен Directus может отдавать
       // пустые кастомные поля (plan, expire_date) из-за политики доступа роли.
       try {
-        const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
+        const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
         const meResp = await directusApi.get(`/users/${userId}`, {
           headers: { 'Authorization': `Bearer ${adminToken}` },
           params: { fields: 'plan,expire_date,is_smm_admin,is_smm_super' },
@@ -454,8 +454,6 @@ export function registerCampaignRoutes(app: Express) {
       // коллекции, поэтому чужое ключевое слово удалялось без единой проверки.
       // Кампанию слова читаем сервисным токеном, дальше — обычная проверка доступа.
       const serviceToken = process.env.DIRECTUS_STATIC_TOKEN
-        || process.env.DIRECTUS_ADMIN_TOKEN
-        || process.env.DIRECTUS_TOKEN
         || token;
 
       let keyword: any;

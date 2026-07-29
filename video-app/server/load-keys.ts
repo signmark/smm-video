@@ -40,15 +40,11 @@ export function getDirectusBaseUrl(): string {
 }
 
 export function getDirectusToken(): string | undefined {
-  // In Replit dev environment, use dev token
-  if (process.env.REPL_ID && !process.env.REPLIT_DEPLOYMENT) {
-    return process.env.DIRECTUS_DEV_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
-  }
-  return (
-    process.env.DIRECTUS_PROD_TOKEN ||
-    process.env.DIRECTUS_STATIC_TOKEN ||
-    process.env.DIRECTUS_ADMIN_TOKEN
-  );
+  // Единственное имя служебного токена во всём проекте — DIRECTUS_STATIC_TOKEN.
+  // Прежние DIRECTUS_DEV_TOKEN / DIRECTUS_PROD_TOKEN / DIRECTUS_ADMIN_TOKEN были
+  // наследием dev/prod/staging-эпох: одно и то же назначение под тремя именами,
+  // из-за чего при смене окружения бралось первое НЕПУСТОЕ, а не рабочее.
+  return process.env.DIRECTUS_STATIC_TOKEN;
 }
 
 async function tryLoadOnce(): Promise<boolean> {

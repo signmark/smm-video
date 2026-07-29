@@ -250,7 +250,7 @@ export async function startAutonomousExternal(params: {
   authToken?: string;
   launchCommand?: string;
 }) {
-  const adminToken = params.authToken || process.env.DIRECTUS_ADMIN_TOKEN || '';
+  const adminToken = params.authToken || process.env.DIRECTUS_STATIC_TOKEN || '';
   const interval = params.interval || 24;
   const postsPerCycle = params.postsPerCycle || 1;
   const autoSchedule = params.autoSchedule !== false;
@@ -1044,7 +1044,7 @@ function pickOptimalScheduleTimeMsk(opts: {
  * Обновляет state и persistence. Возвращает актуальный токен (или пустую строку, если рефреш не удался).
  */
 async function ensureFreshUserToken(state: AutonomousState): Promise<string> {
-  const adminFallback = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || state.authToken || '';
+  const adminFallback = process.env.DIRECTUS_STATIC_TOKEN || state.authToken || '';
   const exp = getJwtExp(state.authToken);
   const nowSec = Math.floor(Date.now() / 1000);
   
@@ -1053,7 +1053,7 @@ async function ensureFreshUserToken(state: AutonomousState): Promise<string> {
     return state.authToken;
   }
 
-  // Не JWT (статический токен, напр. DIRECTUS_ADMIN_TOKEN) — сразу пробуем получить живой JWT
+  // Не JWT (статический токен DIRECTUS_STATIC_TOKEN) — сразу пробуем получить живой JWT
   // через directusAuthManager, т.к. статический токен может не приниматься как Bearer в API
   if (!exp) {
     console.log(`[AUTONOMOUS-AUTH] 🔑 Статический токен обнаружен — получаем живой JWT через directusAuthManager`);
@@ -2025,7 +2025,7 @@ ${titleInstruction}`;
                 contentResponse = await makeGenerateRequest(freshToken);
               } else {
                 // Последний шанс — статический admin-токен (middleware его принимает напрямую)
-                const staticAdmin = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || '';
+                const staticAdmin = process.env.DIRECTUS_STATIC_TOKEN || '';
                 if (staticAdmin) {
                   console.warn(`[CREATE-CONTENT] ⚠️ getValidToken вернул null — пробуем admin static token`);
                   contentResponse = await makeGenerateRequest(staticAdmin);
@@ -2772,7 +2772,7 @@ ${titleInstruction}`;
       }
       
       // Создаём состояние автономного режима
-      const adminToken = process.env.DIRECTUS_ADMIN_TOKEN || '';
+      const adminToken = process.env.DIRECTUS_STATIC_TOKEN || '';
       // Если platforms не переданы — берём фактически подключённые к кампании.
       let platforms: string[] = Array.isArray(params.platforms) && params.platforms.length > 0
         ? params.platforms

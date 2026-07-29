@@ -58,7 +58,7 @@ export const EMAIL_CHANGE_TOKEN_TTL_SEC = 3600;
  *    перенаправить на другую почту.
  */
 function makeEmailChangeToken(userId: string, ts: number, oldEmail: string, newEmail: string): string {
-  const secret = process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
+  const secret = process.env.APP_SIGNING_SECRET;
   if (!secret) {
     throw new Error('Не настроен секрет для подписи ссылок подтверждения почты');
   }
@@ -180,7 +180,7 @@ export function registerEmailChangeRoutes(app: Express) {
 
     try {
       const directusUrl = process.env.DIRECTUS_URL;
-      const adminToken = process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
+      const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
       if (!adminToken) return res.status(500).json({ error: 'Ошибка конфигурации сервера' });
 
       // Текущий адрес — источник истины и одновременно источник

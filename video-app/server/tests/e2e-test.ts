@@ -14,7 +14,7 @@
  *
  * Prerequisites:
  *   • Video App server running on port 3001  (cd video-app && npx tsx server/index.ts)
- *   • Directus reachable (DIRECTUS_URL + DIRECTUS_ADMIN_TOKEN env vars)
+ *   • Directus reachable (DIRECTUS_URL + DIRECTUS_STATIC_TOKEN env vars)
  *
  * Run:
  *   cd video-app && npx tsx server/tests/e2e-test.ts

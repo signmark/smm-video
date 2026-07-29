@@ -72,7 +72,7 @@ router.get('/threads/auth/callback', async (req, res) => {
   try {
     const { appId, appSecret, redirectUri, campaignId, userToken } = session;
 
-    const directusToken = userToken || process.env.DIRECTUS_TOKEN || process.env.ADMIN_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+    const directusToken = userToken || process.env.DIRECTUS_STATIC_TOKEN;
     if (!directusToken) {
       throw new Error('Нет токена для сохранения в Directus');
     }

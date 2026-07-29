@@ -30,9 +30,6 @@ import { getServiceTokenFromEnv, resolvePublishingToken } from '../services/publ
 
 const ENV_KEYS = [
   'DIRECTUS_STATIC_TOKEN',
-  'DIRECTUS_DEV_TOKEN',
-  'DIRECTUS_ADMIN_TOKEN',
-  'DIRECTUS_TOKEN',
   'DIRECTUS_URL',
   'DIRECTUS_ADMIN_EMAIL',
   'DIRECTUS_ADMIN_PASSWORD',
@@ -55,21 +52,25 @@ afterEach(() => {
 });
 
 describe('resolvePublishingToken', () => {
-  it('предпочитает DIRECTUS_STATIC_TOKEN', async () => {
+  it('берёт DIRECTUS_STATIC_TOKEN', async () => {
     process.env.DIRECTUS_STATIC_TOKEN = 'static';
-    process.env.DIRECTUS_ADMIN_TOKEN = 'admin';
     await expect(resolvePublishingToken()).resolves.toBe('static');
   });
 
-  it('порядок источников совпадает с directus-crud', () => {
-    process.env.DIRECTUS_TOKEN = 'plain';
-    expect(getServiceTokenFromEnv()).toBe('plain');
+  // Единственное имя служебного токена. Раньше здесь проверялась лесенка из
+  // DIRECTUS_TOKEN / DIRECTUS_ADMIN_TOKEN / DIRECTUS_DEV_TOKEN / STATIC — четыре
+  // имени одного и того же доступа. Лесенка брала первое НЕПУСТОЕ, а не рабочее,
+  // и при смене базы это роняло весь бэк в 401.
+  it('старые имена переменных больше не считаются источником токена', () => {
     process.env.DIRECTUS_ADMIN_TOKEN = 'admin';
-    expect(getServiceTokenFromEnv()).toBe('admin');
+    process.env.DIRECTUS_TOKEN = 'plain';
     process.env.DIRECTUS_DEV_TOKEN = 'dev';
-    expect(getServiceTokenFromEnv()).toBe('dev');
+    expect(getServiceTokenFromEnv()).toBeNull();
     process.env.DIRECTUS_STATIC_TOKEN = 'static';
     expect(getServiceTokenFromEnv()).toBe('static');
+    delete process.env.DIRECTUS_ADMIN_TOKEN;
+    delete process.env.DIRECTUS_TOKEN;
+    delete process.env.DIRECTUS_DEV_TOKEN;
   });
 
   it('без токена в env падает в getAdminAuthToken', async () => {

@@ -21,7 +21,7 @@ export class SocialPublishingService {
    * @returns {Promise<string|null>} Токен для авторизации запросов к API
    */
   public async getSystemToken(): Promise<string | null> {
-    return process.env.DIRECTUS_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || null;
+    return process.env.DIRECTUS_STATIC_TOKEN || null;
   }
   /**
    * Публикует контент в выбранную социальную платформу

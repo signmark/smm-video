@@ -580,7 +580,7 @@ router.post('/story/:id/publish', authenticateUser, async (req, res) => {
           }
         }
 
-        const adminToken = process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN || '';
+        const adminToken = process.env.DIRECTUS_STATIC_TOKEN || '';
         const { publishInstagramStory } = await import('../services/social-platforms/instagram-stories-service');
 
         webhookPromises.push(
@@ -742,7 +742,7 @@ router.post('/convert-and-publish', authenticateUser, async (req, res) => {
     } catch (userError) {
       createResponse = await directusApi.post('/items/campaign_content', storyData, {
         headers: {
-          'Authorization': `Bearer ${process.env.DIRECTUS_ADMIN_TOKEN}`
+          'Authorization': `Bearer ${process.env.DIRECTUS_STATIC_TOKEN}`
         }
       });
     }
@@ -750,7 +750,7 @@ router.post('/convert-and-publish', authenticateUser, async (req, res) => {
     const savedStory = createResponse.data.data;
 
     // STEP 3: Publish to Instagram directly
-    const adminToken = process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN || '';
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || '';
     const { publishInstagramStory } = await import('../services/social-platforms/instagram-stories-service');
     const storyResult = await publishInstagramStory(savedStory.id, adminToken);
 
@@ -809,7 +809,7 @@ router.post('/publish-video/:id', authenticateUser, async (req, res) => {
     } catch (userError) {
       const response = await directusApi.get(`/items/campaign_content/${id}`, {
         headers: {
-          'Authorization': `Bearer ${process.env.DIRECTUS_ADMIN_TOKEN}`
+          'Authorization': `Bearer ${process.env.DIRECTUS_STATIC_TOKEN}`
         }
       });
       story = response.data.data;
@@ -907,7 +907,7 @@ router.post('/publish-video/:id', authenticateUser, async (req, res) => {
 
 
     // Publish to Instagram directly
-    const adminToken = process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN || '';
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || '';
     const { publishInstagramStory } = await import('../services/social-platforms/instagram-stories-service');
     const storyResult = await publishInstagramStory(id, adminToken);
 
@@ -1185,7 +1185,7 @@ router.post('/publish', authenticateUser, async (req, res) => {
     // Publish to platforms
     const webhookResults = [];
     const selectedPlatforms = Array.isArray(platforms) ? platforms : [platforms];
-    const adminToken = process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN || '';
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || '';
     console.log('[STORIES-PUBLISH] 🚀 Начинаем цикл публикации по платформам:', selectedPlatforms);
 
     for (const platform of selectedPlatforms) {
@@ -1280,7 +1280,7 @@ router.post('/publish-clip', authenticateUser, async (req, res) => {
     let campaignSettings: any = null;
 
     try {
-      const token = authToken || process.env.DIRECTUS_ADMIN_TOKEN;
+      const token = authToken || process.env.DIRECTUS_STATIC_TOKEN;
       const contentResponse = await directusApi.get(`/items/campaign_content/${contentId}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -1392,7 +1392,7 @@ router.post('/publish-clip', authenticateUser, async (req, res) => {
           // Обновляем social_platforms в контенте если успешно
           if (ytResult.success && ytResult.postUrl) {
             try {
-              const token = authToken || process.env.DIRECTUS_ADMIN_TOKEN;
+              const token = authToken || process.env.DIRECTUS_STATIC_TOKEN;
               const currentContent = await directusApi.get(`/items/campaign_content/${contentId}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
               });

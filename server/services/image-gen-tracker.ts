@@ -11,7 +11,7 @@ function getCurrentMonth(): string {
 }
 
 function getAdminToken(): string | undefined {
-  return process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
+  return process.env.DIRECTUS_STATIC_TOKEN;
 }
 
 /**

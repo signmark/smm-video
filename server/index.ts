@@ -1200,7 +1200,7 @@ setInterval(performGlobalMemoryCleanup, 30 * 60 * 1000);
 // Фоновая проверка VK токенов (каждые 30 минут) — мониторинг статуса
 async function checkVkTokensStatus() {
   try {
-    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
     const directusUrl = process.env.DIRECTUS_URL;
     if (!adminToken || !directusUrl) return;
 

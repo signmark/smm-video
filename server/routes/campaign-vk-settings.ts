@@ -25,7 +25,7 @@ router.get('/campaigns/:campaignId/vk-settings', async (req, res) => {
   const userToken = req.headers.authorization?.replace('Bearer ', '');
 
   try {
-    const tokenToUse = userToken || process.env.DIRECTUS_TOKEN;
+    const tokenToUse = userToken || process.env.DIRECTUS_STATIC_TOKEN;
 
     if (!tokenToUse) {
       return res.status(401).json({
@@ -120,9 +120,9 @@ router.patch('/campaigns/:campaignId/vk-settings', async (req, res) => {
       throw authErr;
     }
 
-    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
     if (!adminToken) {
-      return res.status(500).json({ success: false, error: 'Не настроен admin-токен Directus (DIRECTUS_STATIC_TOKEN / DIRECTUS_ADMIN_TOKEN)' });
+      return res.status(500).json({ success: false, error: 'Не настроен admin-токен Directus (DIRECTUS_STATIC_TOKEN)' });
     }
 
     // Шаг 2: Запись через admin-токен (надёжно, без риска 403 на запись)
@@ -193,7 +193,7 @@ router.get('/campaigns/:campaignId/vk-groups', async (req, res) => {
   const userToken = req.headers.authorization?.replace('Bearer ', '');
 
   try {
-    const tokenToUse = userToken || process.env.DIRECTUS_TOKEN;
+    const tokenToUse = userToken || process.env.DIRECTUS_STATIC_TOKEN;
     if (!tokenToUse) {
       return res.status(401).json({ success: false, error: 'Токен авторизации не доступен' });
     }

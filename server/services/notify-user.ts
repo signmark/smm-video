@@ -37,7 +37,7 @@ export function escapeHtml(str: string): string {
 }
 
 function getDirectusConfig(): { adminToken: string; directusUrl: string } | null {
-  const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+  const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
   const directusUrl = process.env.DIRECTUS_URL;
   if (!adminToken || !directusUrl) return null;
   return { adminToken, directusUrl };

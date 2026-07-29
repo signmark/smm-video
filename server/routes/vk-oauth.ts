@@ -144,7 +144,7 @@ router.get('/vk/oauth2/callback', async (req, res) => {
 
     log(`[VK-OAUTH2] Tokens received, saving to campaign ${pending.campaignId}`, 'vk-oauth');
 
-    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
     const directusUrl = process.env.DIRECTUS_URL;
 
     const campaignResp = await axios.get(`${directusUrl}/items/user_campaigns/${pending.campaignId}`, {
@@ -209,7 +209,7 @@ router.post('/vk/oauth2/refresh', authenticateUser, async (req, res) => {
     const result = await refreshVkToken({ refreshToken, clientId, deviceId });
     if (!result) throw new Error('Не удалось обновить токен VK');
 
-    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
     const directusUrl = process.env.DIRECTUS_URL;
 
     const campaignResp = await axios.get(`${directusUrl}/items/user_campaigns/${campaignId}`, {
@@ -284,7 +284,7 @@ async function updateVkWebhookSecret(
   mode: 'ensure' | 'rotate' | 'revoke',
 ): Promise<string | null> {
   return withVkWebhookCampaignLock(campaignId, async () => {
-    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
     const directusUrl = process.env.DIRECTUS_URL;
     const campaignResp = await axios.get(`${directusUrl}/items/user_campaigns/${campaignId}`, {
       headers: { Authorization: `Bearer ${adminToken}` },
@@ -318,7 +318,7 @@ async function patchVkSettingsPreservingWebhookSecret(
   vkChanges: Record<string, any>,
 ): Promise<void> {
   await withVkWebhookCampaignLock(campaignId, async () => {
-    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
     const directusUrl = process.env.DIRECTUS_URL;
     const campaignResp = await axios.get(`${directusUrl}/items/user_campaigns/${campaignId}`, {
       headers: { Authorization: `Bearer ${adminToken}` },
@@ -436,7 +436,7 @@ async function processVkTokenWebhookSubmission(
   campaignId: string,
   secret: string,
 ): Promise<void> {
-  const adminAuthToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+  const adminAuthToken = process.env.DIRECTUS_STATIC_TOKEN;
   const directusUrl = process.env.DIRECTUS_URL;
 
   // Секрет сверяем ДО любого PATCH. Читаем кампанию админ-токеном только чтобы
@@ -597,7 +597,7 @@ router.patch('/vk/token-webhook/:campaignId/reconnecting', authenticateUser, asy
   if (!(await ensureCampaignAccess(req, res, campaignId))) return;
   try {
     await withVkWebhookCampaignLock(campaignId, async () => {
-      const adminAuthToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+      const adminAuthToken = process.env.DIRECTUS_STATIC_TOKEN;
       const directusUrl = process.env.DIRECTUS_URL;
       const campaignResp = await axios.get(`${directusUrl}/items/user_campaigns/${campaignId}`, {
         headers: { Authorization: `Bearer ${adminAuthToken}` },
@@ -630,7 +630,7 @@ router.get('/vk/token-webhook/:campaignId/status', authenticateUser, async (req,
   const { campaignId } = req.params;
   if (!(await ensureCampaignAccess(req, res, campaignId))) return;
   try {
-    const adminAuthToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+    const adminAuthToken = process.env.DIRECTUS_STATIC_TOKEN;
     const directusUrl = process.env.DIRECTUS_URL;
     const campaignResp = await axios.get(`${directusUrl}/items/user_campaigns/${campaignId}`, {
       headers: { Authorization: `Bearer ${adminAuthToken}` }
@@ -722,7 +722,7 @@ router.get('/vk/callback', async (req, res) => {
     // Если указана кампания — сохраняем токен прямо в неё (offline = не истекает)
     if (campaignId) {
       try {
-        const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+        const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
         const directusUrl = process.env.DIRECTUS_URL;
         const campaignResp = await axios.get(`${directusUrl}/items/user_campaigns/${campaignId}`, {
           headers: { Authorization: `Bearer ${adminToken}` }

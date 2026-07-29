@@ -17,7 +17,7 @@ const RESET_TOKEN_TTL_SEC = 3600; // 1 час
  * ошибка конфигурации, чем тихая подпись общеизвестным секретом.
  */
 function makeResetToken(userId: string, ts: number): string {
-  const secret = process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
+  const secret = process.env.APP_SIGNING_SECRET;
   if (!secret) {
     throw new Error('Не настроен секрет для подписи ссылок сброса пароля');
   }
@@ -45,7 +45,7 @@ export function registerPasswordResetRoutes(app: Express) {
 
     try {
       const directusUrl = process.env.DIRECTUS_URL;
-      const adminToken = process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
+      const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
       if (!adminToken) return res.status(500).json({ error: 'Ошибка конфигурации сервера' });
 
       // Ищем пользователя по email
@@ -145,7 +145,7 @@ export function registerPasswordResetRoutes(app: Express) {
 
     try {
       const directusUrl = process.env.DIRECTUS_URL;
-      const adminToken = process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
+      const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
       if (!adminToken) return res.status(500).json({ error: 'Ошибка конфигурации сервера' });
 
       const updateResp = await fetch(`${directusUrl}/users/${userId}`, {

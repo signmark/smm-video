@@ -266,7 +266,7 @@ router.get('/instagram/auth/callback', async (req, res) => {
 
       // Получаем текущие настройки кампании
       const DIRECTUS_URL = process.env.DIRECTUS_URL;
-      const DIRECTUS_TOKEN = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
+      const DIRECTUS_TOKEN = process.env.DIRECTUS_STATIC_TOKEN;
       if (!DIRECTUS_URL || !DIRECTUS_TOKEN) throw new Error('Directus OAuth storage is not configured');
       await authorizeCampaignAccess(session.campaignId, session.userId, DIRECTUS_TOKEN, false);
 

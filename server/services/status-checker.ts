@@ -128,7 +128,7 @@ class PublicationStatusChecker {
     }
     
     // Сначала пробуем получить токен из переменной окружения
-    const envToken = process.env.DIRECTUS_ADMIN_TOKEN;
+    const envToken = process.env.DIRECTUS_STATIC_TOKEN;
     if (envToken) {
       this.adminTokenCache = envToken;
       this.adminTokenTimestamp = Date.now();

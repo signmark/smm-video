@@ -113,8 +113,8 @@ export const requireActiveSubscription = async (
     // Статический admin-токен — полный доступ
     if (
       token === process.env.DIRECTUS_STATIC_TOKEN ||
-      token === process.env.DIRECTUS_TOKEN ||
-      token === process.env.DIRECTUS_ADMIN_TOKEN
+      token === process.env.DIRECTUS_STATIC_TOKEN ||
+      token === process.env.DIRECTUS_STATIC_TOKEN
     ) {
       return next();
     }

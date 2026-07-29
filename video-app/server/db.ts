@@ -115,9 +115,7 @@ function getDirectusConfig(): { baseUrl: string; token: string } | null {
     ? 'https://directus.roboflow.space'
     : (process.env.DIRECTUS_URL || 'https://directus.nplanner.ru');
 
-  const token = isReplitDev
-    ? (process.env.DIRECTUS_DEV_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN)
-    : (process.env.DIRECTUS_PROD_TOKEN || process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN);
+  const token = process.env.DIRECTUS_STATIC_TOKEN;
 
   if (!baseUrl || !token) return null;
   return { baseUrl, token };

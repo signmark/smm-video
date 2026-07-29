@@ -26,7 +26,7 @@ router.get('/campaigns/:campaignId/facebook-settings', async (req, res) => {
 
   try {
     // Используем системный токен как fallback для доступа к базе данных
-    const tokenToUse = userToken || process.env.DIRECTUS_TOKEN;
+    const tokenToUse = userToken || process.env.DIRECTUS_STATIC_TOKEN;
     
     if (!tokenToUse) {
       return res.status(401).json({

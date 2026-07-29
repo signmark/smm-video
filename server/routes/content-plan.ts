@@ -142,7 +142,7 @@ export function registerContentPlanRoutes(app: Express) {
       const { campaignId, trendTopics } = req.body;
       if (!campaignId || !Array.isArray(trendTopics)) return res.status(400).send('Invalid data');
       
-      const adminToken = process.env.DIRECTUS_TOKEN;
+      const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
       for (const topic of trendTopics) {
         await directusApi.post('/items/campaign_trend_topics', {
           title: topic.title,

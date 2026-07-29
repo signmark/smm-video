@@ -73,7 +73,7 @@ router.post('/', async (req, res) => {
     const directusAuthManager = await import('../services/directus-auth-manager').then(m => m.directusAuthManager);
     
     // Получаем токен из активных сессий администратора или используем токен из переменных окружения
-    let adminToken = process.env.DIRECTUS_ADMIN_TOKEN || '';
+    let adminToken = process.env.DIRECTUS_STATIC_TOKEN || '';
     const sessions = directusAuthManager.getAllActiveSessions();
     
     if (sessions.length > 0) {

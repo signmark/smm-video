@@ -43,7 +43,7 @@ router.post('/', authenticateUser, async (req, res) => {
     const directusAuthManager = await import('../services/directus-auth-manager').then(m => m.directusAuthManager);
     
     // Получаем токен из активных сессий администратора или используем токен из переменных окружения
-    let adminToken = process.env.DIRECTUS_ADMIN_TOKEN || '';
+    let adminToken = process.env.DIRECTUS_STATIC_TOKEN || '';
     const sessions = directusAuthManager.getAllActiveSessions();
     
     if (sessions.length > 0) {
@@ -323,7 +323,7 @@ router.post('/page-token/:pageId', authenticateUser, async (req, res) => {
       });
     }
 
-    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
     const directusUrl = process.env.DIRECTUS_URL;
     if (!adminToken || !directusUrl) throw new Error('Directus Facebook storage is not configured');
     const campaign = await authorizeCampaignAccess(campaignId, req.user?.id, adminToken, req.user?.is_smm_admin === true);

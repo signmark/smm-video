@@ -63,14 +63,14 @@ export class TokenHandler {
    * Получает административный токен для операций публикации
    */
   static getAdminToken(): string | null {
-    return process.env.DIRECTUS_TOKEN || null;
+    return process.env.DIRECTUS_STATIC_TOKEN || null;
   }
 
   /**
    * Проверяет, является ли токен административным
    */
   static isAdminToken(token: string): boolean {
-    const adminToken = process.env.DIRECTUS_TOKEN;
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
     return adminToken === token;
   }
 }

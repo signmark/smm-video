@@ -419,7 +419,7 @@ async function getCampaignSources(
   const result: any = { telegram: [], vk: [], youtube: [], instagram: [] };
   try {
     const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
-    const adminToken = process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_TOKEN;
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
 
     // Строим URL для прямого запроса к Directus
     // Поле username отсутствует в dev Directus — не запрашиваем его

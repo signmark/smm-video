@@ -19,9 +19,6 @@
 export function getServiceTokenFromEnv(): string | null {
   return (
     process.env.DIRECTUS_STATIC_TOKEN ||
-    process.env.DIRECTUS_DEV_TOKEN ||
-    process.env.DIRECTUS_ADMIN_TOKEN ||
-    process.env.DIRECTUS_TOKEN ||
     null
   );
 }

@@ -23,7 +23,7 @@ export function registerUserRoutes(app: Express) {
       // Всегда используем admin-токен для получения полного профиля —
       // пользовательский токен Directus может возвращать пустые кастомные поля (plan, expire_date)
       // из-за ограничений политики доступа роли.
-      const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
+      const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
       if (!adminToken) {
         return res.status(500).json({ error: 'Ошибка конфигурации сервера' });
       }
@@ -93,7 +93,7 @@ export function registerUserRoutes(app: Express) {
         return res.status(400).json({ error: 'Некорректный email' });
       }
 
-      const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
+      const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
       if (!adminToken) {
         return res.status(500).json({ error: 'Ошибка конфигурации сервера' });
       }

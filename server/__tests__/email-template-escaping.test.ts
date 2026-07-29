@@ -34,8 +34,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   __clearResetTokenStore();
   process.env.DIRECTUS_URL = 'http://directus.test';
-  process.env.DIRECTUS_ADMIN_TOKEN = 'test-admin-token';
-  delete process.env.DIRECTUS_TOKEN;
+  process.env.APP_SIGNING_SECRET = 'test-admin-token';
+  process.env.DIRECTUS_STATIC_TOKEN = 'test-static-token';
 
   vi.stubGlobal(
     'fetch',

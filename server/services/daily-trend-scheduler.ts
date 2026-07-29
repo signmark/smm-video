@@ -85,7 +85,7 @@ async function runDailyCheck(activeAutonomousCampaigns: Set<string>) {
       log(`[DailyScheduler] 📊 Запуск сбора трендов для кампании ${campaign.campaignId} (неактивна >24ч)`, 'info');
 
       try {
-        const adminToken = process.env.DIRECTUS_ADMIN_TOKEN || '';
+        const adminToken = process.env.DIRECTUS_STATIC_TOKEN || '';
         const result = await collectTrendsForCampaign({
           campaignId: campaign.campaignId,
           userId: campaign.userId,

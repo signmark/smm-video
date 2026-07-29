@@ -97,13 +97,13 @@ export function registerTokenRoutes(app: Express) {
   app.get('/api/admin/token/check', async (req: Request, res: Response) => {
     try {
       // Пробуем получить токен из .env
-      const adminToken = process.env.DIRECTUS_ADMIN_TOKEN;
+      const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
       
       if (!adminToken) {
         return res.status(404).json({
           success: false,
           error: 'Токен администратора не найден в переменных окружения',
-          message: 'Необходимо задать DIRECTUS_ADMIN_TOKEN в переменных окружения'
+          message: 'Необходимо задать DIRECTUS_STATIC_TOKEN в переменных окружения'
         });
       }
       
@@ -335,12 +335,12 @@ export function registerTokenRoutes(app: Express) {
   // Маршрут для проверки прав доступа ADMIN_TOKEN
   app.get('/api/system/admin-token-permissions', async (req: Request, res: Response) => {
     try {
-      const adminToken = process.env.DIRECTUS_ADMIN_TOKEN;
+      const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
       
       if (!adminToken) {
         return res.status(404).json({
           success: false,
-          message: 'DIRECTUS_ADMIN_TOKEN не найден в переменных окружения'
+          message: 'DIRECTUS_STATIC_TOKEN не найден в переменных окружения'
         });
       }
       

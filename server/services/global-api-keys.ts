@@ -92,7 +92,7 @@ export class GlobalApiKeysService {
   
   /**
    * Обновляет кэш глобальных API ключей
-   * @param adminUserToken Опционально: токен залогиненного администратора (используется когда нет DIRECTUS_ADMIN_TOKEN)
+   * @param adminUserToken Опционально: токен залогиненного администратора (используется когда нет статического токена)
    */
   async refreshCache(adminUserToken?: string): Promise<void> {
     try {
@@ -183,7 +183,7 @@ export class GlobalApiKeysService {
     }
     
     // Fallback на статический токен из переменных окружения
-    const staticToken = process.env.DIRECTUS_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+    const staticToken = process.env.DIRECTUS_STATIC_TOKEN;
     
     if (staticToken) {
       return staticToken;
@@ -638,7 +638,7 @@ export class GlobalApiKeysService {
 
   /**
    * Получает список всех глобальных API ключей
-   * @param adminUserToken Опционально: токен залогиненного администратора (когда нет DIRECTUS_ADMIN_TOKEN в env)
+   * @param adminUserToken Опционально: токен залогиненного администратора (когда нет DIRECTUS_STATIC_TOKEN в env)
    * @returns Список глобальных API ключей
    */
   async getGlobalApiKeys(adminUserToken?: string): Promise<GlobalApiKey[]> {
@@ -724,7 +724,7 @@ export class GlobalApiKeysService {
   /**
    * Добавляет новый глобальный API ключ
    * @param keyData Данные ключа для добавления
-   * @param adminUserToken Опционально: токен админа (работает без DIRECTUS_ADMIN_TOKEN)
+   * @param adminUserToken Опционально: токен админа (работает без статического токена)
    * @returns Созданный ключ или null в случае ошибки
    */
   async addGlobalApiKey(keyData: GlobalApiKeyInput, adminUserToken?: string): Promise<GlobalApiKey | null> {

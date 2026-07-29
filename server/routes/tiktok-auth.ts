@@ -45,7 +45,7 @@ async function getTikTokConfig(): Promise<TikTokConfig | null> {
   // Приоритет 2: Directus api_keys
   try {
     const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
-    const token = process.env.DIRECTUS_TOKEN;
+    const token = process.env.DIRECTUS_STATIC_TOKEN;
 
     const response = await axios.get(`${directusUrl}/items/api_keys`, {
       headers: { 'Authorization': `Bearer ${token}` },
@@ -266,7 +266,7 @@ async function saveTikTokTokens(
   creatorInfo: { creatorNickname: string; creatorUsername: string; creatorAvatarUrl: string }
 ): Promise<void> {
   const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
-  const directusToken = process.env.DIRECTUS_TOKEN;
+  const directusToken = process.env.DIRECTUS_STATIC_TOKEN;
 
   const data = {
     user_id: userId,
@@ -365,7 +365,7 @@ router.get('/tiktok/accounts', authMiddleware, async (req, res) => {
     }
 
     const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
-    const directusToken = process.env.DIRECTUS_TOKEN;
+    const directusToken = process.env.DIRECTUS_STATIC_TOKEN;
 
     const response = await axios.get(`${directusUrl}/items/social_accounts`, {
       headers: { 'Authorization': `Bearer ${directusToken}` },
@@ -403,7 +403,7 @@ router.delete('/tiktok/accounts/:accountId', authMiddleware, async (req, res) =>
     }
 
     const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
-    const directusToken = process.env.DIRECTUS_TOKEN;
+    const directusToken = process.env.DIRECTUS_STATIC_TOKEN;
 
     // Проверяем что аккаунт принадлежит пользователю
     const checkResponse = await axios.get(`${directusUrl}/items/social_accounts/${accountId}`, {
@@ -548,7 +548,7 @@ router.get('/tiktok/creator-info/:accountId', authMiddleware, async (req, res) =
     }
 
     const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
-    const directusToken = process.env.DIRECTUS_TOKEN;
+    const directusToken = process.env.DIRECTUS_STATIC_TOKEN;
 
     // Получаем аккаунт
     const accountResponse = await axios.get(`${directusUrl}/items/social_accounts/${accountId}`, {
@@ -624,7 +624,7 @@ router.post('/tiktok/test-publish', authMiddleware, async (req, res) => {
     }
 
     const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
-    const directusToken = process.env.DIRECTUS_TOKEN;
+    const directusToken = process.env.DIRECTUS_STATIC_TOKEN;
 
     // Ищем подключённый TikTok-аккаунт для кампании
     const accountsResp = await axios.get(`${directusUrl}/items/social_accounts`, {

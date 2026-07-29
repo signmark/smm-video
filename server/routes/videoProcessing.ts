@@ -375,7 +375,7 @@ router.post('/process-video-from-url', authMiddleware, async (req, res) => {
               // Публикуем через прямой Instagram API (fire-and-forget)
               const publishAfter = req.body.publishAfter !== false;
               if (publishAfter) {
-                const adminToken = process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN || '';
+                const adminToken = process.env.DIRECTUS_STATIC_TOKEN || '';
                 import('../services/social-platforms/instagram-stories-service').then(({ publishInstagramStory }) => {
                   return publishInstagramStory(storyId, adminToken);
                 }).then(result => {

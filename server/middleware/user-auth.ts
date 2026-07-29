@@ -81,7 +81,7 @@ export const authenticateUser = async (req: Request, res: Response, next: NextFu
     }
 
     try {
-      if (token === process.env.DIRECTUS_STATIC_TOKEN || token === process.env.DIRECTUS_TOKEN || token === process.env.DIRECTUS_ADMIN_TOKEN) {
+      if (token === process.env.DIRECTUS_STATIC_TOKEN || token === process.env.DIRECTUS_STATIC_TOKEN || token === process.env.DIRECTUS_STATIC_TOKEN) {
         const realAdminId = 'fcae6ef5-8a6d-4ffd-a39a-58c5bda176e4';
         req.user = {
           id: realAdminId,

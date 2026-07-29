@@ -204,7 +204,7 @@ interface CampaignRow {
  * отдаёт пустым списком, из-за чего первые прод-циклы видели ноль кампаний.
  */
 async function loadCampaigns(): Promise<CampaignRow[]> {
-  const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+  const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
   const directusUrl = process.env.DIRECTUS_URL;
   if (!adminToken || !directusUrl) {
     log('[ENGAGEMENT] Нет DIRECTUS_URL или админ-токена — цикл пропущен', 'engagement', 'warn');

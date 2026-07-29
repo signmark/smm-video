@@ -176,7 +176,7 @@ export function registerGlobalApiKeysRoutes(app: Application): void {
         return res.status(401).json({ success: false, message: 'Требуется токен авторизации' });
       }
 
-      // Получаем список глобальных API ключей (передаём токен админа — работает без DIRECTUS_ADMIN_TOKEN)
+      // Получаем список глобальных API ключей (передаём токен админа — работает без статического токена)
       const keys = await globalApiKeysService.getGlobalApiKeys(token);
       log('Успешно получен список глобальных API ключей', 'api');
       return res.status(200).json({ success: true, data: keys, timestamp: Date.now() });

@@ -49,15 +49,14 @@ import {
 } from '../services/scraper-analytics';
 
 describe('AnalyticsService scraper supplementation', () => {
-  const previousAdminToken = process.env.DIRECTUS_ADMIN_TOKEN;
+  const previousAdminToken = process.env.DIRECTUS_STATIC_TOKEN;
   const previousStaticToken = process.env.DIRECTUS_STATIC_TOKEN;
 
   beforeEach(() => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-07-16T12:00:00.000Z'));
     vi.clearAllMocks();
-    process.env.DIRECTUS_ADMIN_TOKEN = 'admin-token';
-    delete process.env.DIRECTUS_STATIC_TOKEN;
+    process.env.DIRECTUS_STATIC_TOKEN = 'admin-token';
     vi.mocked(resolveAnalyticsChannel).mockImplementation(async (platform) => (
       platform === 'vk' ? 'vk-monitor' : 'tg-monitor'
     ));
@@ -66,8 +65,8 @@ describe('AnalyticsService scraper supplementation', () => {
 
   afterEach(() => {
     vi.useRealTimers();
-    if (previousAdminToken === undefined) delete process.env.DIRECTUS_ADMIN_TOKEN;
-    else process.env.DIRECTUS_ADMIN_TOKEN = previousAdminToken;
+    if (previousAdminToken === undefined) delete process.env.DIRECTUS_STATIC_TOKEN;
+    else process.env.DIRECTUS_STATIC_TOKEN = previousAdminToken;
     if (previousStaticToken === undefined) delete process.env.DIRECTUS_STATIC_TOKEN;
     else process.env.DIRECTUS_STATIC_TOKEN = previousStaticToken;
   });

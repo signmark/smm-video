@@ -296,7 +296,7 @@ public isTokenValid(token: string): boolean {
       // КРИТИЧНО: Сохраняем новый refresh_token в БД асинхронно
       // Без этого после перезапуска сервера старый (инвалидированный) refresh_token вызывает re-login
       const newExpiresAtDate = new Date(newExpiresAt);
-      const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+      const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
       import('./telegram-session-storage').then(({ telegramSessionStorage }) => {
         telegramSessionStorage.updateTokensForUser(userId, refreshResult.access_token, refreshResult.refresh_token, newExpiresAtDate, adminToken || undefined)
           .catch((e: any) => log(`⚠️ [TOKEN-SYNC] Не удалось синхронизировать токен в БД для ${userId}: ${e.message}`, this.logPrefix));
@@ -963,10 +963,10 @@ public isTokenValid(token: string): boolean {
   async getAdminSession(): Promise<{ token: string; id: string } | null> {
     try {
       // ИСПОЛЬЗУЕМ ТОЛЬКО СТАТИЧЕСКИЙ ТОКЕН
-      const token = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+      const token = process.env.DIRECTUS_STATIC_TOKEN;
       
       if (!token) {
-        log('Missing DIRECTUS_STATIC_TOKEN or DIRECTUS_ADMIN_TOKEN environment variables', this.logPrefix);
+        log('Missing DIRECTUS_STATIC_TOKEN environment variable', this.logPrefix);
         return null;
       }
       

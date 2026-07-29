@@ -116,8 +116,6 @@ export class AnalyticsService {
   ): Promise<any[]> {
     const posts: any[] = [];
     const serviceToken = process.env.DIRECTUS_STATIC_TOKEN
-      || process.env.DIRECTUS_ADMIN_TOKEN
-      || process.env.DIRECTUS_TOKEN
       || '';
     const canUseServiceToken = Boolean(serviceToken && (userId || isSmmAdmin));
     const readToken = canUseServiceToken ? serviceToken : userToken;
@@ -261,7 +259,7 @@ export class AnalyticsService {
     platformStatsMap: Map<string, any>,
     campaign: any,
   ): Promise<void> {
-    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN || '';
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || '';
     if (!adminToken) {
       logAnalyticsTrace('campaign_skipped', {
         campaignId,
@@ -490,7 +488,7 @@ export class AnalyticsService {
     campaignId: string,
     requestedDays = 7,
   ): Promise<{ success: boolean; message: string; processed?: number; failed?: number; skipped?: number }> {
-    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN || '';
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || '';
     if (!adminToken) return { success: false, message: 'Нет токена для Directus' };
 
     const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';

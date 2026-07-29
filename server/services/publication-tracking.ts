@@ -23,7 +23,7 @@ export class PublicationTracker {
     
     // Проверяем статус в базе данных
     try {
-      const authToken = process.env.DIRECTUS_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+      const authToken = process.env.DIRECTUS_STATIC_TOKEN;
       if (!authToken) return true;
       
       const response = await axios.get(`${process.env.DIRECTUS_URL}/items/campaign_content/${contentId}`, {

@@ -78,8 +78,7 @@ class AdminTokenManager {
       // брали безусловно; когда он протухал (INVALID_CREDENTIALS), все админские
       // операции падали 401, а рабочий вход по email/паролю не задействовался —
       // именно из-за этого не грузился список пользователей и фоновые задачи.
-      const staticToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.ADMIN_TOKEN
-        || process.env.DIRECTUS_DEV_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
+      const staticToken = process.env.DIRECTUS_STATIC_TOKEN;
       if (staticToken && await this.isStaticTokenValid(staticToken)) {
         this.adminToken = staticToken;
         this.tokenTimestamp = Date.now();

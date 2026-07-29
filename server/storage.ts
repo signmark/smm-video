@@ -667,7 +667,7 @@ export class DatabaseStorage implements IStorage {
       console.log(`[DatabaseStorage] Получение кампании по ID: ${campaignId}`);
       
       // Используем напрямую directusApi, чтобы убедиться, что мы получим все поля, включая social_media_settings
-      const authToken = token || process.env.DIRECTUS_ADMIN_TOKEN;
+      const authToken = token || process.env.DIRECTUS_STATIC_TOKEN;
       
       const response = await directusApi.get(`/items/user_campaigns/${campaignId}`, {
         headers: {

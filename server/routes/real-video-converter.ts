@@ -49,7 +49,7 @@ router.post('/convert', async (req, res) => {
           console.log('[real-video-converter-api] Updating content with new video URL:', req.body.contentId);
           
           // Обновляем через системный токен
-          const adminToken = process.env.DIRECTUS_ADMIN_TOKEN;
+          const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
           await directusApi.patch(`/items/campaign_content/${req.body.contentId}`, {
             video_url: result.convertedUrl,
             updated_at: new Date().toISOString()
@@ -202,7 +202,7 @@ router.post('/convert-content', async (req, res) => {
     } catch (userError) {
       const response = await directusApi.get(`/items/campaign_content/${contentId}`, {
         headers: {
-          'Authorization': `Bearer ${process.env.DIRECTUS_ADMIN_TOKEN}`
+          'Authorization': `Bearer ${process.env.DIRECTUS_STATIC_TOKEN}`
         }
       });
       content = response.data.data;

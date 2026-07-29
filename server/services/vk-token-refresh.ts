@@ -10,7 +10,7 @@ import { getPublicOrigin } from '../utils/public-url';
  */
 export async function markVkAuthExpired(campaignId: string): Promise<void> {
   try {
-    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
     const directusUrl = process.env.DIRECTUS_URL;
     if (!adminToken || !directusUrl) return;
 
@@ -58,7 +58,7 @@ export async function markVkAuthExpired(campaignId: string): Promise<void> {
  */
 export async function clearVkAuthExpired(campaignId: string): Promise<boolean> {
   try {
-    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
     const directusUrl = process.env.DIRECTUS_URL;
     if (!adminToken || !directusUrl) return false;
 
@@ -235,7 +235,7 @@ function escapeHtml(str: string): string {
 export async function refreshAllExpiringVkTokens(): Promise<void> {
   log('[VK-CRON] Запуск фонового обновления истекающих VK токенов...', 'vk-refresh');
   try {
-    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
     const directusUrl = process.env.DIRECTUS_URL;
     if (!adminToken || !directusUrl) {
       log('[VK-CRON] Нет adminToken или directusUrl, пропуск', 'vk-refresh', 'warn');
@@ -443,7 +443,7 @@ async function _doRefreshAndSave(
 
   try {
     const axios2 = (await import('axios')).default;
-    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
     const directusUrl = process.env.DIRECTUS_URL;
 
     const campaignResp = await axios2.get(`${directusUrl}/items/user_campaigns/${campaignId}`, {

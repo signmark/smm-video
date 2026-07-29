@@ -55,9 +55,7 @@ export async function getCampaignSocialSettings(
   campaignId: string,
   opts: ResolveTokenOptions = {},
 ): Promise<Record<string, any>> {
-  const adminToken = process.env.DIRECTUS_STATIC_TOKEN
-    || process.env.DIRECTUS_ADMIN_TOKEN
-    || process.env.DIRECTUS_TOKEN;
+  const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
   if (!adminToken || !process.env.DIRECTUS_URL) {
     throw new Error('Directus admin token / URL не настроены (DIRECTUS_STATIC_TOKEN, DIRECTUS_URL)');
   }

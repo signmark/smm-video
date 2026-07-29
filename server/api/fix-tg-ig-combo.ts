@@ -18,7 +18,7 @@ router.post('/fix-tg-ig-combo', async (req: Request, res: Response) => {
     
     if (!authToken) {
       // Пытаемся получить токен из переменных окружения
-      authToken = process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_STATIC_TOKEN;
+      authToken = process.env.DIRECTUS_STATIC_TOKEN;
       
       if (!authToken) {
         // Если токен не найден, пытаемся авторизоваться через логин/пароль

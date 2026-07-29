@@ -28,7 +28,7 @@ forceUpdateStatusRouter.post('/publish/force-update-status/:contentId', authenti
     // Получаем API URL системы
     const directusUrl = process.env.DIRECTUS_URL;
 
-    // Только токен пользователя из запроса. Фолбэки на DIRECTUS_ADMIN_TOKEN и на
+    // Только токен пользователя из запроса. Фолбэки на статический токен и на
     // чужую активную сессию убраны — раньше они позволяли анониму патчить любой
     // contentId. authenticateUser гарантирует req.user.token.
     const token = req.user?.token;

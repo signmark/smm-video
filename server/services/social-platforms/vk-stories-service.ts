@@ -130,7 +130,7 @@ export class VKStoriesService {
       const generatedMediaUrl = await StoriesMediaService.getMediaFromAdditionalMedia(
         contentId,
         isVideo ? ADDITIONAL_MEDIA_TYPES.GENERATED_VIDEO : ADDITIONAL_MEDIA_TYPES.GENERATED_IMAGE,
-        authToken || process.env.DIRECTUS_ADMIN_TOKEN || ''
+        authToken || process.env.DIRECTUS_STATIC_TOKEN || ''
       );
 
       if (generatedMediaUrl) {
@@ -192,7 +192,7 @@ export class VKStoriesService {
    */
   private async getContent(contentId: string, authToken?: string): Promise<VKStoriesContent | null> {
     try {
-      const token = authToken || process.env.DIRECTUS_ADMIN_TOKEN;
+      const token = authToken || process.env.DIRECTUS_STATIC_TOKEN;
       const response = await directusApi.get(`/items/campaign_content/${contentId}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -208,7 +208,7 @@ export class VKStoriesService {
    */
   private async getVKSettings(campaignId: string, authToken?: string): Promise<VKSettings | null> {
     try {
-      const token = authToken || process.env.DIRECTUS_ADMIN_TOKEN;
+      const token = authToken || process.env.DIRECTUS_STATIC_TOKEN;
       const response = await directusApi.get(`/items/user_campaigns/${campaignId}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -413,7 +413,7 @@ export class VKStoriesService {
     authToken?: string
   ): Promise<void> {
     try {
-      const token = authToken || process.env.DIRECTUS_ADMIN_TOKEN;
+      const token = authToken || process.env.DIRECTUS_STATIC_TOKEN;
       
       // Сначала получаем текущие social_platforms
       const contentResponse = await directusApi.get(`/items/campaign_content/${contentId}`, {

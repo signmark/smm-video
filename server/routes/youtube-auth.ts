@@ -166,7 +166,7 @@ router.get('/youtube/auth/callback', async (req, res) => {
 
     // Сохраняем токены напрямую в Directus (не через frontend)
     if (campaignId) {
-      const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
+      const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
       const directusUrl = process.env.DIRECTUS_URL;
       if (!adminToken || !directusUrl) throw new Error('Directus OAuth storage is not configured');
       try {

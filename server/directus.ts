@@ -88,8 +88,8 @@ class DirectusApiManager {
               return Promise.reject(error);
             }
 
-            // Проверяем является ли токен статическим (из DIRECTUS_TOKEN/DIRECTUS_ADMIN_TOKEN)
-            const staticToken = process.env.DIRECTUS_TOKEN || process.env.DIRECTUS_DEV_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+            // Проверяем является ли токен статическим (из DIRECTUS_STATIC_TOKEN)
+            const staticToken = process.env.DIRECTUS_STATIC_TOKEN;
             if (token === staticToken) {
               log('❌ Ошибка 401 при использовании статического токена. Вероятно, токен недействителен в Directus.', 'directus');
               return Promise.reject(error);
@@ -380,7 +380,7 @@ class DirectusApiManager {
   async getAdminToken(): Promise<string | null> {
     try {
       // 1. Сначала пробуем статический токен из переменных окружения
-      const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_DEV_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+      const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
 
       if (adminToken) {
         log('Использую статический токен администратора из env', 'directus');
@@ -423,7 +423,7 @@ class DirectusApiManager {
       return null;
     } catch (error: any) {
       log(`❌ Ошибка при получении административного токена: ${error.message}`, 'directus');
-      return process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_DEV_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || null;
+      return process.env.DIRECTUS_STATIC_TOKEN || null;
     }
   }
 

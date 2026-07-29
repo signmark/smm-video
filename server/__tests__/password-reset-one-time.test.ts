@@ -87,8 +87,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   __clearResetTokenStore();
   process.env.DIRECTUS_URL = 'http://directus.test';
-  process.env.DIRECTUS_ADMIN_TOKEN = ADMIN_TOKEN;
-  delete process.env.DIRECTUS_TOKEN;
+  process.env.APP_SIGNING_SECRET = ADMIN_TOKEN;
+  process.env.DIRECTUS_STATIC_TOKEN = 'test-static-token';
 });
 
 afterEach(() => {
@@ -237,8 +237,8 @@ describe('подпись токена', () => {
     // Токен, который подписан выпиленным публичным фолбэком из репозитория.
     const legacyToken = signToken(USER.id, ts, 'smm-reset-secret');
 
-    delete process.env.DIRECTUS_ADMIN_TOKEN;
-    delete process.env.DIRECTUS_TOKEN;
+    delete process.env.APP_SIGNING_SECRET;
+    process.env.DIRECTUS_STATIC_TOKEN = 'test-static-token';
 
     const res = await request(app).post('/api/auth/password-reset/confirm').send({
       userId: USER.id,

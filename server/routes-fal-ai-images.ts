@@ -21,7 +21,7 @@ async function getUserPlanInfo(req: express.Request): Promise<{ userId: string |
     const userId = payload.id;
     if (!userId) return { userId: null, plan: 'free' };
 
-    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
     const resp = await directusApi.get(`/users/${userId}`, {
       headers: { Authorization: `Bearer ${adminToken}` },
       params: { fields: 'plan,expire_date' }

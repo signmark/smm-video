@@ -70,30 +70,30 @@ describe('server/utils/token-handler', () => {
   });
 
   describe('getAdminToken', () => {
-    it('должен возвращать DIRECTUS_TOKEN из env', () => {
-      process.env.DIRECTUS_TOKEN = 'admin-secret-123';
+    it('должен возвращать DIRECTUS_STATIC_TOKEN из env', () => {
+      process.env.DIRECTUS_STATIC_TOKEN = 'admin-secret-123';
       expect(TokenHandler.getAdminToken()).toBe('admin-secret-123');
     });
 
-    it('должен возвращать null при отсутствии DIRECTUS_TOKEN', () => {
-      delete process.env.DIRECTUS_TOKEN;
+    it('должен возвращать null при отсутствии DIRECTUS_STATIC_TOKEN', () => {
+      delete process.env.DIRECTUS_STATIC_TOKEN;
       expect(TokenHandler.getAdminToken()).toBeNull();
     });
   });
 
   describe('isAdminToken', () => {
-    it('должен возвращать true когда токен совпадает с DIRECTUS_TOKEN', () => {
-      process.env.DIRECTUS_TOKEN = 'admin-token';
+    it('должен возвращать true когда токен совпадает с DIRECTUS_STATIC_TOKEN', () => {
+      process.env.DIRECTUS_STATIC_TOKEN = 'admin-token';
       expect(TokenHandler.isAdminToken('admin-token')).toBe(true);
     });
 
     it('должен возвращать false при несовпадении', () => {
-      process.env.DIRECTUS_TOKEN = 'admin-token';
+      process.env.DIRECTUS_STATIC_TOKEN = 'admin-token';
       expect(TokenHandler.isAdminToken('user-token')).toBe(false);
     });
 
-    it('должен возвращать false при отсутствии DIRECTUS_TOKEN', () => {
-      delete process.env.DIRECTUS_TOKEN;
+    it('должен возвращать false при отсутствии DIRECTUS_STATIC_TOKEN', () => {
+      delete process.env.DIRECTUS_STATIC_TOKEN;
       expect(TokenHandler.isAdminToken('any-token')).toBe(false);
     });
   });

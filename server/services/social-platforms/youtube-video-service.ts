@@ -35,7 +35,7 @@ export class YouTubeVideoService {
     try {
       log(`Начинаю публикацию YouTube Video для контента ${contentId}`, LOG_PREFIX);
 
-      const token = authToken || process.env.DIRECTUS_ADMIN_TOKEN;
+      const token = authToken || process.env.DIRECTUS_STATIC_TOKEN;
 
       const contentResponse = await directusApi.get(`/items/campaign_content/${contentId}`, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -121,7 +121,7 @@ export class YouTubeVideoService {
 
   private async getYouTubeSettings(campaignId: string, authToken?: string): Promise<YouTubeSettings | null> {
     try {
-      const token = authToken || process.env.DIRECTUS_ADMIN_TOKEN;
+      const token = authToken || process.env.DIRECTUS_STATIC_TOKEN;
       const response = await directusApi.get(`/items/user_campaigns/${campaignId}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -261,7 +261,7 @@ export class YouTubeVideoService {
     authToken?: string
   ): Promise<void> {
     try {
-      const token = authToken || process.env.DIRECTUS_ADMIN_TOKEN;
+      const token = authToken || process.env.DIRECTUS_STATIC_TOKEN;
       const contentResponse = await directusApi.get(`/items/campaign_content/${contentId}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });

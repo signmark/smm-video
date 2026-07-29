@@ -1067,7 +1067,7 @@ export class PublishScheduler {
       const { instagramService } = await import('./social-platforms/instagram-service');
       const rawText = content.text_content || content.content || content.title || '';
       const text = typeof rawText === 'string' ? rawText : JSON.stringify(rawText);
-      const result = await instagramService.publishPost(settings, { text, imageUrl: content.image_url, videoUrl: content.video_url }, content.id, process.env.DIRECTUS_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN);
+      const result = await instagramService.publishPost(settings, { text, imageUrl: content.image_url, videoUrl: content.video_url }, content.id, process.env.DIRECTUS_STATIC_TOKEN);
 
       if (result.success) {
         await save('instagram', { status: 'published', postId: result.postId, postUrl: result.postUrl, publishedAt: new Date().toISOString() });

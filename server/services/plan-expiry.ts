@@ -16,7 +16,7 @@ export async function downgradeExpiredPlan(userId: string): Promise<void> {
   if (!userId) return;
   try {
     const adminToken =
-      process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
+      process.env.DIRECTUS_STATIC_TOKEN;
     if (!adminToken) return;
 
     const resp = await directusApi.get(`/users/${userId}`, {

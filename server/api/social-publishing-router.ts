@@ -315,7 +315,7 @@ router.post('/stories/publish', authMiddleware, async (req, res) => {
               const { publishInstagramStory } = await import('../services/social-platforms/instagram-stories-service');
               const overrideImageUrl: string | undefined = (generatedImageUrl || storyContent?.image_url) || undefined;
               const overrideVideoUrl: string | undefined = (generatedVideoUrl || storyContent?.video_url || storyContent?.backgroundVideoUrl) || undefined;
-              const adminTok = process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN || '';
+              const adminTok = process.env.DIRECTUS_STATIC_TOKEN || '';
               const result = await publishInstagramStory(contentId, adminTok, { imageUrl: overrideImageUrl, videoUrl: overrideVideoUrl });
               return { platform: 'instagram', success: result.success, status: result.success ? 200 : 500, data: result, error: result.error };
             })().catch((err: any) => ({ platform: 'instagram', success: false, error: err.message }))
@@ -795,7 +795,7 @@ router.post('/publish/now', authMiddleware, async (req, res) => {
     try {
       const { filterCompatiblePlatforms, getIncompatibilityReason } = await import('../utils/content-type-platform-map');
       const directusUrl = process.env.DIRECTUS_URL || 'https://directus.roboflow.space';
-      const adminTk = process.env.DIRECTUS_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || '';
+      const adminTk = process.env.DIRECTUS_STATIC_TOKEN || '';
       const contentResp = await axios.get(`${directusUrl}/items/campaign_content/${contentId}?fields=content_type`, {
         headers: { Authorization: `Bearer ${adminTk}` }
       });
@@ -1455,7 +1455,7 @@ router.post('/publish', authMiddleware, async (req, res) => {
       case 'threads': {
         log(`[Social Publishing] Threads публикация через прямой API`);
         try {
-          const directusToken = req.user?.token || process.env.DIRECTUS_TOKEN;
+          const directusToken = req.user?.token || process.env.DIRECTUS_STATIC_TOKEN;
           const directusUrl = process.env.DIRECTUS_URL;
 
           const contentResponse = await axios.get(`${directusUrl}/items/campaign_content/${contentId}`, {
@@ -1584,7 +1584,7 @@ async function publishViaN8n(contentId: string, platform: string, req: express.R
 
       // Получаем токен администратора
       const directusAuthManager = await import('../services/directus-auth-manager').then(m => m.directusAuthManager);
-      let adminToken = process.env.DIRECTUS_TOKEN || process.env.DIRECTUS_SERVICE_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+      let adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_SERVICE_TOKEN || process.env.DIRECTUS_STATIC_TOKEN;
       const sessions = directusAuthManager.getAllActiveSessions();
 
       if (sessions.length > 0) {
@@ -1824,7 +1824,7 @@ async function publishInstagramCarousel(contentId: string, req: express.Request,
 
     // Автоматически вызываем обновление статуса после публикации карусели
     try {
-      const adminToken = process.env.DIRECTUS_TOKEN || process.env.DIRECTUS_SERVICE_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+      const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_SERVICE_TOKEN || process.env.DIRECTUS_STATIC_TOKEN;
       const appBaseUrl = process.env.APP_URL || `http://localhost:${process.env.PORT || 5000}`;
 
       log(`[Social Publishing] Автоматический вызов обновления статуса после публикации карусели в Instagram`);
@@ -1887,7 +1887,7 @@ router.post('/publish/auto-update-status', authMiddleware, async (req, res) => {
     log(`[Social Publishing] Запрос на автоматическое обновление статуса публикации для контента ${contentId}`);
 
     // Получаем токен для работы с Directus API
-    const adminToken = process.env.DIRECTUS_TOKEN || process.env.DIRECTUS_SERVICE_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_SERVICE_TOKEN || process.env.DIRECTUS_STATIC_TOKEN;
 
     // Получаем текущие данные контента через storage
     const content = await storage.getCampaignContentById(contentId, adminToken);
@@ -2009,7 +2009,7 @@ router.post('/publish/update-status', authMiddleware, async (req, res) => {
     log(`[Social Publishing] Запрос на обновление статуса публикации для контента ${contentId}`);
 
     // Получаем токен для работы с Directus API
-    const adminToken = process.env.DIRECTUS_TOKEN || process.env.DIRECTUS_SERVICE_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN;
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_SERVICE_TOKEN || process.env.DIRECTUS_STATIC_TOKEN;
 
     // Получаем текущие данные контента через storage
     const content = await storage.getCampaignContentById(contentId, adminToken);
@@ -2188,9 +2188,9 @@ router.post('/publish/update-status', authMiddleware, async (req, res) => {
 router.get('/publish/diagnose', devOnly, authMiddleware, async (req, res) => {
   const { getN8nUrl } = await import('../utils/n8n-utils');
   const n8nUrl = getN8nUrl();
-  const directusToken = process.env.DIRECTUS_TOKEN;
+  const directusToken = process.env.DIRECTUS_STATIC_TOKEN;
   const serviceToken = process.env.DIRECTUS_SERVICE_TOKEN;
-  const adminToken = process.env.DIRECTUS_ADMIN_TOKEN;
+  const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
 
   const diagnosis: any = {
     timestamp: new Date().toISOString(),
@@ -2205,7 +2205,7 @@ router.get('/publish/diagnose', devOnly, authMiddleware, async (req, res) => {
     tokens: {
       DIRECTUS_TOKEN: !!directusToken,
       DIRECTUS_SERVICE_TOKEN: !!serviceToken,
-      DIRECTUS_ADMIN_TOKEN: !!adminToken,
+      DIRECTUS_STATIC_TOKEN: !!adminToken,
       hasAnyToken: !!(directusToken || serviceToken || adminToken)
     },
     directus: {

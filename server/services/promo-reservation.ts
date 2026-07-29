@@ -40,8 +40,6 @@ function directusUrl(): string {
 function adminToken(): string {
   return (
     process.env.DIRECTUS_STATIC_TOKEN
-    || process.env.DIRECTUS_ADMIN_TOKEN
-    || process.env.DIRECTUS_TOKEN
     || ''
   );
 }

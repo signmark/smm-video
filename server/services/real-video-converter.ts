@@ -459,7 +459,7 @@ export class RealVideoConverter {
       // Fallback на системный токен
       await directusApi.patch(`/items/campaign_content/${contentId}`, updateData, {
         headers: {
-          'Authorization': `Bearer ${process.env.DIRECTUS_ADMIN_TOKEN}`
+          'Authorization': `Bearer ${process.env.DIRECTUS_STATIC_TOKEN}`
         }
       });
 

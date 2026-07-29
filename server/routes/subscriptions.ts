@@ -63,7 +63,14 @@ const PLAN_VALUES: Record<string, string> = {
 };
 
 function makeActionToken(userId: string, plan: string, days: number): string {
-  const secret = process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN || 'smm-secret-key';
+  // Тот же секрет, что у ссылок сброса пароля и подтверждения почты.
+  // Фолбэка на константу 'smm-secret-key' здесь больше нет: подписывать
+  // общеизвестной строкой — значит позволить подделать ссылку активации
+  // тарифа. Лучше явная ошибка конфигурации, чем тихая фальшивая подпись.
+  const secret = process.env.APP_SIGNING_SECRET;
+  if (!secret) {
+    throw new Error('Не настроен APP_SIGNING_SECRET для подписи ссылок активации подписки');
+  }
   return crypto.createHmac('sha256', secret).update(`${userId}:${plan}:${days}`).digest('hex').slice(0, 32);
 }
 
@@ -149,8 +156,8 @@ router.get('/subscriptions/approve', async (req: Request, res: Response) => {
 
   try {
     const directusUrl = process.env.DIRECTUS_URL;
-    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
-    if (!adminToken) return res.status(500).send(htmlPage('❌ Ошибка', 'DIRECTUS_STATIC_TOKEN / DIRECTUS_ADMIN_TOKEN не настроен на сервере.'));
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
+    if (!adminToken) return res.status(500).send(htmlPage('❌ Ошибка', 'DIRECTUS_STATIC_TOKEN не настроен на сервере.'));
 
     const expireDate = new Date();
     expireDate.setDate(expireDate.getDate() + parseInt(days));
@@ -241,7 +248,7 @@ router.post('/subscriptions/request', async (req: Request, res: Response) => {
     const token = authHeader.substring(7);
 
     const directusUrl = process.env.DIRECTUS_URL;
-    const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_ADMIN_TOKEN || process.env.DIRECTUS_TOKEN;
+    const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
 
     // Сначала получаем ID пользователя по его токену
     const meResponse = await fetch(`${directusUrl}/users/me?fields=id`, {

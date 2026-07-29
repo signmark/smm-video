@@ -1,7 +1,7 @@
 # Деплой SMM Manager в production
 
 **Статус:** канон. Это единственный действующий путь деплоя.
-**Обновлено:** 2026-07-26.
+**Обновлено:** 2026-07-29.
 
 Если какой-то скрипт, README или скилл описывает другой способ поднять прод — он устарел.
 Прежние `deploy/`, `scripts/deploy/` и `docs/deployment/FULL_DEPLOYMENT_GUIDE.md` переехали
@@ -21,7 +21,8 @@
 | Образ | `root-smm` |
 | Имя контейнера | `smm` |
 | Окружение | **только** `/root/.env` через `env_file: .env` |
-| Наружу | traefik → `https://smm.omemo.tech` (порт 5000 внутри) |
+| Наружу | traefik → `https://smm.nplanner.ru` (порт 5000 внутри) |
+| Прод-хост | `31.128.43.113`, hostname `nazicimzxh` |
 
 Проверить, что это действительно так, можно на живом контейнере:
 
@@ -130,6 +131,59 @@ cd /root/smm && git pull && npm run build && docker cp ./dist smm:/app/ && docke
   выкладки приложения он не нужен: `build` + `up -d smm` пересоздаёт контейнер сам.
 - Не запускать `docker system prune` в рамках деплоя.
 
+## Домены и переезд
+
+| | значение |
+|---|---|
+| канонический (primary) | `https://smm.nplanner.ru` — `APP_PUBLIC_URL` в `/root/.env` |
+| допустимый (allowlist) | `https://smm.omemo.tech` — `APP_EXTRA_ORIGINS` |
+| третий алиас | `smm.roboflow.space` — `SMM_HOST_ALT2` |
+
+Разделение принципиальное. **Primary** — адрес, который приложение САМО
+подставляет в письма, OAuth `redirect_uri`, `return_url` платежей и ссылки на
+временные медиа. **Allowlist** — адреса, на которых нас допустимо открыть и чей
+`Host` можно принять.
+
+Заголовок `Host` источником правды не является: он принимается только при
+ТОЧНОМ совпадении с одним из своих доменов
+([`server/utils/public-url.ts`](../server/utils/public-url.ts),
+`resolveRequestOrigin`). Иначе подделанный `Host` подставил бы чужой домен в
+OAuth-поток и в ссылки, уходящие наружу.
+
+В Traefik домены заданы **тремя отдельными роутерами** (`smm`, `smm-alt`,
+`smm-rf`), а не одним правилом с `||`. Это не стилистика: Traefik заказывает
+ОДИН SAN-сертификат на все домены роутера, и провал валидации любого из них
+оставляет без сертификата все остальные. Пока у `smm.omemo.tech` DNS смотрит на
+другой сервер, его ACME-заказ обязан быть отдельным — иначе он утащит за собой
+рабочий `smm.nplanner.ru`.
+
+### Переключение DNS omemo.tech (будущий cutover)
+
+Код к переезду готов: менять его не потребуется, только переменные.
+
+1. Проверить, что `omemo.tech` уже в `APP_EXTRA_ORIGINS` (сейчас там
+   `smm.omemo.tech`; добавить `https://omemo.tech`, если переезжает и апекс).
+2. Переключить DNS A-записи на `31.128.43.113`, дождаться распространения.
+3. Дождаться, пока Traefik закажет сертификат для `smm-alt` — до этого шага
+   ACME-заказ будет падать, и это нормально, он изолирован своим роутером.
+4. Поменять местами primary и alias в `/root/.env`:
+   `APP_PUBLIC_URL=https://smm.omemo.tech`,
+   `APP_EXTRA_ORIGINS=https://smm.nplanner.ru`.
+5. Перезапустить ТОЛЬКО сервис `smm`:
+   `docker compose -f /root/docker-compose.yml up -d smm`.
+6. Проверить оба домена: `/` → 200, protected `/api` без сессии → 401.
+7. Обновить `redirect_uri` в кабинетах OAuth-провайдеров (VK, YouTube,
+   Instagram/Threads) — они сверяют его точным совпадением.
+
+**Rollback cutover:** вернуть прежние значения `APP_PUBLIC_URL` /
+`APP_EXTRA_ORIGINS` в `/root/.env` и поднять `smm` заново. Кода это не
+касается, пересборка образа не нужна. DNS при этом можно не откатывать:
+`smm.nplanner.ru` остаётся в allowlist и продолжает работать.
+
+**Не проверять `omemo.tech` на новом сервере до переключения DNS** — запрос
+уйдёт на старый сервер, и ответ 200 оттуда не означает ничего про эту
+инсталляцию.
+
 ## Проверка после деплоя
 
 ```bash
@@ -137,7 +191,7 @@ docker ps --format "table {{.Names}}\t{{.Status}}" | grep -E "^smm"
 ```
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" https://smm.omemo.tech/health
+curl -s -o /dev/null -w "%{http_code}\n" https://smm.nplanner.ru/health
 ```
 
 Опционально — убедиться, что в собранный бандл попал нужный фикс:
@@ -157,6 +211,11 @@ n8n, `video-app` (`video.omemo.tech`), `videoapp` (`video-app.omemo.tech`) и `s
 
 ## Кто деплоит
 
-По [`AGENTS.md`](../AGENTS.md) production-деплой — зона Mimo, скилл
-[`.mimocode/skills/commit-and-rebuild`](../.mimocode/skills/commit-and-rebuild/SKILL.md).
-Изменения в Docker / CI / deploy-скриптах требуют Mimo вторым ревьюером.
+Production-деплой — зона Claude: он же пишет код, гоняет проверки, пушит в
+`origin/main` и выкатывает. Разрешение на каждый штатный деплой не запрашивается
+(владелец, 2026-07-26: «код ты пишешь ты и деплоишь»). Ревью Codex идёт после
+выкатки и релиз не блокирует; откат — `git revert` + пересборка.
+
+Прежняя редакция этого раздела называла зоной деплоя Mimo и требовала его
+вторым ревьюером на изменения в Docker/CI. Такого состава нет — см. «Урок v4»
+в [`AGENTS.md`](../AGENTS.md).

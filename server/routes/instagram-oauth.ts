@@ -5,7 +5,7 @@ import { log } from '../utils/logger';
 import { authenticateUser } from '../middleware/user-auth';
 import { authorizeCampaignAccess } from '../services/campaign-access';
 import { randomBytes } from 'node:crypto';
-import { publicUrl } from '../utils/public-url';
+import { publicUrl, resolveRequestOrigin } from '../utils/public-url';
 
 const router = express.Router();
 
@@ -35,14 +35,10 @@ router.post('/instagram/auth/start', authenticateUser, async (req, res) => {
     // Определяем правильный redirect URI в зависимости от окружения
     let finalRedirectUri = redirectUri;
     if (!finalRedirectUri) {
-      const host = req.get('host');
-      if (host && host.includes('replit.dev')) {
-        // В Replit разработке используем текущий домен
-        finalRedirectUri = `${req.protocol}://${host}/instagram-callback`;
-      } else {
-        // Публичный домен инсталляции — из APP_PUBLIC_URL, а не хардкод
-        finalRedirectUri = publicUrl('/instagram-callback');
-      }
+      // Origin берётся из Host только при точном совпадении с нашим доменом,
+      // иначе — канонический. Прежняя ветка `host.includes('replit.dev')`
+      // пускала чужой домен в OAuth-поток (ревью 2026-07-29).
+      finalRedirectUri = `${resolveRequestOrigin(req)}/instagram-callback`;
     }
 
     const finalWebhookUrl = process.env.INSTAGRAM_WEBHOOK_URL || '';

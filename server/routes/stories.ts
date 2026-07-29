@@ -16,6 +16,7 @@ import path from 'path';
 import fs from 'fs';
 import { begetS3VideoService } from '../services/beget-s3-video-service';
 import StoriesMediaService from '../services/stories-media-service';
+import { resolveRequestOrigin } from '../utils/public-url';
 
 const router = express.Router();
 
@@ -74,7 +75,9 @@ async function handleSimpleStoryUpdate(
       processedMedia = additional_media.map((item: any) => {
         if (item && typeof item === 'object' && item.type === 'generated_video' && item.url) {
           const fileName = item.url.split('/').pop();
-          const baseUrl = `${req.protocol}://${req.get('host')}`;
+          // Ссылка уходит наружу (её забирает Instagram) — Host из запроса тут
+          // источником быть не может. См. resolveRequestOrigin.
+          const baseUrl = resolveRequestOrigin(req);
           const instagramProxyUrl = `${baseUrl}/api/instagram-video-proxy/${fileName}`;
           return { ...item, instagram_proxy_url: instagramProxyUrl };
         }
@@ -88,7 +91,9 @@ async function handleSimpleStoryUpdate(
           processedMedia = parsed.map((item: any) => {
             if (item && typeof item === 'object' && item.type === 'generated_video' && item.url) {
               const fileName = item.url.split('/').pop();
-              const baseUrl = `${req.protocol}://${req.get('host')}`;
+              // Ссылка уходит наружу (её забирает Instagram) — Host из запроса тут
+          // источником быть не может. См. resolveRequestOrigin.
+          const baseUrl = resolveRequestOrigin(req);
               const instagramProxyUrl = `${baseUrl}/api/instagram-video-proxy/${fileName}`;
               return { ...item, instagram_proxy_url: instagramProxyUrl };
             }

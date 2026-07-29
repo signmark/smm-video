@@ -59,7 +59,10 @@ setInterval(() => {
 
 // Публичный базовый URL сервера (для callback_url)
 export function getPublicBaseUrl(): string {
-  if (process.env.REPLIT_DEV_DOMAIN) return `https://${process.env.REPLIT_DEV_DOMAIN}`;
+  // REPLIT_DEV_DOMAIN больше не проверяется здесь напрямую: очередь была
+  // обратной (превью-домен перебивал APP_PUBLIC_URL), и на проде с
+  // выставленной переменной ссылки уехали бы в превью-окружение.
+  // getPublicOrigin учитывает её штатным порядком (ревью 2026-07-29).
   return getPublicOrigin();
 }
 

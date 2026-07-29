@@ -2,7 +2,7 @@ import express from 'express';
 import axios from 'axios';
 import { log } from '../utils/logger';
 import { threadsService } from '../services/social-platforms/threads-service';
-import { oauthRedirectUri, publicUrl } from '../utils/public-url';
+import { oauthRedirectUri, publicUrl, resolveRequestOrigin } from '../utils/public-url';
 
 const router = express.Router();
 
@@ -16,11 +16,12 @@ router.post('/threads/auth/start', async (req, res) => {
       return res.status(400).json({ success: false, error: 'Требуются: appId, appSecret, campaignId' });
     }
 
-    const host = req.get('host') || '';
-    const finalRedirectUri = redirectUri || (() => {
-      if (host.includes('replit.dev')) return `https://${host}/api/threads/auth/callback`;
-      return oauthRedirectUri('/api/threads/auth/callback');
-    })();
+    // redirect_uri строится по БЕЗОПАСНО выбранному origin: Host принимается,
+    // только если точно совпал с нашим доменом. Прежняя ветка
+    // `host.includes('replit.dev')` пропускала любой чужой домен с этой
+    // подстрокой прямо в OAuth-поток (ревью 2026-07-29).
+    const finalRedirectUri = redirectUri
+      || `${resolveRequestOrigin(req)}/api/threads/auth/callback`;
 
     const userToken = req.headers.authorization?.replace('Bearer ', '') || '';
 

@@ -615,7 +615,8 @@ export function registerTrendsRoutes(app: Express) {
     }
 
     const getBaseUrl = () => {
-      if (process.env.REPLIT_DEV_DOMAIN) return `https://${process.env.REPLIT_DEV_DOMAIN}`;
+      // Превью-домен Replit учитывает сам getPublicOrigin, и в правильном
+      // порядке: APP_PUBLIC_URL важнее (ревью 2026-07-29).
       let url = getPublicOrigin();
       url = url.replace(/\/$/, '');
       if (process.env.NODE_ENV === 'production' && !url.startsWith('http')) {
@@ -1081,7 +1082,8 @@ export function registerTrendsRoutes(app: Express) {
     }
     // Определяем базовый URL для callback (аналогично логике в telegram-bot/index.ts)
     const getBaseUrl = () => {
-      if (process.env.REPLIT_DEV_DOMAIN) return `https://${process.env.REPLIT_DEV_DOMAIN}`;
+      // Превью-домен Replit учитывает сам getPublicOrigin, и в правильном
+      // порядке: APP_PUBLIC_URL важнее (ревью 2026-07-29).
       let url = getPublicOrigin();
       url = url.replace(/\/$/, '');
       if (process.env.NODE_ENV === 'production' && !url.startsWith('http')) {

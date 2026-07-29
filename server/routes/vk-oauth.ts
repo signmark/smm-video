@@ -5,6 +5,7 @@ import { log } from '../utils/logger';
 import { authenticateUser } from '../middleware/user-auth';
 import { authorizeCampaignAccess, CampaignAccessError } from '../services/campaign-access';
 import { classifyVkError } from '../services/vk-error-classifier';
+import { resolveRequestOrigin } from '../utils/public-url';
 import {
   generateVkWebhookSecret,
   vkWebhookSecretMatches,
@@ -58,11 +59,15 @@ function generateCodeVerifier(): string {
 function generateCodeChallenge(verifier: string): string {
   return crypto.createHash('sha256').update(verifier).digest('base64url');
 }
+/**
+ * Базовый URL для redirect_uri VK.
+ *
+ * Раньше собирался прямо из Host — то есть подделанный заголовок подставлял
+ * чужой домен в OAuth-поток. Теперь Host принимается только при точном
+ * совпадении с нашими доменами, иначе берётся канонический (ревью 2026-07-29).
+ */
 function getAppBaseUrl(req: express.Request): string {
-  if (process.env.APP_URL) return process.env.APP_URL;
-  const host = req.get('host') || '';
-  const proto = host.includes('localhost') ? 'http' : 'https';
-  return `${proto}://${host}`;
+  return resolveRequestOrigin(req);
 }
 
 // =======================================================

@@ -112,6 +112,40 @@ export function getOwnOrigins(): string[] {
   return Array.from(new Set([getPublicOrigin(), ...extra]));
 }
 
+/**
+ * Origin ЭТОГО запроса — но только если он наш.
+ *
+ * Заголовок `Host` полностью подконтролен клиенту. До ревью 2026-07-29 из него
+ * прямо собирались OAuth `redirect_uri` (`vk-oauth.ts`), ссылки на медиа для
+ * Instagram (`stories.ts`) и адреса callback'ов Threads/Instagram — то есть
+ * подделанный Host подставлял чужой домен в OAuth-поток и в ссылки, которые
+ * потом уходили наружу.
+ *
+ * Правило простое: Host принимается ТОЛЬКО при точном совпадении с одним из
+ * собственных доменов инсталляции (`APP_PUBLIC_URL` + `APP_EXTRA_ORIGINS`).
+ * Иначе возвращается канонический origin. Сравнение идёт по нормализованному
+ * origin целиком, а не через `includes()`: подстрочная проверка пропускала бы
+ * и `smm.nplanner.ru.evil.com`, и `evilsmm.nplanner.ru`.
+ *
+ * Зачем вообще принимать чужой (свой второй) Host: на время переезда домена
+ * приложение отвечает сразу на старом и новом адресе, и ссылка, выданная в
+ * ответ на запрос по одному из них, должна остаться на том же домене — иначе
+ * пользователя посреди OAuth-потока перекидывает на другой хост.
+ */
+export function resolveRequestOrigin(req: { get?: (name: string) => string | undefined; headers?: any }): string {
+  const raw = (typeof req?.get === 'function' ? req.get('host') : undefined)
+    ?? req?.headers?.host
+    ?? '';
+
+  const host = String(Array.isArray(raw) ? raw[0] : raw).trim();
+  if (!host) return getPublicOrigin();
+
+  const candidate = normalizeOrigin(host);
+  if (!candidate) return getPublicOrigin();
+
+  return getOwnOrigins().includes(candidate) ? candidate : getPublicOrigin();
+}
+
 /** Белый список Origin для CORS: свои домены + партнёры. */
 export function getAllowedOrigins(): string[] {
   const partners = process.env.APP_PARTNER_ORIGINS

@@ -1,5 +1,5 @@
 import { Request } from 'express';
-import { getOwnOrigins, getPublicOrigin } from './public-url';
+import { resolveRequestOrigin } from './public-url';
 
 /**
  * Базовый URL приложения для ссылок в письмах.
@@ -15,11 +15,10 @@ import { getOwnOrigins, getPublicOrigin } from './public-url';
  * APP_EXTRA_ORIGINS, но свойство «Host только по белому списку» сохранено.
  */
 export function getAppBaseUrl(req: Request): string {
-  const host = req.get('host') || '';
-  if (host.includes('replit.dev')) return `https://${host}`;
-
-  const requested = `https://${host}`;
-  if (host && getOwnOrigins().includes(requested)) return requested;
-
-  return getPublicOrigin();
+  // Раньше здесь была отдельная ветка `host.includes('replit.dev')`, которая
+  // возвращала Host как есть. Её удовлетворял любой чужой домен, содержащий эту
+  // подстроку — `replit.dev.attacker.com`, `evil-replit.dev` (ревью 2026-07-29).
+  // Превью-окружение Replit и так покрыто: его домен приходит в
+  // REPLIT_DEV_DOMAIN и попадает в getPublicOrigin штатным путём.
+  return resolveRequestOrigin(req);
 }

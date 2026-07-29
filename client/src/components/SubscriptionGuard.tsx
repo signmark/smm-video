@@ -1,5 +1,7 @@
 import { ReactNode, useEffect, useState } from 'react';
-import { useAuthStore } from '../stores/authStore';
+// Каталога ../stores в проекте нет — стор живёт в @/lib/store. С прежним путём
+// компонент не собирался вовсе, а его типы разъезжались на implicit any.
+import { useAuthStore } from '@/lib/store';
 import { Lock, AlertTriangle } from 'lucide-react';
 
 interface SubscriptionGuardProps {

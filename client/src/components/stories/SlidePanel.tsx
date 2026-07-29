@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { Plus, Copy, Trash2, GripVertical } from 'lucide-react';
-import { StorySlide } from '../../../shared/stories-schema';
+import { StorySlide } from '@shared/stories-schema';
 import { useStoryStore } from '@/lib/storyStore';
 
 interface SlidePanelProps {

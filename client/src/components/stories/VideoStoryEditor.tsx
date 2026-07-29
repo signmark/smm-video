@@ -22,6 +22,15 @@ interface TextOverlay {
   color: string;
   startTime: number;
   endTime: number;
+  // Оформление. Необязательные: новые наложения создаются без них, а разметка и
+  // экспорт читают их с запасным значением. В типе их не было вовсе, хотя код
+  // обращался к ним в шести местах.
+  fontFamily?: string;
+  fontWeight?: string;
+  textAlign?: 'left' | 'center' | 'right';
+  backgroundColor?: string;
+  padding?: number;
+  borderRadius?: number;
 }
 
 interface VideoStoryData {

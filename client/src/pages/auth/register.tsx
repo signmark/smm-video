@@ -98,11 +98,17 @@ export default function Register() {
 
   const registerForm = useForm<RegisterValues>({
     resolver: zodResolver(registerSchema),
+    // Галочки согласий в схеме объявлены как z.literal(true): форма считается
+    // валидной только когда они проставлены. Стартовое значение при этом
+    // обязано быть false — иначе чекбоксы отрисуются уже отмеченными. Тип
+    // defaultValues в react-hook-form требует ровно `true`, поэтому здесь
+    // единственное место, где приведение оправдано: расхождение чисто
+    // типовое, поведение формы правильное.
     defaultValues: {
       firstName: "", lastName: "", email: "", password: "", confirmPassword: "",
       jobTitle: "", termsAccepted: false, privacyAccepted: false,
       personalDataAccepted: false, marketingConsent: false,
-    },
+    } as unknown as RegisterValues,
   });
 
   const campaignForm = useForm<CampaignValues>({

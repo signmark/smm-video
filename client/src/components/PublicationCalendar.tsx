@@ -1,7 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { DISPLAY_TIME_ZONE } from '@/lib/date-utils';
 import { Calendar } from '@/components/ui/calendar';
-import { format, isSameDay, addDays, startOfMonth, startOfDay, parseISO } from 'date-fns';
+import { format, addDays, startOfMonth, parseISO } from 'date-fns';
+import {
+  matchesDisplayDay,
+  hasAnyDisplayDay,
+  platformsOnDisplayDay,
+  toWallDateKey,
+} from '@/lib/publication-day';
 import { formatInTimeZone } from 'date-fns-tz';
 import { ru } from 'date-fns/locale';
 import { Button } from '@/components/ui/button';
@@ -208,8 +214,10 @@ export default function PublicationCalendar({
   // Получаем публикации для выбранной даты
   const getContentForSelectedDate = () => {
     const filteredContentMap = new Map<string, CampaignContent>();
-    const today = new Date();
-    const isSelectedDateToday = isSameDay(startOfDay(selectedDate), startOfDay(today));
+    // Выбранная клетка — стенная дата, публикации — моменты времени. Обе
+    // приводятся к ключу YYYY-MM-DD, каждая своим способом (см. publication-day.ts).
+    const selectedKey = toWallDateKey(selectedDate);
+    const isSelectedDateToday = selectedKey === toWallDateKey(new Date());
     
     // Фильтруем содержимое для выбранной даты
     content.forEach(post => {
@@ -225,63 +233,15 @@ export default function PublicationCalendar({
         return;
       }
       
-      // 1. Формируем массив дат, которые относятся к этому посту
-      let relevantDates: Date[] = [];
-      let platformsWithDates: Set<SocialPlatform> = new Set();
-      let hasAnyDates = false;
-      
-      // Проверяем publishedAt
-      if (post.publishedAt) {
-        try {
-          relevantDates.push(new Date(post.publishedAt));
-          hasAnyDates = true;
-        } catch (e) {}
-      }
-      
-      // Проверяем scheduledAt
-      if (post.scheduledAt) {
-        try {
-          relevantDates.push(new Date(post.scheduledAt));
-          hasAnyDates = true;
-        } catch (e) {}
-      }
-      
-      // Проверяем даты из платформ социальных сетей
-      if (post.socialPlatforms) {
-        for (const platform in post.socialPlatforms) {
-          const platformData = post.socialPlatforms[platform as SocialPlatform];
-          
-          // Проверяем дату публикации
-          if (platformData && platformData.publishedAt) {
-            try {
-              const publishDate = new Date(platformData.publishedAt);
-              if (isSameDay(startOfDay(selectedDate), startOfDay(publishDate))) {
-                platformsWithDates.add(platform as SocialPlatform);
-              }
-              relevantDates.push(publishDate);
-              hasAnyDates = true;
-            } catch (e) {}
-          }
-          
-          // Проверяем запланированную дату для платформы
-          if (platformData && platformData.scheduledAt) {
-            try {
-              const scheduledDate = new Date(platformData.scheduledAt);
-              if (isSameDay(startOfDay(selectedDate), startOfDay(scheduledDate))) {
-                platformsWithDates.add(platform as SocialPlatform);
-              }
-              relevantDates.push(scheduledDate);
-              hasAnyDates = true;
-            } catch (e) {}
-          }
-        }
-      }
-      
-      // 2. Проверяем совпадение любой даты с выбранной датой
-      const hasMatchingDate = relevantDates.some(date => 
-        isSameDay(startOfDay(selectedDate), startOfDay(date))
+      // 1-2. Совпадение по МОСКОВСКИМ суткам: и собственные даты поста, и
+      // платформенные. Раньше здесь стояло шесть сравнений через
+      // isSameDay(startOfDay(...)) — то есть по локальной полуночи зрителя.
+      const platformsWithDates: Set<SocialPlatform> = new Set(
+        platformsOnDisplayDay(post as any, selectedKey) as SocialPlatform[],
       );
-      
+      const hasAnyDates = hasAnyDisplayDay(post as any);
+      const hasMatchingDate = matchesDisplayDay(post as any, selectedKey);
+
       // 3. Если нет дат, но выбрана сегодняшняя дата - показываем контент (черновики)
       const shouldShowAsToday = !hasAnyDates && isSelectedDateToday;
       
@@ -309,9 +269,10 @@ export default function PublicationCalendar({
           
           // Если нет совпадений по платформам, проверяем общую дату поста (scheduledAt/publishedAt)
           // и показываем пост, только если платформы вообще не выбраны
-          const hasMatchingGeneralDate = 
-            (post.scheduledAt && isSameDay(startOfDay(selectedDate), startOfDay(new Date(post.scheduledAt)))) ||
-            (post.publishedAt && isSameDay(startOfDay(selectedDate), startOfDay(new Date(post.publishedAt))));
+          const hasMatchingGeneralDate = matchesDisplayDay(
+            { scheduledAt: post.scheduledAt, publishedAt: post.publishedAt },
+            selectedKey,
+          );
           
           if (hasMatchingGeneralDate && filteredPlatforms.length === 0) {
             filteredContentMap.set(post.id, post);
@@ -406,37 +367,17 @@ export default function PublicationCalendar({
       return true;
     });
     
-    scheduledPosts.forEach((post, index) => {
-      // Формируем массив дат, которые относятся к этому посту
-      let relevantDates: Date[] = [];
-      let hasAnyDates = false;
-      
+    scheduledPosts.forEach((post) => {
       // Проверяем наличие socialPlatforms
       if (!post.socialPlatforms || typeof post.socialPlatforms !== 'object' || Object.keys(post.socialPlatforms).length === 0) {
         return;
       }
-      
-      // Отладка для запланированных постов на 13 июня
-      if (day.getDate() === 13 && index < 5) {
 
-      }
-      
-      // Проверяем ТОЛЬКО scheduledAt для запланированных постов
-      if (post.scheduledAt) {
-        try {
-          const schedDate = new Date(post.scheduledAt);
-          relevantDates.push(schedDate);
-          hasAnyDates = true;
-        } catch (e) {}
-      }
-      
-      // Для запланированных постов проверяем только основную дату scheduledAt
-      // Даты из платформ не используем, так как они могут быть разными
-      
-      // 4. Проверяем совпадение любой даты с указанным днем
-      const isRelevantForDay = relevantDates.some(date => 
-        isSameDay(startOfDay(day), startOfDay(date))
-      );
+      // Для запланированных постов смотрим ТОЛЬКО scheduledAt: платформенные
+      // даты у них могут расходиться между собой.
+      //
+      // Совпадение с клеткой — по московским суткам, а не по локальным.
+      const isRelevantForDay = matchesDisplayDay({ scheduledAt: post.scheduledAt }, toWallDateKey(day));
       
       // Если пост относится к этому дню, добавляем его в Map
       if (isRelevantForDay) {

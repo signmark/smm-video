@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { toDisplayDateKey } from '@/lib/date-utils';
+import { toDisplayDateKey, isDisplayToday, isInDisplayWeek } from '@/lib/date-utils';
 import { authHeaders } from '@/lib/auth-headers';
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,7 +10,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useAuthStore } from "@/lib/store";
 import { useCampaignStore } from "@/lib/campaignStore";
 import { BarChart3, Calendar, Hash, TrendingUp, Users, FileText, MessageCircle, Activity, ArrowRight, Plus, Zap, Settings, PenTool, ExternalLink, BookOpen, AlertTriangle, X, AlertCircle } from "lucide-react";
-import { format, isToday, isThisWeek, subDays, eachDayOfInterval, startOfDay } from "date-fns";
+import { format, subDays, eachDayOfInterval, startOfDay } from "date-fns";
 import { ru, enUS, es } from "date-fns/locale";
 import { useLocation } from "wouter";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -187,20 +187,24 @@ export default function Dashboard() {
 
   // Метрики публикаций. Итоговые счётчики считает Directus и отдаёт числами —
   // раньше ради них с сервера выкачивалась вся таблица контента (354 КБ).
-  // «Сегодня»/«на этой неделе» по-прежнему считаются на клиенте: границы суток и
-  // недели зависят от часового пояса и локали браузера. Окно `recent` заведомо
-  // шире недели, поэтому результат тот же, что и по полной выборке.
+  // «Сегодня»/«на этой неделе» считаются на клиенте, но границы — МОСКОВСКИЕ,
+  // а не по поясу браузера (SM-9). isToday/isThisWeek из date-fns брали
+  // локальную полночь зрителя: у браузера в UTC публикация 01:00 МСК 29-го
+  // (это 22:00Z 28-го) в «сегодня» не попадала вовсе. Неделя вдобавок
+  // считалась с воскресенья — см. DISPLAY_WEEK_STARTS_ON_MONDAY.
+  // Окно `recent` заведомо шире недели, поэтому результат тот же, что и по
+  // полной выборке.
   const publicationMetrics = {
     today: recentContent.filter(item => {
       // Считаем публикации опубликованные сегодня или запланированные на сегодня
-      const publishedToday = item.publishedAt && isToday(new Date(item.publishedAt));
-      const scheduledToday = item.scheduledAt && isToday(new Date(item.scheduledAt)) && item.status === 'scheduled';
+      const publishedToday = item.publishedAt && isDisplayToday(item.publishedAt);
+      const scheduledToday = item.scheduledAt && isDisplayToday(item.scheduledAt) && item.status === 'scheduled';
       return publishedToday || scheduledToday;
     }).length,
     thisWeek: recentContent.filter(item => {
       // Считаем публикации опубликованные на этой неделе или запланированные на эту неделю
-      const publishedThisWeek = item.publishedAt && isThisWeek(new Date(item.publishedAt));
-      const scheduledThisWeek = item.scheduledAt && isThisWeek(new Date(item.scheduledAt)) && item.status === 'scheduled';
+      const publishedThisWeek = item.publishedAt && isInDisplayWeek(item.publishedAt);
+      const scheduledThisWeek = item.scheduledAt && isInDisplayWeek(item.scheduledAt) && item.status === 'scheduled';
       return publishedThisWeek || scheduledThisWeek;
     }).length,
     published: contentStats?.data?.published || 0,

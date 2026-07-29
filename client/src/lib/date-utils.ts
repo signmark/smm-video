@@ -92,3 +92,76 @@ export function toDisplayDateKey(dateString: string | Date | null | undefined): 
 
   return formatInTimeZone(date, DISPLAY_TIME_ZONE, 'yyyy-MM-dd');
 }
+
+/**
+ * Календарный день, ВЫБРАННЫЙ пользователем, в виде `YYYY-MM-DD`.
+ *
+ * Отличается от `toDisplayDateKey` принципиально, и путать их нельзя.
+ *
+ * `toDisplayDateKey` получает МОМЕНТ ВРЕМЕНИ (timestamp публикации) и отвечает,
+ * на какие московские сутки он попадает. А дата из календарного виджета — это
+ * не момент, а «стена»: пользователь ткнул в клетку «29 июля», и виджет отдал
+ * `Date`, собранный из локальной полуночи. Прогонять её через пересчёт поясов
+ * значит сдвинуть выбор пользователя на сутки у любого зрителя западнее Москвы —
+ * то есть внести ровно ту ошибку, от которой мы уходим.
+ *
+ * Поэтому здесь читаются ЛОКАЛЬНЫЕ компоненты: они и есть то, что человек видел
+ * в клетке.
+ */
+export function toWallDateKey(date: Date | null | undefined): string | null {
+  if (!date || isNaN(date.getTime())) return null;
+
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+/** Сегодняшний день по Москве, `YYYY-MM-DD`. */
+export function displayTodayKey(): string {
+  return formatInTimeZone(new Date(), DISPLAY_TIME_ZONE, 'yyyy-MM-dd');
+}
+
+/** Попадает ли момент на сегодняшние МОСКОВСКИЕ сутки. */
+export function isDisplayToday(value: string | Date | null | undefined): boolean {
+  const key = toDisplayDateKey(value);
+  return key !== null && key === displayTodayKey();
+}
+
+/** Попадают ли два момента на одни и те же московские сутки. */
+export function isSameDisplayDay(
+  a: string | Date | null | undefined,
+  b: string | Date | null | undefined,
+): boolean {
+  const ka = toDisplayDateKey(a);
+  const kb = toDisplayDateKey(b);
+  return ka !== null && ka === kb;
+}
+
+/**
+ * Начало недели — ПОНЕДЕЛЬНИК. Задано явно и в одном месте.
+ *
+ * `isThisWeek` из date-fns без опций считает неделю с воскресенья: в
+ * русскоязычном продукте это молча сдвигало «за неделю» на день, и вдобавок
+ * считалось по локальной полуночи зрителя.
+ */
+export const DISPLAY_WEEK_STARTS_ON_MONDAY = true;
+
+/** Ключ понедельника той московской недели, в которую попадает момент. */
+function displayWeekStartKey(value: string | Date | null | undefined): string | null {
+  const key = toDisplayDateKey(value);
+  if (!key) return null;
+
+  // Полдень, чтобы арифметика по суткам не задевала переход даты.
+  const noon = new Date(`${key}T12:00:00Z`);
+  // getUTCDay: 0 — воскресенье. Переводим в «сколько дней назад понедельник».
+  const backToMonday = (noon.getUTCDay() + 6) % 7;
+  noon.setUTCDate(noon.getUTCDate() - backToMonday);
+  return noon.toISOString().slice(0, 10);
+}
+
+/** Попадает ли момент на текущую МОСКОВСКУЮ неделю (с понедельника). */
+export function isInDisplayWeek(value: string | Date | null | undefined): boolean {
+  const week = displayWeekStartKey(value);
+  return week !== null && week === displayWeekStartKey(new Date());
+}

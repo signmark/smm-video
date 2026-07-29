@@ -281,12 +281,24 @@ function webhookUrlFor(req: express.Request, campaignId: string, secret: string)
 }
 
 /**
+ * Отпечаток refresh-токена. Храним хеш, а не сам токен: нужен только признак
+ * «этот экземпляр мы уже применяли».
+ */
+export function vkRefreshTokenFingerprint(refreshToken: string): string {
+  return crypto.createHash('sha256').update(refreshToken).digest('hex');
+}
+
+/**
  * Применяли ли мы уже этот refresh-токен для кампании.
  *
- * Признак — в настройках стоит `serverRefreshedAt` (server-side refresh
- * состоялся), а сохранённый refresh-токен ОТЛИЧАЕТСЯ от присланного: значит VK
- * уже выдал нам ротацию, а needanapp прислал свой прежний экземпляр повторно.
- * Применять его второй раз нельзя — VK убьёт сессию.
+ * Сравнивать присланный токен с сохранённым в `vk.refreshToken` НЕЛЬЗЯ:
+ * обработчик webhook патчит настройки присланным значением ДО того, как
+ * стартует server-side refresh, поэтому на повторной отправке сохранённый
+ * ротированный токен затирается присланным устаревшим — улика уничтожается
+ * ровно перед проверкой.
+ *
+ * Поэтому отдельное поле `consumedRefreshTokenHash`: его пишет только успешный
+ * server-side refresh, и повторный пост от needanapp его не трогает.
  */
 async function vkRefreshTokenAlreadyConsumed(campaignId: string, incomingRefreshToken: string): Promise<boolean> {
   try {
@@ -297,9 +309,9 @@ async function vkRefreshTokenAlreadyConsumed(campaignId: string, incomingRefresh
     const resp = await axios.get(`${directusUrl}/items/user_campaigns/${campaignId}`, {
       headers: { Authorization: `Bearer ${adminToken}` },
     });
-    const vk = resp.data.data?.social_media_settings?.vk;
-    if (!vk?.serverRefreshedAt || !vk?.refreshToken) return false;
-    return vk.refreshToken !== incomingRefreshToken;
+    const consumed = resp.data.data?.social_media_settings?.vk?.consumedRefreshTokenHash;
+    if (!consumed) return false;
+    return consumed === vkRefreshTokenFingerprint(incomingRefreshToken);
   } catch (err: any) {
     // Не смогли проверить — не блокируем реконнект, но и не молчим.
     log(`[VK-WEBHOOK] Не удалось проверить повторность refresh-токена для ${campaignId}: ${err.message}`, 'vk-oauth', 'warn');
@@ -525,6 +537,16 @@ async function processVkTokenWebhookSubmission(
 
     // Сохраняем ВСЁ что пришло от needanapp — без попытки refresh.
     // Refresh будет автоматически перед каждой публикацией (в scheduler).
+    // Повторная отправка из needanapp приносит уже применённый refresh-токен.
+    // Записывать его нельзя: он сожжён, и сохранённая ротация («живой» токен от
+    // VK) была бы затёрта мёртвым — крон потом безуспешно долбился бы им.
+    const rTokenAlreadyConsumed = Boolean(rToken)
+      && await vkRefreshTokenAlreadyConsumed(campaignId, rToken);
+    if (rTokenAlreadyConsumed) {
+      log(`[VK-WEBHOOK] Кампания ${campaignId}: присланный refresh-токен уже применён — `
+        + `сохраняем access-токен, но refresh-токен оставляем прежний`, 'vk-oauth', 'warn');
+    }
+
     const vkUpdate: Record<string, any> = {
       ...existingVk,
       token,
@@ -534,7 +556,7 @@ async function processVkTokenWebhookSubmission(
       authExpired: false,
       reconnecting: false
     };
-    if (rToken)        vkUpdate.refreshToken  = rToken;
+    if (rToken && !rTokenAlreadyConsumed) vkUpdate.refreshToken = rToken;
     if (dId)           vkUpdate.deviceId      = dId;
     if (cId)           vkUpdate.clientId      = cId;
     if (tokenExpiresAt) vkUpdate.tokenExpiresAt = tokenExpiresAt;
@@ -555,7 +577,7 @@ async function processVkTokenWebhookSubmission(
 
     // Рефреш без device_id → новый токен привязывается к IP нашего сервера
     // Это нужно чтобы серверные вызовы (публикация, загрузка групп) работали без IP-ошибки
-    if (rToken && cId) {
+    if (rToken && cId && !rTokenAlreadyConsumed) {
       setImmediate(async () => {
         try {
           const { refreshVkToken } = await import('../services/vk-token-refresh');
@@ -590,6 +612,9 @@ async function processVkTokenWebhookSubmission(
               ...(refreshed.deviceId && { deviceId: refreshed.deviceId }),
               ...(refreshed.expiresIn && { tokenExpiresAt: new Date(Date.now() + refreshed.expiresIn * 1000).toISOString() }),
               serverRefreshedAt: new Date().toISOString(), // маркер: рефреш с сервера завершён
+              // Отпечаток ИМЕННО применённого экземпляра: повторный пост от
+              // needanapp с ним же будет опознан и refresh не запустится.
+              consumedRefreshTokenHash: vkRefreshTokenFingerprint(rToken),
             };
             await patchVkSettingsPreservingWebhookSecret(campaignId, refreshedVk);
             log(`[VK-WEBHOOK] Server-side refresh OK для ${campaignId}. Токен привязан к IP сервера.`, 'vk-oauth');

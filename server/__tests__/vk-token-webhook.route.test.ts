@@ -13,6 +13,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import request from 'supertest';
 import express from 'express';
+import { createHash } from 'crypto';
 
 const STORED_SECRET = 'stored-webhook-secret-abc123';
 
@@ -414,5 +415,77 @@ describe('VK token-webhook reconnecting: сессия + доступ + fail-clos
 
     expect(res.status).toBe(503);
     expect(H.axiosPatch).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * Повторная отправка из needanapp.
+ *
+ * needanapp хранит ОДИН webhook URL и постит по кнопке — пользователь легко
+ * жмёт «Отправить» дважды. Refresh-токен VK одноразовый: второе применение VK
+ * трактует как компрометацию и убивает сессию («session is compromised because
+ * refresh token has already been applied», прод 29.07.2026 08:27:33).
+ *
+ * Признак повторности — `consumedRefreshTokenHash`, отпечаток уже применённого
+ * экземпляра. Сравнивать с `vk.refreshToken` нельзя: обработчик патчит его
+ * присланным значением ДО server-side refresh, то есть на повторном посте
+ * затирает ротацию прямо перед проверкой.
+ */
+describe('VK token-webhook: повторный refresh-токен', () => {
+  const REUSED_REFRESH = 'vk2.уже-применённый-refresh';
+  const FRESH_REFRESH = 'vk2.свежий-refresh';
+  const fingerprint = (value: string) =>
+    createHash('sha256').update(value).digest('hex');
+
+  const campaignWithConsumed = (consumedOf: string | undefined) => ({
+    data: { data: { social_media_settings: { vk: {
+      webhookSecret: STORED_SECRET,
+      token: 't',
+      refreshToken: 'vk2.ротированный-живой',
+      serverRefreshedAt: new Date().toISOString(),
+      ...(consumedOf ? { consumedRefreshTokenHash: fingerprint(consumedOf) } : {}),
+    } } } },
+  });
+
+  /** Значение vk из последнего PATCH. */
+  const lastPatchedVk = () => {
+    const calls = H.axiosPatch.mock.calls;
+    return calls[calls.length - 1]?.[1]?.social_media_settings?.vk;
+  };
+
+  it('повторный токен НЕ перезаписывает сохранённый refresh-токен', async () => {
+    H.axiosGet.mockResolvedValue(campaignWithConsumed(REUSED_REFRESH));
+
+    const res = await request(app)
+      .post(`/api/vk/token-webhook/${CAMPAIGN}/submit/${STORED_SECRET}`)
+      .send({ access_token: 'новый-access', refresh_token: REUSED_REFRESH, client_id: '53179850' });
+
+    expect(res.status).toBe(200);
+    // Access-токен принимаем, а сожжённый refresh в базу не пускаем:
+    // иначе крон потом безуспешно долбился бы мёртвым экземпляром.
+    const vk = lastPatchedVk();
+    expect(vk.token).toBe('новый-access');
+    expect(vk.refreshToken).toBe('vk2.ротированный-живой');
+  });
+
+  it('свежий токен сохраняется как обычно', async () => {
+    H.axiosGet.mockResolvedValue(campaignWithConsumed(REUSED_REFRESH));
+
+    const res = await request(app)
+      .post(`/api/vk/token-webhook/${CAMPAIGN}/submit/${STORED_SECRET}`)
+      .send({ access_token: 'новый-access', refresh_token: FRESH_REFRESH, client_id: '53179850' });
+
+    expect(res.status).toBe(200);
+    expect(lastPatchedVk().refreshToken).toBe(FRESH_REFRESH);
+  });
+
+  it('без отметки о применении повторность не выдумывается', async () => {
+    H.axiosGet.mockResolvedValue(campaignWithConsumed(undefined));
+
+    await request(app)
+      .post(`/api/vk/token-webhook/${CAMPAIGN}/submit/${STORED_SECRET}`)
+      .send({ access_token: 'a', refresh_token: REUSED_REFRESH, client_id: '53179850' });
+
+    expect(lastPatchedVk().refreshToken).toBe(REUSED_REFRESH);
   });
 });

@@ -200,3 +200,76 @@ describe('GET/HEAD /api/video-temp/:id — Meta скачивает видео', 
     expect(res.status).toBe(401);
   });
 });
+
+/**
+ * Табличная проверка исключения `/api/video-temp/:uuid` на обход.
+ *
+ * Требование handoff 29.07.2026: правило открывает наружу путь без сессии,
+ * поэтому его границы проверяются перебором, а не «на глаз». Публичными обязаны
+ * остаться РОВНО точный UUID и РОВНО `GET`/`HEAD`.
+ *
+ * Кодировать `..`/`/` смысла нет — гейт смотрит на `originalUrl`, где
+ * `%2e%2e` и `%2f` остаются процентными последовательностями и в регулярку
+ * не попадают. Проверяем это явно, чтобы будущая «нормализация пути» перед
+ * гейтом не открыла обход молча.
+ */
+describe('/api/video-temp/:uuid — перебор обходов', () => {
+  const UUID_OK = '3f1a5c2e-9b4d-4a7f-8c21-0d5e6f7a8b90';
+
+  const BYPASS_ATTEMPTS = [
+    ['кодированный обход вверх', `/api/video-temp/${UUID_OK}/%2e%2e/campaigns`],
+    ['кодированный слэш в хвосте', `/api/video-temp/${UUID_OK}%2f..%2fcampaigns`],
+    ['кодированный слэш вместо разделителя', `/api/video-temp%2f${UUID_OK}`],
+    ['двойной слэш', `/api//video-temp/${UUID_OK}`],
+    ['двойной слэш внутри', `/api/video-temp//${UUID_OK}`],
+    ['хвостовой слэш', `/api/video-temp/${UUID_OK}/`],
+    ['UUID с хвостом', `/api/video-temp/${UUID_OK}.mp4`],
+    ['UUID с суффиксом-путём', `/api/video-temp/${UUID_OK}/raw`],
+    ['префикс перед UUID', `/api/video-temp/x${UUID_OK}`],
+    ['UUID без дефисов', `/api/video-temp/${UUID_OK.replace(/-/g, '')}`],
+    ['фрагмент UUID', `/api/video-temp/${UUID_OK.slice(0, 20)}`],
+    ['не hex в UUID', '/api/video-temp/3f1a5c2e-9b4d-4a7f-8c21-0d5e6f7a8bZZ'],
+  ] as const;
+
+  it.each(BYPASS_ATTEMPTS)('%s остаётся закрытым', (_name, path) => {
+    expect(isPublicApiPath(path, 'GET')).toBe(false);
+  });
+
+  it('смешанный регистр UUID публичен — hex регистронезависим', () => {
+    // Явное решение, а не случайность: флаг `i` в правиле стоит осознанно.
+    expect(isPublicApiPath(`/api/video-temp/${UUID_OK.toUpperCase()}`, 'GET')).toBe(true);
+  });
+
+  it.each(['GET', 'HEAD', 'get', 'head'])('%s публичен', (method) => {
+    expect(isPublicApiPath(`/api/video-temp/${UUID_OK}`, method)).toBe(true);
+  });
+
+  it.each(['POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS', 'TRACE'])('%s закрыт', (method) => {
+    expect(isPublicApiPath(`/api/video-temp/${UUID_OK}`, method)).toBe(false);
+  });
+
+  it('X-HTTP-Method-Override на POST не открывает путь', async () => {
+    // Гейт обязан смотреть на настоящий метод запроса. Express сам заголовок
+    // не разбирает, но если кто-то поставит method-override middleware ВЫШЕ
+    // гейта, POST начнёт выглядеть как GET — тест это заметит.
+    const { app } = makeApp();
+
+    for (const override of ['GET', 'HEAD']) {
+      const res = await request(app)
+        .post(`/api/video-temp/${UUID_OK}`)
+        .set('X-HTTP-Method-Override', override)
+        .send({});
+
+      expect(res.status, `override ${override} не должен открывать POST`).toBe(401);
+    }
+  });
+
+  it('хвостовой слэш и двойной слэш закрыты и на живом роутере', async () => {
+    const { app } = makeApp();
+
+    for (const path of [`/api/video-temp/${UUID_OK}/`, `/api/video-temp//${UUID_OK}`]) {
+      const res = await request(app).get(path);
+      expect(res.status, `${path} не должен быть публичным`).toBe(401);
+    }
+  });
+});

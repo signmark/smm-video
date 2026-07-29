@@ -51,6 +51,19 @@ vi.mock('../utils/logger', () => ({
   log: vi.fn(),
 }));
 
+/**
+ * Проверка владения контентом. С 29.07.2026 `/api/publish/cancel/:id` и
+ * `/api/publish/status/:id` вызывают её ДО любого чтения и записи, иначе чужую
+ * запись можно было отменить через служебную эскалацию в storage
+ * (см. storage-privilege-escalation.test.ts — там она гоняется настоящей).
+ *
+ * Здесь она мокается разрешающей: этот файл про инвалидацию кеша, а не про
+ * границу арендатора, и Directus в нём не поднят.
+ */
+vi.mock('../services/content-access', () => ({
+  assertContentBelongsToRequester: vi.fn(async () => true),
+}));
+
 // ── Импорты после моков ────────────────────────────────────────────────────────
 
 import { directusApiManager, directusApi } from '../directus';

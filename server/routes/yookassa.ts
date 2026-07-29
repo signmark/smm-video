@@ -122,9 +122,12 @@ async function cancelPaymentAndReleaseReservation(params: {
       `[yookassa] СВЕРКА: платёж ${paymentId} создан, привязать к брони не удалось (${reason}), `
       + `отмена не подтверждена. Бронь order=${orderId} promo=${promoCode} userId=${userId} остаётся занятой.`,
     );
+    // id платежа кладём ТЕМ ЖЕ запросом, что и пометку: без него разбирать
+    // расхождение руками не по чему, а отдельным PATCH он мог бы не долететь.
     await flagReservationReconciliation(
       orderId,
       `платёж ${paymentId} создан, привязка не удалась (${reason}), отмена не подтверждена`,
+      { yookassa_payment_id: paymentId },
     ).catch(() => {});
     return;
   }

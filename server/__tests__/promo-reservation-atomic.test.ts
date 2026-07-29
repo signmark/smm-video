@@ -662,6 +662,10 @@ describe('конкурентные резервирования', () => {
     expect(active.every(r => r.slot_index < 5)).toBe(true);
   }, 30_000);
 
+  // Потолок попыток для кода без max_uses (P3 ревью 2026-07-29) проверяется
+  // отдельно — `promo-slot-budget.test.ts`. Здесь конкуренция слишком слабая:
+  // до потолка не доходит ни один запрос, и тест зеленел бы и без фикса.
+
   it('один пользователь не получает скидку дважды при параллельных запросах', async () => {
     promo.max_uses = null;
 
@@ -773,6 +777,54 @@ describe('needs_reconciliation не реклеймится по таймауту
 
     expect(second.status).toBe(200);
     expect(second.body.confirmationUrl).toBeTruthy();
+  });
+
+  /**
+   * Требование handoff 29.07.2026: id платежа ЮКассы должен сохраняться ВМЕСТЕ с
+   * reconciliation-состоянием. Иначе разбирать расхождение руками не по чему —
+   * в брони остаётся только наш order_id, а платёж в ЮКассе ищи как хочешь.
+   *
+   * `breakAttach` ломает штатный attach-PATCH (в его теле только
+   * yookassa_payment_id), но не совместную запись «id + маркер».
+   */
+  it('id платежа ложится вместе с пометкой на разбор', async () => {
+    promo = { ...promo, max_uses: 1 };
+    cancelFails = true;
+    const realFetch = PRISTINE_FETCH;
+    fetchMock.mockImplementation((url: any, init?: any) => {
+      if (String(url).includes('/items/promo_reservations/') && init?.method === 'PATCH') {
+        const patch = JSON.parse(init.body);
+        // Ломаем только штатную привязку: одиночный yookassa_payment_id.
+        if (patch.yookassa_payment_id && !patch.needs_reconciliation) {
+          return jsonResponse({ errors: [{ message: 'boom' }] }, false, 500);
+        }
+      }
+      return realFetch(url, init);
+    });
+
+    const first = await create('user-1');
+    expect(first.status).toBe(503);
+
+    const held = reservations()[0];
+    const payment: any = Object.values(yookassaPayments)[0];
+    expect(held.needs_reconciliation).toBe(true);
+    expect(held.yookassa_payment_id).toBe(payment.id);
+    expect(held.status).toBe('reserved');
+  });
+
+  it('пометка на разбор переживает отказ записи сопутствующих полей', async () => {
+    // Обратная сторона: если совместная запись не прошла, маркер важнее id —
+    // без него реклеймер снова считает бронь своей.
+    promo = { ...promo, max_uses: 1 };
+    cancelFails = true;
+    breakAttach(); // ломает ЛЮБОЙ PATCH с yookassa_payment_id, включая совместный
+
+    const first = await create('user-1');
+    expect(first.status).toBe(503);
+
+    const held = reservations()[0];
+    expect(held.needs_reconciliation).toBe(true);
+    expect(held.yookassa_payment_id).toBeFalsy();
   });
 
   it('подтверждённые canceled и expired реклеймятся штатно', async () => {

@@ -1591,8 +1591,9 @@ async function publishViaN8n(contentId: string, platform: string, req: express.R
         adminToken = sessions[0].token;
       }
 
-      // Получаем текущий контент
-      const content = await storage.getCampaignContentById(contentId);
+      // Получаем текущий контент. Фоновая задача, сессии пользователя нет —
+      // служебное чтение названо явно.
+      const content = await storage.getCampaignContentByIdPrivileged(contentId);
 
       if (!content || !content.socialPlatforms) {
         log(`[Social Publishing] Не удалось получить контент ${contentId} или нет настроек платформ`);

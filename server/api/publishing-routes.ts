@@ -552,12 +552,18 @@ export function registerPublishingRoutes(app: Express): void {
           
           // Обновляем контент через хранилище
           console.log(`🔄 [PUBLISH] ПЕРЕД updateCampaignContent для ${content.id}`);
-          await storage.updateCampaignContent(content.id, {
+          const publishUpdateToken = updateToken || activeToken;
+          const publishUpdates = {
             socialPlatforms: {
               ...socialPlatforms,
               ...updatedPlatforms
             }
-          }, updateToken || activeToken || undefined);
+          };
+          // Владение уже подтверждено assertContentBelongsToRequester выше.
+          // Если служебного токена нет вовсе — служебная запись названа явно.
+          await (publishUpdateToken
+            ? storage.updateCampaignContent(content.id, publishUpdates, publishUpdateToken)
+            : storage.updateCampaignContentPrivileged(content.id, publishUpdates));
           
           console.log(`✅ [PUBLISH] ПОСЛЕ updateCampaignContent для ${content.id}`);
           log(`Статус публикации установлен в pending для контента ${content.id}`, 'api');
@@ -972,13 +978,17 @@ export function registerPublishingRoutes(app: Express): void {
       if (!contentId) {
         return res.status(400).json({ error: 'Не указан ID контента' });
       }
-      
+
+      // Владение — до любого чтения. Иначе статус, расписание и платформы чужой
+      // записи утекали через служебную эскалацию в storage.
+      if (!(await assertContentBelongsToRequester(contentId, req, res))) return;
+
       // Получаем контент
       const content = await storage.getCampaignContentById(contentId, req.user?.token);
       if (!content) {
         return res.status(404).json({ error: 'Контент не найден' });
       }
-      
+
       // Возвращаем статус публикации по платформам
       return res.status(200).json({ 
         success: true, 
@@ -1009,21 +1019,19 @@ export function registerPublishingRoutes(app: Express): void {
         return res.status(400).json({ error: 'Не указан ID контента' });
       }
       
+      // Владение — до любого чтения и до любой записи.
+      if (!(await assertContentBelongsToRequester(contentId, req, res))) return;
+
       // Получаем контент С ТОКЕНОМ АВТОРИЗАЦИИ
       const content = await storage.getCampaignContentById(contentId, authToken);
       if (!content) {
         return res.status(404).json({ error: 'Контент не найден' });
       }
-      
-      // Используем токен для последующих операций
-      if (authToken) {
-        
-        // Настраиваем временно токен для пользователя, если есть userId в контенте
-        if (content.userId) {
-          directusApiManager.cacheAuthToken(content.userId, authToken);
-        }
-      }
-      
+
+      // Токен запросившего НЕ кешируется под userId из записи: раньше это
+      // подсовывало чужой сессии токен атакующего (и наоборот) в общий кеш
+      // directusApiManager. Свой токен уже есть в req.user.
+
       // Разрешаем отмену для любого контента с scheduledAt или статусом scheduled/pending
       // (пост мог сменить статус пока висел в списке — не блокируем отмену)
       
@@ -1082,13 +1090,18 @@ export function registerPublishingRoutes(app: Express): void {
         log(`Ошибка при прямом обновлении через API: ${directUpdateError.message}`, 'api');
       }
       
-      // Обновляем также через интерфейс хранилища
+      // Обновляем также через интерфейс хранилища — ТЕМ ЖЕ токеном пользователя.
+      // Вызов без токена раньше эскалировал до служебного доступа и дописывал
+      // запись, которую прямой PATCH пользователя только что не смог тронуть.
       try {
+        if (!authToken) {
+          throw new Error('Нет токена пользователя для отмены через storage');
+        }
         await storage.updateCampaignContent(contentId, {
           status: 'draft', // Возвращаем в статус черновика
           scheduledAt: null, // Убираем планирование
           socialPlatforms: {} // Полностью очищаем платформы при отмене
-        });
+        }, authToken);
         log(`Публикация ${contentId} отменена через storage`, 'api');
       } catch (storageError: any) {
         // Если прямое обновление не было успешным и произошла ошибка в хранилище,

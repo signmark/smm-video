@@ -1,5 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { DISPLAY_TIME_ZONE } from '@/lib/date-utils';
+import {
+  DISPLAY_TIME_ZONE,
+  normalizeTimestamp,
+  toDisplayDateKey,
+  toWallDateKey,
+} from '@/lib/date-utils';
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCampaignStore } from "@/lib/campaignStore";
 import { Calendar } from "@/components/ui/calendar";
@@ -8,7 +13,10 @@ import { PenLine, Send, Loader2, SortDesc, SortAsc, Eye, ExternalLink, RefreshCw
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { endOfMonth, format, isSameDay, isSameMonth, parseISO, startOfDay, startOfMonth } from 'date-fns';
+// isSameDay/startOfDay СОЗНАТЕЛЬНО не импортируются: они считают по локальной
+// полуночи зрителя, а сутки в этом продукте московские (SM-9). Ключи дня —
+// momentDayKey/cellDayKey ниже.
+import { endOfMonth, format, isSameMonth, parseISO, startOfMonth } from 'date-fns';
 import { ru, enUS, es } from 'date-fns/locale';
 import { formatInTimeZone } from 'date-fns-tz';
 import { SiInstagram, SiTelegram, SiVk, SiFacebook, SiYoutube, SiThreads } from "react-icons/si";
@@ -176,7 +184,10 @@ export default function Posts() {
     if (!dateString) return '';
     try {
       const userTimeZone = DISPLAY_TIME_ZONE;
-      const dateObj = typeof dateString === 'string' ? new Date(dateString) : dateString;
+      // Directus отдаёт часть timestamp'ов без `Z`. Голый `new Date(...)` считал
+      // бы такую строку местным временем и добавлял к сдвигу ещё один (SM-9),
+      // поэтому нормализация — общая, из date-utils.
+      const dateObj = normalizeTimestamp(dateString);
       return formatInTimeZone(dateObj, userTimeZone, 'dd MMMM yyyy, HH:mm', { locale: getDateLocale() });
     } catch (error) {
       console.error('Ошибка форматирования даты:', error);
@@ -189,7 +200,10 @@ export default function Posts() {
     if (!dateString) return '';
     try {
       const userTimeZone = DISPLAY_TIME_ZONE;
-      const dateObj = typeof dateString === 'string' ? new Date(dateString) : dateString;
+      // Directus отдаёт часть timestamp'ов без `Z`. Голый `new Date(...)` считал
+      // бы такую строку местным временем и добавлял к сдвигу ещё один (SM-9),
+      // поэтому нормализация — общая, из date-utils.
+      const dateObj = normalizeTimestamp(dateString);
       return formatInTimeZone(dateObj, userTimeZone, 'dd MMMM yyyy, HH:mm', { locale: getDateLocale() });
     } catch (error) {
       console.error('Ошибка форматирования даты:', error);
@@ -244,13 +258,21 @@ export default function Posts() {
 
     if (!publishDates.length) return;
 
-    // Если на текущей выбранной дате нет постов — выбираем ближайшую дату с постами
-    const todayHasPosts = publishDates.some(d => isSameDay(d, selectedDate));
+    // Если на текущей выбранной дате нет постов — выбираем ближайшую дату с постами.
+    // Сравнение идёт по МОСКОВСКИМ суткам: `publishDates` — моменты времени,
+    // `selectedDate` — клетка календаря, и мешать их локальным isSameDay нельзя
+    // (SM-9). У зрителя в UTC ночной пост иначе не находится на своей дате.
+    const selectedKey = cellDayKey(selectedDate);
+    const todayHasPosts = publishDates.some(d => momentDayKey(d) === selectedKey);
     if (!todayHasPosts) {
-      // Берём самую позднюю дату публикации
+      // Берём самую позднюю дату публикации и переводим её в клетку календаря
+      // через МОСКОВСКИЙ день, а не через локальную полночь.
       const latestDate = new Date(Math.max(...publishDates.map(d => d.getTime())));
-      setSelectedDate(startOfDay(latestDate));
-      setVisibleMonth(startOfMonth(latestDate));
+      const latestKey = momentDayKey(latestDate);
+      // Полдень: любая арифметика над клеткой не должна перепрыгивать сутки.
+      const latestCell = new Date(`${latestKey}T12:00:00`);
+      setSelectedDate(latestCell);
+      setVisibleMonth(startOfMonth(latestCell));
     }
   }, [campaignContentResponse]);
 
@@ -260,12 +282,28 @@ export default function Posts() {
     { from: startOfMonth(visibleMonth), to: endOfMonth(visibleMonth) },
   ), [campaignContent, visibleMonth]);
 
-  const dayKey = (date: Date) => format(date, 'yyyy-MM-dd');
+  /**
+   * Ключ дня для МОМЕНТА времени (timestamp публикации) — по московским суткам.
+   *
+   * Раньше здесь был один `format(date, 'yyyy-MM-dd')` на оба случая, то есть
+   * локальные сутки зрителя. Публикация 29.07 01:00 МСК хранится как
+   * 28.07 22:00Z, и в браузере с TZ=UTC она попадала в клетку 28-го (SM-9,
+   * остаток находки ревью 29.07.2026).
+   */
+  const momentDayKey = (date: Date) => toDisplayDateKey(date) ?? format(date, 'yyyy-MM-dd');
+
+  /**
+   * Ключ дня для КЛЕТКИ календаря — это «стена», а не момент.
+   *
+   * Пересчитывать её через пояса нельзя: пользователь ткнул в «29 июля», и
+   * никакой конвертации над этим выбором быть не должно (см. `toWallDateKey`).
+   */
+  const cellDayKey = (day: Date) => toWallDateKey(day) ?? format(day, 'yyyy-MM-dd');
 
   const publicationEventsByDay = React.useMemo(() => {
     const eventsByDay = new Map<string, ReturnType<typeof getConfirmedPublicationEvents>>();
     campaignContent.flatMap(getConfirmedPublicationEvents).forEach((event) => {
-      const key = dayKey(event.date);
+      const key = momentDayKey(event.date);
       eventsByDay.set(key, [...(eventsByDay.get(key) || []), event]);
     });
     return eventsByDay;
@@ -275,7 +313,7 @@ export default function Posts() {
     const cardsByDay = new Map<string, CampaignContent[]>();
     campaignContent.forEach((content) => {
       getPublicationCardDates(content).forEach((date) => {
-        const key = dayKey(date);
+        const key = momentDayKey(date);
         const cards = cardsByDay.get(key) || [];
         if (!cards.some((card) => card.id === content.id)) {
           cardsByDay.set(key, [...cards, content]);
@@ -290,7 +328,7 @@ export default function Posts() {
     campaignContent.forEach((content) => {
       const date = getFailedPublicationAttemptDate(content);
       if (!date) return;
-      const key = dayKey(date);
+      const key = momentDayKey(date);
       attemptsByDay.set(key, [...(attemptsByDay.get(key) || []), content]);
     });
     return attemptsByDay;
@@ -307,7 +345,7 @@ export default function Posts() {
     // Создаем карту идентификаторов постов, чтобы избежать дублирования
     const uniquePosts = new Map<string, CampaignContent>();
     
-    (publicationCardsByDay.get(dayKey(day)) || []).forEach((post) => uniquePosts.set(post.id, post));
+    (publicationCardsByDay.get(cellDayKey(day)) || []).forEach((post) => uniquePosts.set(post.id, post));
     
     // Возвращаем массив уникальных опубликованных постов с сортировкой по времени публикации
     const postsArray = Array.from(uniquePosts.values());
@@ -351,7 +389,7 @@ export default function Posts() {
   );
 
   const getDayContent = (day: Date) => {
-    const key = dayKey(day);
+    const key = cellDayKey(day);
     const publicationsForDay = publicationEventsByDay.get(key) || [];
     const failedAttemptsForDay = failedAttemptsByDay.get(key) || [];
 

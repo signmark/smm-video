@@ -1,5 +1,6 @@
 import { directusApi } from "./lib/directus";
 import { directusStorageAdapter } from './services/directus';
+import { resolvePublishingToken } from './services/publishing-token';
 import axios from 'axios';
 import { 
   type UserCampaign, 
@@ -67,9 +68,15 @@ export interface IStorage {
   
   // Campaign Content
   getCampaignContent(userId: string, campaignId?: string): Promise<CampaignContent[]>;
-  getCampaignContentById(id: string): Promise<CampaignContent | undefined>;
+  /** Пользовательское чтение: токен обязателен, эскалации нет. */
+  getCampaignContentById(id: string, authToken?: string): Promise<CampaignContent | undefined>;
+  /** Служебное чтение любого арендатора. Только после подтверждённого ownership или из фона. */
+  getCampaignContentByIdPrivileged(id: string): Promise<CampaignContent | undefined>;
   createCampaignContent(content: InsertCampaignContent): Promise<CampaignContent>;
-  updateCampaignContent(id: string, updates: Partial<InsertCampaignContent>): Promise<CampaignContent>;
+  /** Пользовательская запись: токен обязателен. */
+  updateCampaignContent(id: string, updates: Partial<InsertCampaignContent>, authToken?: string): Promise<CampaignContent>;
+  /** Служебная запись любого арендатора. Только после подтверждённого ownership или из фона. */
+  updateCampaignContentPrivileged(id: string, updates: Partial<InsertCampaignContent>): Promise<CampaignContent>;
   deleteCampaignContent(id: string): Promise<void>;
   getScheduledContent(userId: string, campaignId?: string): Promise<CampaignContent[]>;
   getScheduledCampaignContent(campaignId: string, userId: string, token?: string): Promise<CampaignContent[]>;
@@ -879,104 +886,59 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  /**
+   * ПОЛЬЗОВАТЕЛЬСКОЕ чтение контента. Ходит РОВНО тем токеном, который передал
+   * вызывающий, и никогда не эскалирует.
+   *
+   * Здесь была лесенка из четырёх попыток: свой токен → свой токен ещё раз →
+   * перебор `tokenCache` ВСЕХ пользователей → анонимный запрос. Поскольку
+   * `getAuthToken(любойUserId)` отдаёт `DIRECTUS_SERVICE_TOKEN`, третья попытка
+   * означала «после 403 пользователя дочитать служебным токеном», то есть
+   * пользовательский маршрут молча получал доступ к чужому арендатору
+   * (cancel/status чужой публикации). Отказ пользовательского токена теперь
+   * ОКОНЧАТЕЛЕН.
+   *
+   * Служебное чтение существует отдельно и называется явно —
+   * `getCampaignContentByIdPrivileged`. Оно допустимо только после
+   * подтверждённого ownership (`assertContentBelongsToRequester`) либо в фоновых
+   * задачах, у которых пользовательской сессии нет по определению.
+   */
   async getCampaignContentById(id: string, authToken?: string): Promise<CampaignContent | undefined> {
+    if (!authToken) {
+      // Без токена пользовательского чтения не бывает. Раньше отсюда начиналась
+      // эскалация; молча отдавать служебный доступ нельзя.
+      console.warn(`getCampaignContentById(${id}) вызван без токена — служебное чтение требует getCampaignContentByIdPrivileged`);
+      return undefined;
+    }
+    return this.fetchCampaignContentWithToken(id, authToken);
+  }
+
+  /**
+   * СЛУЖЕБНОЕ чтение контента сервисным токеном — читает любого арендатора.
+   * Вызывать только после подтверждённого ownership или из фоновых задач.
+   */
+  async getCampaignContentByIdPrivileged(id: string): Promise<CampaignContent | undefined> {
+    const serviceToken = await resolvePublishingToken();
+    if (!serviceToken) {
+      console.error(`getCampaignContentByIdPrivileged(${id}): служебный токен недоступен`);
+      return undefined;
+    }
+    return this.fetchCampaignContentWithToken(id, serviceToken);
+  }
+
+  private async fetchCampaignContentWithToken(id: string, token: string): Promise<CampaignContent | undefined> {
     try {
-      // Запрос контента по ID
-      
-      // Настраиваем headers с токеном, если он передан
       let response = null;
-      
-      // Попытка 1: Используем переданный токен авторизации (если он есть)
-      if (authToken) {
-        try {
-          // Используем переданный токен авторизации
-          response = await directusApi.get(`/items/campaign_content/${id}`, { 
-            headers: { 'Authorization': `Bearer ${authToken}` }
-          });
-          if (response?.data?.data) {
-            // Контент получен успешно
-          }
-        } catch (error: any) {
-          console.warn(`Не удалось получить контент с переданным токеном: ${error.message}`);
-          response = null;
-        }
+
+      try {
+        response = await directusApi.get(`/items/campaign_content/${id}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+      } catch (error: any) {
+        console.warn(`Не удалось получить контент ${id}: ${error.message}`);
+        return undefined;
       }
-      
-      // Попытка 2: Используем переданный токен, если первая попытка не удалась
-      if (!response && authToken) {
-        // Используем переданный токен авторизации
-        
-        try {
-          response = await directusApi.get(`/items/campaign_content/${id}`, { 
-            headers: { 'Authorization': `Bearer ${authToken}` }
-          });
-          // Контент получен успешно
-        } catch (error: any) {
-          console.warn(`Не удалось получить контент с переданным токеном: ${error.message}`);
-          response = null;
-        }
-      }
-      
-      // Попытка 3: Если не удалось с токеном, пробуем получить владельца контента
-      if (!response) {
-        console.log(`Пробуем получить владельца контента другими способами`);
-        
-        // Пробуем сделать запрос списка контента с фильтром по ID 
-        // и посмотреть, кто владелец (без доступа к БД напрямую)
-        const filter = {
-          id: {
-            _eq: id
-          }
-        };
-        
-        try {
-          // Пробуем с разными токенами активных пользователей
-          // Получаем все активные токены
-          const userIds = Object.keys(this.tokenCache || {});
-          
-          for (const userId of userIds) {
-            const userToken = await this.getAuthToken(userId);
-            if (userToken) {
-              try {
-                console.log(`Пробуем с токеном пользователя ${userId}`);
-                const metaResponse = await directusApi.get(`/items/campaign_content`, {
-                  params: { filter },
-                  headers: {
-                    'Authorization': `Bearer ${userToken}`
-                  }
-                });
-                
-                if (metaResponse?.data?.data?.length > 0) {
-                  // Если нашли, используем этот же токен для получения полных данных
-                  response = await directusApi.get(`/items/campaign_content/${id}`, {
-                    headers: {
-                      'Authorization': `Bearer ${userToken}`
-                    }
-                  });
-                  console.log(`Успешно получен контент с токеном пользователя ${userId}`);
-                  break;
-                }
-              } catch (error) {
-                // Продолжаем с другим пользователем
-              }
-            }
-          }
-        } catch (error: any) {
-          console.warn(`Не удалось найти владельца контента: ${error.message}`);
-        }
-      }
-      
-      // Попытка 4: Пробуем без токена (публичный доступ)
-      if (!response) {
-        console.log(`Пробуем получить контент без токена авторизации`);
-        try {
-          response = await directusApi.get(`/items/campaign_content/${id}`);
-          console.log(`Успешно получен контент без авторизации (публичный доступ)`);
-        } catch (error: any) {
-          console.warn(`Не удалось получить контент без авторизации: ${error.message}`);
-        }
-      }
-      
+
       // Проверяем, получили ли мы данные
       if (!response || !response.data?.data) {
         console.warn(`Контент с ID ${id} не найден ни одним из способов`);
@@ -1080,37 +1042,46 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
+  /**
+   * ПОЛЬЗОВАТЕЛЬСКАЯ запись контента. Токен обязателен и используется как есть.
+   *
+   * Раньше при отсутствии токена метод сам находил владельца записи и брал
+   * `getAuthToken(владелец)` — то есть служебный токен. Пользовательский handler
+   * (`/api/publish/cancel/:id`), у которого прямой PATCH только что получил 403,
+   * следом звал этот метод БЕЗ токена и дописывал чужую запись служебным
+   * доступом. Служебная запись теперь называется явно —
+   * `updateCampaignContentPrivileged`.
+   */
   async updateCampaignContent(id: string, updates: Partial<InsertCampaignContent>, authToken?: string): Promise<CampaignContent> {
+    if (!authToken) {
+      throw new Error('updateCampaignContent requires an auth token; use updateCampaignContentPrivileged for background/service writes');
+    }
+    return this.patchCampaignContent(id, updates, authToken, false);
+  }
+
+  /**
+   * СЛУЖЕБНАЯ запись контента сервисным токеном — пишет любого арендатора.
+   * Вызывать только из фоновых задач или после подтверждённого ownership.
+   */
+  async updateCampaignContentPrivileged(id: string, updates: Partial<InsertCampaignContent>): Promise<CampaignContent> {
+    const serviceToken = await resolvePublishingToken();
+    if (!serviceToken) {
+      throw new Error('No service token available for privileged content update');
+    }
+    return this.patchCampaignContent(id, updates, serviceToken, true);
+  }
+
+  private async patchCampaignContent(
+    id: string,
+    updates: Partial<InsertCampaignContent>,
+    token: string,
+    privileged: boolean,
+  ): Promise<CampaignContent> {
+    const authToken = token;
     try {
       // Подготовка заголовков для запроса
-      const headers: Record<string, string> = {};
-      
-      // Если передан токен напрямую, используем его
-      if (authToken) {
-        // Используем переданный токен авторизации
-        headers['Authorization'] = `Bearer ${authToken}`;
-      } else {
-        // Получаем данные текущего контента для доступа к userId
-        const currentContent = await this.getCampaignContentById(id);
-        if (!currentContent) {
-          console.error(`Ошибка: Контент с ID ${id} не найден в БД при попытке обновить промт`);
-          throw new Error('Content not found');
-        }
-        
-        // Получаем токен авторизации
-        console.log(`Получение токена авторизации для пользователя: ${currentContent.userId}`);
-        const userToken = await this.getAuthToken(currentContent.userId);
-        
-        if (userToken) {
-          console.log(`Успешно получен токен для обновления: ${userToken ? 'YES' : 'NO'}`);
-          headers['Authorization'] = `Bearer ${userToken}`;
-        } else {
-          console.warn(`⚠️ Не найден токен авторизации для пользователя ${currentContent.userId}.`);
-          console.error(`Ошибка: Пользовательский токен не найден`);
-          throw new Error('No auth token found for user');
-        }
-      }
-      
+      const headers: Record<string, string> = { 'Authorization': `Bearer ${token}` };
+
       // Преобразуем данные из нашей схемы в формат Directus
       const directusUpdates: Record<string, any> = {};
       
@@ -1129,8 +1100,10 @@ export class DatabaseStorage implements IStorage {
       
       // КРИТИЧЕСКИ ВАЖНО: при обновлении socialPlatforms сохраняем существующие статусы опубликованных платформ
       if (updates.socialPlatforms !== undefined) {
-        // Получаем текущие данные контента
-        const currentContent = await this.getCampaignContentById(id, authToken);
+        // Получаем текущие данные контента тем же уровнем доступа, что и запись
+        const currentContent = privileged
+          ? await this.getCampaignContentByIdPrivileged(id)
+          : await this.getCampaignContentById(id, authToken);
         if (currentContent && currentContent.socialPlatforms) {
           const currentPlatforms = typeof currentContent.socialPlatforms === 'string' 
             ? JSON.parse(currentContent.socialPlatforms) 
@@ -1240,12 +1213,13 @@ export class DatabaseStorage implements IStorage {
 
   async deleteCampaignContent(id: string): Promise<void> {
     try {
-      // Получаем данные текущего контента для доступа к userId
-      const content = await this.getCampaignContentById(id);
+      // Получаем данные текущего контента для доступа к userId.
+      // Служебное чтение названо явно: сессии владельца здесь нет.
+      const content = await this.getCampaignContentByIdPrivileged(id);
       if (!content) {
         throw new Error('Content not found');
       }
-      
+
       const authToken = await this.getAuthToken(content.userId);
       if (!authToken) {
         throw new Error('No auth token found for user');

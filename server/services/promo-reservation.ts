@@ -40,13 +40,36 @@ const COLLECTION = 'promo_reservations';
  */
 const SLOT_ATTEMPT_MARGIN = 100;
 
-/** Потолок попыток для кодов без max_uses: столько параллельных гонок хватит с запасом. */
-const UNLIMITED_SLOT_ATTEMPTS = 200;
+/**
+ * Сколько попыток подряд БЕЗ наблюдаемого прогресса считаем безнадёжными.
+ *
+ * Для кода без `max_uses` здесь раньше стоял жёсткий потолок в 200 попыток. Это
+ * скрытая бизнес-ёмкость: 201-й одновременный покупатель мог проиграть гонки за
+ * слоты 0..199 и получить ошибку, хотя слот 200 свободен, — у кода «без лимита»
+ * появлялся лимит (находка ревью 2026-07-29, P3).
+ *
+ * Считать попытки от числа покупателей нельзя — оно и есть неизвестное. Поэтому
+ * критерий не «сколько раз мы попробовали», а «двигается ли вообще система»:
+ * пока занятость слотов меняется между попытками, конкуренты делают прогресс и
+ * ждать имеет смысл. Как только столько попыток подряд не изменили картину —
+ * это уже не гонка, а зацикливание, и лучше отдать retryable-ошибку.
+ */
+const NO_PROGRESS_ATTEMPTS = 100;
 
-/** Сколько попыток допустимо для кода такой ёмкости. */
-function slotAttemptBudget(maxUses: number | null): number {
-  if (maxUses === null) return UNLIMITED_SLOT_ATTEMPTS;
+/**
+ * Потолок попыток для кода с известной ёмкостью — пропорционален ей.
+ * `null` означает «ограничения по числу попыток нет, критерий — прогресс».
+ */
+function slotAttemptBudget(maxUses: number | null): number | null {
+  if (maxUses === null) return null;
   return maxUses + SLOT_ATTEMPT_MARGIN;
+}
+
+/** Снимок занятости — по нему видно, изменилось ли состояние между попытками. */
+function occupancySignature(occupied: Set<number>): string {
+  let max = -1;
+  for (const n of occupied) if (n > max) max = n;
+  return `${occupied.size}:${max}`;
 }
 
 function directusUrl(): string {
@@ -164,29 +187,59 @@ export async function markPaymentAttempt(orderId: string): Promise<void> {
  * но денежный инвариант на этот флаг больше не опирается: слот удерживает
  * `payment_attempt_at`, который встал раньше и по другому пути.
  *
+ * @param extra дополнительные поля, которые обязаны лечь ТЕМ ЖЕ PATCH. Сюда
+ *        передаётся `yookassa_payment_id`, если штатный `attachPaymentId` не
+ *        справился: разбирать расхождение руками без id платежа невозможно, а
+ *        отдельным запросом он мог бы не долететь и остаться потерянным
+ *        (требование handoff 29.07.2026). Одна операция — либо оба поля, либо ни одного.
  * @returns удалось ли фактически поставить пометку
  */
-export async function flagReservationReconciliation(paymentId: string, reason: string): Promise<boolean> {
+export async function flagReservationReconciliation(
+  paymentId: string,
+  reason: string,
+  extra: Record<string, any> = {},
+): Promise<boolean> {
   let lastError = '';
   try {
     const row = await getReservationByPayment(paymentId);
     if (!row) return false;
 
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        const res = await fetch(`${directusUrl()}/items/${COLLECTION}/${row.id}`, {
-          method: 'PATCH',
-          headers: headers(),
-          body: JSON.stringify({ needs_reconciliation: true, last_error: reason.slice(0, 500) }),
-        });
-        if (res.ok) {
-          log(`[promo] Бронь ${row.id} помечена на ручной разбор: ${reason}`, 'promo', 'error');
-          return true;
+    const patchOnce = async (payload: Record<string, any>): Promise<boolean> => {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const res = await fetch(`${directusUrl()}/items/${COLLECTION}/${row.id}`, {
+            method: 'PATCH',
+            headers: headers(),
+            body: JSON.stringify(payload),
+          });
+          if (res.ok) return true;
+          lastError = `HTTP ${res.status}`;
+        } catch (err: any) {
+          lastError = err?.message || 'network error';
         }
-        lastError = `HTTP ${res.status}`;
-      } catch (err: any) {
-        lastError = err?.message || 'network error';
       }
+      return false;
+    };
+
+    const marker = { needs_reconciliation: true, last_error: reason.slice(0, 500) };
+
+    if (await patchOnce({ ...extra, ...marker })) {
+      log(`[promo] Бронь ${row.id} помечена на ручной разбор: ${reason}`, 'promo', 'error');
+      return true;
+    }
+
+    // Сюда попадаем, когда совместная запись не прошла. Причина сбоя привязки
+    // могла быть именно в поле `yookassa_payment_id` — тогда пометка утонет
+    // вместе с ним, а она нужнее: без неё реклеймер снова считает бронь своей.
+    // Поэтому последний заход — только маркер, без дополнительных полей.
+    if (Object.keys(extra).length > 0 && await patchOnce(marker)) {
+      log(
+        `[promo] Бронь ${row.id} помечена на ручной разбор БЕЗ сопутствующих полей `
+        + `(${Object.keys(extra).join(', ')} записать не удалось: ${lastError}): ${reason}`,
+        'promo',
+        'error',
+      );
+      return true;
     }
 
     log(
@@ -395,8 +448,23 @@ export async function reservePromo(params: {
   let reclaimTried = false;
 
   const attemptBudget = slotAttemptBudget(maxUses);
+  // Прогресс наблюдаем по занятости: пока она меняется, конкуренты двигаются.
+  let signature = occupancySignature(occupied);
+  let stalled = 0;
+  let attempt = 0;
 
-  for (let attempt = 0; attempt < attemptBudget; attempt++) {
+  /** Учесть перечитанное состояние: сбросить или увеличить счётчик простоя. */
+  const noteProgress = () => {
+    const next = occupancySignature(occupied);
+    if (next === signature) stalled++;
+    else { stalled = 0; signature = next; }
+  };
+
+  for (
+    ;
+    attemptBudget === null ? stalled < NO_PROGRESS_ATTEMPTS : attempt < attemptBudget;
+    attempt++
+  ) {
     const slot = nextFreeSlot(occupied, maxUses);
 
     if (slot === null) {
@@ -409,6 +477,7 @@ export async function reservePromo(params: {
         const freed = await reclaimDeadReservations(promoId, isSlotHolderDead);
         if (freed > 0) {
           occupied = await occupiedSlots(promoId);
+          noteProgress();
           continue;
         }
       }
@@ -453,6 +522,7 @@ export async function reservePromo(params: {
           if (await isSlotHolderDead(userHolder)) {
             await releaseRow(userHolder.id, `платёж брони ${userHolder.payment_id} не состоится`, { onlyIfNotFlagged: true });
             occupied = await occupiedSlots(promoId);
+          noteProgress();
             continue;
           }
         } catch (err: any) {
@@ -472,6 +542,7 @@ export async function reservePromo(params: {
         if (await isSlotHolderDead(holder)) {
           await releaseRow(holder.id, `платёж брони ${holder.payment_id} не состоится`, { onlyIfNotFlagged: true });
           occupied = await occupiedSlots(promoId);
+          noteProgress();
           continue;
         }
       } catch (err: any) {
@@ -492,12 +563,17 @@ export async function reservePromo(params: {
     //
     // Живой держатель и так присутствует в перечитанном множестве, а
     // исчезнувший — нет, и тот же номер честно пробуется снова. Цикл при этом
-    // остаётся конечным: его ограничивает attemptBudget.
+    // остаётся конечным: код с ёмкостью ограничен attemptBudget, код без неё —
+    // требованием наблюдаемого прогресса.
     occupied = await occupiedSlots(promoId);
+    noteProgress();
   }
 
   throw new PromoReservationUnavailableError(
-    `не удалось занять слот за ${attemptBudget} попыток (ёмкость ${maxUses ?? 'без лимита'})`,
+    attemptBudget === null
+      ? `не удалось занять слот: ${NO_PROGRESS_ATTEMPTS} попыток подряд без изменений занятости `
+        + `(${attempt} всего, код без лимита)`
+      : `не удалось занять слот за ${attemptBudget} попыток (ёмкость ${maxUses})`,
   );
 }
 

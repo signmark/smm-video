@@ -294,7 +294,11 @@ export default function Dashboard() {
           const token = campaign.socialMediaSettings?.vk?.token;
           if (!token) return campaign;
           try {
-            const resp = await fetch(`/api/vk/validate?access_token=${encodeURIComponent(token)}`, { headers: authHeaders() });
+            const resp = await fetch('/api/vk/validate', {
+              method: 'POST',
+              headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+              body: JSON.stringify({ accessToken: token }),
+            });
             const data = await resp.json();
             return data.valid ? null : campaign;
           } catch {

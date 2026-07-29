@@ -275,7 +275,11 @@ export function YouTubeSetupWizard({ campaignId, initialSettings, onComplete }: 
 
   const fetchChannelInfo = async (accessToken: string, tokens?: { accessToken: string; refreshToken: string }) => {
     try {
-      const response = await fetch(`/api/youtube/channel-info?accessToken=${encodeURIComponent(accessToken)}`, { headers: authHeaders() });
+      const response = await fetch('/api/youtube/channel-info', {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken }),
+      });
       
       if (!response.ok) {
         const errorData = await response.json();

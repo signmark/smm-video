@@ -183,7 +183,13 @@ const VkSetupWizard: React.FC<VkSetupWizardProps> = ({ campaignId, onComplete, o
   const fetchVkGroups = async (token: string) => {
     setIsProcessing(true);
     try {
-      const response = await fetch(`/api/vk/groups?access_token=${encodeURIComponent(token)}`, { headers: authHeaders() });
+      // Токен VK уходит ТЕЛОМ: в query он протекал бы в access-логи прокси,
+      // историю браузера и Referer, а живёт такой токен годами.
+      const response = await fetch('/api/vk/groups', {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ accessToken: token }),
+      });
       const data = await response.json();
       if (data.success && data.groups) {
         setAvailableGroups(data.groups);

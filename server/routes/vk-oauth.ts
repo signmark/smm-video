@@ -844,11 +844,19 @@ router.get('/vk/auth-url', (req, res) => {
   res.json({ success: true, authUrl, appId: VK_APP_ID });
 });
 
-router.get('/vk/groups', async (req, res) => {
-  const { access_token } = req.query;
-  if (!access_token) return res.status(400).json({ success: false, error: 'Access token не предоставлен' });
+/**
+ * Список групп по токену VK.
+ *
+ * POST, а не GET, и токен ТЕЛОМ, а не в query (ревью 2026-07-29). Query-строка
+ * попадает в access-логи прокси, историю браузера, Referer и в message ошибок
+ * axios — токен VK при этом живёт годами. Заголовок Authorization здесь занят
+ * сессией пользователя, поэтому социальный токен уезжает телом.
+ */
+router.post('/vk/groups', async (req, res) => {
+  const accessToken = req.body?.accessToken;
+  if (!accessToken) return res.status(400).json({ success: false, error: 'Access token не предоставлен' });
 
-  const token = String(access_token);
+  const token = String(accessToken);
   const isV2 = token.startsWith('vk2.');
 
   // vk2.a.xxx токены: Authorization: Bearer + v=5.199
@@ -928,11 +936,12 @@ router.get('/vk/groups', async (req, res) => {
   }
 });
 
-router.get('/vk/validate', async (req, res) => {
-  const { access_token } = req.query;
-  if (!access_token) return res.status(400).json({ success: false, error: 'Access token не предоставлен' });
+/** Проверка токена VK. Токен телом — см. комментарий у /vk/groups. */
+router.post('/vk/validate', async (req, res) => {
+  const accessToken = req.body?.accessToken;
+  if (!accessToken) return res.status(400).json({ success: false, error: 'Access token не предоставлен' });
   try {
-    const r = await axios.get('https://api.vk.com/method/users.get', { params: { access_token, v: '5.131' } });
+    const r = await axios.get('https://api.vk.com/method/users.get', { params: { access_token: String(accessToken), v: '5.131' } });
     if (r.data.error) throw new Error(r.data.error.error_msg || 'Invalid token');
     const user = r.data.response?.[0];
     res.json({ success: true, valid: true, user: { id: user?.id, first_name: user?.first_name, last_name: user?.last_name } });

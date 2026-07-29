@@ -356,7 +356,11 @@ export function SocialMediaSettings({
     try {
       const manualToken = form.getValues('vk.token');
       const response = manualToken
-        ? await fetch(`/api/vk/groups?access_token=${encodeURIComponent(manualToken)}`)
+        ? await fetch('/api/vk/groups', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ accessToken: manualToken }),
+          })
         : await fetch(`/api/campaigns/${campaignId}/vk-groups`, {
             headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` }
           });

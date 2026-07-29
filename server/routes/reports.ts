@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { generateCampaignReport } from '../services/report-generator';
 import { z } from 'zod';
+import { authenticateUser } from '../middleware/user-auth';
+import { authorizeCampaignAccess, CampaignAccessError } from '../services/campaign-access';
 
 const router = Router();
 
@@ -29,7 +31,7 @@ const exportQuerySchema = z.object({
  * Headers:
  * - Authorization: Bearer <token> - токен доступа пользователя
  */
-router.post('/:campaignId/export', async (req: Request, res: Response) => {
+router.post('/:campaignId/export', authenticateUser, async (req: Request, res: Response) => {
   try {
     const { campaignId } = req.params;
     
@@ -67,6 +69,25 @@ router.post('/:campaignId/export', async (req: Request, res: Response) => {
     }
 
     const accessToken = authHeader.substring(7);
+
+    // Доступ к кампании проверяем ЯВНО. Собственный токен пользователя границей
+    // не является: роль в Directus читает данные кампаний целиком, поэтому по
+    // чужому campaignId выгружался чужой отчёт — с постами, охватами и
+    // комментариями (та же дыра, что закрыта в остальных ручках 2026-07-28).
+    try {
+      await authorizeCampaignAccess(
+        campaignId,
+        (req as any).user?.id,
+        (req as any).user?.token || accessToken,
+        (req as any).user?.is_smm_admin === true,
+      );
+    } catch (accessErr: any) {
+      if (accessErr instanceof CampaignAccessError && accessErr.status === 503) {
+        return res.status(503).json({ error: 'Проверка доступа временно недоступна' });
+      }
+      // 404, а не 403: не подтверждаем существование чужой кампании.
+      return res.status(404).json({ error: 'Campaign not found' });
+    }
 
     // Конвертируем строки дат в объекты Date
     const fromDate = new Date(from);

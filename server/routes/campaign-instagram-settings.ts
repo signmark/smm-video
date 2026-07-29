@@ -7,7 +7,10 @@ import { sanitizeOAuthSecrets } from '../services/oauth-response-sanitizer';
 import { resolvePlatformToken } from '../services/campaign-token-resolver';
 
 const router = express.Router();
-router.use(authenticateUser);
+// Авторизация вешается на каждый маршрут, а НЕ через router.use: роутер
+// смонтирован как app.use('/api', ...), поэтому верхнеуровневая проверка
+// применялась ко всему /api и служила ещё одним незапланированным гейтом.
+// Явный гейт живёт в server/middleware/api-auth-gate.ts.
 router.param('campaignId', async (req, res, next, campaignId) => {
   try {
     await authorizeCampaignAccess(campaignId, req.user?.id, req.user?.token || '', req.user?.is_smm_admin === true);
@@ -21,7 +24,7 @@ router.param('campaignId', async (req, res, next, campaignId) => {
 /**
  * Получение Instagram настроек из JSON кампании
  */
-router.get('/campaigns/:campaignId/instagram-settings', async (req, res) => {
+router.get('/campaigns/:campaignId/instagram-settings', authenticateUser, async (req, res) => {
   const { campaignId } = req.params;
   const userToken = req.headers.authorization?.replace('Bearer ', '');
 
@@ -71,7 +74,7 @@ router.get('/campaigns/:campaignId/instagram-settings', async (req, res) => {
 /**
  * Сохранение Instagram настроек в JSON кампании
  */
-router.patch('/campaigns/:campaignId/instagram-settings', async (req, res) => {
+router.patch('/campaigns/:campaignId/instagram-settings', authenticateUser, async (req, res) => {
   const { campaignId } = req.params;
   const { appId, appSecret, instagramId, accessToken, setupCompletedAt } = req.body;
   const userToken = req.headers.authorization?.replace('Bearer ', '');
@@ -147,7 +150,7 @@ router.patch('/campaigns/:campaignId/instagram-settings', async (req, res) => {
 /**
  * Поиск всех доступных Instagram аккаунтов по токену
  */
-router.post('/campaigns/:campaignId/discover-instagram-accounts', async (req, res) => {
+router.post('/campaigns/:campaignId/discover-instagram-accounts', authenticateUser, async (req, res) => {
   const { campaignId } = req.params;
   let { accessToken } = req.body;
 
@@ -292,7 +295,7 @@ router.post('/campaigns/:campaignId/discover-instagram-accounts', async (req, re
 /**
  * Получение Instagram Business Account ID через Graph API
  */
-router.post('/campaigns/:campaignId/fetch-instagram-business-id', async (req, res) => {
+router.post('/campaigns/:campaignId/fetch-instagram-business-id', authenticateUser, async (req, res) => {
   const { campaignId } = req.params;
   const { accessToken } = req.body;
   const userToken = req.headers.authorization?.replace('Bearer ', '');
@@ -442,7 +445,7 @@ router.post('/campaigns/:campaignId/fetch-instagram-business-id', async (req, re
 /**
  * Проверка конкретной Facebook страницы на наличие Instagram аккаунта
  */
-router.post('/campaigns/:campaignId/check-facebook-page', async (req, res) => {
+router.post('/campaigns/:campaignId/check-facebook-page', authenticateUser, async (req, res) => {
   const { campaignId } = req.params;
   const { accessToken, pageId } = req.body;
   const userToken = req.headers.authorization?.replace('Bearer ', '');
@@ -587,7 +590,7 @@ router.post('/campaigns/:campaignId/check-facebook-page', async (req, res) => {
 /**
  * Поиск всех доступных Instagram аккаунтов пользователя
  */
-router.post('/campaigns/:campaignId/discover-instagram-accounts', async (req, res) => {
+router.post('/campaigns/:campaignId/discover-instagram-accounts', authenticateUser, async (req, res) => {
   const { campaignId } = req.params;
   const { accessToken } = req.body;
   const userToken = req.headers.authorization?.replace('Bearer ', '');
@@ -755,7 +758,7 @@ router.post('/campaigns/:campaignId/discover-instagram-accounts', async (req, re
 /**
  * Тестирование конкретного Instagram Business Account ID
  */
-router.post('/campaigns/:campaignId/test-instagram-account', async (req, res) => {
+router.post('/campaigns/:campaignId/test-instagram-account', authenticateUser, async (req, res) => {
   const { campaignId } = req.params;
   const { accessToken, instagramId } = req.body;
   const userToken = req.headers.authorization?.replace('Bearer ', '');

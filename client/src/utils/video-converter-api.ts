@@ -1,6 +1,7 @@
 /**
  * API клиент для реального видео конвертера
  */
+import { authHeaders } from '@/lib/auth-headers';
 
 export interface VideoConversionResult {
   success: boolean;
@@ -87,7 +88,7 @@ export async function convertContentVideo(contentId: string): Promise<VideoConve
  * Проверяет статус видео конвертера
  */
 export async function getConverterStatus(): Promise<ConversionStatus> {
-  const response = await fetch('/api/real-video-converter/status');
+  const response = await fetch('/api/real-video-converter/status', { headers: authHeaders() });
   const result = await response.json();
   
   if (!response.ok) {

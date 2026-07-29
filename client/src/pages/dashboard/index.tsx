@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { authHeaders } from '@/lib/auth-headers';
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -287,7 +288,7 @@ export default function Dashboard() {
           const token = campaign.socialMediaSettings?.vk?.token;
           if (!token) return campaign;
           try {
-            const resp = await fetch(`/api/vk/validate?access_token=${encodeURIComponent(token)}`);
+            const resp = await fetch(`/api/vk/validate?access_token=${encodeURIComponent(token)}`, { headers: authHeaders() });
             const data = await resp.json();
             return data.valid ? null : campaign;
           } catch {

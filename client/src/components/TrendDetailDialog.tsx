@@ -1,4 +1,5 @@
 import React from "react";
+import { authHeaders } from '@/lib/auth-headers';
 import {
   Dialog,
   DialogContent,
@@ -208,7 +209,7 @@ export function TrendDetailDialog({
     if (videoUrl && videoUrl.includes('vk.com/video')) {
 
 
-      fetch(`/api/vk-video-info?url=${encodeURIComponent(videoUrl)}`)
+      fetch(`/api/vk-video-info?url=${encodeURIComponent(videoUrl)}`, { headers: authHeaders() })
         .then(response => response.json())
         .then(data => {
 
@@ -227,7 +228,7 @@ export function TrendDetailDialog({
   // Проверяем URL для Instagram видео
   React.useEffect(() => {
     if (isInstagramVideo && videoUrl) {
-      fetch(`/api/instagram-video-info?url=${encodeURIComponent(videoUrl)}`)
+      fetch(`/api/instagram-video-info?url=${encodeURIComponent(videoUrl)}`, { headers: authHeaders() })
         .then(response => response.json())
         .then(data => {
           if (data.success) {

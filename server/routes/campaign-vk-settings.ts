@@ -7,7 +7,13 @@ import { sanitizeOAuthSecrets } from '../services/oauth-response-sanitizer';
 import { classifyVkError } from '../services/vk-error-classifier';
 
 const router = express.Router();
-router.use(authenticateUser);
+// Авторизация вешается на каждый маршрут, а НЕ через router.use.
+//
+// Этот роутер смонтирован как app.use('/api', ...), поэтому верхнеуровневый
+// router.use(authenticateUser) применялся ко всему /api и служил ещё одним
+// незапланированным гейтом — он же отбивал публичные пути (медиа-прокси для
+// соцсетей, подписанные ссылки из письма). Явный гейт живёт в
+// server/middleware/api-auth-gate.ts.
 router.param('campaignId', async (req, res, next, campaignId) => {
   try {
     await authorizeCampaignAccess(campaignId, req.user?.id, req.user?.token || '', req.user?.is_smm_admin === true);
@@ -21,7 +27,7 @@ router.param('campaignId', async (req, res, next, campaignId) => {
 /**
  * Получение VK настроек из JSON кампании
  */
-router.get('/campaigns/:campaignId/vk-settings', async (req, res) => {
+router.get('/campaigns/:campaignId/vk-settings', authenticateUser, async (req, res) => {
   const { campaignId } = req.params;
   const userToken = req.headers.authorization?.replace('Bearer ', '');
 
@@ -73,7 +79,7 @@ router.get('/campaigns/:campaignId/vk-settings', async (req, res) => {
  * Авторизация: сначала проверяем, что пользователь владеет кампанией (GET с userToken через Directus).
  * Запись производится через admin-токен (пользователь может не иметь прав на прямую запись).
  */
-router.patch('/campaigns/:campaignId/vk-settings', async (req, res) => {
+router.patch('/campaigns/:campaignId/vk-settings', authenticateUser, async (req, res) => {
   const { campaignId } = req.params;
   const {
     token,
@@ -189,7 +195,7 @@ router.patch('/campaigns/:campaignId/vk-settings', async (req, res) => {
  * Серверная загрузка VK групп — токен НЕ передаётся в браузер.
  * Фронтенд вызывает этот эндпоинт вместо /api/vk/groups?access_token=...
  */
-router.get('/campaigns/:campaignId/vk-groups', async (req, res) => {
+router.get('/campaigns/:campaignId/vk-groups', authenticateUser, async (req, res) => {
   const { campaignId } = req.params;
   const userToken = req.headers.authorization?.replace('Bearer ', '');
 

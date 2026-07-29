@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { authHeaders } from '@/lib/auth-headers';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -102,9 +103,7 @@ export function SupportChat({ onClose, showFloatingButton = true }: SupportChatP
     try {
       const res = await fetch('/api/support/message', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: authHeaders({ 'Content-Type': 'application/json' }),
         body: JSON.stringify({
           message: userMessage,
           sessionId: sessionId,

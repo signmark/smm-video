@@ -375,6 +375,24 @@ app.use('/api', featureFlagsRouter);
 import { registerProxyImageRoute } from './routes/proxy-image';
 registerProxyImageRoute(app);
 
+// ─── Гейт авторизации на весь /api ────────────────────────────────────────────
+//
+// ВСЁ, ЧТО СМОНТИРОВАНО НИЖЕ ЭТОЙ СТРОКИ, ТРЕБУЕТ СЕССИИ.
+//
+// Раньше такого гейта не было: /api закрывался тем, что facebookGroupsRouter
+// (ниже по файлу) имеет верхнеуровневый router.use(authenticateUser) и стоит
+// раньше остальных. Перестановка одного импорта молча открывала наружу десятки
+// ручек. Теперь порядок строк больше ничего не решает.
+//
+// Публичные исключения — единым списком в middleware/api-auth-gate.ts, каждое
+// с обоснованием. Всё, что должно быть публичным, регистрируется ВЫШЕ этой
+// строки (вход, регистрация, /api/config, прайсинг, прокси картинок,
+// feature-flags) либо проходит через registerPublicOAuthBypass в самом начале.
+import { createApiAuthGate } from './middleware/api-auth-gate';
+import { authenticateUser as apiGateAuthenticate } from './middleware/user-auth';
+app.use('/api', createApiAuthGate(apiGateAuthenticate));
+log('API auth gate registered — всё ниже требует сессии');
+
 // Регистрируем прямые маршруты аутентификации до инициализации Vite
 import { registerSimpleAnalyticsAPI } from './simple-analytics-api';
 

@@ -5,7 +5,13 @@ import { authenticateUser } from '../middleware/user-auth';
 import { authorizeCampaignAccess, CampaignAccessError } from '../services/campaign-access';
 
 const router = express.Router();
-router.use(authenticateUser);
+// Авторизация вешается на каждый маршрут, а НЕ через router.use.
+//
+// Этот роутер смонтирован как app.use('/api', ...), поэтому верхнеуровневый
+// router.use(authenticateUser) применялся ко всему /api и служил ещё одним
+// незапланированным гейтом — он же отбивал публичные пути (медиа-прокси для
+// соцсетей, подписанные ссылки из письма). Явный гейт живёт в
+// server/middleware/api-auth-gate.ts.
 
 function sanitizeYoutubeSettings(settings: any) {
   if (!settings) return null;
@@ -22,7 +28,7 @@ function sanitizeYoutubeSettings(settings: any) {
 /**
  * Получение YouTube настроек из JSON кампании
  */
-router.get('/campaigns/:campaignId/youtube-settings', async (req, res) => {
+router.get('/campaigns/:campaignId/youtube-settings', authenticateUser, async (req, res) => {
   const { campaignId } = req.params;
   const userToken = req.user?.token || '';
 
@@ -74,7 +80,7 @@ router.get('/campaigns/:campaignId/youtube-settings', async (req, res) => {
 /**
  * Сохранение YouTube настроек в JSON кампании
  */
-router.patch('/campaigns/:campaignId/youtube-settings', async (req, res) => {
+router.patch('/campaigns/:campaignId/youtube-settings', authenticateUser, async (req, res) => {
   const { campaignId } = req.params;
   const { accessToken, refreshToken, channelId, channelTitle, setupCompletedAt } = req.body;
   const userToken = req.user?.token || '';

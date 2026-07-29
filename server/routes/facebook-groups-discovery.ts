@@ -4,11 +4,24 @@ import { sanitizeFacebookAccount } from '../services/oauth-response-sanitizer';
 import { authenticateUser } from '../middleware/user-auth';
 
 const router = Router();
-router.use(authenticateUser);
 router.use((_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 
+// ВНИМАНИЕ. Здесь СОЗНАТЕЛЬНО нет router.use(authenticateUser).
+//
+// Этот роутер смонтирован как app.use('/api', ...), поэтому верхнеуровневый
+// router.use(authenticateUser) применялся ко ВСЕМУ /api, а не только к своим
+// маршрутам — и де-факто служил единственной авторизацией всего API. Держалось
+// это на порядке импортов в server/index.ts (находка ревью 2026-07-28).
+//
+// Побочный эффект был не только архитектурный: проверка отбивала и то, что
+// обязано отвечать без сессии, — медиа-прокси, который тянут серверы соцсетей,
+// и подписанные ссылки одобрения подписки из письма.
+//
+// Теперь авторизация стоит явно в server/middleware/api-auth-gate.ts, а здесь
+// проверка вешается на конкретный маршрут.
+
 // API для получения Facebook групп и страниц пользователя
-router.post('/facebook/groups-and-pages', async (req, res) => {
+router.post('/facebook/groups-and-pages', authenticateUser, async (req, res) => {
   try {
     const token = req.body?.token as string;
     

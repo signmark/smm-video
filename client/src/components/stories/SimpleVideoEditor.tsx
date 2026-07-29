@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import { authHeaders } from '@/lib/auth-headers';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -146,6 +147,7 @@ export default function SimpleVideoEditor({ campaignId, onBack }: VideoStoryEdit
 
       const response = await fetch('/api/video/process', {
         method: 'POST',
+        headers: authHeaders(),
         body: formData
       });
 

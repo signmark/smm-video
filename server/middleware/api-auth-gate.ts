@@ -1,0 +1,79 @@
+/**
+ * Явная авторизация для всего `/api`.
+ *
+ * До этого гейта не было вовсе. Весь `/api` де-факто закрывался тем, что
+ * `facebookGroupsRouter` смонтирован в `server/index.ts` раньше остальных, а
+ * внутри у него верхнеуровневый `router.use(authenticateUser)`. Работало, но
+ * держалось на порядке строк: перестановка одного импорта молча открывала
+ * наружу десятки ручек (находка ревью 2026-07-28).
+ *
+ * Теперь порядок ни на что не влияет: гейт стоит явно, и всё, что смонтировано
+ * после него, требует сессии. Публичное перечислено здесь одним списком, и это
+ * единственное место, где такое перечисление живёт.
+ *
+ * ЧТО СЮДА НЕ ПОПАЛО И ПОЧЕМУ:
+ *
+ *  - OAuth-коллбэки провайдеров (`/api/<провайдер>/auth/callback`, VK token-webhook,
+ *    `/api/payments/available`) монтируются ДО всей цепочки middleware через
+ *    `registerPublicOAuthBypass`, поэтому гейт до них не доходит физически.
+ *  - `/api/auth/*`, `/api/config`, `/api/config/pricing`, `/api/proxy-image`,
+ *    `/api/feature-flags` зарегистрированы в `index.ts` раньше гейта — вход,
+ *    регистрация, публичный прайсинг и превью картинок обязаны работать без
+ *    сессии.
+ *  - `/api/webhook/trend-topics` В СПИСОК НЕ ВНЕСЁН СОЗНАТЕЛЬНО: это наследство
+ *    n8n, от которого приложение отказалось. Ручка писала темы трендов в любую
+ *    кампанию служебным токеном без всякой проверки — пусть закрывается.
+ */
+
+import type { Request, Response, NextFunction, RequestHandler } from 'express';
+
+/**
+ * Пути под `/api`, которые обязаны отвечать без сессии.
+ *
+ * Каждый — с обоснованием: сюда стучится внешняя сторона, у которой нашего
+ * токена нет и быть не может. Добавлять что-то ещё только с таким же
+ * обоснованием, а не потому, что «клиент почему-то получает 401» — в этом
+ * случае почти всегда прав гейт, а заголовок забыл клиент.
+ */
+export const PUBLIC_API_PATHS: Array<{ pattern: RegExp; why: string }> = [
+  // Платёжный провайдер шлёт уведомление сам, токена приложения у него нет.
+  // Подлинность проверяется перезапросом платежа у ЮКассы внутри обработчика.
+  { pattern: /^\/api\/yookassa\/webhook\/?$/, why: 'уведомление ЮКассы' },
+
+  // Медиа тянут серверы соцсетей (Instagram/Meta), когда забирают наше видео
+  // для публикации. Bearer они не отправляют.
+  { pattern: /^\/api\/instagram-video-proxy\//, why: 'Instagram забирает видео' },
+  { pattern: /^\/api\/video-proxy\//, why: 'соцсети забирают видео' },
+  { pattern: /^\/api\/video-stream-proxy\/?$/, why: 'соцсети забирают видео потоком' },
+  { pattern: /^\/api\/media-proxy\//, why: 'соцсети забирают медиа' },
+
+  // Ссылки из письма и телеграма: пользователь переходит по ним из почты, где
+  // сессии приложения нет. Подлинность — по подписи в query (makeActionToken).
+  { pattern: /^\/api\/subscriptions\/(approve|reject)\/?$/, why: 'подписанная ссылка одобрения' },
+
+  // Обязательные коллбэки Meta для проверки приложения.
+  { pattern: /^\/api\/threads\/(deauth|data-deletion)\/?$/, why: 'коллбэк соответствия Meta' },
+];
+
+/** Публичен ли путь. Query-строка не учитывается. */
+export function isPublicApiPath(pathOrUrl: string): boolean {
+  const path = pathOrUrl.split('?')[0];
+  return PUBLIC_API_PATHS.some(({ pattern }) => pattern.test(path));
+}
+
+/**
+ * Оборачивает переданную проверку сессии, пропуская публичные пути.
+ *
+ * `authenticate` передаётся снаружи, а не импортируется здесь: так гейт можно
+ * проверить тестом, не поднимая настоящую авторизацию с Directus.
+ */
+export function createApiAuthGate(authenticate: RequestHandler): RequestHandler {
+  return (req: Request, res: Response, next: NextFunction) => {
+    // Preflight браузер шлёт без заголовков авторизации по определению.
+    if (req.method === 'OPTIONS') return next();
+
+    if (isPublicApiPath(req.originalUrl)) return next();
+
+    return authenticate(req, res, next);
+  };
+}

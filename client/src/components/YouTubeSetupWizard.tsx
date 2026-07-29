@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { authHeaders } from '@/lib/auth-headers';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -274,7 +275,7 @@ export function YouTubeSetupWizard({ campaignId, initialSettings, onComplete }: 
 
   const fetchChannelInfo = async (accessToken: string, tokens?: { accessToken: string; refreshToken: string }) => {
     try {
-      const response = await fetch(`/api/youtube/channel-info?accessToken=${encodeURIComponent(accessToken)}`);
+      const response = await fetch(`/api/youtube/channel-info?accessToken=${encodeURIComponent(accessToken)}`, { headers: authHeaders() });
       
       if (!response.ok) {
         const errorData = await response.json();

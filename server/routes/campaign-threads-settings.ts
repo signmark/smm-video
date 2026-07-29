@@ -6,7 +6,13 @@ import { authorizeCampaignAccess, CampaignAccessError } from '../services/campai
 import { sanitizeOAuthSecrets } from '../services/oauth-response-sanitizer';
 
 const router = express.Router();
-router.use(authenticateUser);
+// Авторизация вешается на каждый маршрут, а НЕ через router.use.
+//
+// Этот роутер смонтирован как app.use('/api', ...), поэтому верхнеуровневый
+// router.use(authenticateUser) применялся ко всему /api и служил ещё одним
+// незапланированным гейтом — он же отбивал публичные пути (медиа-прокси для
+// соцсетей, подписанные ссылки из письма). Явный гейт живёт в
+// server/middleware/api-auth-gate.ts.
 router.param('campaignId', async (req, res, next, campaignId) => {
   try {
     await authorizeCampaignAccess(campaignId, req.user?.id, req.user?.token || '', req.user?.is_smm_admin === true);
@@ -17,7 +23,7 @@ router.param('campaignId', async (req, res, next, campaignId) => {
   }
 });
 
-router.get('/campaigns/:campaignId/threads-settings', async (req, res) => {
+router.get('/campaigns/:campaignId/threads-settings', authenticateUser, async (req, res) => {
   const { campaignId } = req.params;
   const userToken = req.headers.authorization?.replace('Bearer ', '');
 
@@ -40,7 +46,7 @@ router.get('/campaigns/:campaignId/threads-settings', async (req, res) => {
   }
 });
 
-router.patch('/campaigns/:campaignId/threads-settings', async (req, res) => {
+router.patch('/campaigns/:campaignId/threads-settings', authenticateUser, async (req, res) => {
   const { campaignId } = req.params;
   const { appId, appSecret, accessToken, threadsUserId, username, setupCompletedAt } = req.body;
   const userToken = req.headers.authorization?.replace('Bearer ', '');

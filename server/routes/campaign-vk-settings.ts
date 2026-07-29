@@ -4,6 +4,7 @@ import { log } from '../utils/logger';
 import { authenticateUser } from '../middleware/user-auth';
 import { authorizeCampaignAccess, CampaignAccessError } from '../services/campaign-access';
 import { sanitizeOAuthSecrets } from '../services/oauth-response-sanitizer';
+import { classifyVkError } from '../services/vk-error-classifier';
 
 const router = express.Router();
 router.use(authenticateUser);
@@ -244,7 +245,22 @@ router.get('/campaigns/:campaignId/vk-groups', async (req, res) => {
     }
 
     if (vkData.error) {
-      return res.status(400).json({ success: false, error: vkData.error.error_msg || 'Ошибка VK API' });
+      // Именно отсюда в UI прилетал красный тост с сырым текстом VK
+      // «Internal server error: could not check access_token now, check later».
+      // Временный сбой платформы — это 503 и жёлтое «подождите», а не ошибка
+      // подключения.
+      const verdict = classifyVkError(vkData);
+      log(`[VK-GROUPS] VK отказал для кампании ${campaignId}: ${vkData.error.error_code} `
+        + `${vkData.error.error_msg} (${verdict.kind})`);
+      return res.status(verdict.retryable ? 503 : 400).json({
+        success: false,
+        error: verdict.userMessage,
+        rawError: vkData.error.error_msg,
+        severity: verdict.severity,
+        retryable: verdict.retryable,
+        errorKind: verdict.kind,
+        code: vkData.error.error_code,
+      });
     }
 
     const groups = (vkData.response?.items || []).map((item: any) => ({
@@ -259,8 +275,15 @@ router.get('/campaigns/:campaignId/vk-groups', async (req, res) => {
     res.json({ success: true, groups });
 
   } catch (error: any) {
-    console.error('❌ Error fetching VK groups:', error.message);
-    res.status(500).json({ success: false, error: 'Ошибка при загрузке VK групп' });
+    const verdict = classifyVkError(error);
+    console.error('❌ Error fetching VK groups:', error.message, `(${verdict.kind})`);
+    res.status(verdict.retryable ? 503 : 500).json({
+      success: false,
+      error: verdict.retryable ? verdict.userMessage : 'Не удалось получить список сообществ ВКонтакте',
+      severity: verdict.severity,
+      retryable: verdict.retryable,
+      errorKind: verdict.kind,
+    });
   }
 });
 

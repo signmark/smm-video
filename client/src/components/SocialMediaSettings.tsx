@@ -16,7 +16,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, CheckCircle, XCircle, AlertCircle, AlertTriangle, Youtube, RefreshCw } from "lucide-react";
+import { Loader2, CheckCircle, XCircle, AlertCircle, AlertTriangle, Youtube, RefreshCw, Clock } from "lucide-react";
 import { directusApi } from "@/lib/directus";
 import { api } from "@/lib/api";
 import { apiRequest } from "@/lib/queryClient";
@@ -93,7 +93,20 @@ interface ValidationStatus {
   isValid?: boolean;
   message?: string;
   isLoading: boolean;
+  /**
+   * Насколько плох отказ. `warning` — временный сбой самой соцсети (VK не
+   * отвечает, флуд-контроль, таймаут): подключение исправно, надо подождать.
+   * `error` — нужно действие пользователя. Раньше различия не было, и любой
+   * чих VK показывался красной «Ошибкой».
+   */
+  severity?: 'success' | 'warning' | 'error';
+  /** Имеет ли смысл повторить — приходит с сервера вместе с severity. */
+  retryable?: boolean;
 }
+
+/** Отказ, который требует действий пользователя (а не «подождите»). */
+const isActionableFailure = (status: ValidationStatus): boolean =>
+  status.isValid === false && status.severity !== 'warning';
 
 export function SocialMediaSettings({
   campaignId,
@@ -355,15 +368,34 @@ export function SocialMediaSettings({
           title: "Успешно",
           description: `Загружено ${data.groups.length} групп`,
         });
-      } else {
-        throw new Error(data.error || 'Ошибка получения групп');
+        return;
       }
+
+      // Сервер классифицировал отказ VK — временный сбой платформы показываем
+      // спокойным тостом «подождите». Раньше сюда прилетал сырой текст VK
+      // («Internal server error: could not check access_token now, check later»)
+      // красным, и выглядело это как поломка подключения.
+      if (data.severity === 'warning' || data.retryable) {
+        toast({
+          title: "ВКонтакте временно недоступен",
+          description: data.error || "ВКонтакте сейчас не отдаёт список сообществ. Подключение в порядке — попробуйте через несколько минут.",
+        });
+        setVkGroups([]);
+        return;
+      }
+
+      toast({
+        title: "Не удалось загрузить сообщества",
+        description: data.error || 'ВКонтакте не вернул список сообществ',
+        variant: "destructive"
+      });
+      setVkGroups([]);
     } catch (error: any) {
+      // Сюда попадаем, только если запрос вообще не дошёл или ответ не разобрался.
       console.error('Error fetching VK groups:', error);
       toast({
-        title: "Ошибка",
-        description: "Ошибка получения списка VK групп: " + error.message,
-        variant: "destructive"
+        title: "Запрос не выполнен",
+        description: "Не удалось связаться с сервером. Попробуйте ещё раз через минуту.",
       });
       setVkGroups([]);
     } finally {
@@ -605,7 +637,7 @@ export function SocialMediaSettings({
 
   // Готовим URL, когда видна инструкция needanapp (VK не настроен / токен невалиден).
   useEffect(() => {
-    const needWebhook = !isConfigured('vk') || vkStatus.isValid === false || vkSettings?.authExpired;
+    const needWebhook = !isConfigured('vk') || isActionableFailure(vkStatus) || vkSettings?.authExpired;
     if (campaignId && needWebhook && !vkWebhookUrl && !vkWebhookPreparing) {
       prepareVkWebhook();
     }
@@ -1067,9 +1099,11 @@ export function SocialMediaSettings({
     };
   }, []);
 
-  // Auto-polling: запускаем poll когда инструкции needanapp видны (VK не настроен / токен невалиден / authExpired)
+  // Auto-polling: запускаем poll когда инструкции needanapp видны (VK не настроен / токен невалиден / authExpired).
+  // Временный сбой VK сюда не считается — иначе каждый чих платформы запускал
+  // бы сценарий переподключения у пользователя с исправным подключением.
   useEffect(() => {
-    const shouldShowNeedanapp = !isConfigured('vk') || vkStatus.isValid === false || vkSettings?.authExpired;
+    const shouldShowNeedanapp = !isConfigured('vk') || isActionableFailure(vkStatus) || vkSettings?.authExpired;
     // Не рестартуем, если пользователь нажал «Отмена», истёк таймаут
     // или токен уже получен и идёт выбор группы
     if (shouldShowNeedanapp && !vkPolling && !vkPollRef.current
@@ -1131,7 +1165,9 @@ export function SocialMediaSettings({
             setVkStatus({
               isLoading: false,
               isValid: response.data.success,
-              message: response.data.message
+              message: response.data.message,
+              severity: response.data.severity,
+              retryable: response.data.retryable
             });
             // Вердикт про переподключение берём с бэка, а не выводим из
             // `success`: провал проверки бывает от сети, ошибки группы и
@@ -1143,7 +1179,15 @@ export function SocialMediaSettings({
             }
           })
           .catch(() => {
-            setVkStatus({ isLoading: false, isValid: false, message: 'Не удалось проверить токен' });
+            // Не достучались до своего же бэкенда — это тоже «подождите»,
+            // а не приговор подключению.
+            setVkStatus({
+              isLoading: false,
+              isValid: false,
+              message: 'Не удалось выполнить проверку — попробуем позже.',
+              severity: 'warning',
+              retryable: true
+            });
           });
       }
     }
@@ -1263,11 +1307,18 @@ export function SocialMediaSettings({
       setVkStatus({
         isLoading: false,
         isValid: response.data.success,
-        message: response.data.message
+        message: response.data.message,
+        severity: response.data.severity,
+        retryable: response.data.retryable
       });
-      
+
+      // Временный сбой VK показываем обычным тостом «подождите», а не
+      // destructive: пользователю нечего чинить.
       toast({
-        variant: response.data.success ? "default" : "destructive",
+        variant: isActionableFailure({ isLoading: false, isValid: response.data.success, severity: response.data.severity })
+          ? "destructive"
+          : "default",
+        title: response.data.severity === 'warning' ? "ВКонтакте временно недоступен" : undefined,
         description: response.data.message
       });
 
@@ -1280,19 +1331,22 @@ export function SocialMediaSettings({
         prev ? { ...prev, authExpired: Boolean(response.data.authExpired) } : prev);
     } catch (error) {
       console.error('Error validating VK token:', error);
+      // Запрос не дошёл — про само подключение это ничего не говорит.
       setVkStatus({
         isLoading: false,
         isValid: false,
-        message: 'Ошибка при проверке токена'
+        message: 'Не удалось выполнить проверку — попробуйте позже.',
+        severity: 'warning',
+        retryable: true
       });
-      
+
       toast({
-        variant: "destructive",
-        description: "Не удалось проверить токен ВКонтакте"
+        title: "Проверка не выполнена",
+        description: "Не удалось связаться с ВКонтакте. Подключение не изменилось — попробуйте позже."
       });
     }
   };
-  
+
   const validateInstagramToken = async () => {
     const token = form.getValues("instagram.token");
     
@@ -1600,18 +1654,32 @@ export function SocialMediaSettings({
     if (status.isValid === undefined) {
       return null;
     }
-    
+
+    // Временный сбой соцсети — жёлтым «Недоступен», а не красной «Ошибкой»:
+    // подключение исправно, действий от пользователя не требуется.
+    const isTransient = status.isValid === false && status.severity === 'warning';
+
     return (
       <TooltipProvider>
         <Tooltip>
           <TooltipTrigger asChild>
-            <Badge variant={status.isValid ? "success" : "destructive"} className="ml-2">
-              {status.isValid ? 
-                <CheckCircle className="h-4 w-4 mr-1" /> : 
-                <XCircle className="h-4 w-4 mr-1" />
-              }
-              {status.isValid ? "Валиден" : "Ошибка"}
-            </Badge>
+            {isTransient ? (
+              <Badge
+                variant="secondary"
+                className="ml-2 bg-amber-100 text-amber-900 dark:bg-amber-900 dark:text-amber-100"
+              >
+                <Clock className="h-4 w-4 mr-1" />
+                Недоступен
+              </Badge>
+            ) : (
+              <Badge variant={status.isValid ? "success" : "destructive"} className="ml-2">
+                {status.isValid ?
+                  <CheckCircle className="h-4 w-4 mr-1" /> :
+                  <XCircle className="h-4 w-4 mr-1" />
+                }
+                {status.isValid ? "Валиден" : "Ошибка"}
+              </Badge>
+            )}
           </TooltipTrigger>
           <TooltipContent>
             <p>{status.message || (status.isValid ? "Ключ валиден" : "Ключ не валиден")}</p>
@@ -1909,15 +1977,27 @@ export function SocialMediaSettings({
                   </Button>
                 </div>
               )}
-              {/* Предупреждение о невалидном токене */}
-              {vkStatus.isValid === false && !vkSettings?.authExpired && (
+              {/* Временный сбой на стороне VK: подключение исправно, надо просто подождать */}
+              {vkStatus.isValid === false && vkStatus.severity === 'warning' && !vkSettings?.authExpired && (
                 <div className="flex items-start gap-2 rounded-lg border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/40 px-3 py-2.5 text-sm text-amber-800 dark:text-amber-200">
-                  <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0 text-amber-600 dark:text-amber-400" />
-                  <span><span className="font-medium">Токен недействителен.</span> {vkStatus.message || "Обновите токен, чтобы публикации в VK работали."}</span>
+                  <Clock className="h-4 w-4 mt-0.5 flex-shrink-0 text-amber-600 dark:text-amber-400" />
+                  <span>
+                    <span className="font-medium">ВКонтакте временно недоступен.</span>{' '}
+                    {vkStatus.message || "Это сбой на стороне VK — подключение не тронуто. Проверим ещё раз автоматически."}
+                  </span>
                 </div>
               )}
-              {/* Webhook-инструкция (needanapp) — показываем только если VK не настроен или токен невалиден */}
-              {(!isConfigured('vk') || vkStatus.isValid === false || vkSettings?.authExpired) && (
+              {/* Отказ, требующий действий пользователя */}
+              {isActionableFailure(vkStatus) && !vkSettings?.authExpired && (
+                <div className="flex items-start gap-2 rounded-lg border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-950/40 px-3 py-2.5 text-sm text-red-800 dark:text-red-200">
+                  <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0 text-red-500" />
+                  <span><span className="font-medium">Проверка не прошла.</span> {vkStatus.message || "Обновите токен, чтобы публикации в VK работали."}</span>
+                </div>
+              )}
+              {/* Webhook-инструкция (needanapp) — только когда действительно нужно
+                  подключение заново. При сбое VK её показывать нельзя: она предлагает
+                  переподключение там, где чинить нечего. */}
+              {(!isConfigured('vk') || isActionableFailure(vkStatus) || vkSettings?.authExpired) && (
               <div className="p-4 rounded-lg bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 space-y-3">
                 <p className="font-medium text-blue-900 dark:text-blue-100 text-sm">
                   Пошаговая инструкция через needanapp:

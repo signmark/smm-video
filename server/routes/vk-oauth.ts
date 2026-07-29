@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import { log } from '../utils/logger';
 import { authenticateUser } from '../middleware/user-auth';
 import { authorizeCampaignAccess, CampaignAccessError } from '../services/campaign-access';
+import { classifyVkError } from '../services/vk-error-classifier';
 import {
   generateVkWebhookSecret,
   vkWebhookSecretMatches,
@@ -813,8 +814,19 @@ router.get('/vk/groups', async (req, res) => {
 
     if (data.error) {
       const e = data.error;
-      log(`[VK-GROUPS] Ошибка VK API: ${e.error_code} ${e.error_msg}`, 'vk-oauth', 'error');
-      return res.status(500).json({ success: false, error: e.error_msg || `VK error ${e.error_code}`, code: e.error_code });
+      const verdict = classifyVkError(data);
+      log(`[VK-GROUPS] Ошибка VK API: ${e.error_code} ${e.error_msg} (${verdict.kind})`, 'vk-oauth',
+        verdict.severity === 'warning' ? 'warn' : 'error');
+      // 503 для временного сбоя VK: это не «мы сломались», а «источник занят».
+      return res.status(verdict.retryable ? 503 : 400).json({
+        success: false,
+        error: verdict.userMessage,
+        rawError: e.error_msg,
+        severity: verdict.severity,
+        retryable: verdict.retryable,
+        errorKind: verdict.kind,
+        code: e.error_code,
+      });
     }
 
     const groups = data.response?.items || [];
@@ -831,8 +843,17 @@ router.get('/vk/groups', async (req, res) => {
       }))
     });
   } catch (err: any) {
-    log(`[VK-GROUPS] Исключение: ${err.message}`, 'vk-oauth', 'error');
-    res.status(500).json({ success: false, error: 'Ошибка получения списка VK групп', details: err.message });
+    // Сеть, таймаут и 5xx от VK — тоже «подождите», а не «всё сломалось».
+    const verdict = classifyVkError(err);
+    log(`[VK-GROUPS] Исключение: ${err.message} (${verdict.kind})`, 'vk-oauth',
+      verdict.severity === 'warning' ? 'warn' : 'error');
+    res.status(verdict.retryable ? 503 : 500).json({
+      success: false,
+      error: verdict.retryable ? verdict.userMessage : 'Не удалось получить список сообществ ВКонтакте',
+      severity: verdict.severity,
+      retryable: verdict.retryable,
+      errorKind: verdict.kind,
+    });
   }
 });
 

@@ -364,6 +364,76 @@ describe('Консолидация /api/validate/*: аутентификация
       expect(clearVkAuthExpired).not.toHaveBeenCalled();
     });
 
+    // Сбой самой платформы не должен выглядеть поломкой подключения: клиент
+    // рисует жёлтое «подождите» по severity и НЕ показывает переподключение.
+    it('временный сбой VK (код 10) → severity warning, retryable, флаг не тронут', async () => {
+      stubAuthFetch();
+      (validateVkToken as any).mockResolvedValue({
+        isValid: false,
+        message: 'Internal server error: could not check access_token now, check later.',
+        details: { error: { error_code: 10, error_msg: 'Internal server error: could not check access_token now, check later.' } },
+      });
+
+      const response = await ownerRequest({ campaignId: CAMPAIGN_ID });
+
+      expect(response.body.success).toBe(false);
+      expect(response.body.severity).toBe('warning');
+      expect(response.body.retryable).toBe(true);
+      expect(response.body.errorKind).toBe('transient');
+      expect(response.body.authExpired).toBe(false);
+      expect(markVkAuthExpired).not.toHaveBeenCalled();
+      // Пользователю — по-русски, сырой текст VK только в rawMessage.
+      expect(response.body.message).not.toContain('Internal server error');
+      expect(response.body.rawMessage).toContain('Internal server error');
+    });
+
+    it('мёртвый токен → severity error и не retryable', async () => {
+      stubAuthFetch();
+      (validateVkToken as any).mockResolvedValue({
+        isValid: false,
+        message: 'User authorization failed',
+        details: { error: { error_code: 5, error_msg: 'User authorization failed: invalid access_token (4).' } },
+      });
+
+      const response = await ownerRequest({ campaignId: CAMPAIGN_ID });
+
+      expect(response.body.severity).toBe('error');
+      expect(response.body.retryable).toBe(false);
+      expect(response.body.errorKind).toBe('auth_expired');
+      expect(response.body.authExpired).toBe(true);
+    });
+
+    it('заблокированное VK-приложение → error, но не authExpired', async () => {
+      stubAuthFetch();
+      (validateVkToken as any).mockResolvedValue({
+        isValid: false,
+        message: 'Invalid request: Application is blocked',
+        details: { error: { error_code: 8, error_msg: 'Invalid request: Application is blocked' } },
+      });
+
+      const response = await ownerRequest({ campaignId: CAMPAIGN_ID });
+
+      expect(response.body.errorKind).toBe('app_blocked');
+      expect(response.body.severity).toBe('error');
+      // Переподключение идёт через то же приложение — гнать туда пользователя нельзя.
+      expect(response.body.authExpired).toBe(false);
+      expect(markVkAuthExpired).not.toHaveBeenCalled();
+    });
+
+    it('успешная проверка → severity success', async () => {
+      stubAuthFetch();
+      (validateVkToken as any).mockResolvedValue({
+        isValid: true,
+        message: 'Токен валиден',
+        details: { user: { id: 42 }, group: { id: 777, name: 'Группа' } },
+      });
+
+      const response = await ownerRequest({ campaignId: CAMPAIGN_ID });
+
+      expect(response.body.severity).toBe('success');
+      expect(response.body.errorKind).toBeUndefined();
+    });
+
     it('проверка токена из body не гасит уже стоящий флаг кампании', async () => {
       stubAuthFetch();
       (directusApi.get as any).mockResolvedValue({

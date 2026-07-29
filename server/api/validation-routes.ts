@@ -15,42 +15,7 @@ import { log } from '../utils/logger';
 import { getCampaignSocialSettings, pickPlatformToken } from '../services/campaign-token-resolver';
 import { authenticateUser } from '../middleware/user-auth';
 import { CampaignAccessError } from '../services/campaign-access';
-
-/**
- * VK API отдаёт ошибки структурно, в теле ответа: `{ error: { error_code } }`.
- * Постоянными считаем только семейство «…authorization failed» — они означают,
- * что учётные данные мертвы и сами не починятся:
- *   5  — User authorization failed
- *   27 — Group authorization failed
- *   28 — Application authorization failed
- *
- * 15 (Access denied) намеренно НЕ включён, хотя `publish-scheduler.isAuthError`
- * его учитывает: там классификация по свободному тексту нужна для решения
- * «ретраить ли публикацию», а цена ошибки — лишний ретрай. Здесь цена ошибки
- * другая — `authExpired` на исправной кампании, ложное письмо владельцу и
- * выпадение из refresh cron. Access denied означает отказ по конкретному
- * объекту и смерть токена не доказывает.
- */
-const VK_PERMANENT_AUTH_ERROR_CODES = new Set([5, 27, 28]);
-
-/**
- * Доказана ли постоянная auth-ошибка VK — только по структурному error_code.
- *
- * `validateVkToken` возвращает `isValid: false` для четырёх разных ситуаций, и
- * лишь одна из них означает мёртвый токен:
- *   - сеть/таймаут: `details` пустой (у axios-ошибки нет `response`) → false;
- *   - провал проверки группы: есть `details.groupError`, при этом `users.get`
- *     прошёл — токен как раз рабочий → false;
- *   - прочие ответы, где токен успешно отдал пользователя (`details.user`) → false;
- *   - VK вернул `error.error_code` из списка постоянных → true.
- */
-function isPermanentVkAuthFailure(details: any): boolean {
-  if (!details || typeof details !== 'object') return false;
-  if (details.groupError !== undefined) return false;
-  if (details.user !== undefined) return false;
-  const code = details.error?.error_code;
-  return typeof code === 'number' && VK_PERMANENT_AUTH_ERROR_CODES.has(code);
-}
+import { classifyVkError, isVkAuthExpired } from '../services/vk-error-classifier';
 
 /**
  * Единственный дом маршрутов `/api/validate/*` (кроме threads — он в
@@ -142,7 +107,7 @@ export function registerValidationRoutes(app: Express): void {
       const checkedStoredToken = Boolean(campaignId) && tokenSource === 'campaign';
       let authExpired = storedAuthExpired;
 
-      if (checkedStoredToken && !result.isValid && isPermanentVkAuthFailure(result.details)) {
+      if (checkedStoredToken && !result.isValid && isVkAuthExpired(result.details)) {
         authExpired = true;
         try {
           const { markVkAuthExpired } = await import('../services/vk-token-refresh');
@@ -164,17 +129,28 @@ export function registerValidationRoutes(app: Express): void {
         }
       }
 
+      // Причину отказа классифицируем и отдаём клиенту, чтобы он не гадал по
+      // тексту. Главное различие — `severity`: временный сбой самого VK
+      // (код 10 «could not check access_token now», флуд-контроль, 5xx, таймаут)
+      // это не поломка подключения, и красным его показывать нельзя.
+      const verdict = result.isValid ? null : classifyVkError(result.details);
+
       // Состояние переподключения отдаём явным полем — и это именно СОХРАНЁННОЕ
       // состояние кампании, а не исход текущей проверки. Раньше клиент выводил
       // плашку из `success === false` и поднимал «Требует переподключения» на
-      // любой неудаче: сеть, ошибка группы, код 8 «Application is blocked»
-      // (блокировка VK-приложения, к токену отношения не имеющая). Границы ниже
-      // существовали на сервере, но клиент их не видел. Когда проверялся токен
-      // из body, сохранённого состояния проверка не меняет — отдаём как есть.
+      // любой неудаче. Когда проверялся токен из body, сохранённого состояния
+      // проверка не меняет — отдаём как есть.
       return res.json({
         success: result.isValid,
-        message: result.message,
+        message: verdict?.userMessage || result.message,
+        // Технический текст VK оставляем отдельно — он нужен в поддержке,
+        // но пользователю показывается `message`.
+        rawMessage: result.message,
         authExpired,
+        severity: verdict?.severity || 'success',
+        retryable: verdict?.retryable ?? false,
+        errorKind: verdict?.kind,
+        vkErrorCode: verdict?.code,
         details: result.details
       });
     } catch (error) {

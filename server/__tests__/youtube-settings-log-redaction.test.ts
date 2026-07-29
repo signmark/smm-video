@@ -209,45 +209,11 @@ describe('GET /campaigns/:campaignId/youtube-settings — redaction токено
   });
 });
 
-describe('POST /api/test-youtube-publish — redaction токенов в логе', () => {
-  let app: express.Express;
-  let capture: ReturnType<typeof captureConsole>;
-
-  beforeEach(() => {
-    app = express();
-    app.use(express.json());
-    registerPublishingRoutes(app);
-    capture = captureConsole();
-  });
-
-  afterEach(() => {
-    capture.restore();
-  });
-
-  it('регрессия 2026-07-21: лог содержит channelId, но НЕ значения accessToken/refreshToken из youtubeSettings', async () => {
-    // Нормальная форма вызова: UI тестовой публикации шлёт настройки канала
-    // в теле запроса; хендлер логирует их форму (publishing-routes.ts ~180).
-    const response = await request(app)
-      .post('/api/test-youtube-publish')
-      .set('Authorization', 'Bearer user-session-token')
-      .send({
-        contentId: 'content-1',
-        content: { title: 'Тест', description: 'Описание', videoUrl: 'https://example.com/v.mp4', tags: [] },
-        youtubeSettings: {
-          accessToken: ACCESS_TOKEN,
-          refreshToken: REFRESH_TOKEN,
-          channelId: CHANNEL_ID,
-          configured: true,
-        },
-        userId: 'user-1',
-      });
-
-    expect(response.status).toBe(200);
-    expect(response.body.success).toBe(true);
-
-    const logged = capture.getOutput();
-    expect(logged).toContain(CHANNEL_ID);
-    expect(logged).toContain('configured: true');
-    expectNoTokenLeak(logged, [ACCESS_TOKEN, REFRESH_TOKEN]);
-  });
-});
+// БЛОК ПРО POST /api/test-youtube-publish УДАЛЁН вместе с самой ручкой.
+//
+// Она была тестовым бэкдором в проде: принимала объект content и настройки
+// YouTube прямо из тела запроса, без канонической загрузки записи и без
+// проверки владения, а клиент её не вызывал ни разу (ревью 2026-07-29).
+// Инвариант redaction при этом никуда не делся: значения токенов режет сам
+// логгер, это покрыто server/__tests__/logger-secret-redaction.test.ts, а
+// ветка настроек YouTube — блоком выше в этом же файле.

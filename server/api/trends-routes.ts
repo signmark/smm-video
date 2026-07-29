@@ -1,5 +1,37 @@
 import { Express, Request, Response } from 'express';
 import { authenticateUser } from '../middleware/user-auth';
+import { authorizeCampaignAccess, CampaignAccessError } from '../services/campaign-access';
+
+/**
+ * Доступ к кампании для ручек трендов.
+ *
+ * Эти ручки читают и пишут данные кампании служебным токеном
+ * (`useAdminToken: true`), то есть права Directus в них не участвуют вовсе —
+ * граница арендатора обязана стоять в коде. До ревью 2026-07-29 её здесь не
+ * было: любой залогиненный запускал сбор трендов и комментариев в ЧУЖОЙ
+ * кампании по её id.
+ *
+ * Сам пишет ответ и возвращает false при отказе (404 — не раскрываем
+ * существование чужой кампании; 503 — Directus недоступен).
+ */
+async function ensureTrendsCampaignAccess(req: any, res: any, campaignId: string): Promise<boolean> {
+  try {
+    await authorizeCampaignAccess(
+      String(campaignId),
+      req.user?.id,
+      req.user?.token || '',
+      req.user?.is_smm_admin === true,
+    );
+    return true;
+  } catch (err: any) {
+    if (err instanceof CampaignAccessError && err.status === 503) {
+      res.status(503).json({ success: false, error: 'Проверка доступа временно недоступна' });
+      return false;
+    }
+    res.status(404).json({ success: false, error: 'Кампания не найдена' });
+    return false;
+  }
+}
 import { directusApi } from '../directus';
 import { directusCrud } from '../services/directus-crud';
 import { log } from '../utils/logger';
@@ -316,6 +348,8 @@ export function registerTrendsRoutes(app: Express) {
       if (!campaignId) {
         return res.status(400).json({ success: false, error: 'campaignId обязателен' });
       }
+
+      if (!(await ensureTrendsCampaignAccess(req, res, campaignId))) return;
 
       const authToken = req.user?.token || process.env.DIRECTUS_STATIC_TOKEN || '';
 
@@ -1134,6 +1168,10 @@ export function registerTrendsRoutes(app: Express) {
       if (!trendIds?.length) {
         return res.status(400).json({ success: false, error: "trendIds обязателен" });
       }
+      if (!campaignId) {
+        return res.status(400).json({ success: false, error: "campaignId обязателен" });
+      }
+      if (!(await ensureTrendsCampaignAccess(req, res, campaignId))) return;
 
       console.log(`[Trends] collect-comments: ${trendIds.length} trends, campaign=${campaignId}`);
 
@@ -1183,6 +1221,10 @@ export function registerTrendsRoutes(app: Express) {
       if (!trendId) {
         return res.status(400).json({ success: false, error: "trendId обязателен" });
       }
+      if (!campaignId) {
+        return res.status(400).json({ success: false, error: "campaignId обязателен" });
+      }
+      if (!(await ensureTrendsCampaignAccess(req, res, campaignId))) return;
 
       console.log(`[Trends] collect-comments-single: trendId=${trendId} campaign=${campaignId}`);
 
@@ -1367,6 +1409,7 @@ export function registerTrendsRoutes(app: Express) {
       if (!campaignId || !userId) {
         return res.status(400).json({ success: false, error: "Отсутствуют обязательные параметры" });
       }
+      if (!(await ensureTrendsCampaignAccess(req, res, campaignId))) return;
 
       const serpApiKey = await globalApiKeysService.getGlobalApiKey('SERPAPI_KEY');
       if (!serpApiKey) {
@@ -1763,6 +1806,10 @@ ${trendsForAi}
       if (!trendId) {
         return res.status(400).json({ success: false, message: "trendId обязателен" });
       }
+      if (!campaignId) {
+        return res.status(400).json({ success: false, message: "campaignId обязателен" });
+      }
+      if (!(await ensureTrendsCampaignAccess(req, res, campaignId))) return;
 
       log(`[Analyze Comments] Анализ комментариев для тренда ${trendId}, уровень: ${level}`, 'info');
 

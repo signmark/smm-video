@@ -1,8 +1,16 @@
 import { Router } from 'express';
 import { realVideoConverter } from '../services/real-video-converter';
 import { directusApi } from '../directus';
+import { authenticateUser } from '../middleware/user-auth';
+import { assertContentBelongsToRequester } from '../services/content-access';
 
 const router = Router();
+
+// Конвертация читает и ПЕРЕЗАПИСЫВАЕТ video_url записи контента служебным
+// доступом, поэтому сессия обязательна на всём роутере, а владение конкретной
+// записью проверяется в каждой ручке, где приходит contentId
+// (находка ревью 2026-07-29).
+router.use(authenticateUser);
 
 /**
  * POST /api/real-video-converter/convert
@@ -17,6 +25,13 @@ router.post('/convert', async (req, res) => {
         success: false,
         error: 'Video URL or local path is required'
       });
+    }
+
+    // Если конвертация должна перезаписать запись — проверяем владение ДО
+    // самой конвертации, а не перед PATCH: иначе чужой контент успевал бы
+    // отъесть время процессора и место на диске.
+    if (req.body.contentId) {
+      if (!(await assertContentBelongsToRequester(String(req.body.contentId), req, res))) return;
     }
 
     const sourceUrl = videoUrl || localPath;
@@ -43,12 +58,14 @@ router.post('/convert', async (req, res) => {
     if (result.success) {
       console.log('[real-video-converter-api] Conversion successful:', result.convertedUrl);
       
-      // ОБНОВЛЯЕМ КОНТЕНТ С НОВЫМ URL ВИДЕО
+      // ОБНОВЛЯЕМ КОНТЕНТ С НОВЫМ URL ВИДЕО.
+      // Владение проверено в начале обработчика — только поэтому здесь
+      // допустим служебный токен.
+      let contentUpdated = false;
       if (forceConvert && req.body.contentId) {
         try {
           console.log('[real-video-converter-api] Updating content with new video URL:', req.body.contentId);
-          
-          // Обновляем через системный токен
+
           const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
           await directusApi.patch(`/items/campaign_content/${req.body.contentId}`, {
             video_url: result.convertedUrl,
@@ -58,9 +75,12 @@ router.post('/convert', async (req, res) => {
               'Authorization': `Bearer ${adminToken}`
             }
           });
-          
+
+          contentUpdated = true;
           console.log('[real-video-converter-api] Content updated with new video URL');
         } catch (updateError) {
+          // Раньше здесь всё равно возвращалось contentUpdated: true — клиент
+          // считал, что ссылка в записи обновилась, хотя PATCH не прошёл.
           console.error('[real-video-converter-api] Failed to update content:', updateError);
         }
       }
@@ -73,7 +93,8 @@ router.post('/convert', async (req, res) => {
         metadata: result.metadata,
         method: 'ffmpeg_conversion',
         message: 'Video successfully converted for Instagram Stories',
-        contentUpdated: !!(forceConvert && req.body.contentId)
+        // true только если PATCH действительно прошёл.
+        contentUpdated
       });
     } else {
       console.error('[real-video-converter-api] Conversion failed:', result.error);
@@ -190,22 +211,30 @@ router.post('/convert-content', async (req, res) => {
       });
     }
 
-    // Получаем контент из Directus
+    // Владение — прежде любого доступа к записи.
+    if (!(await assertContentBelongsToRequester(String(contentId), req, res))) return;
+
+    // Получаем контент из Directus.
+    //
+    // Фолбэка «пользовательский токен дал 403 → повторим админским» здесь БОЛЬШЕ
+    // НЕТ: он ровно обнулял проверку прав — чужая запись, недоступная
+    // пользователю, всё равно читалась служебным доступом (находка ревью
+    // 2026-07-29). Служебный доступ допустим только ПОСЛЕ подтверждённого
+    // владения, что и сделано строкой выше.
     const { directusApi } = await import('../directus');
-    
+
     let content;
     try {
       const response = await directusApi.get(`/items/campaign_content/${contentId}`, {
-        headers: req.headers.authorization ? { 'Authorization': req.headers.authorization } : undefined
+        headers: { 'Authorization': `Bearer ${process.env.DIRECTUS_STATIC_TOKEN}` },
       });
       content = response.data.data;
-    } catch (userError) {
-      const response = await directusApi.get(`/items/campaign_content/${contentId}`, {
-        headers: {
-          'Authorization': `Bearer ${process.env.DIRECTUS_STATIC_TOKEN}`
-        }
-      });
-      content = response.data.data;
+    } catch (readErr: any) {
+      const status = readErr?.response?.status;
+      if (status === 404 || status === 403) {
+        return res.status(404).json({ success: false, error: 'Контент не найден' });
+      }
+      return res.status(503).json({ success: false, error: 'Хранилище временно недоступно' });
     }
 
     if (!content?.video_url) {

@@ -12,6 +12,7 @@ type SocialPlatform = 'instagram' | 'facebook' | 'telegram' | 'vk' | 'youtube';
 import { log } from '../utils/logger';
 import { invalidateContentCache } from '../utils/content-cache';
 import { resolvePublishingToken } from '../services/publishing-token';
+import { assertContentBelongsToRequester } from '../services/content-access';
 import { directusApiManager } from '../directus';
 import { directusStorageAdapter } from '../services/directus';
 import { generateStoriesImageServer } from '../services/stories-image-generator';
@@ -127,16 +128,21 @@ export function registerPublishingRoutes(app: Express): void {
   console.log('[publishing-routes] Регистрация маршрутов управления публикациями...');
   
   // Маршрут для ручной публикации YouTube (для тестирования)
-  app.post('/api/manual-publish', authenticateUser, async (req: Request, res: Response) => {
+  // Ручной прогон планировщика по конкретной записи. Только админ И только по
+  // своей/доступной записи: ручка дёргает публикацию служебным путём, поэтому
+  // одной аутентификации мало (находка ревью 2026-07-29).
+  app.post('/api/manual-publish', authenticateUser, requireSmmAdmin, async (req: Request, res: Response) => {
     try {
       const { contentId, platform } = req.body;
-      
+
       if (!contentId || !platform) {
         return res.status(400).json({
           success: false,
           message: 'Требуются contentId и platform'
         });
       }
+
+      if (!(await assertContentBelongsToRequester(contentId, req, res))) return;
 
       console.log(`[manual-publish] Ручная публикация ${contentId} в ${platform}`);
       
@@ -172,106 +178,17 @@ export function registerPublishingRoutes(app: Express): void {
     }
   });
   
-  // Тестовый маршрут для прямой YouTube публикации
-  app.post('/api/test-youtube-publish', authenticateUser, async (req: Request, res: Response) => {
-    try {
-      const { contentId, content, youtubeSettings, userId } = req.body;
-      
-      console.log(`[test-youtube] Тестирование YouTube публикации для ${contentId}`);
-      console.log(`[test-youtube] YouTube настройки:`, youtubeSettings ? {
-        channelId: youtubeSettings.channelId,
-        configured: !!youtubeSettings.configured,
-        hasAccessToken: !!youtubeSettings.accessToken,
-        hasRefreshToken: !!youtubeSettings.refreshToken
-      } : null);
-      
-      // Импортируем YouTube сервис
-      const { YouTubeService } = await import('../services/social-platforms/youtube-service');
-      const youtubeService = new YouTubeService();
-      
-      // Пытаемся опубликовать - передаем настройки в правильном формате
-      const contentData = { 
-        id: contentId, 
-        title: content.title,
-        content: content.description,
-        video_url: content.videoUrl, // Исправляем имя поля
-        keywords: JSON.stringify(content.tags || [])
-      };
-      
-      const result = await youtubeService.publishContent(
-        contentData,
-        { youtube: youtubeSettings }, // Оборачиваем в структуру campaignSettings
-        userId
-      );
-      
-      console.log(`[test-youtube] Результат публикации:`, result);
-      
-      // Если ошибка аутентификации, это означает что интеграция работает, но нужны новые токены
-      if (result.error && result.error.includes('authentication credentials')) {
-        return res.json({
-          success: true,
-          result: {
-            success: false,
-            error: 'Токены YouTube истекли - нужно переавторизоваться',
-            details: 'Интеграция работает корректно, но требуется обновление OAuth токенов'
-          },
-          integration_status: 'working',
-          message: 'YouTube интеграция готова - требуется обновление токенов'
-        });
-      }
-      
-      return res.json({
-        success: true,
-        result: result,
-        message: 'YouTube публикация протестирована'
-      });
-      
-    } catch (error: any) {
-      console.error(`[test-youtube] Ошибка: ${error.message}`);
-      return res.status(500).json({
-        success: false,
-        error: error.message,
-        stack: error.stack
-      });
-    }
-  });
+  // УДАЛЕНО: /api/test-youtube-publish и /api/publish/direct-youtube.
+  //
+  // Обе были тестовыми бэкдорами в проде: принимали объект content и настройки
+  // YouTube прямо из тела запроса, без канонической загрузки записи и без
+  // проверки владения. Клиент их не вызывал ни разу (находка ревью 2026-07-29).
+  // Для отладки публикации есть /api/publish/:contentId с полноценным guard.
 
-  // Прямой роут для тестирования YouTube публикации
-  app.post('/api/publish/direct-youtube', authenticateUser, async (req: Request, res: Response) => {
-    try {
-      const { content, campaignSettings, userId } = req.body;
-      
-      console.log('🎬 [YouTube] Прямая публикация YouTube для контента:', content.id);
-      console.log('📺 [YouTube] Настройки YouTube:', campaignSettings?.youtube ? {
-        channelId: campaignSettings.youtube.channelId,
-        configured: !!campaignSettings.youtube.configured,
-        hasAccessToken: !!campaignSettings.youtube.accessToken,
-        hasRefreshToken: !!campaignSettings.youtube.refreshToken
-      } : null);
-      
-      const { YouTubeService } = await import('../services/social-platforms/youtube-service');
-      const youtubeService = new YouTubeService();
-      
-      const result = await youtubeService.publishContent(
-        content,
-        campaignSettings,
-        userId
-      );
-      
-      console.log('📊 [YouTube] Результат публикации:', result);
-      res.json(result);
-      
-    } catch (error: any) {
-      console.error('💥 [YouTube] Ошибка прямой публикации:', error.message);
-      res.status(500).json({
-        success: false,
-        error: error.message
-      });
-    }
-  });
-  
   // Восстановлена проверка запланированных публикаций после исправления критических ошибок
-  app.all('/api/publish/check-scheduled', authenticateUser, async (req: Request, res: Response) => {
+  // Прогон планировщика по всем запланированным публикациям — операция уровня
+  // всей системы, а не пользователя.
+  app.all('/api/publish/check-scheduled', authenticateUser, requireSmmAdmin, async (req: Request, res: Response) => {
     try {
       log('Проверка запланированных публикаций восстановлена', 'api');
       
@@ -429,11 +346,25 @@ export function registerPublishingRoutes(app: Express): void {
     try {
       log(`Запрос на публикацию контента через API`, 'api');
       
-      // Получаем объект контента и список платформ из запроса
-      let { content, contentId, platforms, userId, force = false } = req.body;
+      // Из тела берём ТОЛЬКО идентификатор и параметры операции.
+      //
+      // Раньше здесь принимался целый объект `content` от клиента, и он же
+      // считался истиной: можно было прислать `content.campaignId` своей
+      // кампании и `content.id` чужой записи — проверка шла по одному
+      // идентификатору, а служебный PATCH уходил по другому (находка ревью
+      // 2026-07-29). Клиентский объект больше не источник истины: запись всегда
+      // загружается с сервера, а campaignId берётся из неё.
+      const { contentId, platforms, force = false } = req.body;
 
       const userToken = req.user?.token;
       const currentUserId = req.user?.id;
+
+      if (!contentId || typeof contentId !== 'string') {
+        return res.status(400).json({ error: 'Не указан идентификатор контента' });
+      }
+
+      // Владение проверяем ДО любого служебного доступа.
+      if (!(await assertContentBelongsToRequester(contentId, req, res))) return;
 
       // ПРИНУДИТЕЛЬНО: Обновляем токен через менеджер, если это возможно
       let activeToken = userToken;
@@ -450,26 +381,20 @@ export function registerPublishingRoutes(app: Express): void {
         log(`[handlePublishContent] Failed to refresh token: ${e}`, 'api');
       }
 
-      // Если передан только ID контента, загружаем его из хранилища
-      if (!content && contentId) {
-        log(`Загрузка контента по ID: ${contentId}`, 'api');
-        content = await storage.getCampaignContentById(contentId, activeToken);
-      }
-      
+      // Запись всегда читаем с сервера — она и есть канонический источник.
+      log(`Загрузка контента по ID: ${contentId}`, 'api');
+      const content = await storage.getCampaignContentById(contentId, activeToken);
+
       if (!content) {
-        return res.status(400).json({ error: 'Объект контента не предоставлен' });
+        // Владение выше уже подтверждено, значит запись пропала между проверкой
+        // и чтением. Отвечаем как на отсутствующую.
+        return res.status(404).json({ error: 'Контент не найден' });
       }
-      
-      // Если userId не передан в теле, но есть в объекте контента, используем его
-      if (!userId && content.userId) {
-        userId = content.userId;
-      }
-      
-      // Используем userId из аутентификации если он там есть
-      if (!userId && currentUserId) {
-        userId = currentUserId;
-      }
-      
+
+      // Пользователь — только из сессии. Из тела он позволял публиковать от
+      // чужого имени.
+      const userId = currentUserId;
+
       // Обработка двух возможных форматов платформ: массив или объект
       let selectedPlatforms: string[] = [];
       
@@ -809,6 +734,9 @@ export function registerPublishingRoutes(app: Express): void {
       if (!contentId) {
         return res.status(400).json({ error: 'Не указан ID контента' });
       }
+
+      // Владение — до любого служебного доступа и до вызова публикации.
+      if (!(await assertContentBelongsToRequester(contentId, req, res))) return;
 
       // Обработка двух возможных форматов платформ: массив или объект
       let selectedPlatforms: string[] = [];

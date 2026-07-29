@@ -1,4 +1,5 @@
 import { Express, Request, Response } from 'express';
+import { authorizeCampaignAccess, CampaignAccessError } from '../services/campaign-access';
 import axios from 'axios';
 import { globalApiKeysService } from '../services/global-api-keys';
 import { ApiServiceName } from '../services/api-keys';
@@ -688,6 +689,24 @@ ${searchTerms.map(t => `- ${t}`).join('\n')}
 
       if (!channelId || !campaignId) {
         return res.status(400).json({ success: false, error: 'channelId и campaignId обязательны' });
+      }
+
+      // Источник добавляется в кампанию служебным токеном, поэтому права
+      // Directus здесь не участвуют — границу ставим сами. Без этой проверки
+      // любой залогиненный дописывал источники в ЧУЖУЮ кампанию
+      // (находка ревью 2026-07-29).
+      try {
+        await authorizeCampaignAccess(
+          String(campaignId),
+          (req as any).user?.id || req.userId,
+          (req as any).user?.token || req.userToken || '',
+          (req as any).user?.is_smm_admin === true,
+        );
+      } catch (accessErr: any) {
+        if (accessErr instanceof CampaignAccessError && accessErr.status === 503) {
+          return res.status(503).json({ success: false, error: 'Проверка доступа временно недоступна' });
+        }
+        return res.status(404).json({ success: false, error: 'Кампания не найдена' });
       }
 
       // Получаем данные канала

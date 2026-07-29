@@ -1885,6 +1885,9 @@ router.post('/publish/auto-update-status', authMiddleware, async (req, res) => {
     }
 
     log(`[Social Publishing] Запрос на автоматическое обновление статуса публикации для контента ${contentId}`);
+    // Владение — ДО служебного токена: ниже запись читается и правится
+    // админским доступом, при котором права Directus не участвуют вовсе.
+    if (!(await assertContentBelongsToRequester(String(contentId), req, res))) return;
 
     // Получаем токен для работы с Directus API
     const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_SERVICE_TOKEN || process.env.DIRECTUS_STATIC_TOKEN;
@@ -2007,6 +2010,9 @@ router.post('/publish/update-status', authMiddleware, async (req, res) => {
     }
 
     log(`[Social Publishing] Запрос на обновление статуса публикации для контента ${contentId}`);
+    // Владение — ДО служебного токена: ниже запись читается и правится
+    // админским доступом, при котором права Directus не участвуют вовсе.
+    if (!(await assertContentBelongsToRequester(String(contentId), req, res))) return;
 
     // Получаем токен для работы с Directus API
     const adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_SERVICE_TOKEN || process.env.DIRECTUS_STATIC_TOKEN;

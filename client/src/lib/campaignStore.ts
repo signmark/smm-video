@@ -6,6 +6,11 @@ interface Campaign {
   id: string;
   name: string;
   description?: string;
+  // Настройки анализа трендов страницы трендов читают прямо из выбранной
+  // кампании; в этом объявлении их не было, хотя в объекте они есть.
+  // Обе формы имени — Directus отдаёт snake_case, часть кода ждёт camelCase.
+  trendAnalysisSettings?: Record<string, any>;
+  trend_analysis_settings?: Record<string, any>;
 }
 
 interface CampaignState {

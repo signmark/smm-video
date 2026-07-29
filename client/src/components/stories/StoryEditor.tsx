@@ -988,7 +988,7 @@ export default function StoryEditor({ campaignId: propCampaignId, storyId: propS
                               size="sm"
                               variant="outline"
                               onClick={() => {
-                                const newOptions = (selectedElement.content.options || []).filter((_, i) => i !== index);
+                                const newOptions = (selectedElement.content.options || []).filter((_: unknown, i: number) => i !== index);
                                 updateElement(selectedElement.id, {
                                   content: { ...selectedElement.content, options: newOptions }
                                 });

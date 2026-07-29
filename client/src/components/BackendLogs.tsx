@@ -110,7 +110,7 @@ export const BackendLogs = () => {
                 </div>
               ) : (
                 <div className="space-y-1">
-                  {logs.map((log, index) => (
+                  {logs.map((log: any, index: number) => (
                     <div 
                       key={index} 
                       className={`whitespace-pre-wrap break-words ${getLogColor(log)}`}

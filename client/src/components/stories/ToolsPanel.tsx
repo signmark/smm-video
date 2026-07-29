@@ -18,7 +18,7 @@ import {
   Smile,
   Settings
 } from 'lucide-react';
-import { StorySlide } from '../../../shared/stories-schema';
+import { StorySlide } from '@shared/stories-schema';
 
 interface ToolsPanelProps {
   currentSlide?: StorySlide;

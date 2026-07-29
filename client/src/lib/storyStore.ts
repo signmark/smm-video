@@ -14,7 +14,7 @@ interface StorySlide {
 
 interface StoryElement {
   id: string;
-  type: 'text' | 'image' | 'video' | 'poll' | 'quiz';
+  type: 'text' | 'image' | 'video' | 'poll' | 'quiz' | 'ai-image';
   position: { x: number; y: number };
   rotation: number;
   zIndex: number;
@@ -35,7 +35,8 @@ interface StoryState {
   setCurrentSlideIndex: (index: number) => void;
   setStoryTitle: (title: string) => void;
   setSelectedElement: (element: StoryElement | null) => void;
-  addElement: (elementType: StoryElement['type']) => StoryElement;
+  // Возвращает null, если слайдов ещё нет — так и написано в реализации.
+  addElement: (elementType: StoryElement['type']) => StoryElement | null;
   updateElement: (elementId: string, updates: Partial<StoryElement>) => void;
   deleteElement: (elementId: string) => void;
   addSlide: () => void;

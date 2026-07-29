@@ -161,7 +161,7 @@ export function ContentGenerationDialog({ campaignId, keywords, onClose, content
         // Заголовки ### → жирный (h-теги не работают в соцсетях)
         .replace(/^#{1,6}\s+(.+)$/gm, '<p><strong>$1</strong></p>')
         // Удаляем блоки кода
-        .replace(/```[\s\S]*?```/g, (m) => m.replace(/```/g, '').trim())
+        .replace(/```[\s\S]*?```/g, (m: string) => m.replace(/```/g, '').trim())
         // Инлайн-код
         .replace(/`([^`]+)`/g, '$1')
         // Зачёркнутый

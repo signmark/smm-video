@@ -76,7 +76,9 @@ export function ImageGenerationTester() {
     try {
       const response = await apiRequest('/api/generate-universal-image', {
         method: 'POST',
-        body: {
+        // `data`, а не `body`: опции body у apiRequest нет, с ней запрос уходил
+        // без тела и генерация не запускалась вовсе.
+        data: {
           prompt,
           negativePrompt,
           width,

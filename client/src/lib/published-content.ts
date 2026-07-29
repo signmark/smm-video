@@ -208,7 +208,16 @@ export function getConfirmedPublicationDates(content: CampaignContent): Date[] {
  * Per-platform timestamps provide a compatibility fallback for records whose
  * aggregate published_at value was not populated by an older publishing path.
  */
-export function getPublishedDisplayDate(content: CampaignContent): Date | null {
+/**
+ * Функции достаточно двух полей, а требовала она весь CampaignContent —
+ * причём КЛИЕНТСКИЙ его вариант, где `title: string`. Записи, приходящие по
+ * shared-типу (`title: string | null`), из-за этого не подходили по типу, хотя
+ * ни title, ни остальные тридцать полей здесь не читаются
+ * (находка ревью 2026-07-29).
+ */
+type PublishedDateSource = Pick<CampaignContent, 'publishedAt' | 'socialPlatforms'>;
+
+export function getPublishedDisplayDate(content: PublishedDateSource): Date | null {
   const aggregateDate = validDate(content.publishedAt);
   if (aggregateDate) return aggregateDate;
 

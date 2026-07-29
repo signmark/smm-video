@@ -1090,10 +1090,13 @@ export default function StoryEditor({ campaignId: propCampaignId, storyId: propS
 
       {/* Element Dialog */}
       <ElementDialog
-        isOpen={showElementDialog}
-        onClose={() => {
-          setShowElementDialog(false);
-          setSelectedElement(null);
+        /* Контракт компонента — open/onOpenChange. Здесь стояли isOpen/onClose,
+           которых у него нет: React такие пропсы молча игнорирует, поэтому
+           диалог не открывался вообще (находка ревью 2026-07-29). */
+        open={showElementDialog}
+        onOpenChange={(next: boolean) => {
+          setShowElementDialog(next);
+          if (!next) setSelectedElement(null);
         }}
         element={selectedElement}
         onSave={(elementData) => {

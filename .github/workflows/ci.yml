@@ -1,0 +1,50 @@
+# Гейт качества: те же четыре проверки, что обязательны перед push вручную.
+#
+# Зачем: тесты §1/§2/§4/§5 security-беклога уже написаны, но запускать их было
+# нечем — каталога .github/workflows/ не существовало, и следующий рефакторинг
+# отломал бы их молча (docs/followups/2026-07-24-security-backlog.md, §7).
+#
+# Порядок шагов повторяет ручной: сначала тесты, потом типы сервера, потом типы
+# клиента, и только затем сборка — падение видно на самом дешёвом шаге.
+
+name: CI
+
+on:
+  push:
+  pull_request:
+
+# Пуш подряд в одну ветку не должен держать очередь: нужен результат по
+# последнему коммиту, промежуточные прогоны отменяем.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Та же мажорная версия, что в Dockerfile и .nvmrc.
+          node-version: '20'
+          cache: npm
+
+      # Именно ci, а не install: ставит строго по lockfile и не правит его.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Tests
+        run: npx vitest run
+
+      - name: Typecheck (server)
+        run: npm run check
+
+      - name: Typecheck (client)
+        run: npm run check:client
+
+      - name: Build
+        run: npm run build

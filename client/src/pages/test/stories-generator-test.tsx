@@ -337,11 +337,11 @@ export default function StoriesGeneratorTest() {
             <p><strong>Фоновое изображение:</strong> {currentStory.image_url || currentStory.backgroundImageUrl || 'Градиент (нет изображения)'}</p>
             <p><strong>Количество текстовых элементов:</strong> {currentStory.textOverlays?.length || 0}</p>
             
-            {currentStory.textOverlays?.length > 0 && (
+            {(currentStory.textOverlays?.length ?? 0) > 0 && (
               <div className="mt-4">
                 <h4 className="font-semibold mb-2">Текстовые элементы:</h4>
                 <div className="space-y-2 max-h-40 overflow-y-auto">
-                  {currentStory.textOverlays.map((overlay, index) => (
+                  {(currentStory.textOverlays ?? []).map((overlay, index) => (
                     <div key={overlay.id} className="text-sm p-2 bg-muted rounded">
                       <p><strong>#{index + 1}:</strong> "{overlay.text}"</p>
                       <p className="text-xs text-muted-foreground">

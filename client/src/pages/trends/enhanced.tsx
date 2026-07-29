@@ -10,13 +10,14 @@ import { AlertCircle, Search, Filter } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useCampaignStore } from "@/lib/campaignStore";
 import { TrendCard } from "@/components/trends/TrendCard";
+import type { SentimentAnalysis } from "@/types";
 import { TrendsCollection } from "@/components/trends/TrendsCollection";
 
 interface TrendTopic {
   id: string;
   title: string;
   description?: string;
-  sentiment_analysis?: string;
+  sentiment_analysis?: SentimentAnalysis;
   date_created?: string;
   created_at?: string;
   reactions?: number;
@@ -71,10 +72,18 @@ export default function EnhancedTrends() {
   const trends = trendsData || [];
 
   // Функция для определения тональности
-  const getSentimentCategory = (sentimentAnalysis?: string): SentimentFilter => {
+  const getSentimentCategory = (sentimentAnalysis?: SentimentAnalysis | string): SentimentFilter => {
     if (!sentimentAnalysis) return "unknown";
-    
-    const text = sentimentAnalysis.toLowerCase();
+
+    // Сервер пишет сюда объект; строка встречается только в старых записях.
+    // Раньше тип объявлял строку, и .toLowerCase() у объекта давал "[object
+    // Object]" — фильтр по тональности не работал ни для одного тренда.
+    const raw = typeof sentimentAnalysis === 'string'
+      ? sentimentAnalysis
+      : [sentimentAnalysis.sentiment, sentimentAnalysis.summary].filter(Boolean).join(' ');
+    if (!raw) return "unknown";
+
+    const text = raw.toLowerCase();
     
     const positiveKeywords = [
       "положительн", "позитивн", "хорош", "отличн", "прекрасн", 

@@ -1,5 +1,5 @@
 import React from 'react';
-import { CampaignContent } from '@/types';
+import { CampaignContent, PlatformPublishInfo } from '@/types';
 import { SafeSocialPlatform, platformNames, safeSocialPlatforms } from '@/lib/social-platforms';
 import { format } from 'date-fns';
 import { ru } from 'date-fns/locale';
@@ -184,10 +184,17 @@ export default function EditScheduledPublication({
       // НОВАЯ ЛОГИКА: Формируем socialPlatforms только с выбранными платформами
       const socialPlatforms: Record<string, any> = {};
       
-      Object.entries(selectedPlatforms).forEach(([platform, isSelected]) => {
+      // Object.entries всегда отдаёт ключ как string, хотя здесь он заведомо
+      // SocialPlatform — сужаем явно, иначе индексация Record<SocialPlatform,…>
+      // ниже становится неявным any.
+      (Object.entries(selectedPlatforms) as [SafeSocialPlatform, boolean][]).forEach(([platform, isSelected]) => {
         if (isSelected) {
           // Получаем существующие данные для платформы
-          const existingData = content.socialPlatforms?.[platform] || {};
+          // `|| {}` давал пустой объектный литерал, у которого нет ни status,
+          // ни publishedAt — отсюда «Property 'status' does not exist on type
+          // '{}'». Тип задаём явно: отсутствующая платформа — это частично
+          // заполненная запись, а не пустышка неизвестной формы.
+          const existingData: Partial<PlatformPublishInfo> = content.socialPlatforms?.[platform] ?? {};
           
           // Создаем дату публикации для этой платформы
           const time = platformTimes?.[platform] || { hour: '12', minute: '00' };

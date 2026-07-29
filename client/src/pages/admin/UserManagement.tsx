@@ -22,7 +22,8 @@ interface User {
   first_name?: string;
   last_name?: string;
   is_smm_admin?: boolean;
-  expire_date?: string;
+  /** null означает «срок снят» — сервер принимает такое значение при очистке поля. */
+  expire_date?: string | null;
   last_access?: string;
   status: string;
   plan?: string;
@@ -40,7 +41,7 @@ interface UserStats {
 
 export default function UserManagement() {
   const { t } = useTranslation();
-  const um = (key: string, opts?: object) => t(`admin.userManagement.${key}`, opts);
+  const um = (key: string, opts?: Record<string, unknown>) => t(`admin.userManagement.${key}`, opts);
 
   const [users, setUsers] = useState<User[]>([]);
   const [stats, setStats] = useState<UserStats | null>(null);
@@ -107,7 +108,7 @@ export default function UserManagement() {
     return new Date(dateString).toLocaleDateString();
   };
 
-  const isExpiredDate = (expireDate?: string) => {
+  const isExpiredDate = (expireDate?: string | null) => {
     if (!expireDate) return false;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -271,7 +272,7 @@ export default function UserManagement() {
 
 function UserEditForm({ user, onUpdate }: { user: User; onUpdate: (userId: string, updates: Partial<User>) => void }) {
   const { t } = useTranslation();
-  const um = (key: string, opts?: object) => t(`admin.userManagement.${key}`, opts);
+  const um = (key: string, opts?: Record<string, unknown>) => t(`admin.userManagement.${key}`, opts);
 
   const [formData, setFormData] = useState({
     is_smm_admin: user.is_smm_admin || false,

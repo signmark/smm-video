@@ -73,6 +73,24 @@ export type ContentStatus =
   | 'error';
 
 // Типы социальных платформ
+/**
+ * Разбор тональности тренда, как его пишет сервер.
+ *
+ * Это ОБЪЕКТ: `server/api/trends-routes.ts` кладёт в `sentiment_analysis`
+ * результат анализа целиком. Часть клиента объявляла поле строкой и звала у
+ * него `.toLowerCase()` — на живых данных это молча давало «unknown» для всех
+ * трендов (находка ревью 2026-07-29). Строковый вариант оставлен в типе только
+ * ради старых записей.
+ */
+export interface SentimentAnalysis {
+  score?: number;
+  sentiment?: string;
+  confidence?: number;
+  commentsCount?: number;
+  summary?: string;
+  [key: string]: any;
+}
+
 export type SocialPlatform = 'instagram' | 'facebook' | 'telegram' | 'vk' | 'youtube' | 'threads' | 'tiktok';
 
 // Типы статусов публикации на платформе. `error` приходит от вебхука статусов

@@ -1,15 +1,28 @@
 import type { SocialPlatform, PlatformPublishInfo } from "@/types";
 import { isConfirmedPublishedPlatform } from "@shared/schedule-time";
 
-// Массив доступных социальных платформ для безопасного использования в коде
-export const safeSocialPlatforms: SocialPlatform[] = [
+/**
+ * Платформы, которые показываются и выбираются в интерфейсе.
+ *
+ * Это ПОДМНОЖЕСТВО SocialPlatform: TikTok поддержан на сервере
+ * (`services/social-platforms/tiktok-service.ts`, ветки в publish-scheduler),
+ * но в UI публикации не предлагается.
+ *
+ * `as const` здесь обязателен. С аннотацией `: SocialPlatform[]` тип элемента
+ * схлопывался обратно в SocialPlatform, и `SafeSocialPlatform` оказывался
+ * РАВЕН SocialPlatform — то есть подмножество существовало только на словах.
+ * Из-за этого карта подключений на 6 платформ не подходила к prop'у, который
+ * якобы ждал те же 6, а на деле требовал 7 вместе с tiktok
+ * (находка ревью 2026-07-29).
+ */
+export const safeSocialPlatforms = [
   'instagram',
   'facebook',
   'telegram',
   'vk',
   'youtube',
-  'threads'
-];
+  'threads',
+] as const satisfies readonly SocialPlatform[];
 
 // Тип для более безопасной работы с платформами
 export type SafeSocialPlatform = typeof safeSocialPlatforms[number];

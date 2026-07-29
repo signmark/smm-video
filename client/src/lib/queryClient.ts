@@ -91,10 +91,20 @@ interface ApiRequestConfig {
   headers?: Record<string, string>;
 }
 
-export async function apiRequest(
+/**
+ * Ответ на 204 No Content.
+ *
+ * Тела у такого ответа нет, а вызывающий ждёт объект. Приведение к `T` здесь —
+ * единственное честное место: функция физически не может знать тип того, чего
+ * сервер не прислал. Локальный каст вместо `any` на всей сигнатуре, чтобы
+ * остальные вызовы типизировались нормально.
+ */
+const EMPTY_OK = { success: true } as const;
+
+export async function apiRequest<T = any>(
   url: string,
   config: ApiRequestConfig = {}
-): Promise<any> {
+): Promise<T> {
   const { method = 'GET', data, params } = config;
   const operationSession = getSessionSnapshot();
   
@@ -167,7 +177,7 @@ export async function apiRequest(
     
     // Если статус 204 No Content, не пытаемся распарсить JSON
     if (res.status === 204) {
-      return { success: true };
+      return EMPTY_OK as T; // 204: тела нет, см. EMPTY_OK
     }
     
     return res.json();
@@ -179,7 +189,7 @@ export async function apiRequest(
       await throwIfResNotOk(res, false, operationSession);
       
       if (res.status === 204) {
-        return { success: true };
+        return EMPTY_OK as T; // 204: тела нет, см. EMPTY_OK
       }
       
       return res.json();

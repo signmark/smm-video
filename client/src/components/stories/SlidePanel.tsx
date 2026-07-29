@@ -8,8 +8,42 @@ import { Plus, Copy, Trash2, GripVertical } from 'lucide-react';
 import { StorySlide } from '@shared/stories-schema';
 import { useStoryStore } from '@/lib/storyStore';
 
+/**
+ * Что панели слайдов действительно нужно от слайда.
+ *
+ * Раньше prop требовал полный shared-тип StorySlide — со storyId, createdAt и
+ * updatedAt, — хотя ни одно из этих полей здесь не читается: панель рисует
+ * фон, длительность и элементы. Из-за лишнего требования редактор, который
+ * держит слайды в памяти и ещё не знает их серверных полей, не подходил по
+ * типу (находка ревью 2026-07-29). Просим ровно то, что используем.
+ */
+export interface SlidePanelElement {
+  id: string;
+  type: string;
+  /**
+   * Ширина и высота ОПЦИОНАЛЬНЫ.
+   *
+   * Слайды, которые редактор держит в памяти, задают элементу только x/y —
+   * размер там появляется позже. Прежний тип требовал width/height всегда, а
+   * разметка делила на них без проверки: для таких элементов в style уезжало
+   * `NaN%` (находка ревью 2026-07-29).
+   */
+  position: { x: number; y: number; width?: number; height?: number };
+  rotation: number;
+  zIndex: number;
+  content?: any;
+}
+
+export interface SlidePanelSlide {
+  id: string;
+  order: number;
+  duration: number;
+  background: { type: string; value?: string; [key: string]: any };
+  elements?: SlidePanelElement[];
+}
+
 interface SlidePanelProps {
-  slides: StorySlide[];
+  slides: SlidePanelSlide[];
   currentSlideIndex: number;
   onSlideSelect: (index: number) => void;
   storyId?: string;
@@ -99,7 +133,7 @@ export default function SlidePanel({
     });
   };
 
-  const renderSlidePreview = (slide: StorySlide, index: number) => {
+  const renderSlidePreview = (slide: SlidePanelSlide, index: number) => {
     const backgroundStyle = getBackgroundStyle(slide.background);
     
     return (
@@ -137,8 +171,8 @@ export default function SlidePanel({
                   style={{
                     left: `${(element.position.x / 1080) * 100}%`,
                     top: `${(element.position.y / 1920) * 100}%`,
-                    width: `${(element.position.width / 1080) * 100}%`,
-                    height: `${(element.position.height / 1920) * 100}%`,
+                    width: `${((element.position.width ?? 1080) / 1080) * 100}%`,
+                    height: `${((element.position.height ?? 1920) / 1920) * 100}%`,
                     transform: `rotate(${element.rotation}deg)`,
                     zIndex: element.zIndex
                   }}

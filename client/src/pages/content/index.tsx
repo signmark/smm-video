@@ -4151,6 +4151,9 @@ export default function ContentPage() {
                       const target = e.target as HTMLImageElement;
                       const imageUrl = previewContent.imageUrl;
                       console.error(`[ImagePreview] Ошибка загрузки основного изображения: ${target.src}`);
+                      // Без адреса диагностировать нечего, а fetch(undefined)
+                      // просто упал бы внутри catch и скрыл настоящую причину.
+                      if (!imageUrl) return;
 
                       // Попытаемся узнать статус ошибки через fetch
                       try {

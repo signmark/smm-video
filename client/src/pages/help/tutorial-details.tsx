@@ -447,7 +447,7 @@ export default function TutorialDetailsPage() {
   const { toast } = useToast();
 
   // Загрузка tutorial по ID (используем авторизованный endpoint)
-  const { data: tutorialsResponse, isLoading, error } = useQuery({
+  const { data: tutorialsResponse, isLoading, error } = useQuery<{ data: VideoTutorial[] }>({
     queryKey: ['/api/tutorials'],
     enabled: !!params.id,
   });

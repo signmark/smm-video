@@ -171,7 +171,7 @@ export async function apiRequest<T = any>(
     if (res.status === 401 && (res as any).__requestToken !== useAuthStore.getState().token && isSameSession(operationSession)) {
       const retried = await makeRequest();
       await throwIfResNotOk(retried, false, operationSession);
-      return retried.status === 204 ? { success: true } : retried.json();
+      return retried.status === 204 ? (EMPTY_OK as T) : retried.json();
     }
     await throwIfResNotOk(res, true, operationSession);
     

@@ -32,6 +32,7 @@ const H = vi.hoisted(() => {
     directusPatch: vi.fn(async () => ({ data: { data: {} } })),
     directusDelete: vi.fn(async () => ({ data: {} })),
     axiosGet: vi.fn(async () => ({ data: { data: [] } })),
+    axiosPatch: vi.fn(async () => ({ data: { data: {} } })),
     getAdminTokenPublic: vi.fn(async () => 'admin-token'),
     analyzeWebsiteKeywords: vi.fn(async () => [{ keyword: 'k' }]),
   };
@@ -54,9 +55,9 @@ vi.mock('../directus', () => ({
 
 vi.mock('axios', () => {
   const interceptors = { request: { use: vi.fn() }, response: { use: vi.fn() } };
-  const instance: any = { get: H.axiosGet, post: vi.fn(), patch: vi.fn(), delete: vi.fn(), put: vi.fn(), interceptors };
+  const instance: any = { get: H.axiosGet, post: vi.fn(), patch: H.axiosPatch, delete: vi.fn(), put: vi.fn(), interceptors };
   const create = () => instance;
-  return { default: { get: H.axiosGet, post: vi.fn(), patch: vi.fn(), delete: vi.fn(), put: vi.fn(), create, interceptors }, create, interceptors };
+  return { default: { get: H.axiosGet, post: vi.fn(), patch: H.axiosPatch, delete: vi.fn(), put: vi.fn(), create, interceptors }, create, interceptors };
 });
 
 vi.mock('../services/directus-crud', () => ({
@@ -128,6 +129,7 @@ beforeEach(() => {
   H.directusPost.mockImplementation(async () => ({ data: { data: { id: 'new' } } }));
   H.directusDelete.mockImplementation(async () => ({ data: {} }));
   H.axiosGet.mockImplementation(async () => ({ data: { data: [] } }));
+  H.axiosPatch.mockImplementation(async () => ({ data: { data: {} } }));
   H.getAdminTokenPublic.mockImplementation(async () => 'admin-token');
   H.analyzeWebsiteKeywords.mockImplementation(async () => [{ keyword: 'k' }]);
   // Валидная сессия для настоящего authenticateUser.
@@ -273,6 +275,67 @@ describe('GET /api/campaign-trends — ходит админским токен�
     expect(res.status).toBe(200);
     expect(res.body.data).toHaveLength(1);
     expect(H.axiosGet).toHaveBeenCalled();
+  });
+});
+
+/**
+ * SM-10: закладка тренда.
+ *
+ * Ручки не существовало вовсе — страница слала сюда PATCH и получала 404 от
+ * Express, пользователь видел «Ошибка при добавлении тренда в закладки».
+ * Добавляя её, сразу закрываем и границу арендатора: тренд правится админским
+ * токеном, поэтому доступ к кампании обязан проверяться в коде.
+ */
+describe('PATCH /api/campaign-trends/:id/bookmark', () => {
+  const bookmark = (id: string, body: any = { isBookmarked: true }) =>
+    authed(request(analyticsApp).patch(`/api/campaign-trends/${id}/bookmark`)).send(body);
+
+  it('тренд чужой кампании → 404, запись не выполняется', async () => {
+    H.axiosGet.mockResolvedValueOnce({ data: { data: { id: 'tr-1', campaign_id: FOREIGN } } });
+
+    const res = await bookmark('tr-1');
+
+    expect(res.status).toBe(404);
+    expect(H.axiosPatch).not.toHaveBeenCalled();
+  });
+
+  it('свой тренд — закладка сохраняется', async () => {
+    H.axiosGet.mockResolvedValueOnce({ data: { data: { id: 'tr-1', campaign_id: 'own-1' } } });
+    H.authorizeCampaignAccess.mockResolvedValueOnce({ id: 'own-1' } as any);
+
+    const res = await bookmark('tr-1');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.isBookmarked).toBe(true);
+    const [, payload] = H.axiosPatch.mock.calls.at(-1) as any[];
+    expect(payload).toEqual({ is_bookmarked: true });
+  });
+
+  it('снятие закладки тоже проходит', async () => {
+    H.axiosGet.mockResolvedValueOnce({ data: { data: { id: 'tr-1', campaign_id: 'own-1' } } });
+    H.authorizeCampaignAccess.mockResolvedValueOnce({ id: 'own-1' } as any);
+
+    const res = await bookmark('tr-1', { isBookmarked: false });
+
+    expect(res.status).toBe(200);
+    const [, payload] = H.axiosPatch.mock.calls.at(-1) as any[];
+    expect(payload).toEqual({ is_bookmarked: false });
+  });
+
+  it('без поля isBookmarked → 400, запись не выполняется', async () => {
+    const res = await bookmark('tr-1', {});
+
+    expect(res.status).toBe(400);
+    expect(H.axiosPatch).not.toHaveBeenCalled();
+  });
+
+  it('несуществующий тренд → 404', async () => {
+    H.axiosGet.mockResolvedValueOnce({ data: { data: null } });
+
+    const res = await bookmark('нет-такого');
+
+    expect(res.status).toBe(404);
+    expect(H.axiosPatch).not.toHaveBeenCalled();
   });
 });
 

@@ -477,6 +477,83 @@ export function registerAnalyticsRoutes(app: Express) {
   });
 
   /**
+   * PATCH /api/campaign-trends/:id/bookmark — добавить тренд в закладки или убрать.
+   *
+   * Ручки не существовало вовсе: страница трендов слала сюда PATCH, получала 404 от
+   * Express и показывала «Ошибка при добавлении тренда в закладки» (SM-10). При этом
+   * метод `storage.bookmarkCampaignTrendTopic` в коде есть — просто ничем не вызывался.
+   *
+   * Ходим в Directus админским токеном, как соседний GET, поэтому граница арендатора
+   * здесь — только проверка в коде: сперва читаем campaign_id тренда, затем сверяем
+   * доступ к этой кампании.
+   */
+  app.patch("/api/campaign-trends/:id/bookmark", authenticateUser, async (req: Request, res: Response) => {
+    try {
+      const { id } = req.params;
+      const { isBookmarked } = req.body ?? {};
+
+      if (typeof isBookmarked !== 'boolean') {
+        return res.status(400).json({ success: false, error: "isBookmarked должен быть true или false" });
+      }
+
+      const adminToken = await directusCrud.getAdminTokenPublic();
+      const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
+
+      let trend: any;
+      try {
+        const found = await axios.get(
+          `${directusUrl}/items/campaign_trend_topics/${encodeURIComponent(id)}`,
+          { params: { fields: 'id,campaign_id' }, headers: { Authorization: `Bearer ${adminToken}` }, timeout: 15000 },
+        );
+        trend = found.data?.data;
+      } catch (readErr: any) {
+        const status = readErr.response?.status;
+        // 403/404 от Directus — «нет объекта или нет доступа»; остальное это сбой.
+        if (status === 403 || status === 404) {
+          return res.status(404).json({ success: false, error: "Тренд не найден" });
+        }
+        throw readErr;
+      }
+
+      if (!trend?.campaign_id) {
+        return res.status(404).json({ success: false, error: "Тренд не найден" });
+      }
+
+      await authorizeCampaignAccess(
+        String(trend.campaign_id),
+        req.user?.id,
+        req.user?.token || '',
+        req.user?.is_smm_admin === true,
+      );
+
+      const updated = await axios.patch(
+        `${directusUrl}/items/campaign_trend_topics/${encodeURIComponent(id)}`,
+        { is_bookmarked: isBookmarked },
+        { headers: { Authorization: `Bearer ${adminToken}` }, timeout: 15000 },
+      );
+
+      log(`[Analytics Route] Тренд ${id} ${isBookmarked ? 'добавлен в закладки' : 'убран из закладок'} (user ${req.user?.id})`, 'info');
+
+      return res.json({
+        success: true,
+        data: { id, isBookmarked, is_bookmarked: isBookmarked, ...(updated.data?.data ?? {}) },
+      });
+    } catch (error: any) {
+      if (error instanceof CampaignAccessError) {
+        // 404 на чужую кампанию — не подтверждаем существование тренда.
+        const status = error.status === 503 ? 503 : 404;
+        return res.status(status).json({
+          success: false,
+          error: status === 503 ? "Проверка доступа временно недоступна" : "Тренд не найден",
+        });
+      }
+      const errorDetail = error.response?.data || error.message;
+      log(`[Analytics Route] Ошибка при обновлении закладки: ${JSON.stringify(errorDetail)}`, 'error');
+      return res.status(500).json({ success: false, error: "Не удалось обновить закладку" });
+    }
+  });
+
+  /**
    * Запуск сбора трендов (УДАЛЕНО - используется /api/trends/collect из api/trends-routes.ts)
    */
   // app.post("/api/trends/collect", ...);

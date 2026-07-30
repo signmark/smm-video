@@ -184,7 +184,7 @@ DEBUG: distPath FOUND: /app/dist/public
 ```env
 DIRECTUS_URL=https://directus.nplanner.ru
 DIRECTUS_DB_PASSWORD=CHANGE_ME   # <- обязательно
-DIRECTUS_ADMIN_TOKEN=2bexIeLQqichfy3KseO3V31XDxfY-zP5
+DIRECTUS_ADMIN_TOKEN=CHANGE_ME
 # и т.д.
 ```
 

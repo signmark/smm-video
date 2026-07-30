@@ -1,6 +1,7 @@
 import axios from 'axios';
 
-const TOKEN = 'Synmnsk2v5_U4uQoX1l6oWcXzkjLX-61';
+const TOKEN = process.env.DIRECTUS_ADMIN_TOKEN;
+if (!TOKEN) throw new Error('DIRECTUS_ADMIN_TOKEN не задан');
 const URL = 'https://directus.nplanner.ru';
 
 async function main() {

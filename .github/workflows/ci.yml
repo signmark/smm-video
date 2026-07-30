@@ -48,3 +48,17 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  # Скан секретов по файлам проверяемого коммита (§7, AI-37). Известные
+  # исторические находки перечислены в .gitleaks.toml; всё новое — красный CI.
+  # Версия закреплена той, которой делался исходный разбор находок.
+  secrets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Secret scan (gitleaks)
+        run: >
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.30.1
+          detect --no-git --source /repo --config /repo/.gitleaks.toml --redact

@@ -3,6 +3,7 @@ import multer from 'multer';
 import ffmpeg from 'fluent-ffmpeg';
 import path from 'path';
 import fs from 'fs';
+import { randomUUID } from 'node:crypto';
 import { authMiddleware } from '../middleware/auth';
 import { safeTempFileName } from '../utils/media-exec';
 
@@ -50,7 +51,7 @@ router.post('/process-video', authMiddleware, upload.single('video'), async (req
     const inputPath = req.file.path;
     // Имя от клиента в путь не попадает: этот путь уходит в fluent-ffmpeg как
     // выходной файл. См. server/utils/media-exec.ts.
-    const outputFileName = safeTempFileName(`processed_${Date.now()}`, req.file.originalname);
+    const outputFileName = safeTempFileName(`processed_${randomUUID()}`, req.file.originalname);
     const outputPath = path.join('uploads/processed/', outputFileName);
 
     // Ensure output directory exists
@@ -200,7 +201,7 @@ router.post('/process-video-from-url', authMiddleware, async (req, res) => {
   console.log('[VIDEO] Request body:', req.body);
   try {
     const { videoUrl, textOverlays, campaignId, contentId } = req.body;
-    const progressId = req.body.progressId || Date.now().toString();
+    const progressId = req.body.progressId || randomUUID();
     const storyId = contentId || campaignId; // contentId или campaignId - это ID stories в Directus
 
     console.log('[VIDEO] progressId:', progressId);
@@ -230,7 +231,7 @@ router.post('/process-video-from-url', authMiddleware, async (req, res) => {
     const videoBuffer = await videoResponse.arrayBuffer();
     
     // Создаем временный файл для входного видео
-    const inputFileName = `temp_input_${Date.now()}.mp4`;
+    const inputFileName = `temp_input_${randomUUID()}.mp4`;
     const inputPath = path.resolve(process.cwd(), 'uploads/temp/', inputFileName);
     
     // Ensure temp directory exists
@@ -261,7 +262,7 @@ router.post('/process-video-from-url', authMiddleware, async (req, res) => {
       throw new Error(`Failed to save input video: ${writeError.message}`);
     }
 
-    const outputFileName = `processed_${Date.now()}.mp4`;
+    const outputFileName = `processed_${randomUUID()}.mp4`;
     const outputPath = path.join(tempDir, outputFileName);
 
     // Используем /tmp для выходного файла (более надежно в Docker)

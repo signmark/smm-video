@@ -2,6 +2,7 @@ import express from 'express';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { randomUUID } from 'node:crypto';
 import { authMiddleware } from '../middleware/auth';
 import { safeTempFileName, sanitizeFileLabel } from '../utils/media-exec';
 
@@ -29,7 +30,7 @@ router.post('/process', authMiddleware, upload.single('video'), async (req, res)
     // но `$( )`, `;`, пробелы и переводы строки доезжают как есть — а этот путь
     // потом уходит в файловые операции и в ссылку. Уникальную часть задаём мы,
     // от клиента остаётся только расширение из allowlist.
-    const outputFileName = safeTempFileName(`video_${Date.now()}`, req.file.originalname);
+    const outputFileName = safeTempFileName(`video_${randomUUID()}`, req.file.originalname);
     const outputPath = path.join('uploads/processed/', outputFileName);
 
     // Создаем папку если не существует

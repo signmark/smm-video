@@ -56,22 +56,100 @@ export function isConfigured(): boolean {
   return !!(SHOP_ID && SECRET_KEY);
 }
 
-async function yookassaRequest(method: string, path: string, body?: object): Promise<any> {
+/**
+ * Подтверждённый HTTP-отказ ЮКассы: ответ дошёл, операция точно НЕ выполнена.
+ * Принципиально отличается от сетевого сбоя, где результат неизвестен.
+ */
+class YookassaHttpError extends Error {
+  constructor(public readonly status: number, message: string) {
+    super(message);
+    this.name = 'YookassaHttpError';
+  }
+}
+
+/**
+ * Результат создания платежа неизвестен: запрос ушёл, ответа нет (или ЮКасса
+ * ответила конфликтом идемпотентности). Платёж МОГ быть создан — бронь по
+ * такому исходу освобождать нельзя.
+ */
+class PaymentCreationUnknownError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PaymentCreationUnknownError';
+  }
+}
+
+async function yookassaRequest(
+  method: string,
+  path: string,
+  body?: object,
+  idempotenceKey?: string,
+): Promise<any> {
   const credentials = Buffer.from(`${SHOP_ID}:${SECRET_KEY}`).toString('base64');
   const res = await fetch(`${YOOKASSA_API}${path}`, {
     method,
     headers: {
       'Authorization': `Basic ${credentials}`,
       'Content-Type': 'application/json',
-      'Idempotence-Key': uuidv4(),
+      // Стабильный ключ обязателен там, где повтор того же действия должен
+      // дедуплицироваться ЮКассой (создание/отмена платежа). Случайный ключ на
+      // каждый вызов делал оборванный POST неповторяемым: второй заход создавал
+      // ВТОРОЙ платёж (находка ревью 2026-07-29).
+      'Idempotence-Key': idempotenceKey || uuidv4(),
     },
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`YooKassa ${method} ${path} → ${res.status}: ${text}`);
+    throw new YookassaHttpError(res.status, `YooKassa ${method} ${path} → ${res.status}: ${text}`);
   }
   return res.json();
+}
+
+/**
+ * Создаёт платёж со стабильным Idempotence-Key, привязанным к orderId.
+ *
+ * Сетевой сбой первого запроса не означает, что платежа нет, — поэтому повтор
+ * идёт с ТЕМ ЖЕ ключом: если первый запрос дошёл, ЮКасса вернёт его результат,
+ * а не создаст дубль. Если и повтор не дал ответа — бросается
+ * PaymentCreationUnknownError, и вызывающий обязан НЕ освобождать бронь.
+ */
+async function createYookassaPayment(orderId: string, body: object): Promise<any> {
+  const idempotenceKey = `order-${orderId}`;
+  let firstNetworkError: any = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      return await yookassaRequest('POST', '', body, idempotenceKey);
+    } catch (err: any) {
+      // 409 — конфликт идемпотентности: первый запрос ещё обрабатывается.
+      // Результат неизвестен, платёж может существовать.
+      if (err instanceof YookassaHttpError && err.status === 409) {
+        throw new PaymentCreationUnknownError(err.message);
+      }
+      // Любой другой HTTP-ответ — подтверждённый отказ: платёж не создан.
+      if (err instanceof YookassaHttpError) throw err;
+      firstNetworkError = err;
+    }
+  }
+  throw new PaymentCreationUnknownError(firstNetworkError?.message || 'network error');
+}
+
+/**
+ * Освобождает бронь; при сбое освобождения ОБЯЗАТЕЛЬНО оставляет видимую
+ * пометку. Молчаливо проглоченный сбой оставлял строку payment_attempt_at
+ * без yookassa_payment_id и без needs_reconciliation — такую бронь
+ * isSlotHolderDead не освобождает никогда, и слот зависал навсегда
+ * (находка ревью 2026-07-29).
+ */
+async function releaseReservationOrFlag(orderId: string, reason: string): Promise<void> {
+  try {
+    await releasePromoReservation(orderId, reason);
+  } catch (releaseErr: any) {
+    await flagReservationReconciliation(
+      orderId,
+      `бронь не освободилась (${reason}): ${releaseErr?.message}`,
+    ).catch(() => {});
+  }
 }
 
 /**
@@ -106,7 +184,8 @@ async function cancelPaymentAndReleaseReservation(params: {
 
   let cancelled = false;
   try {
-    const result = await yookassaRequest('POST', `/${paymentId}/cancel`);
+    // Стабильный ключ: повтор отмены того же платежа дедуплицируется ЮКассой.
+    const result = await yookassaRequest('POST', `/${paymentId}/cancel`, undefined, `cancel-${paymentId}`);
     cancelled = result?.status === 'canceled';
     if (!cancelled) {
       // Ответ пришёл, но статус не тот — считаем отмену неподтверждённой.
@@ -444,7 +523,7 @@ router.post('/payments/create', async (req: Request, res: Response) => {
       await markPaymentAttempt(orderId);
     }
 
-    const payment = await yookassaRequest('POST', '', {
+    const payment = await createYookassaPayment(orderId, {
       amount: { value: amount, currency: CURRENCY },
       capture: true,
       confirmation: {
@@ -517,12 +596,32 @@ router.post('/payments/create', async (req: Request, res: Response) => {
   } catch (err: any) {
     // Платёж не создался — бронь промокода держать незачем, иначе код сгорит впустую.
     //
-    // Исключение — PaymentSetupFailedError: там судьба брони уже решена
+    // Исключение №1 — PaymentSetupFailedError: там судьба брони уже решена
     // (освобождена после подтверждённой отмены либо намеренно оставлена занятой
     // и помечена на разбор). Освобождать её здесь значит переиграть это решение
     // и отдать скидку второй раз по живому платежу.
+    //
+    // Исключение №2 — PaymentCreationUnknownError: ответ ЮКассы не получен,
+    // платёж МОГ быть создан. Освобождение по догадке — та самая ошибка «выдать
+    // скидку дважды», поэтому бронь держим и делаем расхождение видимым.
     if (createdOrderId && !(err instanceof PaymentSetupFailedError)) {
-      await releasePromoReservation(createdOrderId, 'создание платежа не удалось').catch(() => {});
+      if (err instanceof PaymentCreationUnknownError) {
+        await flagReservationReconciliation(
+          createdOrderId,
+          `результат создания платежа неизвестен: ${err?.message}`,
+        ).catch(() => {});
+      } else {
+        // Подтверждённый отказ (HTTP-ответ ЮКассы) или сбой до обращения к ней.
+        // Сбой освобождения не проглатывается: бронь либо свободна, либо помечена.
+        await releaseReservationOrFlag(createdOrderId, 'создание платежа не удалось');
+      }
+    }
+    if (err instanceof PaymentCreationUnknownError) {
+      console.error('[yookassa] Результат создания платежа неизвестен:', err?.message);
+      return res.status(503).json({
+        error: 'Не удалось подтвердить создание платежа. Попробуйте ещё раз через минуту.',
+        retryable: true,
+      });
     }
     if (err instanceof PaymentSetupFailedError) {
       // Платёж уже отозван (или помечен на разбор) внутри обработчика выше.

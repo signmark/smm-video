@@ -1008,3 +1008,138 @@ describe('TOCTOU: освобождённый между конфликтом и 
     expect(second.body.error).toMatch(/исчерпал/);
   });
 });
+
+/**
+ * Создание платежа: стабильный Idempotence-Key и видимость сбоев.
+ *
+ * Находка ревью 2026-07-29 (P1). Маркер payment_attempt_at ставится ДО POST в
+ * ЮКассу; если POST падал, релиз брони мог тоже упасть — и его ошибка
+ * проглатывалась. Оставалась строка payment_attempt_at + без
+ * yookassa_payment_id + без needs_reconciliation + status=reserved, которую
+ * isSlotHolderDead не освобождает НИКОГДА: невидимая вечная бронь держала и
+ * пользовательский, и общий слот. Вдобавок Idempotence-Key генерировался
+ * заново на каждый вызов, так что оборванный запрос нельзя было безопасно
+ * повторить — повтор создавал ВТОРОЙ платёж.
+ */
+describe('создание платежа: idempotence и не-проглатывание сбоев', () => {
+  /** Строки-нарушители денежного инварианта: маркер есть, платежа нет, пометки нет. */
+  const invisibleStuckRows = () => reservations().filter((r: any) =>
+    r.status === 'reserved'
+    && r.payment_attempt_at
+    && !r.yookassa_payment_id
+    && r.needs_reconciliation !== true,
+  );
+
+  /** Заголовки Idempotence-Key всех POST-создания платежа. */
+  const createIdempotenceKeys = () => fetchMock.mock.calls
+    .filter(([u, init]: any[]) => String(u).endsWith('api.yookassa.ru/v3/payments')
+      && init?.method === 'POST')
+    .map(([, init]: any[]) => init.headers['Idempotence-Key']);
+
+  it('ЮКасса отклонила создание, релиз временно упал → бронь помечена, а не невидима', async () => {
+    const realFetch = PRISTINE_FETCH;
+    fetchMock.mockImplementation((url: any, init?: any) => {
+      const u = String(url);
+      const method = init?.method || 'GET';
+      // Подтверждённый HTTP-отказ ЮКассы на создание платежа.
+      if (u.endsWith('api.yookassa.ru/v3/payments') && method === 'POST') {
+        return jsonResponse({ type: 'error', description: 'invalid amount' }, false, 400);
+      }
+      // Релиз (update-by-query) падает; PATCH по id (пометка) проходит.
+      if (method === 'PATCH' && u.endsWith('/items/promo_reservations')) {
+        const body = init?.body ? JSON.parse(init.body) : null;
+        if (body?.query) return jsonResponse({ errors: [{ message: 'boom' }] }, false, 500);
+      }
+      return realFetch(url, init);
+    });
+
+    const res = await create('user-1');
+
+    expect(res.status).toBeGreaterThanOrEqual(500);
+    const row = reservations()[0];
+    expect(row.status).toBe('reserved');
+    expect(row.payment_attempt_at).toBeTruthy();
+    // Сбой релиза больше не проглатывается: бронь видна для ручного разбора.
+    expect(row.needs_reconciliation).toBe(true);
+    expect(row.last_error).toBeTruthy();
+    expect(invisibleStuckRows()).toHaveLength(0);
+  });
+
+  it('network reset после отправки POST → повтор с ТЕМ ЖЕ Idempotence-Key, второй платёж не создаётся', async () => {
+    const realFetch = PRISTINE_FETCH;
+    let failuresLeft = 1;
+    fetchMock.mockImplementation((url: any, init?: any) => {
+      const u = String(url);
+      if (u.endsWith('api.yookassa.ru/v3/payments') && init?.method === 'POST' && failuresLeft > 0) {
+        failuresLeft--;
+        return Promise.reject(new Error('socket hang up'));
+      }
+      return realFetch(url, init);
+    });
+
+    const res = await create('user-1');
+
+    expect(res.status).toBe(200);
+    expect(res.body.confirmationUrl).toBeTruthy();
+
+    const keys = createIdempotenceKeys();
+    expect(keys).toHaveLength(2);
+    expect(keys[0]).toBe(keys[1]); // повтор дедуплицируется ЮКассой
+    expect(Object.keys(yookassaPayments)).toHaveLength(1);
+    expect(invisibleStuckRows()).toHaveLength(0);
+  });
+
+  it('результат неизвестен и после повтора → бронь удержана и помечена, слот не отдан', async () => {
+    const realFetch = PRISTINE_FETCH;
+    fetchMock.mockImplementation((url: any, init?: any) => {
+      const u = String(url);
+      if (u.endsWith('api.yookassa.ru/v3/payments') && init?.method === 'POST') {
+        return Promise.reject(new Error('socket hang up'));
+      }
+      return realFetch(url, init);
+    });
+
+    const res = await create('user-1');
+
+    // Повторяемая ошибка: платёж мог создаться, утверждать обратное нельзя.
+    expect(res.status).toBe(503);
+    expect(res.body.retryable).toBe(true);
+    expect(res.body.confirmationUrl).toBeUndefined();
+
+    const row = reservations()[0];
+    // Бронь НЕ освобождена (платёж, возможно, жив) и видима для разбора.
+    expect(row.status).toBe('reserved');
+    expect(row.needs_reconciliation).toBe(true);
+    expect(row.payment_attempt_at).toBeTruthy();
+    expect(invisibleStuckRows()).toHaveLength(0);
+
+    // Оба захода шли с одним ключом — безопасный повтор, а не второй платёж.
+    const keys = createIdempotenceKeys();
+    expect(keys).toHaveLength(2);
+    expect(keys[0]).toBe(keys[1]);
+  });
+
+  it('подтверждённый отказ ЮКассы при исправном хранилище освобождает бронь штатно', async () => {
+    const realFetch = PRISTINE_FETCH;
+    fetchMock.mockImplementation((url: any, init?: any) => {
+      const u = String(url);
+      if (u.endsWith('api.yookassa.ru/v3/payments') && init?.method === 'POST') {
+        return jsonResponse({ type: 'error', description: 'invalid amount' }, false, 400);
+      }
+      return realFetch(url, init);
+    });
+
+    const res = await create('user-1');
+
+    expect(res.status).toBeGreaterThanOrEqual(500);
+    const row = reservations()[0];
+    // Отказ подтверждён HTTP-ответом: платежа нет, слот возвращается в оборот.
+    expect(row.status).toBe('released');
+    expect(invisibleStuckRows()).toHaveLength(0);
+
+    // Код снова доступен тому же пользователю.
+    fetchMock.mockImplementation(realFetch);
+    const retry = await create('user-1');
+    expect(retry.status).toBe(200);
+  });
+});

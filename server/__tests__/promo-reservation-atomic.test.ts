@@ -1304,4 +1304,144 @@ describe('создание платежа: idempotence и не-проглаты�
     const retry = await create('user-1');
     expect(retry.status).toBe(200);
   });
+
+  /**
+   * 5xx от ЮКассы — НЕ подтверждённый отказ (AI-48 п.4).
+   *
+   * 4xx означает «запрос отвергнут, платежа нет» — слот можно вернуть. А 500 или
+   * 502 приходят уже ИЗ ЮКассы: запрос мог быть принят и обработан, потеряться
+   * мог только ответ. Раньше обе ситуации шли одной веткой, и на пятисотке
+   * бронь освобождалась — слот скидки уходил другому покупателю при живом
+   * платеже. Теперь 5xx повторяется тем же ключом и, если ясности нет,
+   * трактуется как «неизвестно»: слот удерживаем.
+   */
+  it('5xx от ЮКассы не считается отказом: бронь удержана, повтор с тем же ключом', async () => {
+    const realFetch = PRISTINE_FETCH;
+    fetchMock.mockImplementation((url: any, init?: any) => {
+      const u = String(url);
+      if (u.endsWith('api.yookassa.ru/v3/payments') && init?.method === 'POST') {
+        return jsonResponse({ type: 'error', description: 'internal' }, false, 502);
+      }
+      return realFetch(url, init);
+    });
+
+    const res = await create('user-1');
+
+    expect(res.status).toBe(503);
+    expect(res.body.retryable).toBe(true);
+    expect(res.body.confirmationUrl).toBeUndefined();
+
+    const row = reservations()[0];
+    expect(row.status, 'слот не отдаём: платёж мог быть создан').toBe('reserved');
+    expect(row.needs_reconciliation).toBe(true);
+    expect(invisibleStuckRows()).toHaveLength(0);
+
+    const keys = createIdempotenceKeys();
+    expect(keys).toHaveLength(2);
+    expect(keys[0]).toBe(keys[1]);
+  });
+
+  it('4xx по-прежнему освобождает бронь — отказ подтверждён', async () => {
+    // Контроль границы: правило выше не должно превратить любой отказ в
+    // «удерживаем», иначе слот залипнет на ошибке в сумме или в чеке.
+    const realFetch = PRISTINE_FETCH;
+    fetchMock.mockImplementation((url: any, init?: any) => {
+      const u = String(url);
+      if (u.endsWith('api.yookassa.ru/v3/payments') && init?.method === 'POST') {
+        return jsonResponse({ type: 'error', description: 'invalid receipt' }, false, 422);
+      }
+      return realFetch(url, init);
+    });
+
+    await create('user-1');
+    expect(reservations()[0].status).toBe('released');
+    // Ровно одна попытка: повторять подтверждённый отказ незачем.
+    expect(createIdempotenceKeys()).toHaveLength(1);
+  });
+
+  /**
+   * Пропажа брони между резервированием и оплатой — аномалия (AI-48 п.4).
+   *
+   * `markPaymentAttempt` и `attachPaymentId` при отсутствии строки молча
+   * возвращались. Для markPaymentAttempt это означало «маркер поставлен» при
+   * том, что ставить его было некуда: бронь потом освободили бы как сироту,
+   * хотя платёж уже создавался.
+   */
+  it('бронь исчезла перед оплатой → платёж не создаётся вовсе', async () => {
+    const realFetch = PRISTINE_FETCH;
+    fetchMock.mockImplementation((url: any, init?: any) => {
+      const u = String(url);
+      // Резервирование прошло, но чтение брони по order_id ничего не находит.
+      if (u.includes('/items/promo_reservations') && (init?.method || 'GET') === 'GET'
+          && u.includes('filter[payment_id][_eq]=')) {
+        return jsonResponse({ data: [] });
+      }
+      return realFetch(url, init);
+    });
+
+    const res = await create('user-1');
+
+    expect(res.status).toBeGreaterThanOrEqual(500);
+    expect(res.body.confirmationUrl).toBeUndefined();
+    // До ЮКассы не дошли: денег не списываем, когда учитывать их негде.
+    expect(Object.keys(yookassaPayments)).toHaveLength(0);
+  });
+});
+
+/**
+ * История использований промокода восстанавливается на повторе (AI-32).
+ *
+ * `recordPromoUse` не проверял `res.ok`: HTTP 500 от Directus проходил
+ * незамеченным, строка в `promo_code_uses` терялась, и админка недосчитывалась
+ * использований. Повторное обращение по тому же платежу шло веткой
+ * `alreadyCompleted` и просто разворачивалось — потерянная запись не
+ * восстанавливалась уже никогда.
+ *
+ * Денежный инвариант этим не затронут: источник истины по расходу кода —
+ * `promo_reservations`, а не эта история.
+ */
+describe('recordPromoUse: потерянная запись истории восстанавливается', () => {
+  const usesRows = () => tables.promo_code_uses || [];
+
+  it('сбой записи не теряется навсегда: повтор по платежу её создаёт', async () => {
+    const first = await create('user-1');
+    expect(first.status).toBe(200);
+    const payment: any = Object.values(yookassaPayments)[0];
+
+    // Первое подтверждение: Directus отвергает создание записи истории.
+    const realFetch = PRISTINE_FETCH;
+    fetchMock.mockImplementation((url: any, init?: any) => {
+      if (String(url).includes('/items/promo_code_uses') && init?.method === 'POST') {
+        return jsonResponse({ errors: [{ message: 'boom' }] }, false, 500);
+      }
+      return realFetch(url, init);
+    });
+
+    paymentStatus[payment.id] = 'succeeded';
+    await activate(payment.id);
+
+    expect(usesRows(), 'первая попытка записи провалилась').toHaveLength(0);
+    // Бронь при этом погашена — деньги учтены, потеряна только история.
+    expect(reservations()[0].status).toBe('completed');
+
+    // Повтор по тому же платежу: Directus снова исправен.
+    fetchMock.mockImplementation(realFetch);
+    await activate(payment.id);
+
+    expect(usesRows(), 'повтор восстановил запись').toHaveLength(1);
+    expect(usesRows()[0].payment_id).toBe(payment.id);
+  });
+
+  it('третье обращение дубля не создаёт', async () => {
+    const first = await create('user-1');
+    const payment: any = Object.values(yookassaPayments)[0];
+    paymentStatus[payment.id] = 'succeeded';
+
+    await activate(payment.id);
+    await activate(payment.id);
+    await activate(payment.id);
+
+    expect(first.status).toBe(200);
+    expect(usesRows()).toHaveLength(1);
+  });
 });

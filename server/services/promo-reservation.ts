@@ -148,7 +148,15 @@ export async function isReservationStoreReady(): Promise<boolean> {
  */
 export async function markPaymentAttempt(orderId: string): Promise<void> {
   const row = await getReservationByPayment(orderId);
-  if (!row) return;
+  // Ручка зовёт это только при живой брони. Нет строки — либо бронь исчезла
+  // между резервированием и оплатой, либо Directus отдал пустой ответ на сбое.
+  // Молчаливый возврат означал бы «маркер поставлен», и слот потом освободили
+  // бы как сироту при живом платеже. Прерываем оплату.
+  if (!row) {
+    throw new PromoReservationUnavailableError(
+      `бронь по заказу ${orderId} не найдена — отметить начало оплаты не по чему`,
+    );
+  }
 
   let lastError = '';
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -634,7 +642,14 @@ export async function completePromoReservation(paymentId: string): Promise<{
  */
 export async function attachPaymentId(orderId: string, yookassaPaymentId: string): Promise<void> {
   const row = await getReservationByPayment(orderId);
-  if (!row) return;
+  // Как и в markPaymentAttempt: пропажа строки — аномалия, а не «нечего
+  // делать». Тихий возврат оставлял бы платёж без связи с бронью, и через
+  // 30 минут слот ушёл бы другому покупателю.
+  if (!row) {
+    throw new PromoReservationUnavailableError(
+      `бронь по заказу ${orderId} не найдена — платёж ${yookassaPaymentId} привязать не к чему`,
+    );
+  }
 
   let lastError = '';
   for (let attempt = 0; attempt < 3; attempt++) {

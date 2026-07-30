@@ -126,7 +126,15 @@ async function createYookassaPayment(orderId: string, body: object): Promise<any
       if (err instanceof YookassaHttpError && err.status === 409) {
         throw new PaymentCreationUnknownError(err.message);
       }
-      // Любой другой HTTP-ответ — подтверждённый отказ: платёж не создан.
+      // 5xx — сбой НА СТОРОНЕ ЮКассы: запрос мог быть принят и обработан, а
+      // потерялся уже ответ. Считать это подтверждённым отказом нельзя —
+      // освободив бронь, мы отдадим слот скидки при живом платеже. Повторяем
+      // с тем же ключом, а если и повтор не прояснил — «неизвестно».
+      if (err instanceof YookassaHttpError && err.status >= 500) {
+        firstNetworkError = firstNetworkError || err;
+        continue;
+      }
+      // Остальные HTTP-ответы (4xx) — подтверждённый отказ: платёж не создан.
       if (err instanceof YookassaHttpError) throw err;
       firstNetworkError = err;
     }
@@ -259,7 +267,14 @@ async function finalizePromoRedemption(meta: any, paymentId: string): Promise<vo
         `платёж ${paymentId} успешен, бронь освобождена раньше погашения`,
       ).catch(() => {});
     }
-    // alreadyCompleted — нормальный повтор: гасит первый вызов, второй молчит.
+    if (redeemed.alreadyCompleted) {
+      // Бронь погашена первым вызовом, но запись в историю могла не создаться —
+      // например, Directus тогда ответил 500. Раньше повтор здесь просто
+      // разворачивался, и потерянная строка не восстанавливалась уже никогда
+      // (AI-32). Дубля не будет: recordPromoUse сначала ищет запись по
+      // payment_id и при находке выходит.
+      await recordPromoUse(meta.promo_id, meta.user_id, paymentId, meta.plan);
+    }
   } catch (err: any) {
     // Не бросаем: подписка уже выдана, и ронять ответ незачем. Бронь остаётся в
     // reserved, помечена на разбор, а следующий вебхук/activate по этому же
@@ -326,7 +341,10 @@ async function recordPromoUse(promoId: string, userId: string, paymentId: string
       if (data?.length) return; // уже записано — повторный вызов ничего не добавляет
     }
 
-    await fetch(`${DIRECTUS_URL}/items/promo_code_uses`, {
+    // Ответ проверяется: раньше HTTP 500 от Directus проходил незамеченным, и
+    // запись «использование промокода» тихо терялась — в админке история
+    // недосчитывалась строк, хотя скидка была выдана (AI-32).
+    const created = await fetch(`${DIRECTUS_URL}/items/promo_code_uses`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${ADMIN_TOKEN}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -337,6 +355,9 @@ async function recordPromoUse(promoId: string, userId: string, paymentId: string
         plan_before: plan,
       }),
     });
+    if (!created.ok) {
+      throw new Error(`запись использования не создана: HTTP ${created.status}`);
+    }
 
     const promoResp = await fetch(`${DIRECTUS_URL}/items/promo_codes/${promoId}?fields=used_count`, {
       headers: { Authorization: `Bearer ${ADMIN_TOKEN}` },
@@ -350,6 +371,8 @@ async function recordPromoUse(promoId: string, userId: string, paymentId: string
       });
     }
   } catch (err: any) {
+    // Наружу по-прежнему не бросаем: подписка выдана, история — вторичные
+    // данные, ронять из-за неё ответ незачем. Но расхождение теперь видно.
     console.error('[yookassa] Не удалось записать использование промокода:', err?.message);
   }
 }

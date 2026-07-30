@@ -170,6 +170,28 @@ export default function PricingPage() {
   const [appliedPromo, setAppliedPromo] = useState<AppliedPromo | null>(null);
   const promoInputRef = useRef<HTMLInputElement>(null);
 
+  /**
+   * Токен одной попытки оплаты — чтобы повтор после ошибки не создал ВТОРОЙ платёж.
+   *
+   * Сервер выводит из него `order_id`, а из него — Idempotence-Key ЮКассы. Пока
+   * токен тот же, повторный запрос дедуплицируется на стороне ЮКассы вместо
+   * создания нового платежа (находка приёмки 30.07.2026: `order_id` создавался
+   * заново на каждый HTTP-запрос, и после ответа «повторите» платежей
+   * становилось два).
+   *
+   * Токен привязан к паре «тариф + промокод»: сменил тариф — попытка другая,
+   * нужен новый токен, иначе сервер посчитает это тем же заказом.
+   */
+  const checkoutAttemptRef = useRef<{ key: string; token: string } | null>(null);
+
+  const checkoutTokenFor = (planName: string, promo: string | null): string => {
+    const key = `${planName}|${promo ?? ''}`;
+    if (checkoutAttemptRef.current?.key !== key) {
+      checkoutAttemptRef.current = { key, token: crypto.randomUUID() };
+    }
+    return checkoutAttemptRef.current.token;
+  };
+
   useEffect(() => {
     const token = localStorage.getItem('auth_token');
     const userId = localStorage.getItem('user_id');
@@ -377,6 +399,11 @@ export default function PricingPage() {
         body: JSON.stringify({
           plan: selectedPlan.name,
           promoCode: appliedPromo?.code || null,
+          // Токен ОДНОЙ попытки оплаты. При повторе после ошибки уходит тот же —
+          // сервер выведет из него тот же order_id и тот же Idempotence-Key, и
+          // ЮКасса отдаст уже созданный платёж вместо второго. Сбрасывается,
+          // когда пользователь закрывает окно или меняет тариф.
+          checkoutToken: checkoutTokenFor(selectedPlan.name, appliedPromo?.code || null),
         }),
       });
 
@@ -401,6 +428,9 @@ export default function PricingPage() {
     setSelectedPlan(null);
     setModalState('idle');
     setErrorMessage('');
+    // Окно закрыли — попытка окончена. Следующая получит новый токен, иначе
+    // повторная покупка того же тарифа склеилась бы с прошлым платежом.
+    checkoutAttemptRef.current = null;
   };
 
   const finalPrice = selectedPlan?.price ? getDiscountedPrice(selectedPlan.price) : null;

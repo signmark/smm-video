@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import crypto from 'node:crypto';
 import { v4 as uuidv4 } from 'uuid';
 import { sendPurchasePostback } from '../services/partner-postback';
 import { getAppBaseUrl } from '../utils/app-base-url';
@@ -77,6 +78,41 @@ class PaymentCreationUnknownError extends Error {
     super(message);
     this.name = 'PaymentCreationUnknownError';
   }
+}
+
+/**
+ * `order_id` попытки оплаты: стабильный при повторе, непредсказуемый снаружи.
+ *
+ * Ключ идемпотентности ЮКассы строится из `order_id`, поэтому повтор
+ * `/api/payments/create` после неоднозначного ответа обязан дать ТОТ ЖЕ
+ * идентификатор — иначе вместо повтора получится второй платёж.
+ *
+ * В хеш входит весь payload: другой тариф или промокод дают другой `order_id`.
+ * Так один токен нельзя переиспользовать, чтобы «доплатить» по чужой сумме.
+ *
+ * Без `checkoutToken` (старый клиент) возвращается случайный id — то есть
+ * прежнее поведение: хуже, чем с токеном, но не хуже, чем было.
+ */
+function checkoutOrderId(params: {
+  checkoutToken?: string | null;
+  userId: string;
+  plan: string;
+  promoCode?: string | null;
+}): string {
+  const token = String(params.checkoutToken ?? '').trim();
+  if (!token || token.length < 8 || token.length > 200) return uuidv4();
+
+  const payload = [token, params.userId, params.plan, String(params.promoCode ?? '')].join('|');
+  const digest = crypto.createHmac('sha256', SECRET_KEY || 'checkout').update(payload).digest('hex');
+
+  // Формат UUID: order_id уезжает в metadata ЮКассы и в поля брони, где уже
+  // ожидается именно такой вид.
+  return [
+    digest.slice(0, 8), digest.slice(8, 12),
+    `4${digest.slice(13, 16)}`,
+    ((parseInt(digest[16], 16) & 0x3 | 0x8).toString(16)) + digest.slice(17, 20),
+    digest.slice(20, 32),
+  ].join('-');
 }
 
 async function yookassaRequest(
@@ -439,7 +475,11 @@ router.post('/payments/create', async (req: Request, res: Response) => {
   const userToken = authHeader.substring(7);
 
   // `amount` из тела запроса сознательно НЕ читается: сумма считается сервером.
-  const { plan, promoCode } = req.body as { plan: string; promoCode?: string | null };
+  const { plan, promoCode, checkoutToken } = req.body as {
+    plan: string;
+    promoCode?: string | null;
+    checkoutToken?: string | null;
+  };
   if (!plan || !PLAN_KEYS[plan]) {
     return res.status(400).json({ error: 'Неверный тариф' });
   }
@@ -497,7 +537,19 @@ router.post('/payments/create', async (req: Request, res: Response) => {
     // Собственный идентификатор заказа. Бронь промокода берётся ДО обращения к
     // ЮКассе, когда её payment_id ещё не существует, поэтому якорем служит order_id;
     // ЮКасса возвращает его в metadata неизменным.
-    const orderId = uuidv4();
+    //
+    // Раньше здесь стоял голый uuidv4() — новый на КАЖДЫЙ HTTP-запрос. Стабильный
+    // Idempotence-Key жил только внутри одного запроса, а после ответа 503
+    // «повторите» клиент присылал новый запрос, получал новый orderId и создавал
+    // ВТОРОЙ платёж по тому же намерению (находка приёмки 30.07.2026). Особенно
+    // опасно без промокода: там нет даже строки брони, по которой это заметно.
+    //
+    // Теперь клиент выдаёт `checkoutToken` один раз на попытку оплаты и повторяет
+    // его при ретрае. orderId выводится из него детерминированно, но остаётся
+    // непредсказуемым (HMAC на секрете магазина). Токен связан с payload: другой
+    // тариф или промокод дадут другой orderId, поэтому переиспользовать чужой
+    // ключ с другой суммой нельзя.
+    const orderId = checkoutOrderId({ checkoutToken, userId, plan, promoCode });
 
     if (promoCode) {
       const check = await validatePromoCode(String(promoCode), userId);

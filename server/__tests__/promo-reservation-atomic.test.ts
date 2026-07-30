@@ -1415,6 +1415,92 @@ describe('создание платежа: idempotence и не-проглаты�
 });
 
 /**
+ * Повтор ОТДЕЛЬНЫМ HTTP-запросом не создаёт второй платёж (приёмка AI-48).
+ *
+ * Прежний тест доказывал только внутренний ретрай: два fetch внутри одного
+ * `POST /api/payments/create` шли с одним ключом. А между запросами ключ
+ * терялся — `orderId` создавался заново на каждый вход в ручку. Клиент,
+ * получив 503 «повторите», слал новый запрос и получал ВТОРОЙ платёж по тому
+ * же намерению. Особенно опасно без промокода: там нет строки брони, по
+ * которой расхождение вообще заметно.
+ *
+ * Теперь клиент присылает `checkoutToken` попытки, сервер выводит из него
+ * стабильный `order_id`, а из него — Idempotence-Key.
+ */
+describe('идемпотентность между HTTP-запросами', () => {
+  const createIdempotenceKeys = () => fetchMock.mock.calls
+    .filter(([u, init]: any[]) => String(u).endsWith('api.yookassa.ru/v3/payments') && init?.method === 'POST')
+    .map(([, init]: any[]) => init.headers['Idempotence-Key']);
+
+  const pay = (body: Record<string, any>) =>
+    request(app).post('/api/payments/create').set('Authorization', 'Bearer t').send(body);
+
+  it('без промокода: повтор с тем же токеном даёт один Idempotence-Key', async () => {
+    const token = 'attempt-token-aaaaaaaa';
+    const body = { plan: 'Профессиональный', checkoutToken: token };
+
+    // Первый заход неоднозначен: ЮКасса не ответила.
+    const realFetch = PRISTINE_FETCH;
+    fetchMock.mockImplementation((url: any, init?: any) => {
+      if (String(url).endsWith('api.yookassa.ru/v3/payments') && init?.method === 'POST') {
+        return Promise.reject(new Error('socket hang up'));
+      }
+      return realFetch(url, init);
+    });
+    const first = await pay(body);
+    expect(first.status).toBe(503);
+
+    // Клиент повторяет — ОТДЕЛЬНЫМ запросом, с тем же токеном.
+    fetchMock.mockImplementation(realFetch);
+    const second = await pay(body);
+    expect(second.status).toBe(200);
+
+    const keys = createIdempotenceKeys();
+    expect(new Set(keys).size, 'все попытки идут одним ключом').toBe(1);
+    expect(Object.keys(yookassaPayments), 'логический платёж один').toHaveLength(1);
+  });
+
+  it('другой тариф с тем же токеном — другой ключ, а не подмена суммы', async () => {
+    const token = 'attempt-token-bbbbbbbb';
+    await pay({ plan: 'Профессиональный', checkoutToken: token });
+    await pay({ plan: 'Базовый', checkoutToken: token });
+
+    const keys = createIdempotenceKeys();
+    expect(keys).toHaveLength(2);
+    expect(keys[0]).not.toBe(keys[1]);
+  });
+
+  it('новая попытка (новый токен) — новый платёж', async () => {
+    await pay({ plan: 'Профессиональный', checkoutToken: 'attempt-token-cccccccc' });
+    await pay({ plan: 'Профессиональный', checkoutToken: 'attempt-token-dddddddd' });
+
+    const keys = createIdempotenceKeys();
+    expect(new Set(keys).size).toBe(2);
+  });
+
+  it('с промокодом повтор попадает в ТУ ЖЕ бронь, а не занимает второй слот', async () => {
+    promo = { ...promo, max_uses: 5 };
+    const body = { plan: 'Профессиональный', promoCode: 'HALF', checkoutToken: 'attempt-token-eeeeeeee' };
+
+    const realFetch = PRISTINE_FETCH;
+    fetchMock.mockImplementation((url: any, init?: any) => {
+      if (String(url).endsWith('api.yookassa.ru/v3/payments') && init?.method === 'POST') {
+        return Promise.reject(new Error('socket hang up'));
+      }
+      return realFetch(url, init);
+    });
+    await pay(body);
+
+    fetchMock.mockImplementation(realFetch);
+    await pay(body);
+
+    // Одна бронь на попытку: payment_id уникален, второй заход попал в неё же.
+    expect(reservations()).toHaveLength(1);
+    expect(new Set(createIdempotenceKeys()).size).toBe(1);
+  });
+});
+
+/**
  * История использований промокода восстанавливается на повторе (AI-32).
  *
  * `recordPromoUse` не проверял `res.ok`: HTTP 500 от Directus проходил

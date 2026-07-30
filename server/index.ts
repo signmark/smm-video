@@ -32,7 +32,9 @@ import { restoreAutonomousStates, getActiveAutonomousCampaignIds } from './servi
 // daily-trend-scheduler импорт удалён — планировщик отключён, сбор трендов только вручную
 import { log, logEnvironmentInfo } from "./utils/logger";
 import { directusApiManager } from './directus';
-import { registerXmlRiverRoutes } from './api/xmlriver-routes';
+// XMLRiver вырезан по решению владельца 2026-07-29: сервис в проекте не
+// используется, а его self-запросы строились из сырого Host и пересылали
+// Bearer пользователя (P2 ревью). Маршруты и клиент удалены целиком.
 import { falAiUniversalService } from './services/fal-ai-universal';
 import { initializeHeavyServices } from './optimize-startup';
 // Импортируем тестовые маршруты для Telegram
@@ -156,7 +158,8 @@ const PUBLIC_OAUTH_CALLBACKS: Array<{
   // OAuth provider redirect callbacks (GET, redirect from Google/VK/IG/Threads/TikTok)
   { router: youtubeAuthRouter, routerPath: '/youtube/auth/callback', publicPath: '/api/youtube/auth/callback', method: 'get' },
   { router: vkOAuthRouter, routerPath: '/vk/oauth2/callback', publicPath: '/api/vk/oauth2/callback', method: 'get' },
-  { router: vkOAuthRouter, routerPath: '/vk/callback', publicPath: '/api/vk/callback', method: 'get' },
+  // /api/vk/callback (legacy oauth.vk.com flow) удалён вместе с маршрутом:
+  // поток был неработоспособен (нет VK_CLIENT_SECRET) и не имел потребителей.
   { router: instagramOAuthRouter, routerPath: '/instagram/auth/callback', publicPath: '/api/instagram/auth/callback', method: 'get' },
   { router: threadsOAuthRouter, routerPath: '/threads/auth/callback', publicPath: '/api/threads/auth/callback', method: 'get' },
   { router: tiktokAuthRouter, routerPath: '/tiktok/auth/callback', publicPath: '/api/tiktok/auth/callback', method: 'get' },
@@ -900,9 +903,6 @@ app.use('/video-app', (req, res, next) => {
 
     app.use('/api/autonomous', autonomousRouter);
     log("Autonomous AI routes registered");
-
-    registerXmlRiverRoutes(app);
-    log("XMLRiver API routes registered");
 
     registerFalAiImageRoutes(app);
     log("FAL.AI Universal Image Generation routes registered");

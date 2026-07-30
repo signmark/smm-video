@@ -42,16 +42,33 @@ async function ensureCampaignAccess(
 }
 
 const VK_APP_ID = process.env.VK_APP_ID || '6121396';
-const VK_CLIENT_SECRET = process.env.VK_CLIENT_SECRET || '';
 
-// --- PKCE state store (in-memory, TTL 10 min) ---
+// --- PKCE state store (in-memory, одноразовый, TTL 10 min) ---
 interface PendingOAuth {
   campaignId: string;
+  /** Кто начал поток. Callback сверяет владельца кампании именно с ним. */
+  userId: string;
   clientId: string;
   codeVerifier: string;
   redirectUri: string;
+  /** Жёсткий срок годности state — не только сборка мусора таймером. */
+  expiresAt: number;
 }
+const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 const pendingOAuth = new Map<string, PendingOAuth>();
+
+/**
+ * Забирает state строго один раз. Повтор, подмена и просрочка неотличимы для
+ * вызывающего — все дают null, чтобы callback не работал оракулом.
+ */
+function takePendingOAuth(state: unknown): PendingOAuth | null {
+  if (typeof state !== 'string' || !state) return null;
+  const pending = pendingOAuth.get(state);
+  if (!pending) return null;
+  pendingOAuth.delete(state);
+  if (Date.now() > pending.expiresAt) return null;
+  return pending;
+}
 
 function generateCodeVerifier(): string {
   return crypto.randomBytes(32).toString('base64url');
@@ -76,13 +93,19 @@ function getAppBaseUrl(req: express.Request): string {
 
 /**
  * GET /api/vk/oauth2/start?campaign_id=X&client_id=Y
- * Формирует PKCE и редиректит в VK ID
+ * Формирует PKCE и редиректит в VK ID.
+ *
+ * Владение кампанией проверяется ДО редиректа (находка ревью 2026-07-29):
+ * раньше произвольный campaign_id ложился в state, и авторизованный
+ * пользователь, пройдя OAuth со СВОИМ VK, перезаписывал VK-настройки чужой
+ * кампании — публичный callback патчит её служебным токеном.
  */
-router.get('/vk/oauth2/start', (req, res) => {
+router.get('/vk/oauth2/start', authenticateUser, async (req, res) => {
   const { campaign_id, client_id } = req.query as Record<string, string>;
   if (!campaign_id) {
     return res.status(400).json({ error: 'campaign_id обязателен' });
   }
+  if (!(await ensureCampaignAccess(req, res, String(campaign_id)))) return;
 
   const effectiveClientId = client_id || VK_APP_ID;
   if (!effectiveClientId) {
@@ -94,8 +117,16 @@ router.get('/vk/oauth2/start', (req, res) => {
   const state = crypto.randomBytes(16).toString('hex');
   const redirectUri = `${getAppBaseUrl(req)}/api/vk/oauth2/callback`;
 
-  pendingOAuth.set(state, { campaignId: campaign_id, clientId: effectiveClientId, codeVerifier, redirectUri });
-  setTimeout(() => pendingOAuth.delete(state), 10 * 60 * 1000);
+  pendingOAuth.set(state, {
+    campaignId: campaign_id,
+    userId: String((req as any).user?.id),
+    clientId: effectiveClientId,
+    codeVerifier,
+    redirectUri,
+    expiresAt: Date.now() + OAUTH_STATE_TTL_MS,
+  });
+  // Таймер — только сборка мусора; срок годности проверяет takePendingOAuth.
+  setTimeout(() => pendingOAuth.delete(state), OAUTH_STATE_TTL_MS).unref?.();
 
   const authUrl = new URL('https://id.vk.com/oauth2/authorize');
   authUrl.searchParams.set('client_id', effectiveClientId);
@@ -122,11 +153,11 @@ router.get('/vk/oauth2/callback', async (req, res) => {
     return res.redirect(`/vk-callback?vk_error=${encodeURIComponent(error_description || error)}`);
   }
 
-  const pending = pendingOAuth.get(state);
+  // Одноразовость и TTL: повтор, подмена и просрочка отвечают одинаково.
+  const pending = takePendingOAuth(state);
   if (!pending) {
     return res.redirect('/vk-callback?vk_error=invalid_state');
   }
-  pendingOAuth.delete(state);
 
   try {
     const params = new URLSearchParams();
@@ -156,7 +187,22 @@ router.get('/vk/oauth2/callback', async (req, res) => {
     const campaignResp = await axios.get(`${directusUrl}/items/user_campaigns/${pending.campaignId}`, {
       headers: { Authorization: `Bearer ${adminToken}` }
     });
-    const existingSettings = campaignResp.data.data.social_media_settings || {};
+
+    // Публичный callback патчит кампанию СЛУЖЕБНЫМ токеном, поэтому владение
+    // перепроверяется здесь ещё раз: между start и callback кампанию могли
+    // передать другому владельцу, а state — лишь снимок на момент старта.
+    const campaignRecord = campaignResp.data.data || {};
+    const rawOwner = campaignRecord.user_id;
+    const ownerId = typeof rawOwner === 'object' && rawOwner !== null ? rawOwner.id : rawOwner;
+    if (!ownerId || String(ownerId) !== String(pending.userId)) {
+      log(
+        `[VK-OAUTH2] Callback отклонён: кампания ${pending.campaignId} не принадлежит `
+        + `инициатору потока`, 'vk-oauth', 'warn',
+      );
+      return res.redirect('/vk-callback?vk_error=campaign_access_denied');
+    }
+
+    const existingSettings = campaignRecord.social_media_settings || {};
     const existingVk = existingSettings.vk || {};
 
     const expiresAt = t.expires_in
@@ -748,106 +794,12 @@ router.get('/vk/token-webhook/:campaignId/status', authenticateUser, async (req,
   }
 });
 
-// =======================================================
-// Старый VK OAuth flow (oauth.vk.com) — оставлен для совместимости
-// =======================================================
-
-router.get('/vk/auth', (req, res) => {
-  const { redirect_url, campaign_id } = req.query;
-  if (!VK_APP_ID) {
-    return res.status(500).json({ success: false, error: 'VK_APP_ID не настроен' });
-  }
-  const host = req.get('host') || '';
-  const protocol = host.includes('localhost') ? 'http' : 'https';
-  const callbackUrl = `${protocol}://${host}/api/vk/callback`;
-  const state = Buffer.from(JSON.stringify({
-    redirect_url: redirect_url || '/',
-    campaign_id: campaign_id || null,
-    timestamp: Date.now()
-  })).toString('base64');
-  const scope = 'wall,photos,video,groups,offline';
-  const authUrl = `https://oauth.vk.com/authorize?client_id=${VK_APP_ID}&redirect_uri=${encodeURIComponent(callbackUrl)}&scope=${scope}&response_type=code&v=5.131&state=${state}`;
-  res.redirect(authUrl);
-});
-
-router.get('/vk/callback', async (req, res) => {
-  const { code, state, error, error_description } = req.query;
-  if (error) return res.redirect(`/?vk_error=${encodeURIComponent(String(error_description || error))}`);
-  if (!code) return res.redirect('/?vk_error=no_code');
-  if (!VK_APP_ID || !VK_CLIENT_SECRET) return res.redirect('/?vk_error=server_config');
-
-  try {
-    const host = req.get('host') || '';
-    const protocol = host.includes('localhost') ? 'http' : 'https';
-    const callbackUrl = `${protocol}://${host}/api/vk/callback`;
-    const tokenResponse = await axios.get('https://oauth.vk.com/access_token', {
-      params: { client_id: VK_APP_ID, client_secret: VK_CLIENT_SECRET, redirect_uri: callbackUrl, code }
-    });
-    const { access_token, user_id, expires_in } = tokenResponse.data;
-    if (!access_token) return res.redirect('/?vk_error=no_token');
-
-    let redirectUrl = '/';
-    let campaignId: string | null = null;
-    if (state) {
-      try {
-        const stateData = JSON.parse(Buffer.from(String(state), 'base64').toString());
-        redirectUrl = stateData.redirect_url || '/';
-        campaignId = stateData.campaign_id || null;
-      } catch {}
-    }
-
-    // Если указана кампания — сохраняем токен прямо в неё (offline = не истекает)
-    if (campaignId) {
-      try {
-        const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
-        const directusUrl = process.env.DIRECTUS_URL;
-        const campaignResp = await axios.get(`${directusUrl}/items/user_campaigns/${campaignId}`, {
-          headers: { Authorization: `Bearer ${adminToken}` }
-        });
-        const existingSettings = campaignResp.data.data?.social_media_settings || {};
-        const existingVk = existingSettings.vk || {};
-
-        await axios.patch(`${directusUrl}/items/user_campaigns/${campaignId}`, {
-          social_media_settings: {
-            ...existingSettings,
-            vk: {
-              ...existingVk,
-              token: access_token,
-              accessToken: access_token,
-              // offline токен не истекает — убираем refreshToken чтобы не путать крон
-              refreshToken: null,
-              clientId: VK_APP_ID,
-              tokenExpiresAt: null, // offline = вечный
-              tokenReceivedAt: new Date().toISOString(),
-              configured: true,
-              setupCompletedAt: new Date().toISOString()
-            }
-          }
-        }, { headers: { Authorization: `Bearer ${adminToken}` } });
-
-        log(`[VK-CALLBACK] Offline-токен сохранён для кампании ${campaignId}`, 'vk-oauth');
-        return res.redirect(`/campaigns/${campaignId}/settings?vk_connected=1`);
-      } catch (saveErr: any) {
-        log(`[VK-CALLBACK] Ошибка сохранения токена: ${saveErr.message}`, 'vk-oauth', 'error');
-      }
-    }
-
-    const separator = redirectUrl.includes('?') ? '&' : '?';
-    res.redirect(`${redirectUrl}${separator}vk_token=${access_token}&vk_user_id=${user_id}`);
-  } catch (err: any) {
-    res.redirect(`/?vk_error=${encodeURIComponent(err.message)}`);
-  }
-});
-
-router.get('/vk/auth-url', (req, res) => {
-  if (!VK_APP_ID) return res.status(500).json({ success: false, error: 'VK_APP_ID не настроен' });
-  const host = req.get('host') || '';
-  const protocol = host.includes('localhost') ? 'http' : 'https';
-  const callbackUrl = `${protocol}://${host}/api/vk/callback`;
-  const state = Buffer.from(JSON.stringify({ redirect_url: req.query.redirect_url || '/', timestamp: Date.now() })).toString('base64');
-  const authUrl = `https://oauth.vk.com/authorize?client_id=${VK_APP_ID}&redirect_uri=${encodeURIComponent(callbackUrl)}&scope=wall,photos,video,groups,offline&response_type=code&v=5.131&state=${state}`;
-  res.json({ success: true, authUrl, appId: VK_APP_ID });
-});
+// Старый VK OAuth flow (oauth.vk.com: /vk/auth, /vk/callback, /vk/auth-url)
+// УДАЛЁН ревью 2026-07-29. Он принимал произвольный campaign_id в неподписанном
+// base64-state и собирал redirect_uri из сырого Host — то есть позволял записать
+// токен в чужую кампанию. Активных потребителей не было: клиент ссылок не имеет,
+// needanapp ходит через /vk/token-webhook, а VK_CLIENT_SECRET не задан ни в env,
+// ни в Directus — обмен кода на токен в этом потоке не мог состояться вовсе.
 
 /**
  * Список групп по токену VK.

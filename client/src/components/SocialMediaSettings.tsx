@@ -40,6 +40,7 @@ import InstagramSetupWizardSimple from "./InstagramSetupWizardSimple";
 import VkSetupWizard from "./VkSetupWizard";
 import FacebookSetupWizard from "./FacebookSetupWizard";
 import { isPlatformConnected } from "@/lib/platform-connection";
+import { fetchVkGroupsByManualToken } from "@/lib/vk-groups-request";
 import type { SocialMediaSettings } from "@shared/schema";
 
 const socialMediaSettingsSchema = z.object({
@@ -356,11 +357,7 @@ export function SocialMediaSettings({
     try {
       const manualToken = form.getValues('vk.token');
       const response = manualToken
-        ? await fetch('/api/vk/groups', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ accessToken: manualToken }),
-          })
+        ? await fetchVkGroupsByManualToken(manualToken)
         : await fetch(`/api/campaigns/${campaignId}/vk-groups`, {
             headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` }
           });

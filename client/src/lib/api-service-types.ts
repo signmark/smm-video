@@ -7,7 +7,6 @@ export enum ApiServiceName {
   APIFY = 'apify',
   DEEPSEEK = 'deepseek',
   FAL_AI = 'fal_ai',
-  XMLRIVER = 'xmlriver',
   QWEN = 'qwen',
   GEMINI = 'gemini'
 }

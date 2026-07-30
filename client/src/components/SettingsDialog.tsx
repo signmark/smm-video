@@ -22,7 +22,6 @@ function getServiceDisplayName(serviceName: string): string {
     'apify': 'Apify',
     'deepseek': 'DeepSeek',
     'fal_ai': 'FAL.AI',
-    'xmlriver': 'XMLRiver',
     'claude': 'Claude AI',
     'gemini': 'Gemini',
     'qwen': 'Qwen'
@@ -38,7 +37,6 @@ function getApiKeyUrl(serviceName: string): string {
     'apify': 'https://console.apify.com/account/integrations',
     'deepseek': 'https://platform.deepseek.com/api-keys',
     'fal_ai': 'https://www.fal.ai/dashboard/settings',
-    'xmlriver': 'https://xmlriver.com/keys/all',
     'claude': 'https://console.anthropic.com/settings/keys',
     'gemini': 'https://ai.google.dev/tutorials/setup',
     'qwen': 'https://help.aliyun.com/zh/dashscope/developer-reference/api-details'
@@ -51,12 +49,6 @@ interface ApiKey {
   id: string;
   service_name: string;
   api_key: string;
-}
-
-// Интерфейс для XMLRiver ключа
-interface XMLRiverCredentials {
-  user: string;
-  key: string;
 }
 
 // Типы состояния тестирования ключа API
@@ -76,8 +68,6 @@ export function SettingsDialog() {
   const [claudeKey, setClaudeKey] = useState("");
   const [geminiKey, setGeminiKey] = useState("");
   const [qwenKey, setQwenKey] = useState("");
-  const [xmlRiverUserId, setXmlRiverUserId] = useState("16797");
-  const [xmlRiverApiKey, setXmlRiverApiKey] = useState("");
   
   // Testing states
   const [perplexityTesting, setPerplexityTesting] = useState<TestingState>({ status: 'idle' });
@@ -87,7 +77,6 @@ export function SettingsDialog() {
   const [claudeTesting, setClaudeTesting] = useState<TestingState>({ status: 'idle' });
   const [geminiTesting, setGeminiTesting] = useState<TestingState>({ status: 'idle' });
   const [qwenTesting, setQwenTesting] = useState<TestingState>({ status: 'idle' });
-  const [xmlRiverTesting, setXmlRiverTesting] = useState<TestingState>({ status: 'idle' });
   
   // Component states
   const { toast } = useToast();
@@ -120,19 +109,7 @@ export function SettingsDialog() {
   // Load keys from API when component mounts
   useEffect(() => {
     if (apiKeys) {
-      // Process XMLRiver key separately since it contains two fields
-      const xmlRiverKeyData = apiKeys.find((k: ApiKey) => k.service_name === 'xmlriver');
-      if (xmlRiverKeyData && xmlRiverKeyData.api_key) {
-        try {
-          const credentials = JSON.parse(xmlRiverKeyData.api_key) as XMLRiverCredentials;
-          setXmlRiverUserId(credentials.user || "16797");
-          setXmlRiverApiKey(credentials.key || "");
-        } catch (e) {
-          console.error('Error parsing XMLRiver credentials:', e);
-        }
-      }
-
-      // Set other keys
+      // Set keys
       const perplexityKeyData = apiKeys.find((k: ApiKey) => k.service_name === 'perplexity');
       const apifyKeyData = apiKeys.find((k: ApiKey) => k.service_name === 'apify');
       const deepseekKeyData = apiKeys.find((k: ApiKey) => k.service_name === 'deepseek');
@@ -187,11 +164,7 @@ export function SettingsDialog() {
         { service_name: 'fal_ai', api_key: falAiKey },
         { service_name: 'claude', api_key: claudeKey },
         { service_name: 'gemini', api_key: geminiKey },
-        { service_name: 'qwen', api_key: qwenKey },
-        { 
-          service_name: 'xmlriver', 
-          api_key: JSON.stringify({ user: xmlRiverUserId, key: xmlRiverApiKey }) 
-        }
+        { service_name: 'qwen', api_key: qwenKey }
       ];
 
       // Filter to only include keys that are filled in
@@ -242,7 +215,7 @@ export function SettingsDialog() {
   
   // Generic function for testing API keys
   const testApiKey = async (
-    keyType: 'perplexity' | 'apify' | 'deepseek' | 'fal_ai' | 'xmlriver' | 'claude' | 'gemini' | 'qwen',
+    keyType: 'perplexity' | 'apify' | 'deepseek' | 'fal_ai' | 'claude' | 'gemini' | 'qwen',
     keyValue: string,
     setTestingState: React.Dispatch<React.SetStateAction<TestingState>>,
     additionalValidation?: () => boolean
@@ -251,7 +224,7 @@ export function SettingsDialog() {
       toast({
         variant: "destructive",
         title: "Ошибка",
-        description: `Необходимо указать API ключ ${keyType === 'fal_ai' ? 'FAL.AI' : keyType === 'xmlriver' ? 'XMLRiver' : keyType}`
+        description: `Необходимо указать API ключ ${keyType === 'fal_ai' ? 'FAL.AI' : keyType}`
       });
       return;
     }
@@ -383,7 +356,6 @@ export function SettingsDialog() {
         perplexity: 'Perplexity',
         apify: 'Apify',
         deepseek: 'DeepSeek',
-        xmlriver: 'XMLRiver',
         fal_ai: 'FAL.AI',
         gemini: 'Gemini',
         qwen: 'Qwen'
@@ -418,21 +390,6 @@ export function SettingsDialog() {
   const testClaudeKey = () => testApiKey('claude', claudeKey, setClaudeTesting);
   const testGeminiKey = () => testApiKey('gemini', geminiKey, setGeminiTesting);
   const testQwenKey = () => testApiKey('qwen', qwenKey, setQwenTesting);
-  const testXmlRiverKey = () => {
-    const validation = () => {
-      if (!xmlRiverUserId.trim()) {
-        toast({
-          variant: "destructive",
-          title: "Ошибка",
-          description: "Необходимо указать ID пользователя XMLRiver"
-        });
-        return false;
-      }
-      return true;
-    };
-    
-    testApiKey('xmlriver', xmlRiverApiKey, setXmlRiverTesting, validation);
-  };
   
   // Loading state
   if (isLoading) {
@@ -774,77 +731,6 @@ export function SettingsDialog() {
             </ul>
           </div>
 
-          {/* XMLRiver section */}
-          <div className="space-y-2 mb-6 border-b pb-4">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-lg font-medium">API Ключ XMLRiver</h3>
-              <Badge variant={xmlRiverApiKey.trim() && xmlRiverUserId.trim() ? "success" : "destructive"} className="ml-2">
-                {(xmlRiverApiKey.trim() && xmlRiverUserId.trim()) || apiKeys?.some((k: ApiKey) => k.service_name === 'xmlriver' && k.api_key) ? "Настроен" : "Требуется настройка"}
-              </Badge>
-            </div>
-            <div className="grid gap-2">
-              <div className="flex items-center space-x-2">
-                <div className="flex-1 grid gap-2">
-                  <Label htmlFor="xmlriver-user-id">ID пользователя XMLRiver</Label>
-                  <Input
-                    id="xmlriver-user-id"
-                    type="text"
-                    placeholder="16797"
-                    value={xmlRiverUserId}
-                    onChange={(e) => setXmlRiverUserId(e.target.value)}
-                  />
-                </div>
-                <a href="https://xmlriver.com/queries/" target="_blank" rel="noopener noreferrer" className="flex-none p-2 text-amber-500 hover:text-amber-700 border rounded-md mt-8">
-                  <InfoIcon className="h-5 w-5" />
-                </a>
-              </div>
-
-              <Label htmlFor="xmlriver-key">API ключ XMLRiver</Label>
-              <div className="flex space-x-2">
-                <Input
-                  id="xmlriver-key"
-                  type="password"
-                  placeholder="Ключ XMLRiver"
-                  value={xmlRiverApiKey}
-                  className="flex-1"
-                  onChange={(e) => setXmlRiverApiKey(e.target.value)}
-                />
-                <Button
-                  variant="outline"
-                  type="button"
-                  size="sm"
-                  onClick={testXmlRiverKey}
-                  disabled={!xmlRiverApiKey.trim() || !xmlRiverUserId.trim() || xmlRiverTesting.status === 'testing' || isPending}
-                  className={cn(
-                    "flex-none w-24",
-                    xmlRiverTesting.status === 'success' && "bg-green-50 text-green-700 hover:bg-green-100 hover:text-green-800",
-                    xmlRiverTesting.status === 'error' && "bg-red-50 text-red-700 hover:bg-red-100 hover:text-red-800"
-                  )}
-                >
-                  {xmlRiverTesting.status === 'testing' ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : xmlRiverTesting.status === 'success' ? (
-                    <CheckCircle2 className="h-4 w-4 mr-1" />
-                  ) : xmlRiverTesting.status === 'error' ? (
-                    <XCircle className="h-4 w-4 mr-1" />
-                  ) : null}
-                  Проверить
-                </Button>
-              </div>
-              {xmlRiverTesting.status === 'error' && (
-                <p className="text-xs text-red-600">{xmlRiverTesting.message}</p>
-              )}
-              {xmlRiverTesting.status === 'success' && (
-                <p className="text-xs text-green-600">{xmlRiverTesting.message}</p>
-              )}
-            </div>
-            <p className="text-sm mt-2">Ключ используется для поиска и управления товарами на маркетплейсах</p>
-            <ul className="text-sm list-disc list-inside ml-2">
-              <li>Необходим для работы с товарами и ценами</li>
-              <li>Ключ можно получить в <a href="https://xmlriver.com/queries/" target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline">XMLRiver Queries</a></li>
-            </ul>
-          </div>
-
           {/* Gemini section */}
           <div className="space-y-2 mb-6 border-b pb-4">
             <div className="flex items-center justify-between mb-2">
@@ -986,8 +872,7 @@ export function SettingsDialog() {
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm">
                           <span className="bg-muted px-2 py-1 rounded-md font-mono text-xs">
-                            {key.service_name === 'xmlriver' ? 'Составной ключ' : 
-                              key.api_key.substring(0, 4) + '...' + key.api_key.substring(key.api_key.length - 4)}
+                            {key.api_key.substring(0, 4) + '...' + key.api_key.substring(key.api_key.length - 4)}
                           </span>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">

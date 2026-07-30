@@ -12,7 +12,6 @@ export function getServiceDisplayName(serviceName: string): string {
     'apify': 'Apify',
     'deepseek': 'DeepSeek',
     'fal_ai': 'FAL.AI',
-    'xmlriver': 'XMLRiver',
     'claude': 'Claude AI',
     'gemini': 'Google Gemini',
     'qwen': 'Alibaba Qwen',

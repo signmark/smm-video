@@ -507,19 +507,6 @@ export class GlobalApiKeysService {
         if (apiKey.startsWith('Key ')) {
           formattedKey = apiKey.substring(4);
         }
-      } else if (serviceName === ApiServiceName.XMLRIVER) {
-        // Форматирование ключа XMLRiver в JSON формат
-        try {
-          JSON.parse(apiKey); // Проверяем, что это уже JSON
-        } catch (e) {
-          // Если не JSON, преобразуем
-          if (apiKey.includes(':')) {
-            const [user, key] = apiKey.split(':');
-            formattedKey = JSON.stringify({ user: user.trim(), key: key.trim() });
-          } else {
-            formattedKey = JSON.stringify({ user: "16797", key: apiKey.trim() });
-          }
-        }
       }
       
       // Проверяем, существует ли уже ключ для этого сервиса
@@ -744,19 +731,6 @@ export class GlobalApiKeysService {
         // Если ключ начинается с "Key ", удаляем префикс для хранения
         if (keyData.api_key.startsWith('Key ')) {
           formattedKey = keyData.api_key.substring(4);
-        }
-      } else if (keyData.service === ApiServiceName.XMLRIVER) {
-        // Форматирование ключа XMLRiver в JSON формат
-        try {
-          JSON.parse(keyData.api_key); // Проверяем, что это уже JSON
-        } catch (e) {
-          // Если не JSON, преобразуем
-          if (keyData.api_key.includes(':')) {
-            const [user, key] = keyData.api_key.split(':');
-            formattedKey = JSON.stringify({ user: user.trim(), key: key.trim() });
-          } else {
-            formattedKey = JSON.stringify({ user: "16797", key: keyData.api_key.trim() });
-          }
         }
       }
       

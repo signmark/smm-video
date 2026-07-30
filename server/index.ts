@@ -32,9 +32,6 @@ import { restoreAutonomousStates, getActiveAutonomousCampaignIds } from './servi
 // daily-trend-scheduler импорт удалён — планировщик отключён, сбор трендов только вручную
 import { log, logEnvironmentInfo } from "./utils/logger";
 import { directusApiManager } from './directus';
-// XMLRiver вырезан по решению владельца 2026-07-29: сервис в проекте не
-// используется, а его self-запросы строились из сырого Host и пересылали
-// Bearer пользователя (P2 ревью). Маршруты и клиент удалены целиком.
 import { falAiUniversalService } from './services/fal-ai-universal';
 import { initializeHeavyServices } from './optimize-startup';
 // Импортируем тестовые маршруты для Telegram

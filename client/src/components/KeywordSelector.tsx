@@ -4,7 +4,6 @@ import { Button } from '@/components/ui/button';
 import { Search, AlertTriangle, Loader2, RefreshCw } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
-import { AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { useAuthStore } from '@/lib/store';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useQueryClient } from '@tanstack/react-query';
@@ -36,7 +35,6 @@ export function KeywordSelector({
   const [isLoading, setIsLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const [selectedItems, setSelectedItems] = useState<string[]>(selectedKeywords || []);
-  const [showApiKeyDialog, setShowApiKeyDialog] = useState(false);
   const { toast } = useToast();
   const [existingKeywords, setExistingKeywords] = useState<string[]>([]);
   const [isLoadingExisting, setIsLoadingExisting] = useState(false);
@@ -115,7 +113,11 @@ export function KeywordSelector({
       
       if (!response.ok) {
         if (response.status === 401) {
-          setShowApiKeyDialog(true);
+          toast({
+            title: "Требуется авторизация",
+            description: "Войдите в аккаунт, чтобы искать ключевые слова",
+            variant: "destructive"
+          });
           setIsLoading(false);
           return;
         }
@@ -429,28 +431,6 @@ export function KeywordSelector({
         </div>
       )}
 
-      <AlertDialog open={showApiKeyDialog} onOpenChange={setShowApiKeyDialog}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Требуется авторизация и API ключ XMLRiver</AlertDialogTitle>
-            <AlertDialogDescription>
-              Для поиска ключевых слов необходимо:
-              <ol className="list-decimal pl-5 mt-2 space-y-1">
-                <li>Войти в аккаунт системы (авторизоваться)</li>
-                <li>Добавить API ключ XMLRiver в настройках профиля</li>
-              </ol>
-              <div className="mt-4">
-                Вы можете получить API ключ на сайте <a href="https://xmlriver.com" target="_blank" rel="noopener noreferrer" className="text-primary underline">XMLRiver</a>.
-              </div>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogAction onClick={() => setShowApiKeyDialog(false)}>
-              Понятно
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

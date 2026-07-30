@@ -15,11 +15,7 @@ const apiKeys = {
   apify: '',
   deepseek: '',
   falai: '',
-  claude: '',
-  xmlriver: {
-    userId: '',
-    apiKey: ''
-  }
+  claude: ''
 };
 
 /**
@@ -103,25 +99,6 @@ async function loadApiKeys(token) {
               apiKeys.claude = keyData.api_key;
               console.log('✓ Загружен ключ для Claude AI API');
               break;
-            case 'xmlriver':
-              // Для XMLRiver, ключ может храниться как JSON-строка
-              try {
-                const xmlriverData = JSON.parse(keyData.api_key);
-                if (xmlriverData.user && xmlriverData.key) {
-                  apiKeys.xmlriver.userId = xmlriverData.user;
-                  apiKeys.xmlriver.apiKey = xmlriverData.key;
-                  console.log('✓ Загружен составной ключ для XMLRiver из JSON');
-                }
-              } catch (e) {
-                // Если это не JSON, то проверяем другие форматы
-                if (keyData.api_key.includes(':')) {
-                  const [userId, apiKey] = keyData.api_key.split(':');
-                  apiKeys.xmlriver.userId = userId;
-                  apiKeys.xmlriver.apiKey = apiKey;
-                  console.log('✓ Загружен составной ключ для XMLRiver из строки с разделителем');
-                }
-              }
-              break;
             default:
               console.log(`✓ Найден ключ для сервиса: ${keyData.service_name}`);
           }
@@ -136,11 +113,7 @@ async function loadApiKeys(token) {
         apify: apiKeys.apify ? '******' : '',
         deepseek: apiKeys.deepseek ? '******' : '',
         falai: apiKeys.falai ? '******' : '',
-        claude: apiKeys.claude ? '******' : '',
-        xmlriver: {
-          userId: apiKeys.xmlriver.userId ? '******' : '',
-          apiKey: apiKeys.xmlriver.apiKey ? '******' : ''
-        }
+        claude: apiKeys.claude ? '******' : ''
       };
       console.log(JSON.stringify(safeApiKeys, null, 2));
     } else {

@@ -12,7 +12,6 @@ export enum ApiServiceName {
   APIFY = 'apify',
   DEEPSEEK = 'deepseek',
   FAL_AI = 'fal_ai',
-  XMLRIVER = 'xmlriver',
   QWEN = 'qwen',
   CLAUDE = 'claude',
   GEMINI = 'GEMINI_API_KEY',
@@ -31,7 +30,6 @@ const SERVICE_NAME_DB_MAPPING: Record<ApiServiceName, string> = {
   [ApiServiceName.APIFY]: 'apify',
   [ApiServiceName.DEEPSEEK]: 'deepseek',
   [ApiServiceName.FAL_AI]: 'FAL_AI',
-  [ApiServiceName.XMLRIVER]: 'xmlriver',
   [ApiServiceName.QWEN]: 'qwen',
   [ApiServiceName.CLAUDE]: 'claude',
   [ApiServiceName.GEMINI]: 'GEMINI_API_KEY',
@@ -51,7 +49,8 @@ const SERVICE_INDEX_MAPPING: Record<number, ApiServiceName> = {
   1: ApiServiceName.APIFY,            // Второе поле в UI - API Ключ Apify
   2: ApiServiceName.DEEPSEEK,         // Третье поле в UI - API Ключ DeepSeek
   3: ApiServiceName.FAL_AI,           // Четвертое поле в UI - API Ключ FAL.AI
-  4: ApiServiceName.XMLRIVER,         // Пятое поле в UI - API Ключ XMLRiver
+  // Индекс 4 (XMLRiver) удалён вместе с интеграцией: легаси-записи без
+  // service_name на этой позиции больше не резолвятся намеренно.
   5: ApiServiceName.QWEN,             // Шестое поле в UI - API Ключ Qwen
   6: ApiServiceName.CLAUDE,           // Седьмое поле в UI - API Ключ Claude
   7: ApiServiceName.GEMINI,           // Восьмое поле в UI - API Ключ Gemini
@@ -158,21 +157,6 @@ export class ApiKeyService {
           // Для отладки запоминаем формат ключа но НЕ модифицируем его
           if (apiKey.startsWith('Key ')) {
             console.log(`[${serviceName}] ВНИМАНИЕ: Ключ FAL.AI в БД уже содержит префикс 'Key ', что может привести к двойному префиксу.`);
-          }
-        }
-        
-        if (serviceName === ApiServiceName.XMLRIVER) {
-          try {
-            JSON.parse(apiKey);
-            console.log(`[${serviceName}] Ключ уже в JSON формате`);
-          } catch (e) {
-            console.log(`[${serviceName}] Форматирование ключа XMLRiver в JSON`);
-            if (apiKey.includes(':')) {
-              const [user, key] = apiKey.split(':');
-              apiKey = JSON.stringify({ user: user.trim(), key: key.trim() });
-            } else {
-              apiKey = JSON.stringify({ user: "16797", key: apiKey.trim() });
-            }
           }
         }
         
@@ -297,38 +281,6 @@ export class ApiKeyService {
           log(`[${serviceName}] API ключ для пользователя ${userId} сохраняется, но может не работать с FAL.AI API`, 'api-keys');
         } else {
           console.log(`[${serviceName}] Ключ в правильном формате (содержит ":")"`);
-        }
-      }
-      
-      // Для XMLRiver - хранение комбинации user ID и API ключа
-      if (serviceName === ApiServiceName.XMLRIVER) {
-        try {
-          // Проверяем, не передан ли уже ключ в JSON формате
-          const parsed = JSON.parse(apiKey);
-          
-          // Если это объект с полями user и key, значит уже отформатирован
-          if (typeof parsed === 'object' && 'user' in parsed && 'key' in parsed) {
-            console.log(`[${serviceName}] Получен API ключ в формате JSON, сохраняем как есть`);
-          } else {
-            // Иначе это некорректный формат, пробуем создать JSON формат заново
-            console.warn(`[${serviceName}] Некорректный формат JSON для XMLRiver API ключа`);
-          }
-        } catch (e) {
-          // Если не удалось распарсить JSON, то это строка с API ключом
-          // Форматируем в JSON объект
-          console.log(`[${serviceName}] Преобразуем обычный ключ в формат JSON`);
-          
-          // Предполагаем, что ключ содержит два значения: user_id:api_key
-          if (apiKey.includes(':')) {
-            const [user, key] = apiKey.split(':');
-            apiKey = JSON.stringify({ user: user.trim(), key: key.trim() });
-            console.log(`[${serviceName}] Сохраняем ключ в формате JSON с user_id:api_key`);
-          } else {
-            // Если разделитель не найден, предполагаем, что это только API ключ без user ID
-            // Используем значение по умолчанию для user ID (16797)
-            apiKey = JSON.stringify({ user: "16797", key: apiKey.trim() });
-            console.log(`[${serviceName}] Сохраняем ключ в формате JSON с user_id по умолчанию (16797)`);
-          }
         }
       }
       

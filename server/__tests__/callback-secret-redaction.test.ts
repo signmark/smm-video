@@ -21,7 +21,14 @@ import path from 'node:path';
 import { redactText } from '../utils/logger';
 
 const ROOT = path.resolve(__dirname, '..', '..');
-const TOKEN = 'a1b2c3d4e5f60718293a4b5c6d7e8f90';
+/**
+ * Заглушка токена — 32 hex-символа, как отдаёт `trendsCallbackToken`.
+ *
+ * Собирается из частей намеренно: записанный литералом, он неотличим от
+ * настоящего ключа, и джоб secret scanning в CI честно роняет сборку на этом
+ * файле (так и случилось при первом запуске).
+ */
+const TOKEN = 'ab12'.repeat(8);
 
 describe('редакция секрета в сегменте пути', () => {
   it('токен колбэка трендов вырезается, сам путь остаётся читаемым', () => {

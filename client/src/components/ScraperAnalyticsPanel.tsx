@@ -176,9 +176,11 @@ export function ScraperAnalyticsPanel({ campaignId }: Props) {
 
   // Engagement — только когда открыта эта вкладка, не поллим
   const { data: engagementData, isLoading: engagementLoading } = useQuery({
-    queryKey: ['scraper-engagement', platform],
+    queryKey: ['scraper-engagement', platform, campaignId],
     queryFn: async () => {
-      const params = new URLSearchParams({ limit: '20' });
+      // campaignId обязателен: сервер сам выводит набор каналов из кампании и
+      // клиентскому channel_ids не доверяет.
+      const params = new URLSearchParams({ limit: '20', campaignId: campaignId! });
       if (platformParam) params.set('platform', platformParam);
       const resp = await apiRequest(`/api/scraper/analytics/engagement?${params}`);
       return (resp?.data ?? []) as EngagementChannel[];
@@ -186,7 +188,7 @@ export function ScraperAnalyticsPanel({ campaignId }: Props) {
     staleTime: 15 * 60 * 1000,
     refetchOnWindowFocus: false,
     retry: 1,
-    enabled: activeTab === 'engagement',
+    enabled: activeTab === 'engagement' && Boolean(campaignId),
   });
 
   const syncMutation = useMutation({

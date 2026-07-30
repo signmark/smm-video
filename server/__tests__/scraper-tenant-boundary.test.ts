@@ -47,6 +47,13 @@ const H = vi.hoisted(() => {
     getChannelOverview: vi.fn(async () => ({ posts: 1 })),
     getChannelAnalytics: vi.fn(async () => ({ points: [] })),
     ensureChannelsRegistered: vi.fn(async () => undefined),
+    createMonitoringChannel: vi.fn(async () => ({ id: 'ch-new' })),
+    getChannelPosts: vi.fn(async () => ({ items: [], total: 0, page: 1, has_next_page: false })),
+    getChannelBestTimes: vi.fn(async () => ({ by_day: [], by_hour: [] })),
+    getChannelPostsDynamics: vi.fn(async () => ({ points: [] })),
+    getTrendingPosts: vi.fn(async () => [{ id: 'post-1' }]),
+    getEngagementComparison: vi.fn(async () => ({ channels: [], best_performer: null })),
+    refreshChannelMetrics: vi.fn(async () => ({ refreshed: 1 })),
     collectTrendsForCampaign: vi.fn(async () => ({ collected: 0 })),
     getScraperApiKey: vi.fn(async () => 'scraper-key'),
   };
@@ -69,26 +76,34 @@ vi.mock('../services/directus-crud', () => ({
   },
 }));
 
-vi.mock('../services/scraper-analytics', () => ({
-  getAllMonitoredChannels: H.getAllMonitoredChannels,
-  getMonitoredChannels: H.getMonitoredChannels,
-  deleteMonitoringChannel: H.deleteMonitoringChannel,
-  forceParseChannel: H.forceParseChannel,
-  getChannelParseStatus: H.getChannelParseStatus,
-  getChannelOverview: H.getChannelOverview,
-  getChannelAnalytics: H.getChannelAnalytics,
-  ensureChannelsRegistered: H.ensureChannelsRegistered,
-  createMonitoringChannel: vi.fn(async () => ({ id: 'ch' })),
-  // Настоящая логика: канал кампании — telegram username и vk groupId.
-  getScraperCampaignChannels: (settings: any) => {
-    const out: any[] = [];
-    const tg = String(settings?.telegram?.username ?? '').replace(/^@/, '').trim();
-    if (tg) out.push({ platform: 'telegram', id: tg });
-    const vk = String(settings?.vk?.groupId ?? '').trim();
-    if (vk) out.push({ platform: 'vk', id: vk });
-    return out;
-  },
-}));
+// Сетевые функции скрейпера мокаются, а вот РАЗБОР настроек кампании и ключ
+// сравнения берутся настоящие (`importActual`). Прежняя версия теста подменяла
+// getScraperCampaignChannels упрощённым mock'ом, который срезал `@` у телеграм-
+// имени, — то есть проверяла нормализацию, которой в бою нет (находка приёмки
+// 30.07.2026). Теперь расхождение нормализаций тест обязан заметить.
+vi.mock('../services/scraper-analytics', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/scraper-analytics')>();
+  return {
+    ...actual,
+    getScraperCampaignChannels: actual.getScraperCampaignChannels,
+    scraperChannelKey: actual.scraperChannelKey,
+    getAllMonitoredChannels: H.getAllMonitoredChannels,
+    getMonitoredChannels: H.getMonitoredChannels,
+    deleteMonitoringChannel: H.deleteMonitoringChannel,
+    forceParseChannel: H.forceParseChannel,
+    getChannelParseStatus: H.getChannelParseStatus,
+    getChannelOverview: H.getChannelOverview,
+    getChannelAnalytics: H.getChannelAnalytics,
+    getChannelPosts: H.getChannelPosts,
+    getChannelBestTimes: H.getChannelBestTimes,
+    getChannelPostsDynamics: H.getChannelPostsDynamics,
+    getTrendingPosts: H.getTrendingPosts,
+    getEngagementComparison: H.getEngagementComparison,
+    refreshChannelMetrics: H.refreshChannelMetrics,
+    ensureChannelsRegistered: H.ensureChannelsRegistered,
+    createMonitoringChannel: H.createMonitoringChannel,
+  };
+});
 
 vi.mock('../services/trend-collector', () => ({
   getPublicBaseUrl: () => 'https://smm.example.test',
@@ -152,6 +167,13 @@ const VICTIM = 'campaign-of-victim';
 /** Канал атакующего и канал жертвы в общем списке скрейпера. */
 const OWN_CHANNEL = { id: 'ch-own', platform: 'telegram', platform_channel_id: 'own_channel' };
 const VICTIM_CHANNEL = { id: 'ch-victim', platform: 'telegram', platform_channel_id: 'victim_channel' };
+/** VK-группа своей кампании: в настройках `-777`, у скрейпера `777`. */
+const OWN_VK_CHANNEL = { id: 'ch-own-vk', platform: 'vk', platform_channel_id: '777' };
+/**
+ * Чужой канал, чей id СОВПАДАЕТ со своим телеграм-именем, но на другой
+ * платформе. Ловит сравнение по голому id без платформы.
+ */
+const CROSS_PLATFORM_TRAP = { id: 'ch-trap', platform: 'vk', platform_channel_id: 'own_channel' };
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -163,18 +185,34 @@ beforeEach(() => {
   });
   H.listAccessibleCampaignIds.mockImplementation(async () => [OWN]);
 
+  // Настройки кампании — в том же виде, в каком их пишет UI: телеграм с `@`,
+  // VK числом. Настоящий getScraperCampaignChannels отдаст `@own_channel`, а
+  // скрейпер знает канал как `own_channel` — расхождение, которое обязан
+  // сглаживать общий scraperChannelKey, а не тестовый mock.
   H.crudGetById.mockImplementation(async (_collection: any, id: any) => {
-    if (id === OWN) return { id: OWN, name: 'Своя', social_media_settings: { telegram: { username: 'own_channel' } } };
-    if (id === VICTIM) return { id: VICTIM, name: 'Чужая', social_media_settings: { telegram: { username: 'victim_channel' } } };
+    if (id === OWN) {
+      return {
+        id: OWN, name: 'Своя',
+        social_media_settings: { telegram: { username: '@own_channel' }, vk: { groupId: '-777' } },
+      };
+    }
+    if (id === VICTIM) {
+      return {
+        id: VICTIM, name: 'Чужая',
+        social_media_settings: { telegram: { username: '@victim_channel' } },
+      };
+    }
     return null;
   });
 
   // Скрейпер честно отдаёт оба канала — изоляция обязана стоять в приложении.
   H.getAllMonitoredChannels.mockImplementation(async () => ({
-    items: [OWN_CHANNEL, VICTIM_CHANNEL], total: 2, page: 1, page_size: 2,
+    items: [OWN_CHANNEL, OWN_VK_CHANNEL, VICTIM_CHANNEL, CROSS_PLATFORM_TRAP],
+    total: 4, page: 1, page_size: 4,
   }));
   H.getMonitoredChannels.mockImplementation(async () => ({
-    items: [OWN_CHANNEL, VICTIM_CHANNEL], total: 2, page: 1, page_size: 2,
+    items: [OWN_CHANNEL, OWN_VK_CHANNEL, VICTIM_CHANNEL, CROSS_PLATFORM_TRAP],
+    total: 4, page: 1, page_size: 4,
   }));
 
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
@@ -198,6 +236,13 @@ function expectScraperUntouched() {
   expect(H.getChannelOverview).not.toHaveBeenCalled();
   expect(H.getChannelAnalytics).not.toHaveBeenCalled();
   expect(H.ensureChannelsRegistered).not.toHaveBeenCalled();
+  expect(H.getChannelPosts).not.toHaveBeenCalled();
+  expect(H.getChannelBestTimes).not.toHaveBeenCalled();
+  expect(H.getChannelPostsDynamics).not.toHaveBeenCalled();
+  expect(H.getTrendingPosts).not.toHaveBeenCalled();
+  expect(H.getEngagementComparison).not.toHaveBeenCalled();
+  expect(H.refreshChannelMetrics).not.toHaveBeenCalled();
+  expect(H.createMonitoringChannel).not.toHaveBeenCalled();
 }
 
 describe('collect-direct: сбор только в свою кампанию', () => {
@@ -255,6 +300,12 @@ describe('операции по channelId: чужой канал недосту�
     { name: 'parse-status', call: () => authed(request(app).get(`/api/scraper/monitoring/channels/${VICTIM_CHANNEL.id}/parse-status`)) },
     { name: 'overview', call: () => authed(request(app).get(`/api/scraper/channels/${VICTIM_CHANNEL.id}/overview`)) },
     { name: 'analytics', call: () => authed(request(app).get(`/api/scraper/channels/${VICTIM_CHANNEL.id}/analytics`)) },
+    { name: 'posts', call: () => authed(request(app).get(`/api/scraper/channels/${VICTIM_CHANNEL.id}/posts`)) },
+    { name: 'best-times', call: () => authed(request(app).get(`/api/scraper/channels/${VICTIM_CHANNEL.id}/best-times`)) },
+    { name: 'posts/dynamics', call: () => authed(request(app).get(`/api/scraper/channels/${VICTIM_CHANNEL.id}/posts/dynamics`)) },
+    // Ловушка на сравнение без платформы: id совпадает со СВОИМ телеграм-именем,
+    // но канал VK и своей кампании не принадлежит.
+    { name: 'кросс-платформенная ловушка', call: () => authed(request(app).get(`/api/scraper/channels/${CROSS_PLATFORM_TRAP.id}/posts`)) },
   ];
 
   for (const { name, call } of table) {
@@ -275,6 +326,102 @@ describe('операции по channelId: чужой канал недосту�
     const res = await authed(request(app).delete('/api/scraper/monitoring/channels/ch-nonexistent'));
     expect(res.status).toBe(404);
     expectScraperUntouched();
+  });
+});
+
+describe('нормализация: свой канал остаётся своим', () => {
+  it('телеграм с @ в настройках и без @ у скрейпера — это один канал', async () => {
+    const res = await authed(request(app).get(`/api/scraper/channels/${OWN_CHANNEL.id}/posts`));
+    expect(res.status).toBe(200);
+    expect(H.getChannelPosts).toHaveBeenCalled();
+  });
+
+  it('VK-группа -777 в настройках и 777 у скрейпера — это один канал', async () => {
+    const res = await authed(request(app).get(`/api/scraper/channels/${OWN_VK_CHANNEL.id}/best-times`));
+    expect(res.status).toBe(200);
+    expect(H.getChannelBestTimes).toHaveBeenCalled();
+  });
+
+  it('список каналов кампании отдаёт оба своих и ни одного чужого', async () => {
+    const res = await authed(request(app).get(`/api/scraper/monitoring/channels?campaignId=${OWN}`));
+    expect(res.status).toBe(200);
+    const ids = res.body.data.map((ch: any) => ch.id).sort();
+    expect(ids).toEqual([OWN_VK_CHANNEL.id, OWN_CHANNEL.id].sort());
+  });
+});
+
+describe('агрегаты не отдают чужое', () => {
+  it('trends/posts без campaignId — 400, скрейпер не тронут', async () => {
+    const res = await authed(request(app).get('/api/scraper/trends/posts'));
+    expect(res.status).toBe(400);
+    expect(H.getTrendingPosts).not.toHaveBeenCalled();
+  });
+
+  it('trends/posts с чужим campaignId — 404', async () => {
+    const res = await authed(request(app).get(`/api/scraper/trends/posts?campaignId=${VICTIM}`));
+    expect(res.status).toBe(404);
+    expect(H.getTrendingPosts).not.toHaveBeenCalled();
+  });
+
+  it('trends/posts со своим campaignId: набор каналов выводит сервер, а не клиент', async () => {
+    const res = await authed(request(app).get(
+      `/api/scraper/trends/posts?campaignId=${OWN}&channel_ids=${VICTIM_CHANNEL.id}`,
+    ));
+    expect(res.status).toBe(200);
+    const passed = H.getTrendingPosts.mock.calls[0][0].channel_ids;
+    expect(passed.sort()).toEqual([OWN_CHANNEL.id, OWN_VK_CHANNEL.id].sort());
+    expect(passed).not.toContain(VICTIM_CHANNEL.id);
+  });
+
+  it('analytics/engagement так же игнорирует присланный channel_ids', async () => {
+    const res = await authed(request(app).get(
+      `/api/scraper/analytics/engagement?campaignId=${OWN}&channel_ids=${VICTIM_CHANNEL.id}`,
+    ));
+    expect(res.status).toBe(200);
+    const passed = H.getEngagementComparison.mock.calls[0][0].channel_ids;
+    expect(passed).not.toContain(VICTIM_CHANNEL.id);
+  });
+
+  it('trends/hashtags отключена fail-closed: upstream не умеет ограничивать набор', async () => {
+    const res = await authed(request(app).get('/api/scraper/trends/hashtags'));
+    expect(res.status).toBe(501);
+  });
+});
+
+describe('операции со списком каналов проверяют каждый элемент', () => {
+  it('metrics-refresh с чужим каналом в списке отклоняется целиком', async () => {
+    const res = await authed(request(app).post('/api/scraper/monitoring/scheduler/metrics-refresh')).send({
+      channels: [
+        { id: OWN_CHANNEL.id, platform: 'telegram', platform_channel_id: 'own_channel' },
+        { id: VICTIM_CHANNEL.id, platform: 'telegram', platform_channel_id: 'victim_channel' },
+      ],
+    });
+    expect(res.status).toBe(404);
+    expect(H.refreshChannelMetrics, 'частичный запуск недопустим').not.toHaveBeenCalled();
+  });
+
+  it('metrics-refresh только по своим каналам проходит', async () => {
+    const res = await authed(request(app).post('/api/scraper/monitoring/scheduler/metrics-refresh')).send({
+      channels: [{ id: OWN_CHANNEL.id, platform: 'telegram', platform_channel_id: '@own_channel' }],
+    });
+    expect(res.status).toBe(200);
+    expect(H.refreshChannelMetrics).toHaveBeenCalled();
+  });
+
+  it('регистрация чужого канала запрещена', async () => {
+    const res = await authed(request(app).post('/api/scraper/monitoring/channels')).send({
+      platform: 'telegram', platform_channel_id: 'victim_channel',
+    });
+    expect(res.status).toBe(404);
+    expect(H.createMonitoringChannel).not.toHaveBeenCalled();
+  });
+
+  it('регистрация своего канала разрешена', async () => {
+    const res = await authed(request(app).post('/api/scraper/monitoring/channels')).send({
+      platform: 'telegram', platform_channel_id: '@own_channel',
+    });
+    expect(res.status).toBe(200);
+    expect(H.createMonitoringChannel).toHaveBeenCalled();
   });
 });
 

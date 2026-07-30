@@ -94,6 +94,33 @@ function normalizeTelegramPublicUsername(value: unknown): string | null {
   return /^[A-Za-z0-9_]{5,32}$/.test(username) ? `@${username}` : null;
 }
 
+/**
+ * Канонический ключ канала для сравнения «свой / чужой»: `платформа:id`.
+ *
+ * Сравнивать один `platform_channel_id` нельзя: у Telegram и VK идентификаторы
+ * из разных пространств, и числовой id VK-группы может совпасть с чем-то ещё
+ * (находка приёмки 30.07.2026 — граница сравнивала только id, игнорируя
+ * платформу). Плюс одна и та же телеграм-ссылка встречается в трёх видах:
+ * `@name`, `name`, `NAME`, а VK-группа — как `-123` и как `123`. Приводим обе
+ * стороны к одному виду ЗДЕСЬ, чтобы проверка владения, фильтрация списка и
+ * тесты не разъезжались между собой.
+ */
+export function scraperChannelKey(platform: unknown, id: unknown): string | null {
+  const p = String(platform ?? '').trim().toLowerCase();
+  const raw = String(id ?? '').trim();
+  if (!p || !raw) return null;
+
+  if (p === 'telegram') {
+    const username = raw.replace(/^@+/, '').toLowerCase();
+    return username ? `telegram:${username}` : null;
+  }
+  if (p === 'vk') {
+    const digits = raw.replace(/^-/, '');
+    return /^\d+$/.test(digits) ? `vk:${digits}` : null;
+  }
+  return `${p}:${raw.toLowerCase()}`;
+}
+
 export function getScraperCampaignChannels(
   socialSettings: any,
   campaignName?: string,

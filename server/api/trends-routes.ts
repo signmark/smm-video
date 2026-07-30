@@ -185,46 +185,87 @@ async function assertTrendBelongsToRequester(
  *
  * Fail-closed: скрейпер недоступен или канал не найден — отказ, а не пропуск.
  */
+async function ownedChannelKeys(req: any, onlyCampaignId?: string): Promise<Set<string>> {
+  const { getScraperCampaignChannels, scraperChannelKey } = await import('../services/scraper-analytics');
+  const { listAccessibleCampaignIds } = await import('../services/campaign-access');
+
+  let campaignIds: string[];
+  if (onlyCampaignId) {
+    campaignIds = [String(onlyCampaignId)];
+  } else {
+    try {
+      campaignIds = await listAccessibleCampaignIds(req.user?.id, req.user?.token || '');
+    } catch (err: any) {
+      throw new OwnershipUnavailableError(err?.message || 'campaign access unavailable');
+    }
+  }
+
+  const keys = new Set<string>();
+  for (const campaignId of campaignIds) {
+    let campaign: any;
+    try {
+      campaign = await directusCrud.getById<any>('user_campaigns', campaignId, { useAdminToken: true });
+    } catch (err: any) {
+      throw new OwnershipUnavailableError(err?.message || 'directus unavailable');
+    }
+    for (const own of getScraperCampaignChannels(campaign?.social_media_settings)) {
+      const key = scraperChannelKey(own.platform, own.id);
+      if (key) keys.add(key);
+    }
+  }
+  return keys;
+}
+
+/** Каналы мониторинга, принадлежащие запросившему. Бросает при недоступности. */
+async function requesterMonitoredChannels(req: any, onlyCampaignId?: string): Promise<any[]> {
+  const { getAllMonitoredChannels, scraperChannelKey } = await import('../services/scraper-analytics');
+
+  const keys = await ownedChannelKeys(req, onlyCampaignId);
+  let listed;
+  try {
+    listed = await getAllMonitoredChannels(undefined, true);
+  } catch (err: any) {
+    throw new OwnershipUnavailableError(err?.message || 'scraper unavailable');
+  }
+
+  return listed.items.filter((ch: any) => {
+    const key = scraperChannelKey(ch.platform, ch.platform_channel_id);
+    return key !== null && keys.has(key);
+  });
+}
+
 async function assertScraperChannelBelongsToRequester(
   req: any,
   res: any,
   channelId: string,
 ): Promise<boolean> {
   try {
-    const { getAllMonitoredChannels, getScraperCampaignChannels } = await import('../services/scraper-analytics');
-    const { listAccessibleCampaignIds } = await import('../services/campaign-access');
-
-    let channels;
-    try {
-      channels = await getAllMonitoredChannels(undefined, true);
-    } catch (err: any) {
-      throw new OwnershipUnavailableError(err?.message || 'scraper unavailable');
-    }
-
-    const channel = channels.items.find((ch: any) => String(ch.id) === String(channelId));
-    if (!channel) return denyOwnership(res);
-
-    let campaignIds: string[];
-    try {
-      campaignIds = await listAccessibleCampaignIds(req.user?.id, req.user?.token || '');
-    } catch (err: any) {
-      throw new OwnershipUnavailableError(err?.message || 'campaign access unavailable');
-    }
-
-    for (const campaignId of campaignIds) {
-      let campaign: any;
-      try {
-        campaign = await directusCrud.getById<any>('user_campaigns', campaignId, { useAdminToken: true });
-      } catch (err: any) {
-        throw new OwnershipUnavailableError(err?.message || 'directus unavailable');
-      }
-      const owned = getScraperCampaignChannels(campaign?.social_media_settings);
-      if (owned.some((own: any) => String(own.id) === String(channel.platform_channel_id))) return true;
-    }
-
+    const mine = await requesterMonitoredChannels(req);
+    if (mine.some((ch: any) => String(ch.id) === String(channelId))) return true;
     return denyOwnership(res);
   } catch (err) {
     return denyOwnership(res, err);
+  }
+}
+
+/**
+ * Разрешённый набор `channel_ids` для агрегатов.
+ *
+ * Агрегирующие ручки скрейпера (`trends/posts`, `analytics/engagement`)
+ * принимали `channel_ids` из query и без него отдавали статистику ПО ВСЕМ
+ * каналам всех арендаторов. Присланному списку доверять нельзя — набор
+ * выводим сами из кампании запросившего.
+ *
+ * Возвращает null и сам пишет ответ, если доступа нет.
+ */
+async function scopedChannelIds(req: any, res: any, campaignId: string): Promise<string[] | null> {
+  if (!(await ensureTrendsCampaignAccess(req, res, String(campaignId)))) return null;
+  try {
+    const mine = await requesterMonitoredChannels(req, String(campaignId));
+    return mine.map((ch: any) => String(ch.id));
+  } catch (err) {
+    denyOwnership(res, err);
+    return null;
   }
 }
 
@@ -2487,18 +2528,23 @@ ${trendSummaries.length > 0 ? `ВЫВОДЫ ПО ТРЕНДАМ:\n${trendSummari
         page_size: page_size ? Number(page_size) : 100
       });
 
-      // Если campaignId передан — фильтруем только собственные каналы кампании
-      if (campaignId) {
-        const campaign = await directusCrud.getById('user_campaigns', campaignId, { useAdminToken: true }) as any;
-        const ownIds = new Set(
-          getScraperCampaignChannels(campaign?.social_media_settings)
-            .map(channel => channel.id),
-        );
-        const filtered = result.items.filter(ch => ownIds.has(ch.platform_channel_id));
-        return res.json({ success: true, data: filtered, total: filtered.length, page: 1, page_size: filtered.length });
-      }
-
-      res.json({ success: true, data: result.items, total: result.total, page: result.page, page_size: result.page_size });
+      // Фильтр по паре «платформа + нормализованный id» через общий
+      // scraperChannelKey — тот же, которым проверяется владение в guard'ах.
+      // Раньше сравнивался голый platform_channel_id, и телеграм-канал,
+      // записанный в кампании как `@name`, а в скрейпере как `name`, свой
+      // владелец не видел.
+      const { scraperChannelKey } = await import('../services/scraper-analytics');
+      const campaign = await directusCrud.getById('user_campaigns', campaignId, { useAdminToken: true }) as any;
+      const ownKeys = new Set(
+        getScraperCampaignChannels(campaign?.social_media_settings)
+          .map(channel => scraperChannelKey(channel.platform, channel.id))
+          .filter((key): key is string => key !== null),
+      );
+      const filtered = result.items.filter(ch => {
+        const key = scraperChannelKey(ch.platform, ch.platform_channel_id);
+        return key !== null && ownKeys.has(key);
+      });
+      return res.json({ success: true, data: filtered, total: filtered.length, page: 1, page_size: filtered.length });
     } catch (err: any) {
       log(`[ScraperAnalytics] GET monitoring/channels error: ${err.message}`, 'error');
       res.status(500).json({ success: false, error: err.message });
@@ -2565,6 +2611,19 @@ ${trendSummaries.length > 0 ? `ВЫВОДЫ ПО ТРЕНДАМ:\n${trendSummari
       if (!platform || !platform_channel_id) {
         return res.status(400).json({ success: false, error: 'platform и platform_channel_id обязательны' });
       }
+
+      // Регистрировать в мониторинге можно только канал, заявленный в СВОЕЙ
+      // кампании. Иначе ручка позволяла завести чужой канал и дальше законно
+      // читать по нему всю аналитику — обход границы через собственный вход.
+      try {
+        const { scraperChannelKey } = await import('../services/scraper-analytics');
+        const key = scraperChannelKey(platform, platform_channel_id);
+        const mine = await ownedChannelKeys(req);
+        if (!key || !mine.has(key)) return denyOwnership(res);
+      } catch (err) {
+        return denyOwnership(res, err);
+      }
+
       const { createMonitoringChannel } = await import('../services/scraper-analytics');
       const channel = await createMonitoringChannel({ platform, platform_channel_id, name, metadata });
       if (!channel) return res.status(502).json({ success: false, error: 'Скрейпер не ответил' });
@@ -2622,6 +2681,7 @@ ${trendSummaries.length > 0 ? `ВЫВОДЫ ПО ТРЕНДАМ:\n${trendSummari
   app.get('/api/scraper/channels/:channelId/posts', authenticateUser, async (req: Request, res: Response) => {
     try {
       const { channelId } = req.params;
+      if (!(await assertScraperChannelBelongsToRequester(req, res, channelId))) return;
       const { page, page_size, from_date, to_date } = req.query as Record<string, string>;
       const { getChannelPosts } = await import('../services/scraper-analytics');
       const data = await getChannelPosts(channelId, {
@@ -2644,6 +2704,7 @@ ${trendSummaries.length > 0 ? `ВЫВОДЫ ПО ТРЕНДАМ:\n${trendSummari
   app.get('/api/scraper/channels/:channelId/best-times', authenticateUser, async (req: Request, res: Response) => {
     try {
       const { channelId } = req.params;
+      if (!(await assertScraperChannelBelongsToRequester(req, res, channelId))) return;
       const { getChannelBestTimes } = await import('../services/scraper-analytics');
       const data = await getChannelBestTimes(channelId);
       if (!data) return res.status(404).json({ success: false, error: 'Нет данных' });
@@ -2661,6 +2722,7 @@ ${trendSummaries.length > 0 ? `ВЫВОДЫ ПО ТРЕНДАМ:\n${trendSummari
   app.get('/api/scraper/channels/:channelId/posts/dynamics', authenticateUser, async (req: Request, res: Response) => {
     try {
       const { channelId } = req.params;
+      if (!(await assertScraperChannelBelongsToRequester(req, res, channelId))) return;
       const { days, min_views, limit } = req.query as Record<string, string>;
       const { getChannelPostsDynamics } = await import('../services/scraper-analytics');
       const data = await getChannelPostsDynamics(channelId, {
@@ -2682,14 +2744,25 @@ ${trendSummaries.length > 0 ? `ВЫВОДЫ ПО ТРЕНДАМ:\n${trendSummari
    */
   app.get('/api/scraper/trends/posts', authenticateUser, async (req: Request, res: Response) => {
     try {
-      const { platform, from_date, to_date, limit, channel_ids } = req.query as Record<string, string>;
+      const { platform, from_date, to_date, limit, campaignId } = req.query as Record<string, string>;
+
+      // campaignId обязателен, а присланный channel_ids игнорируется: раньше
+      // без него ручка отдавала топ постов ПО ВСЕМ каналам всех арендаторов,
+      // а с ним — по любым чужим, какие перечислит клиент.
+      if (!campaignId) {
+        return res.status(400).json({ success: false, error: 'campaignId обязателен' });
+      }
+      const allowed = await scopedChannelIds(req, res, campaignId);
+      if (!allowed) return;
+      if (allowed.length === 0) return res.json({ success: true, data: [], total: 0 });
+
       const { getTrendingPosts } = await import('../services/scraper-analytics');
       const posts = await getTrendingPosts({
         platform,
         from_date,
         to_date,
         limit: limit ? Number(limit) : 50,
-        channel_ids: channel_ids ? channel_ids.split(',') : undefined
+        channel_ids: allowed,
       });
       res.json({ success: true, data: posts, total: posts.length });
     } catch (err: any) {
@@ -2704,15 +2777,22 @@ ${trendSummaries.length > 0 ? `ВЫВОДЫ ПО ТРЕНДАМ:\n${trendSummari
    */
   app.get('/api/scraper/trends/hashtags', authenticateUser, async (req: Request, res: Response) => {
     try {
-      const { platform, from_date, to_date, limit } = req.query as Record<string, string>;
-      const { getTrendingHashtags } = await import('../services/scraper-analytics');
-      const hashtags = await getTrendingHashtags({
-        platform,
-        from_date,
-        to_date,
-        limit: limit ? Number(limit) : 30
+      // ОТКЛЮЧЕНА НАМЕРЕННО (приёмка AI-48, 30.07.2026).
+      //
+      // Ручка отдавала топ хэштегов по ВСЕМ каналам мониторинга — то есть по
+      // каналам всех арендаторов сразу. Ограничить выборку своими каналами
+      // нельзя: upstream скрейпера принимает только platform и период, набора
+      // каналов у него в контракте нет.
+      //
+      // Выбор между «отдавать чужую агрегацию» и «не отдавать ничего» решён в
+      // пользу второго: потребителей в клиенте у ручки нет, а тихо оставить
+      // утечку ради неиспользуемой функции нельзя. Вернуть можно, когда у
+      // скрейпера появится channel_ids — тогда здесь будет то же, что в
+      // trends/posts.
+      return res.status(501).json({
+        success: false,
+        error: 'Ручка отключена: скрейпер не умеет ограничивать хэштеги набором каналов',
       });
-      res.json({ success: true, data: hashtags, total: hashtags.length });
     } catch (err: any) {
       log(`[ScraperAnalytics] GET trends/hashtags error: ${err.message}`, 'error');
       res.status(500).json({ success: false, error: err.message });
@@ -2725,14 +2805,26 @@ ${trendSummaries.length > 0 ? `ВЫВОДЫ ПО ТРЕНДАМ:\n${trendSummari
    */
   app.get('/api/scraper/analytics/engagement', authenticateUser, async (req: Request, res: Response) => {
     try {
-      const { platform, channel_ids, from_date, to_date, limit } = req.query as Record<string, string>;
+      const { platform, from_date, to_date, limit, campaignId } = req.query as Record<string, string>;
+
+      // Как и в trends/posts: набор каналов выводим сами, клиентскому
+      // channel_ids не доверяем.
+      if (!campaignId) {
+        return res.status(400).json({ success: false, error: 'campaignId обязателен' });
+      }
+      const allowed = await scopedChannelIds(req, res, campaignId);
+      if (!allowed) return;
+      if (allowed.length === 0) {
+        return res.json({ success: true, data: [], best_performer: null, total: 0 });
+      }
+
       const { getEngagementComparison } = await import('../services/scraper-analytics');
       const data = await getEngagementComparison({
         platform,
         from_date,
         to_date,
         limit: limit ? Number(limit) : undefined,
-        channel_ids: channel_ids ? channel_ids.split(',') : undefined
+        channel_ids: allowed,
       });
       res.json({ success: true, data: data.channels, best_performer: data.best_performer, from_date: data.from_date, to_date: data.to_date, total: data.channels.length });
     } catch (err: any) {
@@ -2751,6 +2843,23 @@ ${trendSummaries.length > 0 ? `ВЫВОДЫ ПО ТРЕНДАМ:\n${trendSummari
       if (!channels || !Array.isArray(channels) || channels.length === 0) {
         return res.status(400).json({ success: false, error: 'channels (массив объектов {id, platform, platform_channel_id}) обязателен' });
       }
+
+      // Проверяется КАЖДЫЙ элемент списка: раньше объект channels принимался
+      // из тела как есть, и обновление метрик запускалось по чужим каналам.
+      // Набор отклоняется целиком — частично выполненный запуск оставил бы
+      // побочные эффекты на чужих данных.
+      try {
+        const { scraperChannelKey } = await import('../services/scraper-analytics');
+        const mine = await ownedChannelKeys(req);
+        const allOwned = channels.every((ch: any) => {
+          const key = scraperChannelKey(ch?.platform, ch?.platform_channel_id);
+          return key !== null && mine.has(key);
+        });
+        if (!allOwned) return denyOwnership(res);
+      } catch (err) {
+        return denyOwnership(res, err);
+      }
+
       const { refreshChannelMetrics } = await import('../services/scraper-analytics');
       const result = await refreshChannelMetrics({ channels, days, force: force === true });
       if (!result) return res.status(502).json({ success: false, error: 'Скрейпер не ответил' });

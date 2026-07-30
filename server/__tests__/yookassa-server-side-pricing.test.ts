@@ -32,6 +32,8 @@ process.env.DIRECTUS_STATIC_TOKEN = 'admin-token-test';
 let promoRow: Record<string, any> | null = null;
 /** Уже использованные этим пользователем коды. */
 let promoUses: any[] = [];
+/** Единственная бронь, созданная в ходе теста (см. фейк ниже). */
+let promoReservation: Record<string, any> | null = null;
 /** Тело, с которым ушёл запрос на создание платежа в ЮКассу. */
 let yookassaCreateBody: any = null;
 
@@ -57,6 +59,23 @@ const fetchMock = vi.fn((url: any, init?: any) => {
   if (u.includes('/users/me')) return jsonResponse({ data: { id: 'user-1' } });
   if (u.includes('/items/promo_codes')) return jsonResponse({ data: promoRow ? [promoRow] : [] });
   if (u.includes('/items/promo_code_uses')) return jsonResponse({ data: promoUses });
+
+  // Брони: этот тест про цену, а не про них, но обойтись без них нельзя.
+  // markPaymentAttempt/attachPaymentId больше не молчат при отсутствии строки
+  // (AI-48 п.4), и заглушка `{data:{}}` здесь означала бы «бронь исчезла» —
+  // оплата честно прерывалась бы с 503. Держим минимальную живую строку.
+  if (u.includes('/items/promo_reservations')) {
+    const method = init?.method || 'GET';
+    if (method === 'POST') {
+      promoReservation = { id: 'res-1', status: 'reserved', ...JSON.parse(init.body) };
+      return jsonResponse({ data: promoReservation });
+    }
+    if (method === 'PATCH') {
+      if (promoReservation) Object.assign(promoReservation, JSON.parse(init.body).data ?? JSON.parse(init.body));
+      return jsonResponse({ data: promoReservation ? [promoReservation] : [] });
+    }
+    return jsonResponse({ data: promoReservation ? [promoReservation] : [] });
+  }
   if (u.includes('/users/user-1')) return jsonResponse({ data: { email: 'u@test.local' } });
 
   return jsonResponse({ data: {} });
@@ -91,6 +110,7 @@ describe('POST /api/payments/create — цена только серверная
     vi.clearAllMocks();
     promoRow = null;
     promoUses = [];
+    promoReservation = null;
     yookassaCreateBody = null;
     app = await buildApp();
   });

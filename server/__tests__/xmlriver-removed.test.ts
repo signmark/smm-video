@@ -12,11 +12,11 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import { execFileSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 
 import { isPublicApiPath } from '../middleware/api-auth-gate';
+import { scanSourceFiles } from './helpers/source-scan';
 
 const ROOT = path.resolve(__dirname, '..', '..');
 
@@ -30,18 +30,7 @@ const ACTIVE_DIRS = ['server', 'client/src', 'shared', 'test_scripts', 'scripts'
 const ALLOWED = new Set(['server/services/api-keys.ts']);
 
 function grepXmlriver(): string[] {
-  try {
-    const out = execFileSync(
-      'grep',
-      ['-ril', 'xmlriver', ...ACTIVE_DIRS, '--include=*.ts', '--include=*.tsx', '--include=*.js', '--include=*.json'],
-      { cwd: ROOT, encoding: 'utf8' },
-    );
-    return out.split('\n').filter(Boolean);
-  } catch (e: any) {
-    // grep выходит с кодом 1, когда совпадений нет — это и есть цель.
-    if (e.status === 1) return [];
-    throw e;
-  }
+  return scanSourceFiles('xmlriver', { root: ROOT, dirs: ACTIVE_DIRS });
 }
 
 describe('XMLRiver полностью удалён', () => {

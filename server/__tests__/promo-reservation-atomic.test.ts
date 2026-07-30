@@ -74,7 +74,11 @@ function matchRows(rows: any[], url: string): any[] {
 function evalOperator(actual: any, op: string, expected: any): boolean {
   switch (op) {
     case '_eq': return String(actual) === String(expected);
-    case '_neq': return !(actual === null || actual === undefined) ? String(actual) !== String(expected) : true;
+    // `_neq` ведёт себя как SQL `<>`: сравнение с NULL даёт unknown, строка НЕ
+    // попадает в выборку. Проверено на боевом Directus 11.2.2 (приёмка
+    // 30.07.2026): из 96 строк с одним NULL `_neq` вернул 95, а не 96.
+    // Прежняя версия этого фейка считала наоборот и скрывала боевой баг.
+    case '_neq': return (actual === null || actual === undefined) ? false : String(actual) !== String(expected);
     case '_null': return expected ? (actual === null || actual === undefined) : !(actual === null || actual === undefined);
     case '_nnull': return expected ? !(actual === null || actual === undefined) : (actual === null || actual === undefined);
     case '_in': return (Array.isArray(expected) ? expected : String(expected).split(','))
@@ -803,48 +807,70 @@ describe('needs_reconciliation не реклеймится по таймауту
    * Контракт CAS-фильтра `needs_reconciliation: {_neq: true}` — напрямую,
    * без создания платежей.
    *
-   * Ради этого теста fake Directus и научили настоящим операторам (AI-33):
-   * раньше он понимал только `_eq`, а `_neq` молча считал выполненным — то есть
-   * «реклеймер не трогает помеченную бронь» проверялось фиктивно и осталось бы
-   * зелёным, даже если бы условие из фильтра выпало.
+   * Три состояния поля, как в живой таблице: NULL (никогда не писали — так у
+   * всех броней старше самого поля), false (пометку снимали) и true (на
+   * разборе). Первые два обязаны освобождаться, третье — нет.
    *
-   * Три состояния поля, как в живой таблице: NULL (никогда не писали),
-   * false (сняли пометку) и true (на разборе). Первые два — освобождаются,
-   * третье — нет.
+   * ЗАЧЕМ ФИЛЬТР СЛОЖНЕЕ, ЧЕМ `_neq: true`. Directus повторяет семантику SQL:
+   * `<> true` не пропускает NULL, потому что сравнение с NULL даёт unknown.
+   * Проверено на боевом 11.2.2 при приёмке 30.07.2026 — из 96 строк с одним
+   * NULL `_neq` вернул 95. Значит одиночный `_neq` отсекал ВСЁ ЛЕГАСИ: такие
+   * брони не освобождались никогда и держали слот скидки вечно. Поэтому в
+   * `releaseRow` стоит явное «NULL или false» через `_or`.
    */
-  it('CAS _neq по nullable-полю: NULL и false освобождаются, true — нет', async () => {
+  it('«не помечена» = NULL или false: обе освобождаются, true — нет', async () => {
     const table = [
       { id: 'res-null', needs_reconciliation: null, shouldRelease: true },
       { id: 'res-false', needs_reconciliation: false, shouldRelease: true },
       { id: 'res-true', needs_reconciliation: true, shouldRelease: false },
     ];
 
-    tables.promo_reservations = table.map(t => ({
-      id: t.id,
-      status: 'reserved',
-      needs_reconciliation: t.needs_reconciliation,
-      promo_code_id: promo.id,
-      slot_index: 0,
-      user_lock: `lock-${t.id}`,
-      slot_lock: `slot-${t.id}`,
-    }));
+    const seed = () => {
+      tables.promo_reservations = table.map(t => ({
+        id: t.id,
+        status: 'reserved',
+        needs_reconciliation: t.needs_reconciliation,
+        promo_code_id: promo.id,
+        slot_index: 0,
+        user_lock: `lock-${t.id}`,
+        slot_lock: `slot-${t.id}`,
+      }));
+    };
 
-    // Ровно тот запрос, который выпускает transitionReservation с
-    // onlyIfNotFlagged: update-by-query, условие внутри той же операции.
-    for (const { id, shouldRelease } of table) {
+    /** Тот же update-by-query, что выпускает transitionReservation. */
+    const attemptRelease = async (id: string, notFlagged: any) => {
       const res: any = await fetchMock('https://directus.test/items/promo_reservations', {
         method: 'PATCH',
         body: JSON.stringify({
-          query: { filter: { id: { _eq: id }, status: { _eq: 'reserved' }, needs_reconciliation: { _neq: true } } },
+          query: { filter: { id: { _eq: id }, status: { _eq: 'reserved' }, ...notFlagged } },
           data: { status: 'released', released_at: new Date().toISOString(), user_lock: null, slot_lock: null },
         }),
       });
-      const matched = (await res.json()).data;
+      return (await res.json()).data.length;
+    };
 
+    // Боевой фильтр.
+    const NOT_FLAGGED = {
+      _or: [{ needs_reconciliation: { _null: true } }, { needs_reconciliation: { _eq: false } }],
+    };
+
+    seed();
+    for (const { id, shouldRelease } of table) {
+      const matched = await attemptRelease(id, NOT_FLAGGED);
       const row = tables.promo_reservations.find((r: any) => r.id === id);
-      expect(matched.length, `${id}: сколько строк перешло`).toBe(shouldRelease ? 1 : 0);
+      expect(matched, `${id}: сколько строк перешло`).toBe(shouldRelease ? 1 : 0);
       expect(row.status, `${id}: статус`).toBe(shouldRelease ? 'released' : 'reserved');
     }
+
+    // И фиксируем ПРИЧИНУ: одиночный `_neq: true` строку с NULL не берёт.
+    // Если кто-то решит «упростить» фильтр обратно — увидит здесь, чем это
+    // кончается, а не через полгода по залипшим слотам.
+    seed();
+    expect(
+      await attemptRelease('res-null', { needs_reconciliation: { _neq: true } }),
+      '_neq: true не пропускает NULL — ради этого и нужен _or',
+    ).toBe(0);
+    expect(await attemptRelease('res-false', { needs_reconciliation: { _neq: true } })).toBe(1);
   });
 
   /**

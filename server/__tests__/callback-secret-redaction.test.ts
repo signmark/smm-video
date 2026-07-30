@@ -15,10 +15,10 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 
 import { redactText } from '../utils/logger';
+import { scanSources } from './helpers/source-scan';
 
 const ROOT = path.resolve(__dirname, '..', '..');
 /**
@@ -69,22 +69,12 @@ describe('редакция секрета в сегменте пути', () => {
 
 describe('Host не участвует в построении URL', () => {
   it("req.get('host') читается только резолвером public-url", () => {
-    let out = '';
-    try {
-      out = execFileSync(
-        'grep',
-        ['-rn', "-e", "req\\.get(['\"]host", "-e", "headers\\.host", 'server', '--include=*.ts'],
-        { cwd: ROOT, encoding: 'utf8' },
-      );
-    } catch (e: any) {
-      if (e.status !== 1) throw e;
-    }
-
-    const offenders = out
-      .split('\n')
-      .filter(Boolean)
-      .filter((line) => !line.startsWith('server/utils/public-url.ts'))
-      .filter((line) => !line.includes('__tests__'));
+    const offenders = scanSources(/req\.get\(['"]host|headers\.host/, {
+      root: ROOT,
+      dirs: ['server'],
+      extensions: ['.ts'],
+      skipFile: (file) => file === 'server/utils/public-url.ts' || file.includes('__tests__'),
+    }).map((hit) => `${hit.file}:${hit.line}`);
 
     expect(offenders, 'Host должен читаться только в resolveRequestOrigin').toEqual([]);
   });

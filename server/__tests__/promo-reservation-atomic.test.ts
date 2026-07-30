@@ -58,6 +58,48 @@ function matchRows(rows: any[], url: string): any[] {
   }));
 }
 
+/**
+ * Один оператор фильтра Directus по значению поля.
+ *
+ * Раньше fake понимал ровно `_eq`, а всё остальное молча считал выполненным
+ * (`expected === undefined → true`). На этом держался ложно-зелёный тест
+ * `onlyIfNotFlagged`: CAS-переход фильтрует `needs_reconciliation: {_neq: true}`,
+ * fake этот оператор игнорировал — и «не трогать помеченную бронь» проверялось
+ * фиктивно. Живой Directus на nullable-поле считает NULL !== true, то есть
+ * непомеченную бронь пропускает, а помеченную отсекает; моделируем именно так.
+ *
+ * Неизвестный оператор — исключение, а не «пропустить»: молчаливое согласие
+ * ровно и создало эту дыру в тестах.
+ */
+function evalOperator(actual: any, op: string, expected: any): boolean {
+  switch (op) {
+    case '_eq': return String(actual) === String(expected);
+    case '_neq': return !(actual === null || actual === undefined) ? String(actual) !== String(expected) : true;
+    case '_null': return expected ? (actual === null || actual === undefined) : !(actual === null || actual === undefined);
+    case '_nnull': return expected ? !(actual === null || actual === undefined) : (actual === null || actual === undefined);
+    case '_in': return (Array.isArray(expected) ? expected : String(expected).split(','))
+      .map(String).includes(String(actual));
+    case '_nin': return !(Array.isArray(expected) ? expected : String(expected).split(','))
+      .map(String).includes(String(actual));
+    case '_gt': return Number(actual) > Number(expected);
+    case '_lt': return Number(actual) < Number(expected);
+    case '_gte': return Number(actual) >= Number(expected);
+    case '_lte': return Number(actual) <= Number(expected);
+    default:
+      throw new Error(`fake Directus: оператор ${op} не поддержан — добавьте его в evalOperator`);
+  }
+}
+
+/** Полное условие фильтра Directus, включая `_or`/`_and`. */
+function rowMatchesFilter(row: any, filter: any): boolean {
+  return Object.entries(filter || {}).every(([field, cond]: [string, any]) => {
+    if (field === '_or') return (cond as any[]).some(sub => rowMatchesFilter(row, sub));
+    if (field === '_and') return (cond as any[]).every(sub => rowMatchesFilter(row, sub));
+    if (cond === null || typeof cond !== 'object') return String(row[field]) === String(cond);
+    return Object.entries(cond).every(([op, expected]) => evalOperator(row[field], op, expected));
+  });
+}
+
 const fetchMock = vi.fn((url: any, init?: any) => {
   const u = String(url);
   const method = init?.method || 'GET';
@@ -115,12 +157,7 @@ const fetchMock = vi.fn((url: any, init?: any) => {
       // той же операцией, что и запись, поэтому гонку выигрывает ровно один.
       if (body && body.query && body.data) {
         const filter = body.query.filter || {};
-        const matched = rows.filter(r =>
-          Object.entries(filter).every(([field, cond]: [string, any]) => {
-            const expected = cond?._eq;
-            return expected === undefined || String(r[field]) === String(expected);
-          }),
-        );
+        const matched = rows.filter(r => rowMatchesFilter(r, filter));
         for (const row of matched) {
           for (const f of UNIQUES[name] || []) {
             // Обнуление замка конфликтом не считается.
@@ -760,6 +797,131 @@ describe('needs_reconciliation не реклеймится по таймауту
     await create('user-2');
 
     expect(reservations()[0].status).toBe('reserved');
+  });
+
+  /**
+   * Контракт CAS-фильтра `needs_reconciliation: {_neq: true}` — напрямую,
+   * без создания платежей.
+   *
+   * Ради этого теста fake Directus и научили настоящим операторам (AI-33):
+   * раньше он понимал только `_eq`, а `_neq` молча считал выполненным — то есть
+   * «реклеймер не трогает помеченную бронь» проверялось фиктивно и осталось бы
+   * зелёным, даже если бы условие из фильтра выпало.
+   *
+   * Три состояния поля, как в живой таблице: NULL (никогда не писали),
+   * false (сняли пометку) и true (на разборе). Первые два — освобождаются,
+   * третье — нет.
+   */
+  it('CAS _neq по nullable-полю: NULL и false освобождаются, true — нет', async () => {
+    const table = [
+      { id: 'res-null', needs_reconciliation: null, shouldRelease: true },
+      { id: 'res-false', needs_reconciliation: false, shouldRelease: true },
+      { id: 'res-true', needs_reconciliation: true, shouldRelease: false },
+    ];
+
+    tables.promo_reservations = table.map(t => ({
+      id: t.id,
+      status: 'reserved',
+      needs_reconciliation: t.needs_reconciliation,
+      promo_code_id: promo.id,
+      slot_index: 0,
+      user_lock: `lock-${t.id}`,
+      slot_lock: `slot-${t.id}`,
+    }));
+
+    // Ровно тот запрос, который выпускает transitionReservation с
+    // onlyIfNotFlagged: update-by-query, условие внутри той же операции.
+    for (const { id, shouldRelease } of table) {
+      const res: any = await fetchMock('https://directus.test/items/promo_reservations', {
+        method: 'PATCH',
+        body: JSON.stringify({
+          query: { filter: { id: { _eq: id }, status: { _eq: 'reserved' }, needs_reconciliation: { _neq: true } } },
+          data: { status: 'released', released_at: new Date().toISOString(), user_lock: null, slot_lock: null },
+        }),
+      });
+      const matched = (await res.json()).data;
+
+      const row = tables.promo_reservations.find((r: any) => r.id === id);
+      expect(matched.length, `${id}: сколько строк перешло`).toBe(shouldRelease ? 1 : 0);
+      expect(row.status, `${id}: статус`).toBe(shouldRelease ? 'released' : 'reserved');
+    }
+  });
+
+  /**
+   * Гонка, ради которой условие живёт В ФИЛЬТРЕ, а не в отдельной проверке.
+   *
+   * Перед `releaseRow` стоят два более ранних заслона: `continue` в цикле
+   * реклейма и проверка внутри `isSlotHolderDead`. Оба смотрят на СНИМОК брони,
+   * прочитанный до начала работы. Если пометку на разбор поставят уже после
+   * этого чтения — а именно так и происходит, когда параллельный запрос ловит
+   * сбой привязки платежа, — оба заслона её проспят.
+   *
+   * Ловим ровно этот момент: строка читается непомеченной, помечается сразу
+   * после чтения. Единственное, что удерживает слот, — `_neq: true` в фильтре
+   * CAS-перехода. Уберите его из `releaseRow` — тест краснеет.
+   */
+  it('пометка на разбор, поставленная после чтения, всё равно удерживает слот', async () => {
+    promo = { ...promo, max_uses: 1 };
+
+    // Мёртвая с виду бронь: платёж не создавался, висит дольше таймаута сироты.
+    tables.promo_reservations = [{
+      id: 'res-race',
+      payment_id: 'order-race',
+      promo_code_id: promo.id,
+      status: 'reserved',
+      slot_index: 0,
+      user_lock: 'lock-race',
+      slot_lock: 'slot-race',
+      reserved_at: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
+      payment_attempt_at: null,
+      yookassa_payment_id: null,
+      needs_reconciliation: null,
+    }];
+
+    // Чтение списка занятых слотов отдаёт снимок БЕЗ пометки, а сразу после
+    // этого другой процесс её ставит.
+    const realFetch = PRISTINE_FETCH;
+    fetchMock.mockImplementation((url: any, init?: any) => {
+      const u = String(url);
+      const isHeldQuery = u.includes('/items/promo_reservations')
+        && (init?.method || 'GET') === 'GET'
+        && u.includes('filter[status][_eq]=reserved');
+
+      if (!isHeldQuery) return realFetch(url, init);
+
+      // Снимок отдаётся КОПИЕЙ — как настоящий HTTP-ответ, а не живой ссылкой
+      // на строку таблицы. Иначе пометка, поставленная ниже, задним числом
+      // «появилась» бы в уже прочитанных данных, и гонка не воспроизвелась бы.
+      const snapshot = tables.promo_reservations
+        .filter((r: any) => r.status === 'reserved')
+        .map((r: any) => ({ ...r }));
+
+      const row = tables.promo_reservations.find((r: any) => r.id === 'res-race');
+      if (row) row.needs_reconciliation = true;
+
+      return jsonResponse({ data: snapshot });
+    });
+
+    // Новый покупатель за единственным слотом — он и запускает реклейм.
+    const second = await create('user-2');
+
+    const row = tables.promo_reservations.find((r: any) => r.id === 'res-race');
+    expect(row.status, 'помеченная бронь не должна освобождаться').toBe('reserved');
+    expect(second.body.confirmationUrl).toBeUndefined();
+  });
+
+  it('fake Directus падает на неизвестном операторе, а не считает его выполненным', async () => {
+    // Смысл AI-33: молчаливое «оператор не понят → условие выполнено» и делало
+    // проверки ложно-зелёными. Теперь такой фильтр обязан сломать тест громко.
+    tables.promo_reservations = [{ id: 'res-x', status: 'reserved' }];
+
+    expect(() => fetchMock('https://directus.test/items/promo_reservations', {
+      method: 'PATCH',
+      body: JSON.stringify({
+        query: { filter: { status: { _contains: 'reserv' } } },
+        data: { status: 'released' },
+      }),
+    })).toThrow(/оператор _contains не поддержан/);
   });
 
   it('подтверждённая отмена после сбоя привязки слот всё-таки освобождает', async () => {

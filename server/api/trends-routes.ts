@@ -1490,7 +1490,10 @@ export function registerTrendsRoutes(app: Express) {
 
       const externalApiUrl = 'http://217.26.25.95:3030/api/telegram/collect-comments';
 
-      log(`[Telegram Collect] Sending request to ${externalApiUrl} with callback ${callback_url}`, 'info');
+      // Путь колбэка — без последнего сегмента: в нём HMAC-токен, а лог живёт
+      // дольше ротации секрета. Редактор в logger режет его и сам, но не
+      // печатать секрет вовсе надёжнее, чем полагаться на регулярку.
+      log(`[Telegram Collect] Sending request to ${externalApiUrl} with callback /api/trends/collect-comments-callback`, 'info');
 
       const response = await axios.post(externalApiUrl, {
         post_url,

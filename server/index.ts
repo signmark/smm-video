@@ -228,7 +228,9 @@ wss.on('connection', (ws) => {
 // Security §5 (2026-07-24): в production /ws временно закрыт (события всех пользователей
 // уходили любому анонимному клиенту). Гейт: server/utils/ws-gate.ts
 server.on('upgrade', (request, socket, head) => {
-  const { pathname } = new URL(request.url || '/', `http://${request.headers.host}`);
+  // База фиктивная и намеренно не из Host: нужен только pathname, а заголовок
+  // клиента в разборе URL не должен участвовать вообще (см. public-url.ts).
+  const { pathname } = new URL(request.url || '/', 'http://internal.invalid');
   if (pathname === '/ws') {
     if (!isWsAllowed(process.env)) {
       log('WebSocket upgrade отклонён: /ws закрыт в production (security §5)', 'websocket');

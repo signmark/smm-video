@@ -119,6 +119,22 @@ const AUTH_SCHEME = /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{8,}/gi;
 const QUERY_SECRET = /([?&](?:key|sig|signature|auth|code)=)[^&#\s"'<>]+/gi;
 
 /**
+ * Секрет ПОСЛЕДНИМ СЕГМЕНТОМ ПУТИ — колбэки трендов вида
+ * `/api/trends/tg-webhook/<32 hex>` (`trendsCallbackToken`, HMAC от
+ * `TRENDS_WEBHOOK_SECRET`).
+ *
+ * Ни одно правило выше сюда не достаёт: у сегмента нет ни имени параметра, ни
+ * `=`, ни кавычек — для них это просто часть URL. А сам callback_url логируется
+ * при каждой отправке задания скрейперу, и токен переживает ротацию логов
+ * (находка ревью 2026-07-30). Токен детерминирован: одного лога достаточно,
+ * чтобы дёргать колбэк вечно.
+ *
+ * Режем непрозрачный hex от 16 символов — короче не бывает ни один наш токен,
+ * а обычные сегменты пути такой длины из одних hex-символов не состоят.
+ */
+const PATH_SECRET = /(\/(?:api\/)?[A-Za-z0-9._-]*(?:webhook|callback)[A-Za-z0-9._-]*\/)[a-f0-9]{16,}/gi;
+
+/**
  * Вырезает секреты из готовой строки.
  *
  * До этого редакция применялась только к структурированной ошибке, а `msg`
@@ -134,6 +150,7 @@ export function redactText(text: string): string {
     // наоборот вырезал бы именно его, оставив сам токен снаружи.
     .replace(AUTH_SCHEME, (_m, scheme) => `${scheme} ${REDACTED}`)
     .replace(QUERY_SECRET, (_m, head) => `${head}${REDACTED}`)
+    .replace(PATH_SECRET, (_m, head) => `${head}${REDACTED}`)
     .replace(JSON_PAIR, (_m, head) => `${head}"${REDACTED}"`)
     .replace(KV_PAIR, (match, key, sep, value) => {
       const v = String(value);

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   DISPLAY_TIME_ZONE,
+  displayToday,
   formatTimeWithTimezone,
   normalizeTimestamp,
   toDisplayDateKey,
@@ -60,8 +61,9 @@ export default function Posts() {
   const [_, setLocation] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-  const [visibleMonth, setVisibleMonth] = useState<Date>(() => startOfMonth(new Date()));
+  // Стартовый день и видимый месяц — по Москве, а не по поясу браузера.
+  const [selectedDate, setSelectedDate] = useState<Date>(() => displayToday());
+  const [visibleMonth, setVisibleMonth] = useState<Date>(() => startOfMonth(displayToday()));
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [retryingKey, setRetryingKey] = useState<string | null>(null);
   // Set of post IDs whose "Ошибки публикации → Повторить" is currently

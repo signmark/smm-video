@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { DISPLAY_TIME_ZONE, formatTimeWithTimezone } from '@/lib/date-utils';
+import { DISPLAY_TIME_ZONE, displayToday, displayTodayKey, formatTimeWithTimezone } from '@/lib/date-utils';
 import { Calendar } from '@/components/ui/calendar';
 import { format, addDays, startOfMonth, parseISO } from 'date-fns';
 import {
@@ -155,7 +155,9 @@ export default function PublicationCalendar({
   onSortOrderChange,
   onReschedulePost
 }: PublicationCalendarProps) {
-  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  // Календарь открывается на МОСКОВСКОМ сегодня: около полуночи браузерное
+  // «сегодня» у зрителя в другом поясе — уже/ещё другой день.
+  const [selectedDate, setSelectedDate] = useState<Date>(() => displayToday());
   const [filteredPlatforms, setFilteredPlatforms] = useState<SocialPlatform[]>([]);
   const [isPostDetailOpen, setIsPostDetailOpen] = useState(false);
   const [selectedPost, setSelectedPost] = useState<CampaignContent | null>(null);
@@ -217,7 +219,7 @@ export default function PublicationCalendar({
     // Выбранная клетка — стенная дата, публикации — моменты времени. Обе
     // приводятся к ключу YYYY-MM-DD, каждая своим способом (см. publication-day.ts).
     const selectedKey = toWallDateKey(selectedDate);
-    const isSelectedDateToday = selectedKey === toWallDateKey(new Date());
+    const isSelectedDateToday = selectedKey === displayTodayKey();
     
     // Фильтруем содержимое для выбранной даты
     content.forEach(post => {

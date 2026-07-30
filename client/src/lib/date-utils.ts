@@ -125,6 +125,25 @@ export function displayTodayKey(): string {
   return formatInTimeZone(new Date(), DISPLAY_TIME_ZONE, 'yyyy-MM-dd');
 }
 
+/**
+ * Сегодняшний московский день как «стена» — `Date` из ЛОКАЛЬНОЙ полуночи.
+ *
+ * Нужен там, где московскую дату кладут в календарный виджет: `useState(new
+ * Date())` для выбранного дня и `startOfMonth(new Date())` для видимого месяца
+ * брали браузерное «сегодня», и около московской полуночи зритель в UTC,
+ * Нью-Йорке или Токио открывал календарь на ДРУГОМ дне и другом месяце, чем
+ * человек в Москве (находка приёмки 30.07.2026).
+ *
+ * Возвращается именно wall-Date, а не момент: виджет и `toWallDateKey` читают
+ * локальные компоненты, и пересчитывать этот `Date` по поясам нельзя — иначе
+ * внесём ровно тот сдвиг, от которого уходим. Пара к `toWallDateKey`:
+ * `toWallDateKey(displayToday())` всегда равен `displayTodayKey()`.
+ */
+export function displayToday(): Date {
+  const [year, month, day] = displayTodayKey().split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
 /** Попадает ли момент на сегодняшние МОСКОВСКИЕ сутки. */
 export function isDisplayToday(value: string | Date | null | undefined): boolean {
   const key = toDisplayDateKey(value);

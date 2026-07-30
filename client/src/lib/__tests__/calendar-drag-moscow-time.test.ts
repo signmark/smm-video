@@ -17,10 +17,16 @@
  * проверяют не-UTC пояс — как требует чек-лист ревью.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
-import { formatTimeWithTimezone } from '../date-utils';
+import { startOfMonth } from 'date-fns';
+import {
+  displayToday,
+  displayTodayKey,
+  formatTimeWithTimezone,
+  toWallDateKey,
+} from '../date-utils';
 
 /** 15:00 МСК 29 июля = 12:00Z. */
 const THREE_PM_MSK = '2026-07-29T12:00:00.000Z';
@@ -59,6 +65,68 @@ describe('время переноса берётся по Москве', () => {
       if (original === undefined) delete process.env.TZ;
       else process.env.TZ = original;
     }
+  });
+});
+
+describe('«сегодня» и стартовый месяц — московские', () => {
+  const withTZ = (tz: string, fn: () => void) => {
+    const original = process.env.TZ;
+    try {
+      process.env.TZ = tz;
+      fn();
+    } finally {
+      if (original === undefined) delete process.env.TZ;
+      else process.env.TZ = original;
+    }
+  };
+
+  afterEach(() => vi.useRealTimers());
+
+  it('за полчаса ДО московской полуночи день ещё вчерашний во всех поясах', () => {
+    // 23:30 МСК 29 июля = 20:30Z. В Токио уже 30-е, в Нью-Йорке ещё 29-е.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-29T20:30:00.000Z'));
+
+    for (const tz of ['UTC', 'America/New_York', 'Asia/Tokyo']) {
+      withTZ(tz, () => {
+        expect(displayTodayKey(), tz).toBe('2026-07-29');
+        expect(toWallDateKey(displayToday()), tz).toBe('2026-07-29');
+      });
+    }
+  });
+
+  it('через полчаса ПОСЛЕ московской полуночи день уже новый во всех поясах', () => {
+    // 00:30 МСК 30 июля = 21:30Z 29-го. В UTC и Нью-Йорке ещё 29-е.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-29T21:30:00.000Z'));
+
+    for (const tz of ['UTC', 'America/New_York', 'Asia/Tokyo']) {
+      withTZ(tz, () => {
+        expect(displayTodayKey(), tz).toBe('2026-07-30');
+        expect(toWallDateKey(displayToday()), tz).toBe('2026-07-30');
+      });
+    }
+  });
+
+  it('стартовый месяц берётся от московского дня, а не от браузерного', () => {
+    // 00:30 МСК 1 августа = 21:30Z 31 июля: в UTC ещё июль, в Москве уже август.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-31T21:30:00.000Z'));
+
+    withTZ('UTC', () => {
+      expect(toWallDateKey(startOfMonth(displayToday()))).toBe('2026-08-01');
+      // Контроль: браузерное «сегодня» дало бы июль — ошибка, которую чиним.
+      expect(toWallDateKey(startOfMonth(new Date()))).toBe('2026-07-01');
+    });
+  });
+
+  it('обе страницы инициализируют дату московским хелпером', () => {
+    expect(CALENDAR).toContain('displayToday()');
+    expect(POSTS_PAGE).toContain('displayToday()');
+    // Голый new Date() в useState-инициализаторах не остался.
+    expect(CALENDAR).not.toMatch(/useState<Date>\(new Date\(\)\)/);
+    expect(POSTS_PAGE).not.toMatch(/useState<Date>\(new Date\(\)\)/);
+    expect(POSTS_PAGE).not.toMatch(/startOfMonth\(new Date\(\)\)/);
   });
 });
 

@@ -341,6 +341,76 @@ describe('POST /api/analyze-comments', () => {
 
     expect(res.status).toBe(200);
   });
+
+  /**
+   * Pivot через trend.source_id (находка ревью 2026-07-29): свой тренд мог
+   * ссылаться на ЧУЖОЙ источник, и level=source читал все тренды этого
+   * источника и перезаписывал его sentiment_analysis служебным токеном.
+   */
+  describe('level=source: source_id тренда — данные, а не доверенный факт', () => {
+    const OWN_TREND_FOREIGN_SOURCE = {
+      'trend-own': { id: 'trend-own', campaign_id: OWN, source_id: 'source-foreign' },
+      'source-foreign': { id: 'source-foreign', campaign_id: FOREIGN },
+    };
+
+    /** post_comment пуст, трендовый refetch отдаёт запись из records(). */
+    function listReturnsTrendRow(map: Record<string, any>) {
+      H.crudList.mockImplementation(async (collection: any, opts: any) => {
+        if (collection === 'campaign_trend_topics' && opts?.filter?.id?._eq) {
+          const row = map[String(opts.filter.id._eq)];
+          return row ? [row] : [];
+        }
+        return [];
+      });
+    }
+
+    it('свой тренд + ЧУЖОЙ source_id → 404, тренды источника не читаются, источник не перезаписывается', async () => {
+      records(OWN_TREND_FOREIGN_SOURCE);
+      listReturnsTrendRow(OWN_TREND_FOREIGN_SOURCE);
+
+      const res = await analyze({ campaignId: OWN, trendId: 'trend-own', level: 'source' });
+
+      expect(res.status).toBe(404);
+      // Чтения по source_id (агрегация чужих трендов) не было.
+      const sourceReads = H.crudList.mock.calls.filter(([, opts]: any[]) => opts?.filter?.source_id);
+      expect(sourceReads).toHaveLength(0);
+      // Admin-запись в чужой источник не выполнена.
+      expect(H.crudUpdate).not.toHaveBeenCalledWith('campaign_content_sources', expect.anything(), expect.anything(), expect.anything());
+    });
+
+    it('битая ссылка: source_id указывает на несуществующий источник → 404 без записи', async () => {
+      const map = { 'trend-own': { id: 'trend-own', campaign_id: OWN, source_id: 'source-ghost' } };
+      records(map);
+      listReturnsTrendRow(map);
+
+      const res = await analyze({ campaignId: OWN, trendId: 'trend-own', level: 'source' });
+
+      expect(res.status).toBe(404);
+      expect(H.crudUpdate).not.toHaveBeenCalled();
+    });
+
+    it('валидная связь внутри одной кампании — анализ идёт, выборка ограничена кампанией', async () => {
+      const map = {
+        'trend-own': { id: 'trend-own', campaign_id: OWN, source_id: 'source-own' },
+        'source-own': { id: 'source-own', campaign_id: OWN },
+      };
+      records(map);
+      listReturnsTrendRow(map);
+
+      const res = await analyze({ campaignId: OWN, trendId: 'trend-own', level: 'source' });
+
+      expect(res.status).toBe(200);
+      // Агрегирующая выборка по source_id дополнительно зажата подтверждённой кампанией.
+      const sourceReads = H.crudList.mock.calls.filter(([, opts]: any[]) => opts?.filter?.source_id);
+      expect(sourceReads.length).toBeGreaterThan(0);
+      for (const [, opts] of sourceReads) {
+        expect(opts.filter.campaign_id).toEqual({ _eq: OWN });
+      }
+      expect(H.crudUpdate).toHaveBeenCalledWith(
+        'campaign_content_sources', 'source-own', expect.anything(), expect.anything(),
+      );
+    });
+  });
 });
 
 describe('POST /api/sources/:sourceId/analyze — проверки не было вовсе', () => {

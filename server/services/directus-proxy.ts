@@ -343,11 +343,29 @@ export class DirectusProxyService {
     token: string;
   }) {
     const { data, userId, token } = params;
-    
+
     // Проверяем доступ к кампании
     const campaign = await this.getUserCampaign(data.campaign_id, userId, token);
     if (!campaign) {
       throw new Error('Access denied');
+    }
+
+    // source_id обязан принадлежать ТОЙ ЖЕ кампании. Без этой проверки тренд со
+    // ссылкой на чужой источник становился мостом между арендаторами: дальше
+    // analyze-comments(level=source) по своему тренду читал чужие тренды и
+    // перезаписывал sentiment_analysis чужого источника служебным токеном
+    // (находка ревью 2026-07-29). «Не найдено» и «чужой» отвечают одинаково,
+    // чтобы ручка не работала оракулом существования чужих UUID.
+    if (data.source_id) {
+      const source = await directusCrud.getById<any>(
+        'campaign_content_sources',
+        String(data.source_id),
+        { useAdminToken: true },
+      );
+      const sourceCampaignId = source?.campaign_id ?? source?.campaignId ?? null;
+      if (!source || String(sourceCampaignId) !== String(data.campaign_id)) {
+        throw new Error('Source not found in campaign');
+      }
     }
 
     const created = await directusCrud.create('campaign_trend_topics', data, {

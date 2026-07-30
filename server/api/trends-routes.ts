@@ -2005,11 +2005,29 @@ ${trendsForAi}
         const sourceId = trend?.[0]?.source_id;
         let sourceAnalysis: Record<string, any> = { sentiment: 'neutral', confidence: 0 };
 
+        // source_id из записи тренда — данные, а не доверенный факт: тренд мог
+        // быть создан со ссылкой на ЧУЖОЙ источник (до проверки в
+        // createTrendTopic или битой связью). Прежде чем читать тренды
+        // источника и перезаписывать его sentiment_analysis служебным токеном,
+        // подтверждаем, что источник принадлежит той же проверенной кампании.
+        if (sourceId) {
+          try {
+            const sourceCampaignId = await loadOwningCampaignId(OWNED_COLLECTIONS.source, String(sourceId));
+            if (!sourceCampaignId || sourceCampaignId !== String(campaignId)) {
+              return denyOwnership(res);
+            }
+          } catch (err) {
+            return denyOwnership(res, err);
+          }
+        }
+
         if (sourceId) {
           let allSourceTrends: any[] = [];
           try {
+            // Дополнительный фильтр по подтверждённой кампании: даже если в
+            // source_id затесались чужие тренды, служебный токен их не читает.
             allSourceTrends = await directusCrud.list('campaign_trend_topics', {
-              filter: { source_id: { _eq: sourceId } },
+              filter: { source_id: { _eq: sourceId }, campaign_id: { _eq: String(campaignId) } },
               limit: 500,
               useAdminToken: true
             });
@@ -2086,14 +2104,17 @@ ${trendsForAi}
       // Ручка прогоняет AI по КАЖДОМУ тренду источника и перезаписывает их
       // sentiment_analysis служебным токеном. Без этой проверки чужой источник
       // анализировался и правился по одному лишь его id.
-      if (!(await assertSourceBelongsToRequester(req, res, String(sourceId)))) return;
+      const ownedSource = await assertSourceBelongsToRequester(req, res, String(sourceId));
+      if (!ownedSource) return;
 
       log(`[Source Analyze] Анализ источника ${sourceId}`, 'info');
 
       let trends: any[] = [];
       try {
+        // Фильтр по кампании ИСТОЧНИКА: чужой тренд с битой ссылкой на этот
+        // source_id не должен ни читаться, ни перезаписываться служебным токеном.
         trends = await directusCrud.list('campaign_trend_topics', {
-          filter: { source_id: { _eq: sourceId } },
+          filter: { source_id: { _eq: sourceId }, campaign_id: { _eq: ownedSource.campaign_id } },
           limit: 500,
           useAdminToken: true
         });
@@ -2155,7 +2176,7 @@ ${trendsForAi}
       log(`[Source Analyze] Проанализировано ${analyzedCount} трендов с комментариями (${totalComments} комм.)`, 'info');
 
       const updatedTrends = await directusCrud.list('campaign_trend_topics', {
-        filter: { source_id: { _eq: sourceId } },
+        filter: { source_id: { _eq: sourceId }, campaign_id: { _eq: ownedSource.campaign_id } },
         limit: 500,
         useAdminToken: true
       }) as any[];

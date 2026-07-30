@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   DISPLAY_TIME_ZONE,
+  formatTimeWithTimezone,
   normalizeTimestamp,
   toDisplayDateKey,
   toWallDateKey,
@@ -781,8 +782,11 @@ export default function Posts() {
                     const date = post.scheduledAt || post.publishedAt;
                     if (!date) return;
                     try {
-                      const h = new Date(date).getHours();
-                      hourCounts[h] = (hourCounts[h] || 0) + 1;
+                      // Час публикации — МОСКОВСКИЙ: «лучшее время» показывается
+                      // всем одинаково, а локальный getHours давал у зрителя в
+                      // другом поясе сдвинутую статистику.
+                      const h = Number(formatTimeWithTimezone(date).slice(0, 2));
+                      if (Number.isFinite(h)) hourCounts[h] = (hourCounts[h] || 0) + 1;
                     } catch {}
                   });
                   const topHours = Object.entries(hourCounts)

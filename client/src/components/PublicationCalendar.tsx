@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { DISPLAY_TIME_ZONE } from '@/lib/date-utils';
+import { DISPLAY_TIME_ZONE, formatTimeWithTimezone } from '@/lib/date-utils';
 import { Calendar } from '@/components/ui/calendar';
 import { format, addDays, startOfMonth, parseISO } from 'date-fns';
 import {
@@ -178,12 +178,12 @@ export default function PublicationCalendar({
     let newTime = "12:00";
     
     if (existingPost?.scheduledAt) {
-      try {
-        const existingDate = new Date(existingPost.scheduledAt);
-        newTime = `${existingDate.getHours().toString().padStart(2, '0')}:${existingDate.getMinutes().toString().padStart(2, '0')}`;
-      } catch (e) {
-        newTime = "12:00"; // Время по умолчанию если не удалось извлечь
-      }
+      // Время берём ПО МОСКВЕ, а не локальными getHours/getMinutes: перенос
+      // сохраняет час публикации, и у зрителя в другом поясе локальное чтение
+      // сдвигало его на разницу поясов. Пост, стоявший на 15:00 МСК, у зрителя
+      // в UTC переезжал на 12:00 МСК — молча, при обычном перетаскивании.
+      const moscowTime = formatTimeWithTimezone(existingPost.scheduledAt);
+      if (/^\d{2}:\d{2}$/.test(moscowTime)) newTime = moscowTime;
     }
 
     onReschedulePost(postId, newDate, newTime);

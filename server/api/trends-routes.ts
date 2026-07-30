@@ -171,6 +171,63 @@ async function assertTrendBelongsToRequester(
   return rows ? rows[0] : null;
 }
 
+/**
+ * Канал скрейпера принадлежит кампании запросившего.
+ *
+ * Находка ревью 2026-07-30: ручки `/api/scraper/...` брали `channelId` из пути
+ * и шли в скрейпер без единой проверки — любой залогиненный удалял чужой канал
+ * из мониторинга, запускал парсинг и читал аналитику чужой кампании.
+ *
+ * Связь арендатора у канала не хранится в Directus: она выводится из
+ * `social_media_settings` кампаний — telegram username и vk groupId. Поэтому
+ * цепочка такая: channelId → канал скрейпера → его `platform_channel_id` →
+ * кампании запросившего, у которых такой канал заявлен.
+ *
+ * Fail-closed: скрейпер недоступен или канал не найден — отказ, а не пропуск.
+ */
+async function assertScraperChannelBelongsToRequester(
+  req: any,
+  res: any,
+  channelId: string,
+): Promise<boolean> {
+  try {
+    const { getAllMonitoredChannels, getScraperCampaignChannels } = await import('../services/scraper-analytics');
+    const { listAccessibleCampaignIds } = await import('../services/campaign-access');
+
+    let channels;
+    try {
+      channels = await getAllMonitoredChannels(undefined, true);
+    } catch (err: any) {
+      throw new OwnershipUnavailableError(err?.message || 'scraper unavailable');
+    }
+
+    const channel = channels.items.find((ch: any) => String(ch.id) === String(channelId));
+    if (!channel) return denyOwnership(res);
+
+    let campaignIds: string[];
+    try {
+      campaignIds = await listAccessibleCampaignIds(req.user?.id, req.user?.token || '');
+    } catch (err: any) {
+      throw new OwnershipUnavailableError(err?.message || 'campaign access unavailable');
+    }
+
+    for (const campaignId of campaignIds) {
+      let campaign: any;
+      try {
+        campaign = await directusCrud.getById<any>('user_campaigns', campaignId, { useAdminToken: true });
+      } catch (err: any) {
+        throw new OwnershipUnavailableError(err?.message || 'directus unavailable');
+      }
+      const owned = getScraperCampaignChannels(campaign?.social_media_settings);
+      if (owned.some((own: any) => String(own.id) === String(channel.platform_channel_id))) return true;
+    }
+
+    return denyOwnership(res);
+  } catch (err) {
+    return denyOwnership(res, err);
+  }
+}
+
 /** Источник контента. Возвращает запись либо null (ответ уже отправлен). */
 async function assertSourceBelongsToRequester(
   req: any,
@@ -2361,6 +2418,10 @@ ${trendSummaries.length > 0 ? `ВЫВОДЫ ПО ТРЕНДАМ:\n${trendSummari
       if (!userId || !authToken) return res.status(401).json({ error: 'Unauthorized' });
       if (!campaignId) return res.status(400).json({ error: 'campaignId обязателен' });
 
+      // Сбор идёт служебным токеном и пишет тренды в кампанию из тела запроса —
+      // без этой проверки любой залогиненный наполнял чужую кампанию.
+      if (!(await ensureTrendsCampaignAccess(req, res, String(campaignId)))) return;
+
       log(`[Trends Direct] 🚀 Запрос сбора трендов: кампания=${campaignId}, userId=${userId}`, 'info');
 
       // Запускаем в фоне — не ждём завершения
@@ -2403,6 +2464,15 @@ ${trendSummaries.length > 0 ? `ВЫВОДЫ ПО ТРЕНДАМ:\n${trendSummari
   app.get('/api/scraper/monitoring/channels', authenticateUser, async (req: Request, res: Response) => {
     try {
       const { platform, is_active, page, page_size, campaignId } = req.query as Record<string, string>;
+
+      // campaignId обязателен: без него ручка отдавала каналы мониторинга ВСЕХ
+      // арендаторов одним списком. Фильтрация по своей кампании — единственный
+      // режим, в котором эта выборка имеет право существовать.
+      if (!campaignId) {
+        return res.status(400).json({ success: false, error: 'campaignId обязателен' });
+      }
+      if (!(await ensureTrendsCampaignAccess(req, res, String(campaignId)))) return;
+
       const {
         getMonitoredChannels,
         getScraperCampaignChannels,
@@ -2438,6 +2508,7 @@ ${trendSummaries.length > 0 ? `ВЫВОДЫ ПО ТРЕНДАМ:\n${trendSummari
   app.delete('/api/scraper/monitoring/channels/:channelId', authenticateUser, async (req: Request, res: Response) => {
     try {
       const { channelId } = req.params;
+      if (!(await assertScraperChannelBelongsToRequester(req, res, channelId))) return;
       const { deleteMonitoringChannel } = await import('../services/scraper-analytics');
       const ok = await deleteMonitoringChannel(channelId);
       if (!ok) return res.status(502).json({ success: false, error: 'Не удалось удалить канал' });
@@ -2454,6 +2525,7 @@ ${trendSummaries.length > 0 ? `ВЫВОДЫ ПО ТРЕНДАМ:\n${trendSummari
   app.get('/api/scraper/monitoring/channels/:channelId/parse-status', authenticateUser, async (req: Request, res: Response) => {
     try {
       const { channelId } = req.params;
+      if (!(await assertScraperChannelBelongsToRequester(req, res, channelId))) return;
       const { getChannelParseStatus } = await import('../services/scraper-analytics');
       const status = await getChannelParseStatus(channelId);
       if (!status) return res.status(404).json({ success: false, error: 'Канал не найден' });
@@ -2470,6 +2542,7 @@ ${trendSummaries.length > 0 ? `ВЫВОДЫ ПО ТРЕНДАМ:\n${trendSummari
   app.post('/api/scraper/monitoring/channels/:channelId/force-parse', authenticateUser, async (req: Request, res: Response) => {
     try {
       const { channelId } = req.params;
+      if (!(await assertScraperChannelBelongsToRequester(req, res, channelId))) return;
       const { forceParseChannel } = await import('../services/scraper-analytics');
       const result = await forceParseChannel(channelId);
       if (!result) return res.status(502).json({ success: false, error: 'Скрейпер не ответил' });
@@ -2505,6 +2578,7 @@ ${trendSummaries.length > 0 ? `ВЫВОДЫ ПО ТРЕНДАМ:\n${trendSummari
   app.get('/api/scraper/channels/:channelId/overview', authenticateUser, async (req: Request, res: Response) => {
     try {
       const { channelId } = req.params;
+      if (!(await assertScraperChannelBelongsToRequester(req, res, channelId))) return;
       const { getChannelOverview } = await import('../services/scraper-analytics');
       const overview = await getChannelOverview(channelId);
       if (!overview) return res.status(404).json({ success: false, error: 'Канал не найден или нет данных' });
@@ -2522,6 +2596,7 @@ ${trendSummaries.length > 0 ? `ВЫВОДЫ ПО ТРЕНДАМ:\n${trendSummari
   app.get('/api/scraper/channels/:channelId/analytics', authenticateUser, async (req: Request, res: Response) => {
     try {
       const { channelId } = req.params;
+      if (!(await assertScraperChannelBelongsToRequester(req, res, channelId))) return;
       const { from_date, to_date, granularity } = req.query as Record<string, string>;
       const { getChannelAnalytics } = await import('../services/scraper-analytics');
       const data = await getChannelAnalytics(channelId, {
@@ -2691,6 +2766,10 @@ ${trendSummaries.length > 0 ? `ВЫВОДЫ ПО ТРЕНДАМ:\n${trendSummari
     try {
       const { campaignId } = req.body;
       if (!campaignId) return res.status(400).json({ success: false, error: 'campaignId обязателен' });
+
+      // Кампания читается служебным токеном: без проверки владения ручка
+      // раскрывала настройки соцсетей чужой кампании и регистрировала её каналы.
+      if (!(await ensureTrendsCampaignAccess(req, res, String(campaignId)))) return;
 
       // Регистрируем только СОБСТВЕННЫЕ каналы кампании (куда публикуем)
       // Анализ источников/трендов реализован отдельно

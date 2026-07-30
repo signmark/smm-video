@@ -162,11 +162,13 @@ export function ScraperAnalyticsPanel({ campaignId }: Props) {
   const { data: channelsData, isLoading: channelsLoading } = useQuery({
     queryKey: ['scraper-monitoring-channels', campaignId],
     queryFn: async () => {
-      const params = new URLSearchParams({ page_size: '100' });
-      if (campaignId) params.set('campaignId', campaignId);
+      // campaignId обязателен: без него сервер отвечает 400 — выборка каналов
+      // существует только в разрезе своей кампании.
+      const params = new URLSearchParams({ page_size: '100', campaignId: campaignId! });
       const resp = await apiRequest(`/api/scraper/monitoring/channels?${params}`);
       return (resp?.data ?? []) as MonitoredChannel[];
     },
+    enabled: Boolean(campaignId),
     staleTime: 15 * 60 * 1000,
     refetchOnWindowFocus: false,
     retry: 1,

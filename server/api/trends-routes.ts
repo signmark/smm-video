@@ -2844,24 +2844,45 @@ ${trendSummaries.length > 0 ? `ВЫВОДЫ ПО ТРЕНДАМ:\n${trendSummari
         return res.status(400).json({ success: false, error: 'channels (массив объектов {id, platform, platform_channel_id}) обязателен' });
       }
 
-      // Проверяется КАЖДЫЙ элемент списка: раньше объект channels принимался
-      // из тела как есть, и обновление метрик запускалось по чужим каналам.
-      // Набор отклоняется целиком — частично выполненный запуск оставил бы
-      // побочные эффекты на чужих данных.
+      // Наверх уходит ТОЛЬКО то, что сервер собрал сам.
+      //
+      // Первая версия guard'а проверяла присланную пару
+      // `platform + platform_channel_id`, а в скрейпер отправляла присланный же
+      // `channels[].id` — и эти два поля ничем не связаны. Достаточно было
+      // подставить внутренний id чужого канала, прикрыв его внешней парой
+      // своего: проверка проходила, а метрики обновлялись у чужого (находка
+      // повторной приёмки 30.07.2026).
+      //
+      // Теперь `id` из тела не используется вовсе: по паре находим СВОЮ запись
+      // мониторинга и берём её настоящий id. Набор отклоняется целиком —
+      // частичный запуск оставил бы следы на чужих данных.
+      let resolvedChannels: any[];
       try {
         const { scraperChannelKey } = await import('../services/scraper-analytics');
-        const mine = await ownedChannelKeys(req);
-        const allOwned = channels.every((ch: any) => {
+        const mine = await requesterMonitoredChannels(req);
+        const byKey = new Map<string, any>();
+        for (const ch of mine) {
+          const key = scraperChannelKey(ch.platform, ch.platform_channel_id);
+          if (key) byKey.set(key, ch);
+        }
+
+        resolvedChannels = [];
+        for (const ch of channels) {
           const key = scraperChannelKey(ch?.platform, ch?.platform_channel_id);
-          return key !== null && mine.has(key);
-        });
-        if (!allOwned) return denyOwnership(res);
+          const own = key ? byKey.get(key) : undefined;
+          if (!own) return denyOwnership(res);
+          resolvedChannels.push({
+            id: own.id,
+            platform: own.platform,
+            platform_channel_id: own.platform_channel_id,
+          });
+        }
       } catch (err) {
         return denyOwnership(res, err);
       }
 
       const { refreshChannelMetrics } = await import('../services/scraper-analytics');
-      const result = await refreshChannelMetrics({ channels, days, force: force === true });
+      const result = await refreshChannelMetrics({ channels: resolvedChannels, days, force: force === true });
       if (!result) return res.status(502).json({ success: false, error: 'Скрейпер не ответил' });
       res.json({ success: true, data: result });
     } catch (err: any) {

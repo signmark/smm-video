@@ -400,6 +400,31 @@ describe('операции со списком каналов проверяют
     expect(H.refreshChannelMetrics, 'частичный запуск недопустим').not.toHaveBeenCalled();
   });
 
+  /**
+   * Подмена внутреннего id под видом своей внешней пары.
+   *
+   * Первая версия guard'а проверяла `platform + platform_channel_id`, а наверх
+   * отправляла присланный `channels[].id` — поля друг с другом не связаны.
+   * Атакующий прикрывал чужой внутренний id парой СВОЕГО канала: проверка
+   * проходила, метрики обновлялись у чужого (находка повторной приёмки).
+   */
+  it('чужой id под своей парой platform/channel_id не проходит наверх', async () => {
+    const res = await authed(request(app).post('/api/scraper/monitoring/scheduler/metrics-refresh')).send({
+      channels: [{
+        id: VICTIM_CHANNEL.id,               // чужой внутренний id
+        platform: 'telegram',
+        platform_channel_id: '@own_channel', // но пара — своя
+      }],
+    });
+
+    expect(res.status).toBe(200);
+    // Ключевое: наверх ушёл id СВОЕГО канала, а не присланный.
+    const sent = H.refreshChannelMetrics.mock.calls[0][0].channels;
+    expect(sent).toHaveLength(1);
+    expect(sent[0].id, 'id обязан быть выведен сервером').toBe(OWN_CHANNEL.id);
+    expect(JSON.stringify(sent)).not.toContain(VICTIM_CHANNEL.id);
+  });
+
   it('metrics-refresh только по своим каналам проходит', async () => {
     const res = await authed(request(app).post('/api/scraper/monitoring/scheduler/metrics-refresh')).send({
       channels: [{ id: OWN_CHANNEL.id, platform: 'telegram', platform_channel_id: '@own_channel' }],

@@ -60,12 +60,15 @@ outage; после истечения TTL тот же outage обязан дат
 
 | Hash | Сообщение | Файлы |
 |---|---|---|
-| см. диапазон в `codex-review-request-2026-07-31-ai39.md` | security(subscription): AI-39 fail-closed гейт подписки | `server/middleware/require-active-subscription.ts`, `server/__tests__/require-active-subscription.test.ts` |
+| `6f37463db` | security(subscription): AI-39 fail-closed гейт подписки | `server/middleware/require-active-subscription.ts`, `server/__tests__/require-active-subscription.test.ts`, этот файл |
+| (второй) | test(subscription): AI-39 тест на форму ответа Directus | `server/__tests__/require-active-subscription.test.ts`, этот файл |
+
+Точный диапазон для ревью — в `docs/prompts/codex-review-request-2026-07-31-ai39.md`.
 
 ## Верификация (мой прогон)
 
-- `npx vitest run`: **155/155 файлов, 1990/1990 тестов**, 88.58 s
-  - дельта против снимка в AGENTS.md (146 файлов / 1874 теста): +1 файл, +27 тестов (новый `require-active-subscription.test.ts`); упавших нет
+- `npx vitest run`: **155/155 файлов, 1991/1991 тестов**, 95.6 s
+  - дельта против снимка в AGENTS.md (146 файлов / 1874 теста): +1 файл, +28 тестов (новый `require-active-subscription.test.ts`); упавших нет
 - `npm run check` (tsc `tsconfig.critical.json`): **exit 0**
 - `npm run check:client` (tsc `tsconfig.client.json`): **exit 0**
 - `npm run build`: **exit 0** (предупреждение о размере чанка — прежнее, не связано с правкой)
@@ -79,13 +82,23 @@ outage; после истечения TTL тот же outage обязан дат
 
 | Что снимаем | Красных тестов |
 |---|---|
-| весь фикс middleware (старое поведение) | **14 из 27** |
-| только общий allowlist `isPublicApiPath` | **1 из 27** (публичные вебхуки) |
-| возврат `catch { next() }` (старый fail-open) | **9 из 27** (outage/401/403-кейсы) |
+| весь фикс middleware (старое поведение) | **14 из 28** |
+| только общий allowlist `isPublicApiPath` | **1 из 28** (публичные вебхуки) |
+| возврат `catch { next() }` (старый fail-open) | **9 из 28** (outage/401/403-кейсы) |
+| только проверка формы ответа Directus | **1 из 28** |
 
 Каждый негативный тест проверяет не только код ответа, но и что `handler` не
 был вызван ни разу: 503 после отработавшего handler'а означал бы, что
 побочный эффект уже случился.
+
+**Правка по ходу red-before.** Первая версия теста на форму ответа Directus
+(`{ data: null }`) проверку формы НЕ стерегла: при снятом guard'е обращение к
+полю у `undefined` бросает TypeError, его подхватывает внешний catch и ответ
+всё равно 503 — тест зеленел по другой причине. Замер это и показал: снятие
+guard'а не красило ничего. Добавлен случай с телом-примитивом
+(`{ data: { data: 'unexpected-body' } }`): без guard'а он читается как
+«`expire_date` нет, значит бессрочно» и mutation проходит, то есть тот самый
+молчаливый fail-open. Теперь снятие guard'а красит 1 из 28.
 
 ### Прод-проверка после выкатки
 
@@ -113,13 +126,13 @@ outage; после истечения TTL тот же outage обязан дат
 - **Оба ответа 401 различимы по коду** (`SUBSCRIPTION_IDENTITY_REQUIRED` и
   `SUBSCRIPTION_SESSION_INVALID`). Клиент сейчас на эти коды не смотрит —
   отдельная работа фронта, в scope AI-39 не входила.
-- **`POST /api/tiktok/webhook` в `PUBLIC_API_PATHS` отсутствует.** До этой
-  правки он проходил гейт подписки как «запрос без токена», после — получает
-  401. Регрессии нет: он и раньше закрывался `createApiAuthGate`, который
-  смонтирован ниже и тоже не считает его публичным, — то есть внешний
-  наблюдаемый ответ тот же 401, просто раньше по цепочке. Если TikTok реально
-  шлёт туда вебхуки, это существующая поломка, не внесённая здесь; заводить
-  её в allowlist без подтверждения владельца я не стал.
+- **`POST /api/tiktok/webhook` в allowlist не вносился.** Дефект шире гейта
+  подписки: `tiktokAuthRouter` вообще не смонтирован в `server/index.ts`
+  (наружу извлечён только GET OAuth callback для раннего bypass), поэтому и
+  оба webhook-handler'а, и client-вызовы `auth/start`, `accounts`,
+  `sync-settings`, disconnect сейчас недостижимы; при этом POST webhook не
+  проверяет подпись и echo'ит payload — открывать его allowlist'ом небезопасно.
+  Заведено отдельно как **AI-49** под эпиком AI-44.
 - **Живой простой Directus специально не воспроизводился** — по указанию из
   плана боевой Directus не останавливается, fail-closed доказан тестом.
 - **Остальные пункты §6** закрыты частично: гейт подписки теперь
@@ -128,9 +141,7 @@ outage; после истечения TTL тот же outage обязан дат
 
 ## Вопросы к ревьюеру / owner'у
 
-1. `POST /api/tiktok/webhook` — он вообще используется? Если да, его нужно
-   вносить в `PUBLIC_API_PATHS` отдельным тикетом (сейчас закрыт).
-2. TTL 60 s оставлен прежним. Если для платящих нужен более длинный буфер на
+1. TTL 60 s оставлен прежним. Если для платящих нужен более длинный буфер на
    простой Directus — это одно число, но решение продуктовое.
 
 ## Следующий шаг (по ролям)

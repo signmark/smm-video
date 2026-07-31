@@ -267,6 +267,25 @@ describe('невозможность подтвердить право → от�
     expect(handler).not.toHaveBeenCalled();
   });
 
+  // Тело-примитив вместо объекта пользователя — единственный случай, который
+  // ловит именно проверку формы. Пустой data отсекается ещё и тем, что обращение
+  // к полю у undefined бросает TypeError, поэтому один он ничего не стережёт:
+  // без проверки формы такой ответ читается как «expire_date нет, значит
+  // бессрочно» и mutation проходит.
+  it('ответ-примитив вместо объекта пользователя → 503, а не «бессрочная подписка»', async () => {
+    const { app, handler } = makeApp();
+    mockGet.mockResolvedValue({ data: { data: 'unexpected-body' } });
+
+    const res = await request(app)
+      .post('/api/campaigns')
+      .set('Authorization', `Bearer ${freshToken()}`)
+      .send({});
+
+    expect(res.status).toBe(503);
+    expect(res.body.code).toBe('SUBSCRIPTION_VALIDATION_UNAVAILABLE');
+    expect(handler).not.toHaveBeenCalled();
+  });
+
   it('ответ без объекта пользователя → 503, а не «полей нет, значит бессрочно»', async () => {
     const { app, handler } = makeApp();
     mockGet.mockResolvedValue({ data: null });

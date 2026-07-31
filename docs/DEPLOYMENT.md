@@ -228,14 +228,20 @@ OAuth-поток и в ссылки, уходящие наружу.
 4. Поменять местами primary и alias в `/root/.env`:
    `APP_PUBLIC_URL=https://smm.omemo.tech`,
    `APP_EXTRA_ORIGINS=https://smm.nplanner.ru`.
-5. Перезапустить ТОЛЬКО сервис `smm`:
-   `docker compose -f /root/docker-compose.yml up -d smm`.
+5. Перезапустить ТОЛЬКО сервис `smm`, чтобы он перечитал `/root/.env`:
+   `docker compose -f /root/docker-compose.yml up -d --no-build --no-deps smm`.
+
+   Это **перезапуск, а не деплой**: образ и `revision` не меняются, код берётся
+   тот же. Единственный путь выкатки кода — `scripts/deploy-smm.sh`. Убедитесь,
+   что деплой сейчас не идёт (`scripts/deploy-smm.sh` держит лок
+   `/var/lock/smm-deploy.lock`), иначе перезапуск встанет поперёк выкатки.
 6. Проверить оба домена: `/` → 200, protected `/api` без сессии → 401.
 7. Обновить `redirect_uri` в кабинетах OAuth-провайдеров (VK, YouTube,
    Instagram/Threads) — они сверяют его точным совпадением.
 
 **Rollback cutover:** вернуть прежние значения `APP_PUBLIC_URL` /
-`APP_EXTRA_ORIGINS` в `/root/.env` и поднять `smm` заново. Кода это не
+`APP_EXTRA_ORIGINS` в `/root/.env` и поднять `smm` заново тем же
+`up -d --no-build --no-deps smm` (снова перезапуск, не деплой). Кода это не
 касается, пересборка образа не нужна. DNS при этом можно не откатывать:
 `smm.nplanner.ru` остаётся в allowlist и продолжает работать.
 

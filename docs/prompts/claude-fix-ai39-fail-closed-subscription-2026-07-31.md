@@ -102,7 +102,29 @@ guard'а не красило ничего. Добавлен случай с те
 
 ### Прод-проверка после выкатки
 
-(проставляется после deploy)
+Образ собран не мной: параллельная сессия (Claude Desktop, работа по SM)
+подтянула `/root/smm-build-clean` на `81093b3d2` и собрала образ из него, то
+есть с этим фиксом. Отдельная сборка не потребовалась; проверял результат.
+
+- контейнер `smm` поднят 2026-07-31 07:27:38, `=== SERVER SUCCESSFULLY STARTED ON PORT 5000 ===`
+- `[Directus Health] Directus доступен и работает`
+- `curl https://smm.nplanner.ru/` → **200**
+- `bash scripts/smoke.sh` → **OK: все 14 проверок прошли**
+- код действительно уехал, а не остался в кеше слоёв: в `/app/dist/server/index.js`
+  найдены ASCII-маркеры `SUBSCRIPTION_VALIDATION_UNAVAILABLE` (2) и
+  `SUBSCRIPTION_IDENTITY_REQUIRED` (1). Кириллицу грепать бесполезно — esbuild
+  экранирует не-ASCII в `\uXXXX`.
+
+Живая проверка поведения на проде:
+
+| Запрос | Ответ | Смысл |
+|---|---|---|
+| `POST /api/campaigns` без токена | **401** `SUBSCRIPTION_IDENTITY_REQUIRED` | до правки проходил насквозь |
+| `POST /api/yookassa/webhook` | 200 | публичный вебхук не сломан |
+| `POST /api/auth/login` | 400 | renewal-путь доходит до handler, гейтом не режется |
+
+Простой Directus на проде не воспроизводился намеренно (боевой Directus не
+останавливаем) — ветка 503 доказана тестами.
 
 ## Компромиссы и отклонения
 

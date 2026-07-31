@@ -35,7 +35,12 @@ export function AppShell({ children, onNavigate, onLogout, userIsAdmin }: AppShe
 
   const handleMenuClick = () => {
     if (window.innerWidth >= 1024) {
-      setIsSidebarCollapsed((v) => !v);
+      // Вторая точка переключения (кнопка-гамбургер на десктопе). Без записи
+      // сюда настройка, сделанная отсюда, не переживала бы переход.
+      setIsSidebarCollapsed((v) => {
+        writeSidebarCollapsed(!v);
+        return !v;
+      });
     } else {
       setIsSidebarOpen((v) => !v);
     }

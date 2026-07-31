@@ -48,6 +48,9 @@ import { statusValidator } from './services/status-validator';
 import { getPublishScheduler } from './services/publish-scheduler';
 // Импортируем Telegram бота
 import { startTelegramBot, getWebhookCallback } from './telegram-bot/bot-launcher';
+// Выключатель фоновых задач: второй экземпляр приложения на том же окружении
+// даёт второй планировщик и второго бота на одной базе (AI-36).
+import { scheduleBackgroundJob } from './services/background-jobs';
 import { loadEnvFromDirectus } from './services/load-env-from-directus';
 
 import ffmpeg from 'fluent-ffmpeg';
@@ -1123,36 +1126,36 @@ app.use('/video-app', (req, res, next) => {
       initializeHeavyServices();
 
       // Восстанавливаем автономный режим для кампаний которые были активны до рестарта
-      setTimeout(() => {
+      scheduleBackgroundJob('restore-autonomous', 10000, () => {
         restoreAutonomousStates();
-      }, 10000);
+      }, (m) => log(m, 'background-jobs'));
 
       // Ежедневный планировщик сбора трендов ОТКЛЮЧЁН:
       // сбор трендов запускается только вручную пользователем
       // startDailyTrendScheduler(getActiveAutonomousCampaignIds);
 
       // Запускаем валидатор статусов публикаций для автоматического исправления некорректных статусов
-      setTimeout(() => {
+      scheduleBackgroundJob('status-validator', 30000, () => {
         log('Запуск валидатора статусов публикаций', 'status-validator');
         if (statusValidator && typeof statusValidator.startValidation === 'function') {
           statusValidator.startValidation();
         } else {
           console.warn('⚠️ statusValidator.startValidation is not a function or statusValidator is undefined');
         }
-      }, 30000); // Задержка 30 секунд для завершения инициализации всех сервисов
+      }, (m) => log(m, 'background-jobs')); // Задержка 30 секунд для завершения инициализации всех сервисов
 
       // Запускаем планировщик публикаций с поддержкой индивидуального времени платформ
-      setTimeout(() => {
+      scheduleBackgroundJob('publish-scheduler', 35000, () => {
         log('Запуск планировщика публикаций с поддержкой N8N', 'scheduler');
         const scheduler = getPublishScheduler();
         scheduler.start();
         log('✅ Планировщик публикаций успешно запущен', 'scheduler');
-      }, 35000); // Задержка 35 секунд для завершения инициализации всех сервисов
+      }, (m) => log(m, 'background-jobs')); // Задержка 35 секунд для завершения инициализации всех сервисов
 
       // Авторефреш VK токенов отключён — обновление происходит только при публикации
 
       // Запускаем Telegram бота
-      setTimeout(async () => {
+      scheduleBackgroundJob('telegram-bot', 5000, async () => {
         try {
           log('Запуск Telegram бота...', 'telegram-bot');
           await startTelegramBot();
@@ -1160,7 +1163,7 @@ app.use('/video-app', (req, res, next) => {
         } catch (error) {
           log(`⚠️ Не удалось запустить Telegram бота: ${error}`, 'telegram-bot');
         }
-      }, 5000); // Запускаем через 5 секунд (бот не зависит от тяжелых сервисов)
+      }, (m) => log(m, 'background-jobs')); // Запускаем через 5 секунд (бот не зависит от тяжелых сервисов)
     }).on('error', (err: NodeJS.ErrnoException) => {
       console.log(`=== SERVER START ERROR: ${err.message} ===`);
       if (err.code === 'EADDRINUSE') {

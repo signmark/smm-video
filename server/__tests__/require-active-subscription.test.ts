@@ -299,6 +299,95 @@ describe('невозможность подтвердить право → от�
     expect(handler).not.toHaveBeenCalled();
   });
 
+  // Приёмка AI-39 (Codex, 2026-07-31): проверки «это объект» мало.
+  //
+  // Объект правильного типа, но с неверным контрактом полей, проходил гейт
+  // насквозь. Это не гипотеза: все три случая ниже воспроизведены на
+  // a4fb2717c и давали 200 с вызовом handler'а. Каждый — отдельный способ
+  // получить платное действие без подтверждённого права на него.
+  describe('object-shaped drift Directus', () => {
+    it('поля expire_date нет вовсе → 503, а не «бессрочная подписка»', async () => {
+      const { app, handler } = makeApp();
+      // Так выглядит ответ, если поле скрыли правами или переименовали в схеме.
+      mockGet.mockResolvedValue(userResponse({}));
+
+      const res = await request(app)
+        .post('/api/campaigns')
+        .set('Authorization', `Bearer ${freshToken()}`)
+        .send({});
+
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe('SUBSCRIPTION_VALIDATION_UNAVAILABLE');
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it.each(['not-a-date', '', '2026-13-45', 'null'])(
+      'неразбираемая expire_date (%s) → 503, а не «не истекло»',
+      async (value) => {
+        const { app, handler } = makeApp();
+        // new Date(мусор) даёт Invalid Date, а любое сравнение с ним false —
+        // поэтому раньше мусорная дата означала «срок не наступил».
+        mockGet.mockResolvedValue(userResponse({ expire_date: value }));
+
+        const res = await request(app)
+          .post('/api/campaigns')
+          .set('Authorization', `Bearer ${freshToken()}`)
+          .send({});
+
+        expect(res.status).toBe(503);
+        expect(handler).not.toHaveBeenCalled();
+      },
+    );
+
+    it.each([
+      ['is_smm_admin', 'false'],
+      ['is_smm_super', 'false'],
+      ['is_smm_admin', 0],
+      ['is_smm_admin', 'no'],
+    ])('нелогический admin-флаг %s=%s → 503, а не «админ»', async (field, value) => {
+      const { app, handler } = makeApp();
+      // Строка 'false' истинна: !! делал из неё админа и снимал гейт целиком.
+      mockGet.mockResolvedValue(userResponse({ expire_date: PAST, [field]: value }));
+
+      const res = await request(app)
+        .post('/api/campaigns')
+        .set('Authorization', `Bearer ${freshToken()}`)
+        .send({});
+
+      expect(res.status).toBe(503);
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    it('null в admin-флагах — обычный пользователь, а не отказ', async () => {
+      const { app, handler } = makeApp();
+      // Штатный ответ для не-админа: ломать его строгостью нельзя.
+      mockGet.mockResolvedValue(
+        userResponse({ expire_date: FUTURE, is_smm_admin: null, is_smm_super: null }),
+      );
+
+      const res = await request(app)
+        .post('/api/campaigns')
+        .set('Authorization', `Bearer ${freshToken()}`)
+        .send({});
+
+      expect(res.status).toBe(200);
+      expect(handler).toHaveBeenCalledTimes(1);
+    });
+
+    it('expire_date: null остаётся «срок не задан» и пропускает', async () => {
+      const { app, handler } = makeApp();
+      mockGet.mockResolvedValue(userResponse({ expire_date: null }));
+
+      const res = await request(app)
+        .post('/api/campaigns')
+        .set('Authorization', `Bearer ${freshToken()}`)
+        .send({});
+
+      expect(res.status).toBe(200);
+      expect(handler).toHaveBeenCalledTimes(1);
+    });
+  });
+
   it('наружу не утекают детали upstream', async () => {
     const { app } = makeApp();
     mockGet.mockRejectedValue(

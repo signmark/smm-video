@@ -100,6 +100,55 @@ function extractToken(req: Request): string | null {
 }
 
 /**
+ * Строгий разбор `expire_date` (приёмка AI-39, 2026-07-31).
+ *
+ * Проверки «это объект» недостаточно: объект правильного типа, но с неверным
+ * контрактом полей, проходил насквозь.
+ *  - `{}` — поля нет, `?? null` давало «бессрочно». При drift прав в Directus
+ *    (поле скрыто) бессрочными становились сразу все.
+ *  - `{ expire_date: 'not-a-date' }` — `new Date('not-a-date')` даёт Invalid
+ *    Date, и любое сравнение с ним false, то есть неразбираемая дата молча
+ *    означала «не истекло».
+ *
+ * Поле запрашивается явно (`fields=expire_date,...`), поэтому Directus обязан
+ * вернуть ключ — со значением `null`, если срока нет. Отсутствие ключа это уже
+ * не «бессрочный пользователь», а расхождение схемы или прав, и решение по
+ * такому ответу принимать нельзя.
+ *
+ * Цена строгости: если поле скроют правами, прод получит 503 на все мутации,
+ * а не «все бессрочные». Это осознанно — 503 retryable и заметен, тихая
+ * бессрочность незаметна.
+ */
+function readExpireDate(userData: Record<string, unknown>): string | null {
+  if (!('expire_date' in userData)) {
+    throw new SubscriptionCheckError('unavailable');
+  }
+
+  const raw = userData.expire_date;
+  if (raw === null) return null; // срок не задан — существующее бизнес-правило
+
+  if (typeof raw !== 'string' || Number.isNaN(new Date(raw).getTime())) {
+    throw new SubscriptionCheckError('unavailable');
+  }
+  return raw;
+}
+
+/**
+ * Строгий разбор admin-флага (приёмка AI-39, 2026-07-31).
+ *
+ * Было `!!(userData.is_smm_admin || userData.is_smm_super)`, а строка `'false'`
+ * истинна — ответ `{ is_smm_admin: 'false' }` делал пользователя админом и
+ * снимал с него гейт целиком. Поэтому админом считается только настоящий
+ * `true`; отсутствие и `null` — обычный пользователь; любой другой тип это
+ * расхождение контракта, а не «наверное не админ».
+ */
+function readAdminFlag(raw: unknown): boolean {
+  if (raw === undefined || raw === null) return false;
+  if (typeof raw === 'boolean') return raw;
+  throw new SubscriptionCheckError('unavailable');
+}
+
+/**
  * Статус подписки по токену. Кешируется ТОЛЬКО успешный ответ:
  * кеш ошибок означал бы, что один простой Directus открывает окно на весь TTL.
  *
@@ -136,8 +185,8 @@ async function fetchStatus(token: string): Promise<StatusEntry> {
   }
 
   const entry: StatusEntry = {
-    expireDate: userData.expire_date ?? null,
-    isAdmin: !!(userData.is_smm_admin || userData.is_smm_super),
+    expireDate: readExpireDate(userData),
+    isAdmin: readAdminFlag(userData.is_smm_admin) || readAdminFlag(userData.is_smm_super),
     at: Date.now(),
   };
   statusCache.set(token, entry);

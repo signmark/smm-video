@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { directusApi } from '../directus';
+import { isPublicApiPath } from './api-auth-gate';
 
 /**
  * Гейт подписки.
@@ -15,17 +16,36 @@ import { directusApi } from '../directus';
  *  - изменяющие методы (POST/PUT/PATCH/DELETE) — блокируются при истёкшей подписке,
  *    кроме whitelist (авторизация, оплата, заявка на подписку, промокоды),
  *    чтобы пользователь мог продлить доступ;
- *  - запросы без пользовательского токена (вебхуки провайдеров) — пропускаются,
- *    их аутентификация обрабатывается самими роутами;
- *  - администраторы — полный доступ;
- *  - при недоступности Directus гейт fail-open (не блокирует). Это осознанный
- *    компромисс: Directus — внешний VPS пользователя с известными простоями,
- *    и остальной код (ai.ts getUserPlanFromDirectus) тоже fail-open. Жёсткая
- *    блокировка при сбое Directus заблокировала бы платящих пользователей.
+ *  - публичные callback'и и вебхуки провайдеров — по общему списку
+ *    `isPublicApiPath` из `api-auth-gate.ts`;
+ *  - администраторы — полный доступ.
  *
  * Идентичность пользователя определяется через сам предъявленный токен
  * (GET /users/me с Bearer токеном) — Directus сам валидирует подпись/срок токена.
  * Мы НЕ доверяем расшифрованному payload JWT (его можно подделать).
+ *
+ * FAIL-CLOSED (AI-39, security-backlog §6, 2026-07-31)
+ * ----------------------------------------------------
+ * Раньше гейт пропускал изменяющий запрос в трёх случаях, когда право на
+ * действие подтвердить невозможно: при отсутствии токена (`!token → next()`),
+ * при любой ошибке проверки (`catch → next()`) и, как следствие, при полной
+ * недоступности Directus. Это давало платные функции бесплатно ровно в тот
+ * момент, когда проверить их некому.
+ *
+ * Теперь наоборот: непроверяемая mutation не исполняется.
+ *  - нет предъявленной личности → 401, handler не вызывается;
+ *  - Directus ответил 401/403 → сессия недействительна → 401;
+ *  - сеть/таймаут/429/5xx/неожиданная форма ответа → 503
+ *    `SUBSCRIPTION_VALIDATION_UNAVAILABLE`.
+ *
+ * Прежний аргумент за fail-open (Directus — внешний VPS с известными
+ * простоями, жёсткая блокировка ударит по платящим) закрыт кешем: успешная
+ * проверка живёт TTL, и краткий простой платящий пользователь не заметит.
+ * После истечения TTL простой обязан давать 503 — иначе кеш превращается в
+ * тот же fail-open, только отложенный.
+ *
+ * Наружу причина не детализируется: клиенту сообщается стабильный код, а не
+ * ответ upstream.
  */
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
@@ -43,6 +63,20 @@ interface StatusEntry {
   expireDate: string | null;
   isAdmin: boolean;
   at: number;
+}
+
+/** Почему проверку не удалось довести до ответа. */
+type FailureKind =
+  /** Directus явно отверг токен — сессия недействительна. */
+  | 'invalid-session'
+  /** Directus недоступен или ответил непонятным — решение принять нельзя. */
+  | 'unavailable';
+
+class SubscriptionCheckError extends Error {
+  constructor(readonly kind: FailureKind) {
+    super(`subscription check failed: ${kind}`);
+    this.name = 'SubscriptionCheckError';
+  }
 }
 
 const STATUS_TTL = 60 * 1000;
@@ -65,21 +99,47 @@ function extractToken(req: Request): string | null {
   return cookieToken || null;
 }
 
+/**
+ * Статус подписки по токену. Кешируется ТОЛЬКО успешный ответ:
+ * кеш ошибок означал бы, что один простой Directus открывает окно на весь TTL.
+ *
+ * Срок действия здесь не вычисляется — только сохраняется. Сравнение с
+ * текущим временем делает вызывающий на каждом запросе, иначе запись из кеша
+ * продлевала бы уже наступивший `expire_date`.
+ */
 async function fetchStatus(token: string): Promise<StatusEntry> {
   const cached = statusCache.get(token);
   if (cached && Date.now() - cached.at < STATUS_TTL) return cached;
 
-  // Валидируем личность через сам токен — Directus отвергнет поддельный/просроченный
-  const resp = await directusApi.get('/users/me', {
-    headers: { Authorization: `Bearer ${token}` },
-    params: { fields: 'expire_date,is_smm_admin,is_smm_super' },
-  });
+  let resp: any;
+  try {
+    // Валидируем личность через сам токен — Directus отвергнет поддельный/просроченный
+    resp = await directusApi.get('/users/me', {
+      headers: { Authorization: `Bearer ${token}` },
+      params: { fields: 'expire_date,is_smm_admin,is_smm_super' },
+    });
+  } catch (err: any) {
+    const status = err?.response?.status;
+    // 401/403 — это ответ по существу: токен недействителен. Остальное
+    // (сеть, таймаут, 429, 5xx) — отсутствие ответа, а не отказ.
+    if (status === 401 || status === 403) {
+      throw new SubscriptionCheckError('invalid-session');
+    }
+    throw new SubscriptionCheckError('unavailable');
+  }
 
-  const userData = resp.data?.data;
-  const isAdmin = !!(userData?.is_smm_admin || userData?.is_smm_super);
-  const expireDate = userData?.expire_date ?? null;
+  const userData = resp?.data?.data;
+  // Ответ без объекта пользователя разобрать нельзя. Трактовать его как
+  // «полей нет, значит бессрочно» — это молчаливый fail-open.
+  if (!userData || typeof userData !== 'object') {
+    throw new SubscriptionCheckError('unavailable');
+  }
 
-  const entry: StatusEntry = { expireDate, isAdmin, at: Date.now() };
+  const entry: StatusEntry = {
+    expireDate: userData.expire_date ?? null,
+    isAdmin: !!(userData.is_smm_admin || userData.is_smm_super),
+    at: Date.now(),
+  };
   statusCache.set(token, entry);
   return entry;
 }
@@ -96,7 +156,7 @@ export const requireActiveSubscription = async (
     // Чтение разрешено всегда — пользователь может сохранить/мигрировать свои данные
     if (!MUTATING_METHODS.has(req.method.toUpperCase())) return next();
 
-    // Публичные OAuth callback'ов (security plan §N fix 2026-07-24) — провайдеры
+    // Публичные OAuth callback'и (security plan §N fix 2026-07-24) — провайдеры
     // (Google/VK/Instagram/FB/Threads/TikTok) редиректят без app Bearer-токена,
     // валидация делается через `state`-параметр на уровне handler'а.
     if ((req as any)._publicOauthBypass) return next();
@@ -106,23 +166,50 @@ export const requireActiveSubscription = async (
       return next();
     }
 
+    // Публичные вебхуки и коллбэки, которые физически доходят до этого гейта
+    // (ЮКасса, коллбэки соответствия Meta и т.п.). Список общий с
+    // `api-auth-gate.ts` намеренно: два независимых перечисления публичного
+    // разойдутся, и разойдутся молча.
+    if (isPublicApiPath(req.originalUrl || req.path, req.method)) return next();
+
     const token = extractToken(req);
-    // Нет пользовательского токена — это вебхук/публичный роут, пропускаем
-    if (!token) return next();
+    // Личность не предъявлена. Раньше это трактовалось как «наверное вебхук»
+    // и пропускалось — теперь непроверяемая mutation не исполняется.
+    if (!token) {
+      return res.status(401).json({
+        error: 'Требуется авторизация',
+        message: 'Для этого действия нужен действующий вход в аккаунт.',
+        code: 'SUBSCRIPTION_IDENTITY_REQUIRED',
+      });
+    }
 
     // Статический admin-токен — полный доступ
-    if (
-      token === process.env.DIRECTUS_STATIC_TOKEN ||
-      token === process.env.DIRECTUS_STATIC_TOKEN ||
-      token === process.env.DIRECTUS_STATIC_TOKEN
-    ) {
+    if (process.env.DIRECTUS_STATIC_TOKEN && token === process.env.DIRECTUS_STATIC_TOKEN) {
       return next();
     }
 
-    const { expireDate, isAdmin } = await fetchStatus(token);
-    if (isAdmin) return next();
+    let status: StatusEntry;
+    try {
+      status = await fetchStatus(token);
+    } catch (err) {
+      const kind = err instanceof SubscriptionCheckError ? err.kind : 'unavailable';
+      if (kind === 'invalid-session') {
+        return res.status(401).json({
+          error: 'Сессия недействительна',
+          message: 'Войдите в аккаунт заново.',
+          code: 'SUBSCRIPTION_SESSION_INVALID',
+        });
+      }
+      return res.status(503).json({
+        error: 'Проверка подписки временно недоступна',
+        message: 'Не удалось подтвердить статус подписки. Повторите попытку позже.',
+        code: 'SUBSCRIPTION_VALIDATION_UNAVAILABLE',
+      });
+    }
 
-    const expired = !!expireDate && new Date(expireDate) <= new Date();
+    if (status.isAdmin) return next();
+
+    const expired = !!status.expireDate && new Date(status.expireDate) <= new Date();
     if (expired) {
       return res.status(403).json({
         error: 'Подписка истекла',
@@ -134,7 +221,13 @@ export const requireActiveSubscription = async (
 
     return next();
   } catch {
-    // Fail-open: не блокируем при недоступности Directus (внешний VPS пользователя)
-    return next();
+    // Непредвиденный сбой самого гейта — тоже отказ, а не пропуск: иначе
+    // достаточно уронить гейт, чтобы обойти проверку.
+    if (res.headersSent) return;
+    return res.status(503).json({
+      error: 'Проверка подписки временно недоступна',
+      message: 'Не удалось подтвердить статус подписки. Повторите попытку позже.',
+      code: 'SUBSCRIPTION_VALIDATION_UNAVAILABLE',
+    });
   }
 };

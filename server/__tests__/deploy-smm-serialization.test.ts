@@ -87,14 +87,21 @@ case "\$1" in
     cp "\$src" "\$dst"; exit 0
     ;;
   images)
-    # images <repo> --format '{{.Tag}} {{.ID}}' — от новых к старым
+    # images <repo> [--no-trunc] --format '{{.Tag}} {{.ID}}' — от новых к старым.
+    # Настоящий docker БЕЗ --no-trunc отдаёт короткий id (12 hex), а с ним —
+    # полный sha256:<64>. Фейк обязан вести себя так же: расхождение здесь уже
+    # один раз спрятало мёртвый код (защита deployed в ротации).
+    notrunc=""
+    case "\$*" in *--no-trunc*) notrunc=1;; esac
     ls -t "\$STATE/images" 2>/dev/null | while read -r f; do
-      case "\$f" in
-        *_deployed) continue;;
-      esac
       tag="\${f#*__}"
       [ "\$tag" = "\$f" ] && tag="\${f#*_}"
-      printf '%s %s\\n' "\$tag" "\$(cat "\$STATE/images/\$f")"
+      content="\$(cat "\$STATE/images/\$f")"
+      if [ -n "\$notrunc" ]; then
+        printf '%s sha256:%s\\n' "\$tag" "\$content"
+      else
+        printf '%s %s\\n' "\$tag" "\$(printf '%s' "\$content" | cut -c1-12)"
+      fi
     done
     exit 0
     ;;
@@ -223,6 +230,11 @@ function runDeploy(work: string, opts: RunOpts = {}): Promise<{ code: number; st
     SMM_DOCKER: path.join(root, 'bin', 'docker'),
     SMM_CURL: path.join(root, 'bin', 'curl'),
     SMM_EVENT_LOG: path.join(root, 'events.log'),
+    // Каталог для измерения свободного места — свой. Тест обязан быть
+    // герметичным: наличие /var/lib/docker на машине не должно влиять ни на
+    // результат, ни на то, сработает ли порог. Отдельные тесты
+    // переопределяют это значение осознанно.
+    SMM_DOCKER_ROOT: root,
     SMM_HEALTH_RETRIES: '3',
     SMM_HEALTH_DELAY: '0',
     SMM_LOCK_WAIT: '60',
@@ -487,6 +499,53 @@ describe('место на диске и ротация образов (AI-51)', 
     // Старые образы — это пути отката. Ронять их на неудаче нельзя.
     const after = readdirSync(path.join(root, 'state', 'images')).sort();
     expect(after).toEqual(expect.arrayContaining(before));
+  }, 120_000);
+});
+
+describe('находки приёмки AI-51', () => {
+  // Finding 1: ветка «не смог измерить место» была недостижима — под pipefail
+  // падение df убивало скрипт раньше. Из-за этого тесты краснели на любой
+  // машине без /var/lib/docker, то есть обязательный прогон перед пушем был
+  // выполним только на прод-хосте.
+  it('недоступный docker root не ломает деплой, а лишь отключает проверку места', async () => {
+    const { work, sha1 } = makeRepos();
+
+    const res = await runDeploy(work, {
+      env: { SMM_DOCKER_ROOT: '/nonexistent-' + process.pid },
+    });
+
+    expect(res.code).toBe(0);
+    expect(deployedRevision()).toBe(sha1);
+    expect(events().some((e) => e.label === 'free_space_unknown')).toBe(true);
+  }, 60_000);
+
+  // Finding 2: images отдаёт короткий id, inspect — sha256:<64>. Сравнение
+  // никогда не совпадало, и защита выкаченного образа была мёртвым кодом.
+  // keep=0 просит удалить всё — выжить обязан ровно тот образ, что сейчас
+  // запущен.
+  it('выкаченный образ не удаляется даже при нулевом лимите хранения', async () => {
+    const { work, sha1 } = makeRepos();
+
+    const res = await runDeploy(work, { env: { SMM_KEEP_IMAGES: '0' } });
+
+    expect(res.code).toBe(0);
+    const images = readdirSync(path.join(root, 'state', 'images'));
+    expect(images).toContain(`root-smm_${sha1}`);
+    expect(images).toContain('root-smm_deployed');
+  }, 60_000);
+
+  it('алиас deployed не считается автотегом и не удаляется', async () => {
+    const { work, authoring } = makeRepos();
+    expect((await runDeploy(work, { env: { SMM_KEEP_IMAGES: '1' } })).code).toBe(0);
+
+    for (let i = 0; i < 2; i++) {
+      pushSecondCommit(authoring);
+      expect((await runDeploy(work, { env: { SMM_KEEP_IMAGES: '1' } })).code).toBe(0);
+    }
+
+    // Настоящий docker показывает deployed в выдаче images; фейк раньше его
+    // прятал, поэтому фильтр не-hex тегов для него не был покрыт.
+    expect(readdirSync(path.join(root, 'state', 'images'))).toContain('root-smm_deployed');
   }, 120_000);
 });
 

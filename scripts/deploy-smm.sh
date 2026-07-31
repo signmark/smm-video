@@ -179,10 +179,17 @@ rollback_alias() {
 # Диск на этом хосте общий с postgres, directus, traefik и n8n: заполнив его,
 # мы уроним не только smm. Поэтому отказ до сборки, а не «а вдруг влезет».
 check_free_space() {
+  # `|| true` обязателен. Под `set -Eeuo pipefail` падение df роняет весь
+  # pipeline, подстановка возвращает ненулевой код, и `set -e` убивает скрипт
+  # ДО проверки ниже — то есть ветка «не смог измерить, продолжаю» была
+  # недостижима в принципе. На машине без $SMM_DOCKER_ROOT (любой dev-хост)
+  # это делало обязательный прогон тестов невыполнимым, а на проде при
+  # недоступном docker root деплой падал бы молча вместо деградации.
   local avail
-  avail="$("$SMM_DF" -Pm "$SMM_DOCKER_ROOT" 2>/dev/null | awk 'NR==2 {print $4}')"
+  avail="$( { "$SMM_DF" -Pm "$SMM_DOCKER_ROOT" 2>/dev/null | awk 'NR==2 {print $4}'; } || true )"
   if [ -z "$avail" ]; then
-    log "не удалось определить свободное место на $SMM_DOCKER_ROOT — продолжаю"
+    log "не удалось определить свободное место на $SMM_DOCKER_ROOT — продолжаю без проверки"
+    event free_space_unknown
     return 0
   fi
   event free_space "$avail"
@@ -217,16 +224,18 @@ prune_old_images() {
       kept=$((kept + 1))
       continue
     fi
-    if [ -n "$deployed_id" ] && [ "sha256:${id}" = "$deployed_id" ]; then continue; fi
-    if [ -n "$container_id" ] && [ "sha256:${id}" = "$container_id" ]; then continue; fi
-    if [ "$id" = "${deployed_id#sha256:}" ] || [ "$id" = "${container_id#sha256:}" ]; then continue; fi
+    # Сравниваем полные id с полными. `docker images` без --no-trunc отдаёт
+    # короткий id (12 hex), а `image inspect` — `sha256:<64>`: ни одна форма
+    # сравнения не совпадала бы никогда, и защита была бы мёртвым кодом.
+    [ -n "$deployed_id" ] && [ "$id" = "$deployed_id" ] && continue
+    [ -n "$container_id" ] && [ "$id" = "$container_id" ] && continue
 
     if "$SMM_DOCKER" image rm "${SMM_IMAGE_REPO}:${tag}" >/dev/null 2>&1; then
       removed=$((removed + 1))
       log "убран старый образ ${SMM_IMAGE_REPO}:${tag}"
     fi
   done <<EOF
-$("$SMM_DOCKER" images "$SMM_IMAGE_REPO" --format '{{.Tag}} {{.ID}}' 2>/dev/null)
+$("$SMM_DOCKER" images "$SMM_IMAGE_REPO" --no-trunc --format '{{.Tag}} {{.ID}}' 2>/dev/null)
 EOF
 
   event pruned "kept=$kept removed=$removed"

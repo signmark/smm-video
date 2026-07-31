@@ -16,6 +16,12 @@
 
 set -Eeuo pipefail
 
+# Каталог этого скрипта — вычисляется ДО любых cd: дальше по ходу мы уходим в
+# temp-каталоги, и относительный BASH_SOURCE перестанет резолвиться. Смоук
+# обязан проверять deploy-smm.sh из того же checkout, а не случайно
+# установленный в /root/smm.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 ROOT="$(mktemp -d /tmp/ai50-smoke-XXXXXX)"
 PROJ="$ROOT/ai50smoke"
 ORIGIN="$ROOT/origin.git"
@@ -86,7 +92,7 @@ export SMM_PUBLIC_URL="http://127.0.0.1:${PORT}/health"
 export SMM_HEALTH_RETRIES=30
 export SMM_HEALTH_DELAY=1
 
-DEPLOY=/root/smm/scripts/deploy-smm.sh
+DEPLOY="$SCRIPT_DIR/deploy-smm.sh"
 
 echo "=== 1. первый деплой (настоящие build/tag/up) ==="
 if "$DEPLOY" >"$ROOT/d1.log" 2>&1; then ok "деплой SHA1 прошёл"; else bad "деплой SHA1: $(tail -3 "$ROOT/d1.log")"; fi

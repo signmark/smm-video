@@ -60,10 +60,19 @@ SMM_PUBLIC_URL="${SMM_PUBLIC_URL:-https://smm.nplanner.ru/}"
 SMM_LOCK_WAIT="${SMM_LOCK_WAIT:-1800}"
 SMM_HEALTH_RETRIES="${SMM_HEALTH_RETRIES:-30}"
 SMM_HEALTH_DELAY="${SMM_HEALTH_DELAY:-2}"
+# Сколько последних root-smm:<sha> держать для отката. Каждый образ — ~2.4 ГБ
+# УНИКАЛЬНЫХ слоёв, поэтому «держать десять» физически не помещается на диск
+# (AI-51). Три — это откат примерно на сутки деплоев.
+SMM_KEEP_IMAGES="${SMM_KEEP_IMAGES:-3}"
+# Ниже этого порога свободного места не начинаем сборку: упасть на середине
+# из-за места хуже, чем честно отказаться сразу. Сборке нужно ~3.4 ГБ.
+SMM_MIN_FREE_MB="${SMM_MIN_FREE_MB:-8000}"
+SMM_DOCKER_ROOT="${SMM_DOCKER_ROOT:-/var/lib/docker}"
 
 SMM_DOCKER="${SMM_DOCKER:-docker}"
 SMM_GIT="${SMM_GIT:-git}"
 SMM_CURL="${SMM_CURL:-curl}"
+SMM_DF="${SMM_DF:-df}"
 
 # Куда писать машиночитаемый журнал шагов. Тест по нему проверяет, что
 # critical section двух процессов не пересеклись.
@@ -113,12 +122,12 @@ preflight_compose() {
   cfg="$("$SMM_DOCKER" compose -f "$SMM_COMPOSE_FILE" config 2>/dev/null)" \
     || fail "не удалось прочитать compose config: $SMM_COMPOSE_FILE"
 
+  # Вырезаем блок сервиса: от строки "  <service>:" до следующего сервиса того
+  # же уровня. Отступ в выводе `docker compose config` нормализован, поэтому
+  # два пробела — надёжный признак уровня, а не догадка о форматировании.
   local block
-  block="$(printf '%s\n' "$cfg" | awk -v svc="  $SMM_SERVICE:" '
-    $0 == svc {inside=1; next}
-    inside && /^  [a-zA-Z0-9_-]+:$/ {inside=0}
-    inside {print}
-  ')"
+  block="$(printf '%s\n' "$cfg" | sed -n "/^  ${SMM_SERVICE}:\$/,/^  [a-zA-Z0-9_-]*:\$/p" \
+    | sed "1d;\$d")"
 
   [ -n "$block" ] || fail "сервис $SMM_SERVICE не найден в compose config"
 
@@ -163,6 +172,66 @@ rollback_alias() {
   "$SMM_DOCKER" tag "$PREV_IMAGE_ID" "$SMM_DEPLOYED_TAG" || return 1
   "$SMM_DOCKER" compose -f "$SMM_COMPOSE_FILE" up -d --no-build --no-deps --force-recreate "$SMM_SERVICE" || return 1
   event rollback_done "$PREV_IMAGE_ID"
+}
+
+# Свободного места хватит на сборку?
+#
+# Диск на этом хосте общий с postgres, directus, traefik и n8n: заполнив его,
+# мы уроним не только smm. Поэтому отказ до сборки, а не «а вдруг влезет».
+check_free_space() {
+  local avail
+  avail="$("$SMM_DF" -Pm "$SMM_DOCKER_ROOT" 2>/dev/null | awk 'NR==2 {print $4}')"
+  if [ -z "$avail" ]; then
+    log "не удалось определить свободное место на $SMM_DOCKER_ROOT — продолжаю"
+    return 0
+  fi
+  event free_space "$avail"
+  [ "$avail" -ge "$SMM_MIN_FREE_MB" ] \
+    || fail "свободно ${avail} МБ на $SMM_DOCKER_ROOT, нужно минимум ${SMM_MIN_FREE_MB} МБ. Освободите место (см. AI-51) или снизьте SMM_MIN_FREE_MB осознанно."
+}
+
+# Ротация старых образов сборки.
+#
+# Удаляются ТОЛЬКО теги вида <repo>:<40 hex>, то есть автоматические сборки.
+# Не трогаются: алиас deployed, образ запущенного контейнера и любые
+# человеческие метки вроде pre-ai50-<sha> или latest — они ставятся руками
+# как точки отката, и снести их автоматикой недопустимо.
+#
+# Общий `docker system prune` здесь неприменим принципиально: он бьёт по всему
+# хосту, включая чужие сервисы и их volume'ы. Удаляем точечно, по списку.
+prune_old_images() {
+  local deployed_id container_id
+  deployed_id="$("$SMM_DOCKER" image inspect --format '{{.Id}}' "$SMM_DEPLOYED_TAG" 2>/dev/null || true)"
+  container_id="$("$SMM_DOCKER" inspect --format '{{.Image}}' "$SMM_CONTAINER" 2>/dev/null || true)"
+
+  local kept=0 tag id removed=0
+  # docker images выдаёт от новых к старым
+  while read -r tag id; do
+    [ -n "$tag" ] || continue
+    case "$tag" in
+      *[!0-9a-f]* | "") continue ;;                 # не полный SHA — не наш автотег
+    esac
+    [ "${#tag}" -eq 40 ] || continue
+
+    if [ "$kept" -lt "$SMM_KEEP_IMAGES" ]; then
+      kept=$((kept + 1))
+      continue
+    fi
+    if [ -n "$deployed_id" ] && [ "sha256:${id}" = "$deployed_id" ]; then continue; fi
+    if [ -n "$container_id" ] && [ "sha256:${id}" = "$container_id" ]; then continue; fi
+    if [ "$id" = "${deployed_id#sha256:}" ] || [ "$id" = "${container_id#sha256:}" ]; then continue; fi
+
+    if "$SMM_DOCKER" image rm "${SMM_IMAGE_REPO}:${tag}" >/dev/null 2>&1; then
+      removed=$((removed + 1))
+      log "убран старый образ ${SMM_IMAGE_REPO}:${tag}"
+    fi
+  done <<EOF
+$("$SMM_DOCKER" images "$SMM_IMAGE_REPO" --format '{{.Tag}} {{.ID}}' 2>/dev/null)
+EOF
+
+  event pruned "kept=$kept removed=$removed"
+  [ "$removed" -gt 0 ] && log "ротация: оставлено $kept, удалено $removed"
+  return 0
 }
 
 verify_revision() {
@@ -224,6 +293,25 @@ switch_and_verify() {
 do_rollback() {
   local sha="$1"
   local image="${SMM_IMAGE_REPO}:${sha}"
+
+  # Короткий SHA принимается, но разворачивается в полный: теги ставятся
+  # полными, а человек обычно копирует первые 7-12 символов из git log.
+  # Неоднозначный префикс — это отказ, а не «возьмём первый попавшийся».
+  if ! "$SMM_DOCKER" image inspect "$image" >/dev/null 2>&1; then
+    local matches
+    matches="$("$SMM_DOCKER" images "$SMM_IMAGE_REPO" --format '{{.Tag}}' 2>/dev/null \
+      | grep -E "^${sha}[0-9a-f]*$" || true)"
+    local count
+    count="$(printf '%s\n' "$matches" | grep -c . || true)"
+    if [ "$count" = "1" ]; then
+      sha="$(printf '%s\n' "$matches" | head -1)"
+      image="${SMM_IMAGE_REPO}:${sha}"
+      log "короткий SHA развёрнут в $sha"
+    elif [ "${count:-0}" -gt 1 ]; then
+      fail "префикс $1 неоднозначен, подходит несколько образов: $(printf '%s ' $matches)"
+    fi
+  fi
+
   "$SMM_DOCKER" image inspect "$image" >/dev/null 2>&1 \
     || fail "образ $image не найден: откатываться некуда"
   log "откат на $image"
@@ -259,6 +347,8 @@ do_deploy() {
     return 0
   fi
 
+  check_free_space
+
   event build_start "$sha"
   "$SMM_DOCKER" build \
     --build-arg "APP_COMMIT_SHA=$sha" \
@@ -284,6 +374,10 @@ do_deploy() {
 
   switch_and_verify "$sha" "$image"
   log "выкачено: $sha"
+
+  # Только после успешной проверки прода: неудачный деплой не должен
+  # ничего удалять — старые образы это и есть пути отката.
+  prune_old_images
 }
 
 main() {

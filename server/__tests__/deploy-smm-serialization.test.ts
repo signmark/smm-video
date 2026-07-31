@@ -20,7 +20,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { execFile, execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -86,8 +86,25 @@ case "\$1" in
     [ -f "\$src" ] || { echo "no such image \$2" >&2; exit 1; }
     cp "\$src" "\$dst"; exit 0
     ;;
+  images)
+    # images <repo> --format '{{.Tag}} {{.ID}}' — от новых к старым
+    ls -t "\$STATE/images" 2>/dev/null | while read -r f; do
+      case "\$f" in
+        *_deployed) continue;;
+      esac
+      tag="\${f#*__}"
+      [ "\$tag" = "\$f" ] && tag="\${f#*_}"
+      printf '%s %s\\n' "\$tag" "\$(cat "\$STATE/images/\$f")"
+    done
+    exit 0
+    ;;
   image)
-    # image inspect [--format F] TAG
+    # image rm TAG | image inspect [--format F] TAG
+    if [ "\${2:-}" = "rm" ]; then
+      f="\$(img_file "\$3")"
+      [ -f "\$f" ] || exit 1
+      rm -f "\$f"; exit 0
+    fi
     shift
     fmt=""; tgt=""
     while [ \$# -gt 0 ]; do
@@ -181,10 +198,15 @@ function makeRepos() {
   return { origin, work, authoring, sha1 };
 }
 
+let commitSeq = 1;
 function pushSecondCommit(authoring: string): string {
-  writeFileSync(path.join(authoring, 'app.txt'), 'v2\n');
+  // Содержимое обязано отличаться на каждом вызове: одинаковый файл даёт пустой
+  // коммит, git падает, и тест краснеет по причине, не связанной с делом.
+  commitSeq += 1;
+  const label = `v${commitSeq}`;
+  writeFileSync(path.join(authoring, 'app.txt'), `${label}\n`);
   git(authoring, ['add', '-A']);
-  git(authoring, ['commit', '-m', 'v2']);
+  git(authoring, ['commit', '-m', label]);
   git(authoring, ['push', 'origin', 'main']);
   return git(authoring, ['rev-parse', 'HEAD']).trim();
 }
@@ -395,6 +417,77 @@ describe('неудача не меняет выкаченное', () => {
     expect(bad.stderr).toMatch(/revision/i);
     expect(deployedRevision()).toBe(before);
   }, 60_000);
+});
+
+describe('место на диске и ротация образов (AI-51)', () => {
+  it('сборка не начинается, если свободного места меньше порога', async () => {
+    const { work } = makeRepos();
+
+    const res = await runDeploy(work, { env: { SMM_MIN_FREE_MB: '999999999' } });
+
+    expect(res.code).not.toBe(0);
+    expect(res.stderr).toMatch(/свободно/i);
+    // Именно «не начинается»: упасть на середине сборки из-за места хуже.
+    expect(events().some((e) => e.label === 'build_start')).toBe(false);
+    expect(deployedRevision()).toBeNull();
+  }, 60_000);
+
+  it('старые сборки убираются, но остаются последние N', async () => {
+    const { work, authoring } = makeRepos();
+    const shas: string[] = [];
+
+    // Пять выкаток подряд при лимите в 2.
+    expect((await runDeploy(work, { env: { SMM_KEEP_IMAGES: '2' } })).code).toBe(0);
+    for (let i = 0; i < 4; i++) {
+      shas.push(pushSecondCommit(authoring));
+      expect((await runDeploy(work, { env: { SMM_KEEP_IMAGES: '2' } })).code).toBe(0);
+    }
+
+    const imagesDir = path.join(root, 'state', 'images');
+    const shaTags = readdirSync(imagesDir).filter((f) => /^root-smm_[0-9a-f]{40}$/.test(f));
+
+    // Держим ровно N последних. Текущий выкаченный входит в них.
+    expect(shaTags.length).toBe(2);
+    const newest = shas[shas.length - 1];
+    expect(shaTags.some((f) => f.endsWith(newest))).toBe(true);
+    // Самая старая сборка удалена.
+    expect(shaTags.some((f) => f.endsWith(shas[0]))).toBe(false);
+  }, 120_000);
+
+  it('человеческие метки и алиас deployed ротацией не трогаются', async () => {
+    const { work, authoring } = makeRepos();
+    expect((await runDeploy(work, { env: { SMM_KEEP_IMAGES: '1' } })).code).toBe(0);
+
+    // Точка отката, поставленная руками: не полный SHA — значит не автотег.
+    const imagesDir = path.join(root, 'state', 'images');
+    writeFileSync(path.join(imagesDir, 'root-smm_pre-release-marker'), 'manual\n');
+
+    for (let i = 0; i < 3; i++) {
+      pushSecondCommit(authoring);
+      expect((await runDeploy(work, { env: { SMM_KEEP_IMAGES: '1' } })).code).toBe(0);
+    }
+
+    const left = readdirSync(imagesDir);
+    expect(left).toContain('root-smm_pre-release-marker');
+    expect(left).toContain('root-smm_deployed');
+  }, 120_000);
+
+  it('неудачный деплой ничего не удаляет', async () => {
+    const { work, authoring } = makeRepos();
+    expect((await runDeploy(work, { env: { SMM_KEEP_IMAGES: '1' } })).code).toBe(0);
+    pushSecondCommit(authoring);
+    expect((await runDeploy(work, { env: { SMM_KEEP_IMAGES: '1' } })).code).toBe(0);
+
+    const before = readdirSync(path.join(root, 'state', 'images')).sort();
+
+    pushSecondCommit(authoring);
+    const bad = await runDeploy(work, { env: { SMM_KEEP_IMAGES: '1', FAKE_UP_FAIL: '1' } });
+    expect(bad.code).not.toBe(0);
+
+    // Старые образы — это пути отката. Ронять их на неудаче нельзя.
+    const after = readdirSync(path.join(root, 'state', 'images')).sort();
+    expect(after).toEqual(expect.arrayContaining(before));
+  }, 120_000);
 });
 
 describe('happy path', () => {

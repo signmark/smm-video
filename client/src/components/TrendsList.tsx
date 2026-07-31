@@ -218,7 +218,11 @@ export function TrendsList({ campaignId, onSelectTrends, onSelectTrend, selectab
     },
     onSuccess: () => {
       // Инвалидируем кеш после успешного изменения закладки
+      // Список трендов на странице живёт под ключом ["trends", campaignId], а не
+      // ["campaign-trends", ...] — инвалидация «своего» ключа не обновляла ничего,
+      // и карточка оставалась в прежнем состоянии до перезагрузки (AI-52).
       queryClient.invalidateQueries({ queryKey: ["campaign-trends", campaignId] });
+      queryClient.invalidateQueries({ queryKey: ["trends", campaignId] });
       toast({
         title: "Закладка обновлена",
         description: "Статус закладки успешно изменен",

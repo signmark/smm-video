@@ -1390,6 +1390,17 @@ export default function Trends() {
         });
       }
 
+      // ...и открытую модалку тоже: она рисуется из previewTrendTopic, а не из
+      // selectedTrendTopic. Без этого подпись кнопки в открытом окне не менялась,
+      // и тренд приходилось закрывать и открывать заново, чтобы увидеть результат
+      // (замечание владельца по AI-52).
+      if (previewTrendTopic && previewTrendTopic.id === updatedId) {
+        setPreviewTrendTopic({
+          ...previewTrendTopic,
+          is_bookmarked: isBookmarked
+        });
+      }
+
       toast({
         title: isBookmarked ? t('trends.toasts.bookmarkSaved') : t('trends.toasts.bookmarkRemoved'),
         description: isBookmarked ? t('trends.toasts.bookmarkSavedDesc') : t('trends.toasts.bookmarkRemovedDesc'),

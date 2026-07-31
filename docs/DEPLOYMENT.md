@@ -16,9 +16,9 @@
 | Compose-файл | `/root/docker-compose.yml` (**вне репозитория**) |
 | Compose-проект | `root` |
 | Сервис | `smm` |
-| Build context | `./smm` → `/root/smm` (корень репозитория) |
+| Build context | временный worktree на SHA (создаёт deploy-скрипт); **не** `/root/smm` |
 | Dockerfile | `/root/smm/Dockerfile` (корневой, **не** из `deploy/`) |
-| Образ | `root-smm` |
+| Образ | `root-smm:<full-sha>` + подвижный алиас `root-smm:deployed` |
 | Имя контейнера | `smm` |
 | Окружение | **только** `/root/.env` через `env_file: .env` |
 | Наружу | traefik → `https://smm.nplanner.ru` (порт 5000 внутри) |
@@ -78,49 +78,36 @@ compose-файла, то есть от `/root`). Но переменные в р
 
 ## Пересборка и раскатка
 
-> **СТАТУС НА 2026-07-31: скрипт ещё не включён.**
->
-> `scripts/deploy-smm.sh` лежит в репозитории, но пока НЕ работает: он требует,
-> чтобы в `/root/docker-compose.yml` у сервиса `smm` не было секции `build:`, а
-> она там ещё есть. Скрипт сознательно падает на этой проверке, а не
-> «предупреждает и продолжает».
->
-> Переключение ждёт решения владельца: удаление `build:` намеренно ломает
-> `docker compose build smm`, то есть привычную команду Claude Desktop, и
-> сделать это можно только синхронно со всеми исполнителями (AI-50).
->
-> **До переключения действующая процедура — прежняя, но обязательно из чистого
-> worktree:**
->
-> ```bash
-> cd /root/smm && git fetch origin --prune
-> git worktree add --detach /root/smm-build-<метка> origin/main
-> docker build -t root-smm -f /root/smm-build-<метка>/Dockerfile /root/smm-build-<метка>
-> docker compose -f /root/docker-compose.yml up -d --no-build --no-deps --force-recreate smm
-> git worktree remove --force /root/smm-build-<метка>
-> ```
->
-> `--no-build` обязателен: без него compose пересоберёт образ из `/root/smm`, где
-> лежит чужой незакоммиченный WIP. Перед сборкой убедиться, что чужой сборки не
-> идёт: `ps aux | grep "[d]ocker build"`.
->
-> Всё, что описано ниже, вступает в силу после переключения.
-
-
 **Единственная команда деплоя:**
 
 ```bash
 /root/smm/scripts/deploy-smm.sh
 ```
 
-Она выкатывает текущий `origin/main` целиком: fetch → чистый worktree ровно на
-SHA → сборка → повторная сверка `origin/main` → переключение алиаса →
-`up -d --no-build` → проверка. Всё это под host-wide локом.
+Она выкатывает текущий `origin/main` целиком: fetch → чистый временный worktree
+ровно на SHA → сборка → повторная сверка `origin/main` → переключение алиаса →
+`up -d --no-build` → проверка трёх источников SHA. Всё под host-wide локом.
 
-`docker compose build smm` больше не канон и с 2026-07-31 физически невозможен:
-у сервиса `smm` в `/root/docker-compose.yml` нет секции `build:`, только
-`image: root-smm:deployed`. Скрипт это проверяет до любых действий и падает,
-если кто-то вернул `build:` обратно.
+Включено 31.07.2026. У сервиса `smm` в `/root/docker-compose.yml` больше нет
+секции `build:` — только `image: root-smm:deployed`.
+
+> ### ⚠️ `docker compose build smm` теперь молча ничего не делает
+>
+> Он **не падает**. Он выходит с кодом 0 и не собирает ничего — потому что
+> собирать ему больше нечем: секции `build:` у сервиса нет.
+>
+> Это опаснее, чем явная ошибка. Старая последовательность
+> `docker compose build smm && docker compose up -d smm` отработает «успешно»,
+> контейнер перезапустится на **прежнем** образе, и будет полное впечатление,
+> что код выкачен. Он не будет.
+>
+> Как убедиться, что выкачено именно то, что нужно:
+>
+> ```bash
+> curl -s https://smm.nplanner.ru/health | jq -r .revision   # должен совпасть с origin/main
+> ```
+>
+> Если `revision` отстал — деплой не состоялся, запускайте `deploy-smm.sh`.
 
 ### Почему так, а не пара команд руками (AI-50)
 

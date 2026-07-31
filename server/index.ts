@@ -330,15 +330,10 @@ import { invalidateContentCacheOnMutation } from './middleware/content-cache-inv
 app.use('/api', invalidateContentCacheOnMutation);
 
 // Health check endpoint for deployment monitoring
-app.get('/health', (req, res) => {
-  res.status(200).json({
-    status: 'healthy',
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    environment: process.env.NODE_ENV || 'development',
-    version: '1.0.0'
-  });
-});
+// Обработчик вынесен в модуль: поле revision — часть проверки выкатки (AI-50)
+// и покрыто тестом, а импортировать ради этого весь index.ts нельзя.
+import { rootHealthHandler } from './routes/root-health';
+app.get('/health', rootHealthHandler);
 
 // Trends Collection API (регистрируем максимально рано для избежания 404)
 import { registerTrendsRoutes } from './api/trends-routes';

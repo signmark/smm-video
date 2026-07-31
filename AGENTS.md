@@ -43,8 +43,8 @@ SMM Manager — автоматизация публикации и аналит�
 1. **Claude** делает правку: код + тесты. Для многофайловых и security-критичных задач — сначала `docs/prompts/claude-<задача>-<дата>.md` (шаблон: `docs/agents/templates/handoff-template.md`), потом код.
 2. **Проверки перед пушем, все четыре:** `npx vitest run`, `npm run check` (tsc сервера), `npm run check:client`, `npm run build`. Клиентский тайпчек добавлен в обязательные 2026-07-29, когда его довели до нуля: `tsconfig.critical.json` клиент не покрывает, и без отдельной проверки он молча деградировал. Те же четыре шага гоняет CI (`.github/workflows/ci.yml`).
 3. **Новый тест должен краснеть без фикса.** Проверять снятием правки (`git stash push -- <файл>`), а не на глаз. Без этого тест ничего не стережёт.
-4. **Claude** коммитит, пушит в `origin/main`, пересобирает образ и выкатывает на прод — см. `docs/DEPLOYMENT.md`.
-5. **Проверки после выкатки:** контейнер поднялся, Directus health, публичный URL отдаёт 200, и грепом по бандлу — что новый код реально уехал, а не остался в кеше слоёв. Кириллицу грепать бесполезно: esbuild экранирует не-ASCII в `\uXXXX`, ищи ASCII-маркеры.
+4. **Claude** коммитит, пушит в `origin/main` и выкатывает прод одной командой `scripts/deploy-smm.sh` — см. `docs/DEPLOYMENT.md`. Ручные `docker compose build/up` и `docker cp dist` больше не канон: первый собирает из общего рабочего дерева, второй оставляет в контейнере код, которого нет ни в одном образе.
+5. **Проверки после выкатки** делает сам скрипт: контейнер, Directus health, публичный 200 и сверка SHA в трёх местах (метка образа, метка контейнера, `/health.revision`). Расхождение = откат. Греп ASCII-маркеров по бандлу был обходным путём, пока provenance не было; теперь достаточно `curl -s .../health | jq -r .revision`.
 6. **Codex** — ревью, по желанию владельца. Результат ревью и следующий промт фиксирует в `docs/prompts/` или `docs/followups/` отдельным docs-only commit и пушит прямо в `origin/main`. Код, конфиги и production Codex не меняет. Вердикт не блокирует выкатку: откат делается `git revert` + пересборка.
 7. **Owner (Dmitry)** — приоритеты и решения по спорным местам. Деплой руками у него не запрашивается: это зона Claude.
 
@@ -76,6 +76,12 @@ SMM Manager — автоматизация публикации и аналит�
 
 ## Push policy (текущее состояние)
 
+- **Деплой — только `scripts/deploy-smm.sh`, и очередь обязательна для всех:**
+  агентов Raft, Claude Desktop, человека. Это не стиль, а инвариант: общий тег
+  образа и один контейнер означают, что выкативший последним определяет прод.
+  31.07.2026 две параллельные сборки едва не стёрли с прода уже влитый
+  security-фикс — обошлось случайно. Скрипт сериализует сборку и не даёт
+  устаревшему образу заменить более новый `main`.
 - **Push кода в `origin/main` и деплой на прод — зона Claude** (владелец 2026-07-26: «код ты пишешь ты и деплоишь»). Разрешения на каждый заход спрашивать не нужно.
 - **Codex разрешён docs-only push прямо в `origin/main`** (владелец 2026-07-30): только review/handoff/prompts и связанные обновления памяти процесса. Перед push — `git fetch origin --prune`, `git merge --ff-only origin/main`, явный `git add` только разрешённых документов. Если remote ушёл вперёд, повторить fetch/ff-only; force push запрещён.
 - Перед push всё равно проверить: (1) все три проверки зелёные — vitest, tsc, build; (2) `git status --short` чист от чужого WIP в `.mimocode/`; (3) не коммитить незакоммиченное чужое — docker собирает из рабочего дерева, а не из HEAD, поэтому в образ уедет всё, что лежит в нём.
@@ -105,10 +111,16 @@ npm run check:client                 # клиентский tsc, обязан б
 npm run build                        # обязателен, если менялся client/
 
 # === Деплой === (подробности — docs/DEPLOYMENT.md)
-docker compose -f /root/docker-compose.yml build smm
-docker compose -f /root/docker-compose.yml up -d smm
-docker logs smm --since 3m | grep -E "SERVER SUCCESSFULLY|Directus Health"
-curl -s -o /dev/null -w "%{http_code}\n" https://smm.nplanner.ru/
+# Единственная команда. Держит очередь (flock), собирает из чистого worktree
+# на origin/main, не выкатывает устаревшую сборку, сверяет provenance.
+/root/smm/scripts/deploy-smm.sh
+/root/smm/scripts/deploy-smm.sh --rollback <sha>   # откат на ранее собранный образ
+
+# Что сейчас на проде (грепать бандл больше не нужно):
+curl -s https://smm.nplanner.ru/health | jq -r .revision
+
+# docker compose build smm — НЕ канон и невозможен: у сервиса нет build:,
+# только image: root-smm:deployed. Канон блока — docs/deploy/compose-smm.fragment.yml
 ```
 
 ## Как обновлять этот файл

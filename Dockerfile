@@ -3,6 +3,9 @@ FROM node:22-alpine AS builder
 
 WORKDIR /app
 
+# SHA коммита, из которого собран образ (AI-50). Прокидывается deploy-скриптом.
+ARG APP_COMMIT_SHA=unknown
+
 # VITE_ переменные встраиваются во время сборки — передаём через ARG
 ARG VITE_PLAN_PRICE_PRO
 ARG VITE_PLAN_PRICE_PRO_ORIGINAL
@@ -54,6 +57,13 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
 ENV LANG=en_US.UTF-8
 ENV LC_ALL=en_US.UTF-8
 ENV NODE_ENV=production
+
+# Provenance: тот же SHA доступен приложению (его отдаёт /health) и висит
+# меткой на образе. Так «уехал ли код на прод» проверяется полем, а не
+# грепом ASCII-маркеров по бандлу.
+ARG APP_COMMIT_SHA=unknown
+ENV APP_COMMIT_SHA=$APP_COMMIT_SHA
+LABEL org.opencontainers.image.revision=$APP_COMMIT_SHA
 
 # Копируем package files и устанавливаем ТОЛЬКО production зависимости
 COPY package*.json ./

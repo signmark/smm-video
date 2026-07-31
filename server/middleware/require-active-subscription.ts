@@ -184,9 +184,18 @@ async function fetchStatus(token: string): Promise<StatusEntry> {
     throw new SubscriptionCheckError('unavailable');
   }
 
+  // Оба флага разбираются ДО «или», а не внутри него. При
+  // `readAdminFlag(a) || readAdminFlag(b)` второй флаг не проверялся вовсе,
+  // если первый уже true: `{ is_smm_admin: true, is_smm_super: 'false' }`
+  // проходил, хотя контракт заявлен строгим для обоих полей. Эскалации прав
+  // это не давало (первый true и так означает админа), но делало проверку
+  // контракта зависящей от порядка полей — то есть необъяснимой снаружи.
+  const isAdminFlag = readAdminFlag(userData.is_smm_admin);
+  const isSuperFlag = readAdminFlag(userData.is_smm_super);
+
   const entry: StatusEntry = {
     expireDate: readExpireDate(userData),
-    isAdmin: readAdminFlag(userData.is_smm_admin) || readAdminFlag(userData.is_smm_super),
+    isAdmin: isAdminFlag || isSuperFlag,
     at: Date.now(),
   };
   statusCache.set(token, entry);

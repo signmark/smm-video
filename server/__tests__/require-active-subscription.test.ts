@@ -358,6 +358,48 @@ describe('невозможность подтвердить право → от�
       expect(handler).not.toHaveBeenCalled();
     });
 
+    // Оба флага обязаны валидироваться независимо от порядка и от того,
+    // «решил» ли уже первый исход. До правки `readAdminFlag(a) || readAdminFlag(b)`
+    // коротко замыкался: при is_smm_admin=true второй флаг не разбирался вовсе,
+    // и мусор в нём проходил незамеченным.
+    it.each([
+      [{ is_smm_admin: true, is_smm_super: 'false' }, 'мусор во втором флаге'],
+      [{ is_smm_admin: true, is_smm_super: 0 }, 'число во втором флаге'],
+      [{ is_smm_admin: 'false', is_smm_super: true }, 'мусор в первом флаге'],
+      [{ is_smm_admin: false, is_smm_super: 'yes' }, 'мусор во втором при false в первом'],
+    ])('неканонический тип в любом из двух admin-флагов → 503 (%#: %s)', async (flags) => {
+      const { app, handler } = makeApp();
+      mockGet.mockResolvedValue(userResponse({ expire_date: PAST, ...flags }));
+
+      const res = await request(app)
+        .post('/api/campaigns')
+        .set('Authorization', `Bearer ${freshToken()}`)
+        .send({});
+
+      expect(res.status).toBe(503);
+      expect(res.body.code).toBe('SUBSCRIPTION_VALIDATION_UNAVAILABLE');
+      expect(handler).not.toHaveBeenCalled();
+    });
+
+    // Встречный случай: строгость не должна ломать нормального админа.
+    it.each([
+      [{ is_smm_admin: true, is_smm_super: false }, 'админ'],
+      [{ is_smm_admin: false, is_smm_super: true }, 'супер-админ'],
+      [{ is_smm_admin: true, is_smm_super: true }, 'оба флага'],
+      [{ is_smm_admin: true, is_smm_super: null }, 'второй флаг null'],
+    ])('валидные boolean-флаги пропускают админа с истёкшей датой (%#: %s)', async (flags) => {
+      const { app, handler } = makeApp();
+      mockGet.mockResolvedValue(userResponse({ expire_date: PAST, ...flags }));
+
+      const res = await request(app)
+        .post('/api/campaigns')
+        .set('Authorization', `Bearer ${freshToken()}`)
+        .send({});
+
+      expect(res.status).toBe(200);
+      expect(handler).toHaveBeenCalledTimes(1);
+    });
+
     it('null в admin-флагах — обычный пользователь, а не отказ', async () => {
       const { app, handler } = makeApp();
       // Штатный ответ для не-админа: ломать его строгостью нельзя.

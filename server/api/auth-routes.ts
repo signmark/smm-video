@@ -432,8 +432,18 @@ export function registerAuthRoutes(app: Express): void {
   app.get('/api/config', (req: Request, res: Response) => {
     const envConfig = detectEnvironment();
     
+
+    // Браузеру нужен адрес, по которому Directus достижим ИЗ БРАУЗЕРА, а
+    // серверный DIRECTUS_URL — внутренний. На проде они совпадают, поэтому
+    // разницы не было видно. На E2E-стенде серверный адрес — docker-имя
+    // http://directus-e2e:8055, и части интерфейса, которые ходят в Directus
+    // напрямую (календарь, настройки, соцсети), падали бы сетевой ошибкой.
+    // Направление безопасное (до боевого Directus браузеру не дотянуться),
+    // но прогон E2E показывал бы инфраструктурное красное вместо прикладного.
+    const publicDirectusUrl = process.env.DIRECTUS_PUBLIC_URL || envConfig.directusUrl;
+
     res.json({
-      directusUrl: envConfig.directusUrl,
+      directusUrl: publicDirectusUrl,
       environment: envConfig.environment,
       logLevel: envConfig.logLevel,
       debugScheduler: envConfig.debugScheduler,

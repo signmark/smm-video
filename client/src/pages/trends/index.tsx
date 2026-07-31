@@ -9,6 +9,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { api } from "@/lib/api-client";
+import { readBookmarkResult, hasBookmarkState } from '@/lib/bookmark-result';
 import { SourcePostsList } from "@/components/SourcePostsList";
 import { SourcePostsSearchForm } from "@/components/SourcePostsSearchForm";
 import { Loader2, Search, Plus, RefreshCw, Bot, Trash2, CheckCircle, Clock, AlertCircle, FileText, ThumbsUp, MessageSquare, Eye, Bookmark, Flame, Download, ExternalLink, BarChart, Target, Building, TrendingUp, EyeOff, Link2 } from "lucide-react";
@@ -1353,8 +1354,20 @@ export default function Trends() {
         return response.json();
       });
     },
-    onSuccess: (data) => {
-      console.log('Bookmark updated:', data);
+    onSuccess: (payload) => {
+      // Ответ приходит конвертом { success, data: {...} }; читать поля у
+      // конверта нельзя — см. readBookmarkResult (AI-52).
+      const { id: updatedId, isBookmarked } = readBookmarkResult(payload);
+
+      if (!hasBookmarkState(payload)) {
+        // Сервер не сообщил состояние — не выдумываем его за него.
+        toast({
+          title: t('trends.toasts.error'),
+          description: t('trends.toasts.bookmarkError'),
+          variant: "destructive",
+        });
+        return;
+      }
 
       // Обновляем данные в кеше
       queryClient.setQueryData(
@@ -1362,24 +1375,24 @@ export default function Trends() {
         (old: TrendTopic[] | undefined) => {
           if (!old) return [];
           return old.map(topic =>
-            topic.id === data.id
-              ? { ...topic, is_bookmarked: data.is_bookmarked }
+            topic.id === updatedId
+              ? { ...topic, is_bookmarked: isBookmarked }
               : topic
           );
         }
       );
 
       // Обновляем выбранный тренд, если это тот же самый
-      if (selectedTrendTopic && selectedTrendTopic.id === data.id) {
+      if (selectedTrendTopic && selectedTrendTopic.id === updatedId) {
         setSelectedTrendTopic({
           ...selectedTrendTopic,
-          is_bookmarked: data.is_bookmarked
+          is_bookmarked: isBookmarked
         });
       }
 
       toast({
-        title: data.is_bookmarked ? t('trends.toasts.bookmarkSaved') : t('trends.toasts.bookmarkRemoved'),
-        description: data.is_bookmarked ? t('trends.toasts.bookmarkSavedDesc') : t('trends.toasts.bookmarkRemovedDesc'),
+        title: isBookmarked ? t('trends.toasts.bookmarkSaved') : t('trends.toasts.bookmarkRemoved'),
+        description: isBookmarked ? t('trends.toasts.bookmarkSavedDesc') : t('trends.toasts.bookmarkRemovedDesc'),
       });
     },
     onError: (error: Error) => {

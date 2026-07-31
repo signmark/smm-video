@@ -50,7 +50,7 @@ import { getPublishScheduler } from './services/publish-scheduler';
 import { startTelegramBot, getWebhookCallback } from './telegram-bot/bot-launcher';
 // Выключатель фоновых задач: второй экземпляр приложения на том же окружении
 // даёт второй планировщик и второго бота на одной базе (AI-36).
-import { scheduleBackgroundJob } from './services/background-jobs';
+import { scheduleBackgroundJob, backgroundJobsDisabled } from './services/background-jobs';
 import { loadEnvFromDirectus } from './services/load-env-from-directus';
 
 import ffmpeg from 'fluent-ffmpeg';
@@ -1252,15 +1252,20 @@ async function checkVkTokensStatus() {
   }
 }
 
-// Первая проверка через 5 минут после старта, затем каждые 30 минут
-setTimeout(() => {
+// Первая проверка через 5 минут после старта, затем каждые 30 минут.
+// Через выключатель: пропущен внешний таймер — внутренний setInterval не заводится.
+scheduleBackgroundJob('vk-tokens-status', 5 * 60 * 1000, () => {
   checkVkTokensStatus();
   setInterval(checkVkTokensStatus, 30 * 60 * 1000);
-}, 5 * 60 * 1000);
+}, (m) => log(m, 'background-jobs'));
 
 // Фоновое обновление истекающих VK токенов — каждые 6 часов.
 // Первый запуск через 3 минуты после старта (чтобы сервер успел полностью инициализироваться).
-setTimeout(async () => {
+// Через выключатель обязательно: это единственная фоновая задача, которая
+// ПИШЕТ во внешнюю систему. Два экземпляра приложения на одном окружении
+// начнут наперегонки ротировать VK-токены, и проигравший останется с
+// недействительным.
+scheduleBackgroundJob('vk-tokens-refresh', 3 * 60 * 1000, async () => {
   try {
     const { refreshAllExpiringVkTokens } = await import('./services/vk-token-refresh');
     log('[VK-CRON] Первый запуск фонового обновления VK токенов', 'vk-cron');
@@ -1276,16 +1281,23 @@ setTimeout(async () => {
       log(`[VK-CRON] Ошибка: ${e.message}`, 'vk-cron', 'error');
     }
   }, 30 * 60 * 1000); // каждые 30 минут
-}, 3 * 60 * 1000);
+}, (m) => log(m, 'background-jobs'));
 
 // Уведомления о новых комментариях и всплесках охвата.
 // Данные берём готовыми из Analytics API (он сам обновляет метрики раз в 6 часов),
 // поэтому цикл лёгкий: один запрос на канал. Выключается ENGAGEMENT_WATCH_ENABLED=false.
-try {
-  const { startEngagementWatcher } = await import('./services/engagement-watcher');
-  startEngagementWatcher();
-} catch (e: any) {
-  log(`[ENGAGEMENT] Не удалось запустить наблюдатель: ${e.message}`, 'engagement', 'error');
+// У наблюдателя есть свой ENGAGEMENT_WATCH_ENABLED, но общий выключатель обязан
+// его перекрывать: иначе «фоновая активность выключена» окажется неправдой,
+// а полагаться на два независимых флага в стендовом env — способ забыть один.
+if (backgroundJobsDisabled()) {
+  log('[background-jobs] engagement-watcher: пропущен, DISABLE_BACKGROUND_JOBS активен', 'background-jobs');
+} else {
+  try {
+    const { startEngagementWatcher } = await import('./services/engagement-watcher');
+    startEngagementWatcher();
+  } catch (e: any) {
+    log(`[ENGAGEMENT] Не удалось запустить наблюдатель: ${e.message}`, 'engagement', 'error');
+  }
 }
 
 // Graceful shutdown для всех сервисов

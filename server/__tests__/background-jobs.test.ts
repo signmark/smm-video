@@ -120,8 +120,28 @@ describe('проводка в server/index.ts', () => {
     'status-validator',
     'publish-scheduler',
     'telegram-bot',
+    // Приёмка инкремента 1: эти две жили мимо выключателя. vk-tokens-refresh —
+    // единственная фоновая задача, которая ПИШЕТ во внешнюю систему: два
+    // экземпляра начнут наперегонки ротировать VK-токены, и проигравший
+    // останется с недействительным.
+    'vk-tokens-status',
+    'vk-tokens-refresh',
   ])('фоновая задача %s проходит через выключатель', (name) => {
     expect(source).toContain(`scheduleBackgroundJob('${name}'`);
+  });
+
+  it('engagement-watcher перекрыт общим выключателем, а не только своим флагом', () => {
+    // У наблюдателя есть ENGAGEMENT_WATCH_ENABLED, но полагаться на два
+    // независимых флага в стендовом env — способ забыть один.
+    const at = source.indexOf('startEngagementWatcher');
+    expect(at).toBeGreaterThan(-1);
+    expect(source.slice(Math.max(0, at - 600), at)).toContain('backgroundJobsDisabled()');
+  });
+
+  it('VK-задачи не остались на голом setTimeout', () => {
+    // Внешний таймер заворачивается целиком: пропущен он — внутренний
+    // setInterval не заводится вовсе.
+    expect(source).not.toContain('setTimeout(() => {\n  checkVkTokensStatus();');
   });
 
   it('запуск планировщика и бота не остался на голом setTimeout', () => {

@@ -797,11 +797,6 @@ export default function Trends() {
 
   // Стабильные хендлеры для мемоизированной карточки TrendListItem — без них
   // React.memo не сработает и карточки будут перерисовываться на любое действие.
-  const handleOpenTrend = useCallback((topic: any) => {
-    setSelectedTrendTopic(topic);
-    setActiveTab('comments');
-    loadTrendComments(topic.id);
-  }, []);
   const handlePreviewTrend = useCallback((topic: any) => {
     setPreviewTrendTopic(topic);
   }, []);
@@ -2432,7 +2427,7 @@ export default function Trends() {
                                   isActive={selectedTrendTopic?.id === vt.topic.id}
                                   isSelected={selectedTopics.some((s) => s.id === vt.topic.id)}
                                   t={t}
-                                  onOpen={handleOpenTrend}
+                                  onOpen={handlePreviewTrend}
                                   onToggleSelect={toggleTopicSelection}
                                   onPreview={handlePreviewTrend}
                                   onHide={handleHideTrend}

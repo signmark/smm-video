@@ -82,12 +82,24 @@ function SidebarContent({ location, onNavigate, onLogout, userIsAdmin, isCollaps
       <div className={`${isCollapsed ? 'p-1.5' : 'p-2'} transition-all duration-300 border-b border-sidebar-border/30`}>
         <div className={`flex items-center ${isCollapsed ? 'justify-center' : 'justify-between'}`}>
           {!isCollapsed && (
-            <img 
-              src="/smm-logo.png" 
-              alt="SMM Manager" 
-              className="h-8 w-auto select-none"
-              style={{ userSelect: 'none' }}
-            />
+            <button
+              type="button"
+              data-testid="nav-logo"
+              title={t('nav.home')}
+              aria-label={t('nav.home')}
+              className="rounded-md focus-visible:ring-2 focus-visible:ring-primary/20 focus-visible:outline-none"
+              onClick={(e) => {
+                e.stopPropagation();
+                onNavigate('/dashboard');
+              }}
+            >
+              <img
+                src="/smm-logo.png"
+                alt="SMM Manager"
+                className="h-8 w-auto select-none"
+                style={{ userSelect: 'none' }}
+              />
+            </button>
           )}
           <button
             type="button"

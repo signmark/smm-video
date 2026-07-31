@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { readSidebarCollapsed, writeSidebarCollapsed } from "@/lib/sidebar-preferences";
 import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Menu } from "lucide-react";
@@ -20,7 +21,9 @@ export function AppShell({ children, onNavigate, onLogout, userIsAdmin }: AppShe
   const [location] = useLocation();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const { limits } = usePlan();
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  // Ленивый инициализатор: AppShell монтируется заново на каждой странице, и
+  // useState(false) забывал свёрнутое меню при каждом переходе.
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(readSidebarCollapsed);
   const [isProfileDialogOpen, setIsProfileDialogOpen] = useState(false);
   const [isAIChatOpen, setIsAIChatOpen] = useState(false);
   const [isTGBotOpen, setIsTGBotOpen] = useState(false);
@@ -55,7 +58,11 @@ export function AppShell({ children, onNavigate, onLogout, userIsAdmin }: AppShe
         userIsAdmin={userIsAdmin}
         location={location}
         isCollapsed={isSidebarCollapsed}
-        onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+        onToggleCollapse={() => {
+          const next = !isSidebarCollapsed;
+          setIsSidebarCollapsed(next);
+          writeSidebarCollapsed(next);
+        }}
       />
 
       {/* Main Content Area */}

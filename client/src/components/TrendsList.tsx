@@ -222,7 +222,10 @@ export function TrendsList({ campaignId, onSelectTrends, onSelectTrend, selectab
       // ["campaign-trends", ...] — инвалидация «своего» ключа не обновляла ничего,
       // и карточка оставалась в прежнем состоянии до перезагрузки (AI-52).
       queryClient.invalidateQueries({ queryKey: ["campaign-trends", campaignId] });
-      queryClient.invalidateQueries({ queryKey: ["trends", campaignId] });
+      // Префикс без id: TrendsList не знает ключа списка на странице и не должен
+      // на него закладываться. Сегодня формы совпадают, а добавят период в ключ —
+      // связь развалится молча.
+      queryClient.invalidateQueries({ queryKey: ["trends"] });
       toast({
         title: "Закладка обновлена",
         description: "Статус закладки успешно изменен",

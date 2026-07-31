@@ -1,0 +1,103 @@
+# E2E-стенд для Playwright (AI-36).
+#
+# Отдельный compose-проект, ничем не связанный с боевым /root/docker-compose.yml.
+# Правила, из-за которых он выглядит именно так:
+#
+#  1. НАРУЖУ НЕ ТОРЧИТ. Все порты публикуются только на 127.0.0.1, меток traefik
+#     нет вообще. Стенд не должен получить сертификат и оказаться в интернете.
+#  2. СВОЯ БАЗА. Отдельные postgres и directus со своими данными. Боевые данные
+#     сюда не копируются: тесты создают себе всё сами, а копия боевой базы — это
+#     утечка и лишний риск.
+#  3. ПУСТЫЕ ВНЕШНИЕ ТОКЕНЫ (см. .env.e2e). Даже если фоновые задачи включат,
+#     публиковать некуда и некому.
+#  4. ФОНОВЫЕ ЗАДАЧИ ВЫКЛЮЧЕНЫ через DISABLE_BACKGROUND_JOBS. Планировщик
+#     публикаций, VK-ротация токенов, телеграм-бот и наблюдатель вовлечённости
+#     на стенде не нужны и только мешают детерминизму.
+#  5. ОБРАЗ НЕ СОБИРАЕТСЯ ЗДЕСЬ. Берётся тот же root-smm:deployed, что и на
+#     проде, — иначе стенд проверял бы не то, что выкачено. Секции build: нет
+#     сознательно, по той же причине, что и в боевом compose (AI-50).
+#
+# Запуск:  docker compose -f /root/smm-e2e/docker-compose.yml --env-file /root/smm-e2e/.env.e2e up -d
+# Адрес:   http://127.0.0.1:5100
+# Тесты:   PLAYWRIGHT_BASE_URL=http://127.0.0.1:5100 npx playwright test
+
+name: smm-e2e
+
+services:
+  postgres-e2e:
+    image: postgres:16
+    restart: unless-stopped
+    shm_size: 128mb
+    environment:
+      - POSTGRES_PASSWORD=${E2E_DB_PASSWORD}
+      - POSTGRES_DB=directus
+    volumes:
+      - e2e_postgres:/var/lib/postgresql/data
+    networks:
+      - e2e
+    # Порт наружу не публикуется вовсе: база нужна только directus-e2e.
+
+  directus-e2e:
+    image: directus/directus:11.2.2
+    restart: unless-stopped
+    depends_on:
+      - postgres-e2e
+    environment:
+      - PUBLIC_URL=http://127.0.0.1:8155
+      - DB_CLIENT=pg
+      - DB_HOST=postgres-e2e
+      - DB_PORT=5432
+      - DB_DATABASE=directus
+      - DB_USER=postgres
+      - DB_PASSWORD=${E2E_DB_PASSWORD}
+      - ADMIN_EMAIL=${E2E_DIRECTUS_ADMIN_EMAIL}
+      - ADMIN_PASSWORD=${E2E_DIRECTUS_ADMIN_PASSWORD}
+      - SECRET=${E2E_DIRECTUS_SECRET}
+      - CORS_ENABLED=true
+      - CORS_ORIGIN=true
+      - CORS_METHODS=GET,POST,PATCH,DELETE
+      - CORS_ALLOWED_HEADERS=Content-Type,Authorization
+      - CORS_EXPOSED_HEADERS=Content-Range
+      - CORS_CREDENTIALS=true
+      - ACCESS_TOKEN_TTL=1d
+      - REFRESH_TOKEN_TTL=7d
+      - AUTH_TOKEN_TTL=1d
+      # Локальное хранилище: на стенде S3 не нужен, а каталог свой и пишется.
+      - STORAGE_LOCATIONS=local
+      - STORAGE_LOCAL_DRIVER=local
+      - STORAGE_LOCAL_ROOT=/directus/uploads
+    volumes:
+      - e2e_directus_uploads:/directus/uploads
+    ports:
+      # Только localhost: нужен для снапшота схемы и отладки, наружу не смотрит.
+      - "127.0.0.1:8155:8055"
+    networks:
+      - e2e
+
+  smm-e2e:
+    # Тот же образ, что на проде. Стенд обязан проверять выкаченный код.
+    image: root-smm:deployed
+    restart: unless-stopped
+    depends_on:
+      - directus-e2e
+    env_file:
+      - .env.e2e
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+      - DIRECTUS_URL=http://directus-e2e:8055
+      # Фоновая активность выключена целиком (AI-36).
+      - DISABLE_BACKGROUND_JOBS=1
+    command: npm run start
+    ports:
+      - "127.0.0.1:5100:5000"
+    networks:
+      - e2e
+
+networks:
+  e2e:
+    driver: bridge
+
+volumes:
+  e2e_postgres:
+  e2e_directus_uploads:

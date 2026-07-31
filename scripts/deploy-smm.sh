@@ -51,6 +51,10 @@ SMM_WORKTREE_BASE="${SMM_WORKTREE_BASE:-/root/.smm-deploy-worktrees}"
 SMM_IMAGE_REPO="${SMM_IMAGE_REPO:-root-smm}"
 SMM_DEPLOYED_TAG="${SMM_DEPLOYED_TAG:-${SMM_IMAGE_REPO}:deployed}"
 SMM_SERVICE="${SMM_SERVICE:-smm}"
+# Имя контейнера отдельно от имени сервиса: в проде они совпадают
+# (container_name: smm), но полагаться на совпадение нельзя — docker inspect
+# ищет контейнер, а не сервис compose.
+SMM_CONTAINER="${SMM_CONTAINER:-$SMM_SERVICE}"
 SMM_HEALTH_URL="${SMM_HEALTH_URL:-https://smm.nplanner.ru/health}"
 SMM_PUBLIC_URL="${SMM_PUBLIC_URL:-https://smm.nplanner.ru/}"
 SMM_LOCK_WAIT="${SMM_LOCK_WAIT:-1800}"
@@ -168,7 +172,7 @@ verify_revision() {
   [ "$value" = "$sha" ] || { log "revision образа: '$value' != '$sha'"; return 1; }
 
   # 2. образ запущенного контейнера
-  value="$("$SMM_DOCKER" inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$SMM_SERVICE" 2>/dev/null || true)"
+  value="$("$SMM_DOCKER" inspect --format '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$SMM_CONTAINER" 2>/dev/null || true)"
   [ "$value" = "$sha" ] || { log "revision контейнера: '$value' != '$sha'"; return 1; }
 
   # 3. то, что приложение само о себе сообщает

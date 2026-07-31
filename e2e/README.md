@@ -12,7 +12,7 @@
 ## Запуск
 
 ```bash
-cp e2e/.env.e2e.sample /root/smm-e2e/.env.e2e   # заполнить CHANGE_ME
+cp e2e/env.e2e.sample /root/smm-e2e/.env.e2e   # заполнить CHANGE_ME
 cp e2e/docker-compose.yml /root/smm-e2e/
 cd /root/smm-e2e
 docker compose --env-file .env.e2e up -d

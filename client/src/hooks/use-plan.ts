@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '@/lib/store';
+import { PROFILE_FRESHNESS } from './profile-freshness';
 
 export type PlanType = 'free' | 'basic' | 'trial' | 'pro' | 'enterprise';
 
@@ -106,8 +107,7 @@ export function usePlan() {
   }>({
     queryKey: ['/api/user/profile', userId || 'me'],
     enabled: !!token,
-    staleTime: 5 * 60 * 1000,
-    refetchOnWindowFocus: true,
+    ...PROFILE_FRESHNESS,
   });
 
   const plan = (profile?.plan || 'basic') as PlanType;

@@ -5,6 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { telegramSessionStorage } from '../services/telegram-session-storage';
 import { directusAuthManager } from '../services/directus-auth-manager';
+import { applySubscription } from '../services/apply-subscription';
 import { markSubscriptionProcessed, getSubscriptionStatus } from '../routes/subscriptions';
 
 interface BotSession {
@@ -897,19 +898,39 @@ class TelegramBotService {
         expireDate.setDate(expireDate.getDate() + days);
         const expireDateStr = expireDate.toISOString().split('T')[0];
 
-        const updateResp = await fetch(`${directusUrl}/users/${userId}`, {
-          method: 'PATCH',
-          headers: {
-            'Authorization': `Bearer ${adminToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ expire_date: expireDateStr, plan: planValue }),
+        // Пишем и ОБЯЗАТЕЛЬНО читаем обратно. 01.08.2026 владелец одобрил
+        // тариф, бот ответил «активировано», а в базе осталось старое: успехом
+        // считался сам код ответа Directus. 200 означает «запрос принят», а не
+        // «поле сохранено» — см. services/apply-subscription.ts.
+        const applied = await applySubscription({
+          directusUrl,
+          adminToken,
+          userId,
+          planValue,
+          expireDateStr,
         });
 
-        if (!updateResp.ok) {
-          const errBody = await updateResp.text();
-          console.error('[sap] Directus error:', errBody);
-          await ctx.editMessageText(`❌ Ошибка активации: ${updateResp.status}\n${errBody.slice(0, 200)}`);
+        console.log(JSON.stringify({
+          event: 'subscription.approve',
+          source: 'telegram-bot',
+          userId,
+          plan: planValue,
+          days,
+          result: applied.ok ? 'applied' : applied.reason,
+          ...(applied.ok ? { readback: applied.readback } : {}),
+          ...('status' in applied ? { status: applied.status } : {}),
+          ...('actual' in applied ? { actual: applied.actual } : {}),
+        }));
+
+        if (!applied.ok) {
+          // Владельцу — честный отказ вместо галочки. Молчаливое «успешно»
+          // хуже ошибки: пользователь остаётся без тарифа, и никто не знает.
+          const detail = applied.reason === 'not-applied'
+            ? `Directus принял запрос, но значение не сохранилось (в базе: ${String(applied.actual.plan)} / ${String(applied.actual.expire_date)})`
+            : applied.reason === 'write-failed'
+              ? `Directus отклонил запись: ${applied.status}`
+              : `Не удалось перечитать значение после записи: ${applied.status}`;
+          await ctx.editMessageText(`❌ Тариф НЕ активирован.\n${detail}\n\nПользователь: ${userId}`);
           return;
         }
 

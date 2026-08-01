@@ -1,9 +1,9 @@
 import { defineConfig, devices } from '@playwright/test';
-import fs from 'fs';
 
-const NIX_CHROMIUM = '/nix/store/qa9cnw4v5xkxyip6mb9kxqfq1z4x2dx1-chromium-138.0.7204.100/bin/chromium';
-const systemChromium = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH
-  || (fs.existsSync(NIX_CHROMIUM) ? NIX_CHROMIUM : undefined);
+// Escape hatch на случай своего браузера. Захардкоженный путь к nix-chromium
+// отсюда убран: он остался от Replit, на хосте не существует и молча отваливался
+// в undefined — то есть не держал ничего, а выглядел как рабочая настройка.
+const systemChromium = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
 
 /**
  * Адрес стенда обязателен и не имеет умолчания.

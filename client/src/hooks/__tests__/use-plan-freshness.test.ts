@@ -14,6 +14,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { PROFILE_FRESHNESS } from '../profile-freshness';
 
 describe('свежесть профиля', () => {
@@ -30,5 +32,30 @@ describe('свежесть профиля', () => {
   it('переход на страницу панели тоже перезапрашивает', () => {
     // Пользователь может вернуться не фокусом окна, а навигацией внутри SPA.
     expect(PROFILE_FRESHNESS.refetchOnMount).toBe(true);
+  });
+});
+
+/**
+ * Проверка проводки, а не значения.
+ *
+ * Находка приёмки: тесты выше стерегут саму константу, но не её применение —
+ * ревьюер вернул в use-plan.ts staleTime: 5 минут вместо спреда, и все три
+ * теста остались зелёными. То есть «константа правильная, но не подключена»
+ * не ловилось ничем. Это тот же класс «успешно, но не то», который сегодня
+ * дважды стоил инцидента.
+ *
+ * Render-тест хука честнее, но он заблокирован отсутствием jsdom-инфраструктуры
+ * (AI-59), поэтому проверяем исходник — тем же приёмом, что для фоновых задач.
+ */
+describe('проводка PROFILE_FRESHNESS в use-plan', () => {
+  const source = readFileSync(path.resolve(__dirname, '../use-plan.ts'), 'utf8');
+
+  it('опции запроса профиля берутся из PROFILE_FRESHNESS', () => {
+    expect(source).toContain('...PROFILE_FRESHNESS');
+  });
+
+  it('staleTime не задаётся в use-plan напрямую в обход константы', () => {
+    // Именно так регресс и выглядел бы: спред заменили обратно на число.
+    expect(source).not.toMatch(/staleTime:\s*\d/);
   });
 });

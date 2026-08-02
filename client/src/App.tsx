@@ -110,32 +110,6 @@ function devOnly(Component: React.ComponentType | null): React.ComponentType {
   return Component;
 }
 
-// Routes that must NOT render inside <Layout>: публичные auth-страницы, pricing/payment, OAuth callbacks, help.
-// Они рендерятся до AuthGuard проверки сессии (см. PUBLIC_ROUTES) или вообще без неё.
-const PublicRoutes = () => (
-  <Switch>
-    <Route path="/auth/login" component={Login} />
-    <Route path="/auth/register" component={Register} />
-    <Route path="/auth/forgot-password" component={ForgotPassword} />
-    <Route path="/auth/reset-password" component={ResetPassword} />
-    <Route path="/auth/confirm-email" component={ConfirmEmail} />
-    <Route path="/login" component={Login} />
-    <Route path="/pricing" component={PricingPage} />
-    <Route path="/payment/success" component={PaymentSuccessPage} />
-    <Route path="/payment/cancel" component={PaymentCancelPage} />
-    {/* OAuth callbacks */}
-    <Route path="/api/youtube/auth/callback" component={YouTubeCallback} />
-    <Route path="/youtube-callback" component={YouTubeCallback} />
-    <Route path="/instagram-callback" component={InstagramCallback} />
-    <Route path="/vk-callback" component={VkCallback} />
-    <Route path="/threads-callback" component={ThreadsCallback} />
-    {/* Help — публичные, доступные без логина */}
-    <Route path="/help" component={HelpPage} />
-    <Route path="/help/tutorials" component={TutorialsPage} />
-    <Route path="/help/tutorials/:id" component={TutorialDetailsPage} />
-  </Switch>
-);
-
 // Защищённые роуты: все маунтятся под одним <Layout>, поэтому при переходе
 // каркас (Sidebar/Topbar/AuthStore/CampaignStore/ThemeProvider/useCampaignOwnershipCheck)
 // остаётся стабильным, а меняется только содержимое внутри <Layout>.
@@ -207,11 +181,32 @@ const VideoStoryEditorRoute = () => {
 };
 
 function Router() {
+  // Один внешний <Switch>: публичные роуты первыми, защищённые —
+  // последней fallback-строкой через <Route component={ProtectedRoutes}>.
+  // Это гарантирует, что /login (и любой другой публичный путь)
+  // матчится ровно один раз, а не рендерится параллельно с защищённым
+  // fallback'ом внутри <Layout>.
   return (
-    <>
-      <PublicRoutes />
-      <ProtectedRoutes />
-    </>
+    <Switch>
+      <Route path="/auth/login" component={Login} />
+      <Route path="/auth/register" component={Register} />
+      <Route path="/auth/forgot-password" component={ForgotPassword} />
+      <Route path="/auth/reset-password" component={ResetPassword} />
+      <Route path="/auth/confirm-email" component={ConfirmEmail} />
+      <Route path="/login" component={Login} />
+      <Route path="/pricing" component={PricingPage} />
+      <Route path="/payment/success" component={PaymentSuccessPage} />
+      <Route path="/payment/cancel" component={PaymentCancelPage} />
+      <Route path="/api/youtube/auth/callback" component={YouTubeCallback} />
+      <Route path="/youtube-callback" component={YouTubeCallback} />
+      <Route path="/instagram-callback" component={InstagramCallback} />
+      <Route path="/vk-callback" component={VkCallback} />
+      <Route path="/threads-callback" component={ThreadsCallback} />
+      <Route path="/help" component={HelpPage} />
+      <Route path="/help/tutorials" component={TutorialsPage} />
+      <Route path="/help/tutorials/:id" component={TutorialDetailsPage} />
+      <Route component={ProtectedRoutes} />
+    </Switch>
   );
 }
 

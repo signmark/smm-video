@@ -13,8 +13,30 @@ function readApp(): string {
   return fs.readFileSync(APP_TSX, 'utf-8');
 }
 
+function routerBlock(src: string): string {
+  const start = src.indexOf('function Router()');
+  const end = src.indexOf('function AppWithWebSocket');
+  if (start < 0 || end < 0) return '';
+  return stripComments(src.slice(start, end));
+}
+
+function stripComments(src: string): string {
+  // Drop block comments (`/* ... */`) AND full-line `//` comments.
+  // Approximation: good enough for our own source, where we don't put
+  // `//` inside strings inside the slice we care about.
+  return src
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .split('\n')
+    .map((line) => {
+      const trimmed = line.trimStart();
+      return trimmed.startsWith('//') ? '' : line;
+    })
+    .join('\n');
+}
+
 describe('AI-54: Layout lives above the protected Switch', () => {
-  const src = readApp();
+  const rawSrc = readApp();
+  const src = stripComments(rawSrc);
 
   it('не использует устаревшие обёртки wrapWithLayout/WithLayout', () => {
     expect(src).not.toMatch(/wrapWithLayout\b/);
@@ -23,29 +45,39 @@ describe('AI-54: Layout lives above the protected Switch', () => {
     expect(src).not.toMatch(/const Layout[A-Z]\w*\s*=/);
   });
 
+  it('внешний <Switch> один, с protected routes как fallback (нет sibling-конструкции)', () => {
+    const rb = routerBlock(src);
+    expect(rb.length).toBeGreaterThan(0);
+    // Ровно один внешний <Switch> внутри Router; второй живёт внутри ProtectedRoutes.
+    const outerSwitches = rb.match(/<Switch>(?!\/)/g) ?? [];
+    expect(outerSwitches.length).toBe(1);
+    // Защищённые роуты попадают внутрь <Layout> через ProtectedRoutes как fallback.
+    expect(rb).toMatch(/<Route component=\{ProtectedRoutes\} \/>/);
+    // Старая sibling-конструкция (fragment с PublicRoutes/ProtectedRoutes рядом) запрещена.
+    expect(rb).not.toMatch(/<PublicRoutes\b/);
+    // Отдельного компонента PublicRoutes быть не должно во всём файле.
+    expect(src).not.toMatch(/const PublicRoutes\b/);
+  });
+
   it('содержит стабильный <Layout> над protected Switch', () => {
     // <Layout> должен встречаться хотя бы один раз как JSX-тег (не как импорт).
     expect(src).toMatch(/<Layout>/);
-    // Switch должен быть ровно два раза (Public + Protected).
-    const switches = src.match(/<Switch>/g) ?? [];
+    // Второй <Switch> живёт внутри ProtectedRoutes — итого ровно 2 по всему файлу.
+    // Anchored regex, чтобы </Switch> не считался.
+    const switches = src.match(/<Switch>(?!\/)/g) ?? [];
     expect(switches.length).toBe(2);
   });
 
-  it('отделяет публичные роуты (login/callbacks/help) от защищённых', () => {
-    const publicIdx = src.indexOf('const PublicRoutes');
-    const protectedIdx = src.indexOf('const ProtectedRoutes');
-    expect(publicIdx).toBeGreaterThan(0);
-    expect(protectedIdx).toBeGreaterThan(0);
-
-    // Защищённые роуты не должны упоминаться в PublicRoutes.
-    const publicBlock = src.slice(publicIdx, protectedIdx);
-    // Strip comments to avoid matching "<Layout>" in documentation text.
-
-    expect(publicBlock).not.toMatch(/component=\{Campaigns\}/);
-    expect(publicBlock).not.toMatch(/component=\{Content\}/);
-
-    // Публичные OAuth callback'и присутствуют в PublicRoutes; ProtectedRoutes — нет.
-    expect(publicBlock).toMatch(/YouTubeCallback|InstagramCallback/);
+  it('инлайнит публичные роуты прямо в Router, защищённые — только как fallback', () => {
+    const rb = routerBlock(src);
+    // Публичные страницы должны быть прямо в Router.
+    expect(rb).toMatch(/component=\{Login\}/);
+    expect(rb).toMatch(/component=\{YouTubeCallback\}/);
+    expect(rb).toMatch(/component=\{PricingPage\}/);
+    expect(rb).toMatch(/component=\{HelpPage\}/);
+    // А защищённые страницы — НЕ в Router напрямую, только через ProtectedRoutes.
+    expect(rb).not.toMatch(/component=\{Campaigns\}/);
+    expect(rb).not.toMatch(/component=\{Content\}/);
   });
 
   it('корневой роут и dashboard указывают на Dashboard, а не LayoutDashboard', () => {

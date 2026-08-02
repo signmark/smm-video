@@ -99,17 +99,6 @@ const PricingPage = lazy(() => import("@/pages/pricing"));
 const PaymentSuccessPage = lazy(() => import("@/pages/payment/success"));
 const PaymentCancelPage = lazy(() => import("@/pages/payment/cancel"));
 
-// Обертка Layout
-const WithLayout = ({ Component }: { Component: React.ComponentType }) => (
-  <Layout>
-    <Component />
-  </Layout>
-);
-
-// Утилита для мемоизированных компонентов с Layout
-const wrapWithLayout = (Component: React.ComponentType) =>
-  React.memo(() => <WithLayout Component={Component} />);
-
 /**
  * Returns a route component that is only mounted in development. In
  * production the lazy import is `null`, so the Switch never registers
@@ -118,134 +107,111 @@ const wrapWithLayout = (Component: React.ComponentType) =>
  */
 function devOnly(Component: React.ComponentType | null): React.ComponentType {
   if (!Component) return () => <NotFound />;
-  return wrapWithLayout(Component);
+  return Component;
 }
 
-// Мемоизированные компоненты с Layout
-const LayoutDashboard = wrapWithLayout(Dashboard);
-const LayoutCampaigns = wrapWithLayout(Campaigns);
-const LayoutCampaignDetails = wrapWithLayout(CampaignDetails);
-const LayoutKeywords = wrapWithLayout(Keywords);
-const LayoutContent = wrapWithLayout(Content);
-const LayoutEditContentPage = wrapWithLayout(EditContentPage);
-const LayoutPosts = wrapWithLayout(Posts);
-const LayoutTrends = wrapWithLayout(Trends);
-const LayoutAnalytics = wrapWithLayout(Analytics);
-const LayoutScheduledPublications = wrapWithLayout(ScheduledPublications);
-const LayoutCalendarView = wrapWithLayout(CalendarView);
-const LayoutTestPublish = devOnly(TestPublish);
-const LayoutImageGenerationTest = devOnly(ImageGenerationTest);
-const LayoutTransparentDialogTest = devOnly(TransparentDialogTest);
-const LayoutFalAiTest = devOnly(FalAiTest);
-const LayoutApiKeyPriorityTest = devOnly(ApiKeyPriorityTest);
-const LayoutApiKeysTest = devOnly(ApiKeysTest);
-const LayoutUniversalImageGenTest = devOnly(UniversalImageGenTest);
-const LayoutHtmlTagsTestPage = devOnly(HtmlTagsTestPage);
-const LayoutAiImageTester = devOnly(AiImageTester);
-const LayoutErrorHandlingTest = devOnly(ErrorHandlingTest);
-const LayoutTestPage = devOnly(TestPage);
-const LayoutGlobalApiKeysPage = wrapWithLayout(GlobalApiKeysPage);
-const LayoutUserManagement = wrapWithLayout(UserManagement);
-const LayoutEditorDemo = devOnly(EditorDemoPage);
-const LayoutBusinessQuestionnaire = wrapWithLayout(BusinessQuestionnairePage);
-const LayoutInstagramSetup = wrapWithLayout(InstagramSimplePage);
-const LayoutStoriesGeneratorTest = devOnly(StoriesGeneratorTest);
-const LayoutStoriesPage = wrapWithLayout(StoriesPage);
-const LayoutTelegramChannelsAdmin = wrapWithLayout(TelegramChannelsAdmin);
+// Routes that must NOT render inside <Layout>: публичные auth-страницы, pricing/payment, OAuth callbacks, help.
+// Они рендерятся до AuthGuard проверки сессии (см. PUBLIC_ROUTES) или вообще без неё.
+const PublicRoutes = () => (
+  <Switch>
+    <Route path="/auth/login" component={Login} />
+    <Route path="/auth/register" component={Register} />
+    <Route path="/auth/forgot-password" component={ForgotPassword} />
+    <Route path="/auth/reset-password" component={ResetPassword} />
+    <Route path="/auth/confirm-email" component={ConfirmEmail} />
+    <Route path="/login" component={Login} />
+    <Route path="/pricing" component={PricingPage} />
+    <Route path="/payment/success" component={PaymentSuccessPage} />
+    <Route path="/payment/cancel" component={PaymentCancelPage} />
+    {/* OAuth callbacks */}
+    <Route path="/api/youtube/auth/callback" component={YouTubeCallback} />
+    <Route path="/youtube-callback" component={YouTubeCallback} />
+    <Route path="/instagram-callback" component={InstagramCallback} />
+    <Route path="/vk-callback" component={VkCallback} />
+    <Route path="/threads-callback" component={ThreadsCallback} />
+    {/* Help — публичные, доступные без логина */}
+    <Route path="/help" component={HelpPage} />
+    <Route path="/help/tutorials" component={TutorialsPage} />
+    <Route path="/help/tutorials/:id" component={TutorialDetailsPage} />
+  </Switch>
+);
 
-// Wrapper для VideoStoryEditor — использует useParams вместо ручного парсинга URL
-const LayoutVideoStoryEditor = React.memo(() => {
-  const { storyId } = useParams<{ storyId: string }>();
-
-  if (!storyId) {
-    return <NotFound />;
-  }
-
-  return (
-    <Layout>
-      <VideoStoryEditor storyId={storyId} />
-    </Layout>
-  );
-});
-
-function Router() {
-  return (
+// Защищённые роуты: все маунтятся под одним <Layout>, поэтому при переходе
+// каркас (Sidebar/Topbar/AuthStore/CampaignStore/ThemeProvider/useCampaignOwnershipCheck)
+// остаётся стабильным, а меняется только содержимое внутри <Layout>.
+const ProtectedRoutes = () => (
+  <Layout>
     <Switch>
-      <Route path="/auth/login" component={Login} />
-      <Route path="/auth/register" component={Register} />
-      <Route path="/auth/forgot-password" component={ForgotPassword} />
-      <Route path="/auth/reset-password" component={ResetPassword} />
-      <Route path="/auth/confirm-email" component={ConfirmEmail} />
-      <Route path="/login" component={Login} />
-      <Route path="/pricing" component={PricingPage} />
-      <Route path="/payment/success" component={PaymentSuccessPage} />
-      <Route path="/payment/cancel" component={PaymentCancelPage} />
-
       {/* Stories routes - нужно поставить ДО других роутов */}
-      <Route path="/stories/:storyId/video-edit" component={LayoutVideoStoryEditor} />
-      <Route path="/stories/:storyId/edit" component={LayoutStoriesPage} />
-      <Route path="/stories/new" component={LayoutStoriesPage} />
-      <Route path="/stories" component={LayoutStoriesPage} />
+      <Route path="/stories/:storyId/video-edit" component={VideoStoryEditorRoute} />
+      <Route path="/stories/:storyId/edit" component={StoriesPage} />
+      <Route path="/stories/new" component={StoriesPage} />
+      <Route path="/stories" component={StoriesPage} />
 
-      <Route path="/campaigns" component={LayoutCampaigns} />
-      <Route path="/campaigns/:id" component={LayoutCampaignDetails} />
-      <Route path="/campaigns/:campaignId/stories/new" component={LayoutStoriesPage} />
-      <Route path="/campaigns/:campaignId/stories/edit/:storyId" component={LayoutStoriesPage} />
-      <Route path="/business-questionnaire/:id" component={LayoutBusinessQuestionnaire} />
-      <Route path="/keywords" component={LayoutKeywords} />
-      <Route path="/edit-content/:contentId" component={LayoutEditContentPage} />
-      <Route path="/content/new" component={LayoutContent} />
-      <Route path="/content" component={LayoutContent} />
-      <Route path="/posts" component={LayoutPosts} />
+      <Route path="/campaigns" component={Campaigns} />
+      <Route path="/campaigns/:id" component={CampaignDetails} />
+      <Route path="/campaigns/:campaignId/stories/new" component={StoriesPage} />
+      <Route path="/campaigns/:campaignId/stories/edit/:storyId" component={StoriesPage} />
+      <Route path="/business-questionnaire/:id" component={BusinessQuestionnairePage} />
+      <Route path="/keywords" component={Keywords} />
+      <Route path="/edit-content/:contentId" component={EditContentPage} />
+      <Route path="/content/new" component={Content} />
+      <Route path="/content" component={Content} />
+      <Route path="/posts" component={Posts} />
 
-      <Route path="/trends" component={LayoutTrends} />
-      <Route path="/analytics" component={LayoutAnalytics} />
+      <Route path="/trends" component={Trends} />
+      <Route path="/analytics" component={Analytics} />
       <Route path="/ai-assistant" component={AIAssistantPage} />
-      <Route path="/publish/scheduled" component={LayoutScheduledPublications} />
-      <Route path="/publish/calendar" component={LayoutCalendarView} />
-      {IS_DEV && <Route path="/publish/test" component={LayoutTestPublish} />}
-      {IS_DEV && <Route path="/test/image-generation" component={LayoutImageGenerationTest} />}
-      {IS_DEV && <Route path="/test/transparent-dialog" component={LayoutTransparentDialogTest} />}
+      <Route path="/publish/scheduled" component={ScheduledPublications} />
+      <Route path="/publish/calendar" component={CalendarView} />
+      {IS_DEV && <Route path="/publish/test" component={devOnly(TestPublish)} />}
+      {IS_DEV && <Route path="/test/image-generation" component={devOnly(ImageGenerationTest)} />}
+      {IS_DEV && <Route path="/test/transparent-dialog" component={devOnly(TransparentDialogTest)} />}
       {IS_DEV && <Route path="/test/auth-bypass" component={AuthBypassRoute} />}
-      {IS_DEV && <Route path="/test/fal-ai-test" component={LayoutFalAiTest} />}
-      {IS_DEV && <Route path="/test/api-key-priority" component={LayoutApiKeyPriorityTest} />}
-      {IS_DEV && <Route path="/test/api-keys" component={LayoutApiKeysTest} />}
-      {IS_DEV && <Route path="/editor-demo" component={LayoutEditorDemo} />}
-      {IS_DEV && <Route path="/test/universal-image-gen" component={LayoutUniversalImageGenTest} />}
-      {IS_DEV && <Route path="/test/html-tags" component={LayoutHtmlTagsTestPage} />}
-      {IS_DEV && <Route path="/test/telegram" component={TelegramTestPage!} />}
-      {IS_DEV && <Route path="/test/ai-image" component={LayoutAiImageTester} />}
-      {IS_DEV && <Route path="/test/error-handling" component={LayoutErrorHandlingTest} />}
-      {IS_DEV && <Route path="/test/stories-generator" component={LayoutStoriesGeneratorTest} />}
-      <Route path="/admin/global-api-keys" component={LayoutGlobalApiKeysPage} />
-      <Route path="/admin/users" component={LayoutUserManagement} />
-      <Route path="/admin/telegram-channels" component={LayoutTelegramChannelsAdmin} />
-      <Route path="/admin/promo-codes" component={() => <WithLayout Component={PromoCodesAdmin} />} />
-      <Route path="/settings/instagram-setup" component={LayoutInstagramSetup} />
+      {IS_DEV && <Route path="/test/fal-ai-test" component={devOnly(FalAiTest)} />}
+      {IS_DEV && <Route path="/test/api-key-priority" component={devOnly(ApiKeyPriorityTest)} />}
+      {IS_DEV && <Route path="/test/api-keys" component={devOnly(ApiKeysTest)} />}
+      {IS_DEV && <Route path="/editor-demo" component={devOnly(EditorDemoPage)} />}
+      {IS_DEV && <Route path="/test/universal-image-gen" component={devOnly(UniversalImageGenTest)} />}
+      {IS_DEV && <Route path="/test/html-tags" component={devOnly(HtmlTagsTestPage)} />}
+      {IS_DEV && <Route path="/test/telegram" component={devOnly(TelegramTestPage)} />}
+      {IS_DEV && <Route path="/test/ai-image" component={devOnly(AiImageTester)} />}
+      {IS_DEV && <Route path="/test/error-handling" component={devOnly(ErrorHandlingTest)} />}
+      {IS_DEV && <Route path="/test/stories-generator" component={devOnly(StoriesGeneratorTest)} />}
+      <Route path="/admin/global-api-keys" component={GlobalApiKeysPage} />
+      <Route path="/admin/users" component={UserManagement} />
+      <Route path="/admin/telegram-channels" component={TelegramChannelsAdmin} />
+      <Route path="/admin/promo-codes" component={PromoCodesAdmin} />
+      <Route path="/settings/instagram-setup" component={InstagramSimplePage} />
 
       {/* Video routes */}
-      <Route path="/video" component={() => <WithLayout Component={VideoEditor} />} />
-
-      {/* OAuth callbacks */}
-      <Route path="/api/youtube/auth/callback" component={YouTubeCallback} />
-      <Route path="/youtube-callback" component={YouTubeCallback} />
-      <Route path="/instagram-callback" component={InstagramCallback} />
-      <Route path="/vk-callback" component={VkCallback} />
-      <Route path="/threads-callback" component={ThreadsCallback} />
-
-      {/* Help routes */}
-      <Route path="/help" component={HelpPage} />
-      <Route path="/help/tutorials" component={TutorialsPage} />
-      <Route path="/help/tutorials/:id" component={TutorialDetailsPage} />
+      <Route path="/video" component={VideoEditor} />
 
       {/* Dashboard routes */}
-      <Route path="/dashboard" component={LayoutDashboard} />
+      <Route path="/dashboard" component={Dashboard} />
 
       {/* Корневой роут */}
-      <Route path="/" component={LayoutDashboard} />
+      <Route path="/" component={Dashboard} />
       {/* NotFound должен быть последним */}
       <Route component={NotFound} />
     </Switch>
+  </Layout>
+);
+
+// Inline route для /stories/:storyId/video-edit: единственный защищённый путь,
+// которому нужен useParams до того, как wouter отдаст props.
+const VideoStoryEditorRoute = () => {
+  const { storyId } = useParams<{ storyId: string }>();
+  if (!storyId) return <NotFound />;
+  return <VideoStoryEditor storyId={storyId} />;
+};
+
+function Router() {
+  return (
+    <>
+      <PublicRoutes />
+      <ProtectedRoutes />
+    </>
   );
 }
 

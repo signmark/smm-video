@@ -194,6 +194,26 @@ export class GlobalApiKeysService {
   }
   
   /**
+   * Сбрасывает рантайм-кеш ключей (AI-66).
+   *
+   * Кешей два, и раньше правились не оба: `keysCache` — список для админки,
+   * `keyCache` — то, из чего реально берут ключ работающие сервисы. Смена ключа
+   * обновляла только список, а рантайм до часа продолжал ходить со старым:
+   * пользователь менял ключ Qwen и не понимал, почему ничего не изменилось.
+   *
+   * Сбрасываем целиком, а не точечно по имени сервиса: `service_name` тоже
+   * может измениться в этом же обновлении, и тогда точечный сброс промахнётся
+   * мимо старой записи. Пустой кеш безопасен — `getGlobalApiKey` на промахе сам
+   * читает свежие значения из Directus, а происходит это только после действия
+   * администратора, не в горячем пути.
+   */
+  private invalidateRuntimeKeyCache(reason: string): void {
+    const had = Object.keys(this.keyCache).length;
+    this.keyCache = {};
+    log(`Runtime key cache invalidated (${reason}), dropped ${had} entries`, 'global-api-keys');
+  }
+
+  /**
    * Получает глобальный API ключ для указанного сервиса
    * @param serviceName Название сервиса
    * @returns API ключ или null, если ключ не найден
@@ -734,6 +754,11 @@ export class GlobalApiKeysService {
         }
       }
       
+      // Новый ключ тоже обязан быть виден сразу: рантайм-кеш держит и
+      // отрицательный результат поиска, поэтому без сброса свежесозданный ключ
+      // не подхватится до истечения TTL (AI-66).
+      this.invalidateRuntimeKeyCache(`add ${keyData.service}`);
+
       // Создаем новый глобальный ключ
       const response = await this.directusApi.post('/items/global_api_keys', {
         service_name: keyData.service,
@@ -800,6 +825,10 @@ export class GlobalApiKeysService {
       if (updatedKey) {
         log(`Обновлен глобальный API ключ ${id}`, 'global-api-keys');
         
+        // Рантайм-кеш обязателен к сбросу: без него работающие сервисы до часа
+        // продолжат использовать прежний ключ (AI-66).
+        this.invalidateRuntimeKeyCache(`update ${id}`);
+
         // Обновляем только конкретный ключ в кэше, а не весь кэш
         if (this.keysCache) {
           // Находим индекс ключа в кэше
@@ -849,7 +878,8 @@ export class GlobalApiKeysService {
           }
         });
         keyInfo = keyResponse.data?.data;
-        console.log(`Информация о ключе получена:`, keyInfo);
+        // Печатать keyInfo целиком нельзя: в нём лежит api_key (AI-66).
+        console.log(`Информация о ключе ${id} получена: сервис ${keyInfo?.service_name}`);
       } catch (keyError) {
         console.error(`Ошибка при получении информации о ключе ${id}:`, keyError);
       }
@@ -888,6 +918,9 @@ export class GlobalApiKeysService {
       }
       
       log(`Удален глобальный API ключ ${id}`, 'global-api-keys');
+
+      // Иначе удалённый ключ продолжит выдаваться сервисам из рантайм-кеша (AI-66).
+      this.invalidateRuntimeKeyCache(`delete ${id}`);
       
       // Удаляем ключ из списка ключей в кэше
       if (this.keysCache) {

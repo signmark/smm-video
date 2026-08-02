@@ -242,7 +242,9 @@ export function registerGlobalApiKeysRoutes(app: Application): void {
       if (is_active !== undefined) updateData.is_active = is_active;
       else if (active !== undefined) updateData.is_active = active;
 
-      console.log(`Запрос на обновление ключа ${id}:`, updateData);
+      // Значение ключа в лог не идёт: раньше сюда печатался весь updateData
+      // вместе с api_key (AI-66). Логируем только состав изменения.
+      console.log(`Запрос на обновление ключа ${id}: поля [${Object.keys(updateData).join(', ')}]`);
 
       const result = await globalApiKeysService.updateGlobalApiKey(id, updateData, token);
 

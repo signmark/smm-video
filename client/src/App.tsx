@@ -141,7 +141,6 @@ const ProtectedRoutes = () => (
       {IS_DEV && <Route path="/publish/test" component={devOnly(TestPublish)} />}
       {IS_DEV && <Route path="/test/image-generation" component={devOnly(ImageGenerationTest)} />}
       {IS_DEV && <Route path="/test/transparent-dialog" component={devOnly(TransparentDialogTest)} />}
-      {IS_DEV && <Route path="/test/auth-bypass" component={AuthBypassRoute} />}
       {IS_DEV && <Route path="/test/fal-ai-test" component={devOnly(FalAiTest)} />}
       {IS_DEV && <Route path="/test/api-key-priority" component={devOnly(ApiKeyPriorityTest)} />}
       {IS_DEV && <Route path="/test/api-keys" component={devOnly(ApiKeysTest)} />}
@@ -205,6 +204,8 @@ function Router() {
       <Route path="/help" component={HelpPage} />
       <Route path="/help/tutorials" component={TutorialsPage} />
       <Route path="/help/tutorials/:id" component={TutorialDetailsPage} />
+      {/* Dev-only auth bypass must NOT live under <Layout>/AuthGuard. */}
+      {IS_DEV && <Route path="/test/auth-bypass" component={AuthBypassRoute} />}
       <Route component={ProtectedRoutes} />
     </Switch>
   );

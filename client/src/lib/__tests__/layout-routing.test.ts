@@ -85,4 +85,26 @@ describe('AI-54: Layout lives above the protected Switch', () => {
     expect(src).toMatch(/path="\/" component=\{Dashboard\}/);
     expect(src).not.toMatch(/component=\{LayoutDashboard\}/);
   });
+
+  it('/test/auth-bypass живёт во внешнем Router, не под <Layout>', () => {
+    // AuthBypass by definition обходит аутентификацию — он не должен
+    // сидеть под <Layout>/AuthGuard, иначе защищённый каркас его
+    // завернёт обратно в auth-flow. Раньше маршрут сидел в
+    // ProtectedRoutes и попадал под <Layout>; статические проверки это
+    // пропустили, потому что dev-only гард не покрывал semantic.
+    const rb = routerBlock(src);
+    expect(rb).toMatch(/IS_DEV && <Route path="\/test\/auth-bypass" component=\{AuthBypassRoute\} \/>/);
+    // Защищённый блок — это всё, что внутри ProtectedRoutes.
+    // Ищем конец по строке, которую я не вырезаю stripComments'ом.
+    const protStart = rawSrc.indexOf('const ProtectedRoutes');
+    const protEnd = rawSrc.indexOf('const VideoStoryEditorRoute');
+    expect(protStart).toBeGreaterThan(0);
+    expect(protEnd).toBeGreaterThan(protStart);
+    const protBlock = stripComments(rawSrc.slice(protStart, protEnd));
+    expect(protBlock).not.toMatch(/auth-bypass/);
+    expect(protBlock).not.toMatch(/AuthBypassRoute/);
+    // Глобально — ровно одно упоминание маршрута.
+    const routeMatches = rawSrc.match(/<Route path="\/test\/auth-bypass" component=\{AuthBypassRoute\}/g) ?? [];
+    expect(routeMatches.length).toBe(1);
+  });
 });

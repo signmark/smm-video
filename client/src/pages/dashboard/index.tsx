@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { toDisplayDateKey, isDisplayToday, isInDisplayWeek } from '@/lib/date-utils';
+import { toDisplayDateKey, isDisplayToday, isInDisplayWeek, formatDateWithTimezone } from '@/lib/date-utils';
 import { authHeaders } from '@/lib/auth-headers';
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -521,7 +521,7 @@ export default function Dashboard() {
                       </Badge>
                     </div>
                     <span className="text-xs text-muted-foreground">
-                      {format(new Date(content.createdAt), "dd.MM.yyyy HH:mm", { locale: getDateLocale() })}
+                      {formatDateWithTimezone(content.createdAt, "dd.MM.yyyy HH:mm")}
                     </span>
                   </div>
                 ))}

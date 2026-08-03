@@ -23,6 +23,20 @@ const IMMUTABLE_CONTENT_FIELDS = new Set([
 ]);
 
 /**
+ * Гарантирует, что в ответе клиенту строка содержит явный TZ-маркер (Z или ±HH:MM).
+ * Directus иногда отдаёт naive-UTC (например, '2026-07-26T10:00:00' без 'Z');
+ * в браузере такая строка читается как локальное время и даёт сдвиг в карточке
+ * «Недавний контент» (SM-14). Пустое/null остаются как есть.
+ */
+function ensureIsoWithTimezone(value: string | null | undefined): string | null | undefined {
+  if (value === null || value === undefined) return value;
+  if (typeof value !== 'string') return value;
+  if (value === '') return value;
+  if (value.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(value)) return value;
+  return value + 'Z';
+}
+
+/**
  * Проверяет владение записью campaign_content перед мутацией.
  *
  * Находка ревью 2026-07-28: PATCH/PUT/DELETE правили запись по чужому `id`, хотя
@@ -463,13 +477,13 @@ export function registerContentRoutes(app: Express) {
             id: item.id,
             title: item.title,
             status: item.status,
-            createdAt: item.created_at,
+            createdAt: ensureIsoWithTimezone(item.created_at),
           })),
           recent: windowRows.map((item: any) => ({
             id: item.id,
             status: item.status,
-            publishedAt: item.published_at,
-            scheduledAt: item.scheduled_at,
+            publishedAt: ensureIsoWithTimezone(item.published_at),
+            scheduledAt: ensureIsoWithTimezone(item.scheduled_at),
           })),
         },
       };

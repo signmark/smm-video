@@ -3,12 +3,13 @@
  * Disables console logs in production environment
  */
 
-interface EnvironmentConfig {
-  environment: 'development' | 'production';
-  logLevel: string;
-  debugScheduler: boolean;
-  verboseLogs: boolean;
-}
+import {
+  getServerConfig,
+  refreshServerConfig,
+  type ServerConfig,
+} from '@/lib/server-config';
+
+type EnvironmentConfig = Omit<ServerConfig, 'directusUrl'>;
 
 class BrowserLogger {
   private config: EnvironmentConfig | null = null;
@@ -33,10 +34,20 @@ class BrowserLogger {
     this.initializeConfig();
   }
 
-  private async initializeConfig() {
+  private async initializeConfig(loadConfig = getServerConfig) {
     try {
-      const response = await fetch('/api/config');
-      this.config = await response.json();
+      const {
+        environment,
+        logLevel,
+        debugScheduler,
+        verboseLogs,
+      } = await loadConfig();
+      this.config = {
+        environment,
+        logLevel,
+        debugScheduler,
+        verboseLogs,
+      };
       this.setupConsoleOverrides();
     } catch (error) {
       // Если не удалось получить конфигурацию, по умолчанию разрешаем логи
@@ -127,7 +138,7 @@ class BrowserLogger {
 
   // Обновление конфигурации
   async refreshConfig() {
-    await this.initializeConfig();
+    await this.initializeConfig(refreshServerConfig);
   }
 
   // Получение текущей конфигурации

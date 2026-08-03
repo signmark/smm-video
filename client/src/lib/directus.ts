@@ -4,28 +4,20 @@ import { redirectToLogin } from './public-routes';
 import { refreshAuthSession } from './refreshAuth';
 import { decodeJwtPayload } from './jwt';
 import { getSessionSnapshot, isSameSession } from './sessionCoordinator';
+import { getServerConfig } from './server-config';
 
 // Динамическое получение URL Directus с сервера
 let directusUrl = import.meta.env.VITE_DIRECTUS_URL;
 
-// Функция для получения конфигурации с сервера
-async function getServerConfig() {
-  try {
-    const response = await fetch('/api/config');
-    const config = await response.json();
-    return config.directusUrl;
-  } catch (error) {
-    console.warn('Failed to get server config, using default:', error);
-    return directusUrl;
-  }
-}
-
 // Обновляем URL при загрузке
-getServerConfig().then(url => {
+getServerConfig().then(config => {
+  const url = config.directusUrl;
   if (url && url !== directusUrl) {
     directusUrl = url;
     directusApi.defaults.baseURL = url;
   }
+}).catch(error => {
+  console.warn('Failed to get server config, using default:', error);
 });
 
 export const DIRECTUS_URL = directusUrl;

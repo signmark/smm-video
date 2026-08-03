@@ -218,6 +218,47 @@ describe('GET /api/campaign-content/stats', () => {
     expect((fallbackCall?.[1] as any).params.fields).toEqual(['id', 'status']);
   });
 
+  it('нормализует naive-UTC от Directus к ISO с Z (SM-14)', async () => {
+    // Directus иногда отдаёт timestamp'ы без явного TZ-маркера (naive-UTC).
+    // Без нормализации клиент читает строку как локальное время и карточка
+    // «Недавний контент» дрейфует на TZ браузера (SM-14).
+    mockDirectus(
+      [{ status: 'draft', count: { id: '1' } }],
+      [{ id: 'c1', status: 'published', published_at: '2026-07-26T10:00:00', scheduled_at: null }],
+      [{ id: 'n1', title: 'Пост', status: 'draft', created_at: '2026-07-26T09:00:00' }],
+    );
+
+    const res = await request(app).get('/api/campaign-content/stats');
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.latest[0].createdAt).toBe('2026-07-26T09:00:00Z');
+    expect(res.body.data.recent[0].publishedAt).toBe('2026-07-26T10:00:00Z');
+    expect(res.body.data.recent[0].scheduledAt).toBeNull();
+  });
+
+  it('не ломает строки с уже явным TZ-маркером (Z или ±HH:MM)', async () => {
+    mockDirectus(
+      [{ status: 'draft', count: { id: '1' } }],
+      [
+        { id: 'cZ', status: 'published', published_at: '2026-07-26T10:00:00Z', scheduled_at: null },
+        { id: 'cP', status: 'scheduled', published_at: null, scheduled_at: '2026-07-27T11:00:00+05:00' },
+      ],
+      [
+        { id: 'nZ', title: 'Z', status: 'draft', created_at: '2026-07-26T09:00:00Z' },
+        { id: 'nP', title: 'P', status: 'draft', created_at: '2026-07-26T09:00:00+05:00' },
+      ],
+    );
+
+    const res = await request(app).get('/api/campaign-content/stats');
+
+    expect(res.body.data.latest.map((r: any) => r.createdAt)).toEqual([
+      '2026-07-26T09:00:00Z',
+      '2026-07-26T09:00:00+05:00',
+    ]);
+    expect(res.body.data.recent[0].publishedAt).toBe('2026-07-26T10:00:00Z');
+    expect(res.body.data.recent[1].scheduledAt).toBe('2026-07-27T11:00:00+05:00');
+  });
+
   it('"stats" не уезжает в обработчик /:id', async () => {
     mockDirectus([{ status: 'draft', count: { id: '1' } }]);
 

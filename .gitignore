@@ -103,3 +103,6 @@ video-app/data/audio/
 data/database.db
 project_snapshot.txt
 webbridge-req-*.json
+
+# Отчёты gitleaks (джоб secrets-history в CI, AI-37) — артефакт, не код.
+gitleaks-out/

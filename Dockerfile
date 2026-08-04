@@ -1,5 +1,10 @@
 # Стадия 1: Сборка приложения
-FROM node:22-alpine AS builder
+#
+# База закреплена по digest, а не тегом node:22-alpine (AI-42): тег
+# плавающий, и пересборка того же коммита через месяц давала другой образ.
+# Обновлять осознанно: docker pull node:22-alpine && docker inspect ... RepoDigests.
+# Digest соответствует node v22.23.2 / npm 10.9.8.
+FROM node@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS builder
 
 WORKDIR /app
 
@@ -22,8 +27,13 @@ COPY package*.json ./
 # Заменяем Replit-внутренний реестр на публичный npm перед установкой
 RUN sed -i 's|http://package-firewall.replit.local/npm/|https://registry.npmjs.org/|g' package-lock.json
 
-# Устанавливаем ВСЕ зависимости (включая dev для сборки)
-RUN npm install --registry https://registry.npmjs.org
+# Устанавливаем ВСЕ зависимости (включая dev для сборки).
+# Именно ci, а не install: ставит строго по lockfile и не правит его —
+# install игнорировал lockfile и делал сборку невоспроизводимой (AI-42).
+# Кеш BuildKit на ~/.npm переживает сборки и не влияет на результат:
+# состав дерева задаёт lockfile, кеш экономит только скачивание.
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --registry https://registry.npmjs.org
 
 # Копируем исходный код
 COPY . .
@@ -32,7 +42,8 @@ COPY . .
 RUN npm run build
 
 # Стадия 2: Production образ
-FROM node:22-alpine
+# Тот же digest, что и у builder — стадии не должны разъезжаться по версии Node.
+FROM node@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32
 
 WORKDIR /app
 
@@ -68,8 +79,12 @@ LABEL org.opencontainers.image.revision=$APP_COMMIT_SHA
 # Копируем package files и устанавливаем ТОЛЬКО production зависимости
 COPY package*.json ./
 RUN sed -i 's|http://package-firewall.replit.local/npm/|https://registry.npmjs.org/|g' package-lock.json
-RUN npm install --omit=dev --registry https://registry.npmjs.org && \
-    npm install @ffmpeg-installer/ffmpeg @ffprobe-installer/ffprobe --omit=dev --registry https://registry.npmjs.org
+# Один ci по lockfile. Отдельной доустановки @ffmpeg-installer/ffmpeg и
+# @ffprobe-installer/ffprobe больше нет (AI-42): оба пакета лежат в
+# dependencies, поэтому npm ci --omit=dev ставит их сам, а вторая install
+# поверх готового дерева правила package.json/lock прямо в образе.
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --omit=dev --registry https://registry.npmjs.org
 
 # Копируем собранные файлы из builder стадии
 COPY --from=builder /app/dist ./dist

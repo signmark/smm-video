@@ -36,9 +36,33 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          # Та же мажорная версия, что в Dockerfile и .nvmrc.
-          node-version: '20'
+          # Версия берётся ИЗ .nvmrc, а не дублируется числом здесь.
+          # Раньше тут стояло '20' с комментарием «та же мажорная, что в
+          # Dockerfile и .nvmrc» — и то, и другое было неправдой: образ
+          # уехал на 22, .nvmrc остался на 20, комментарий не поправили
+          # (AI-69). Ссылка на файл убирает сам класс расхождения:
+          # разъехаться теперь можно только с Dockerfile, а он сверяется
+          # шагом ниже.
+          node-version-file: '.nvmrc'
           cache: npm
+
+      # Третье место, где живёт версия Node, — база образа. Она закреплена
+      # по digest (AI-42), поэтому число оттуда не вычитать: сверяем с тем,
+      # что этот digest реально отдаёт. Шаг дешёвый и ловит ровно ту
+      # ситуацию, из-за которой заведена AI-69: прод уехал, CI остался.
+      - name: Версия Node в CI совпадает с базой образа
+        run: |
+          image_node=$(docker run --rm \
+            "$(grep -m1 -oE 'node@sha256:[0-9a-f]+' Dockerfile)" \
+            node -v)
+          image_node=${image_node#v}
+          nvmrc_node=$(tr -d '[:space:]' < .nvmrc)
+          echo "образ: $image_node, .nvmrc: $nvmrc_node"
+          if [ "$image_node" != "$nvmrc_node" ]; then
+            echo "::error::.nvmrc ($nvmrc_node) разошёлся с базой образа ($image_node)."
+            echo "Поправить .nvmrc или осознанно обновить digest в Dockerfile."
+            exit 1
+          fi
 
       # Именно ci, а не install: ставит строго по lockfile и не правит его.
       - name: Install dependencies

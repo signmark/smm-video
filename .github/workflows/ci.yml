@@ -49,6 +49,26 @@ jobs:
       - name: Build
         run: npm run build
 
+      # Аудит зависимостей и SBOM (§11, AI-42). Оба шага идут ПОСЛЕ npm ci:
+      # npm sbom требует полностью установленного дерева и падает на частичном.
+      #
+      # continue-on-error намеренно: на 04.08 в production-дереве уже 22
+      # находки (13 high), и они не следствие этой правки — блокирующий гейт
+      # покрасил бы CI всем и сразу, не дав починить. Шаг сейчас отчётный;
+      # снимать continue-on-error нужно отдельной задачей, после разбора
+      # находок, иначе он бесполезен.
+      - name: Dependency audit (production tree, reporting only)
+        continue-on-error: true
+        run: npm run audit:prod
+
+      - name: SBOM (CycloneDX, production tree)
+        run: npm run sbom > sbom.cyclonedx.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom-cyclonedx
+          path: sbom.cyclonedx.json
+
   # Скан секретов по файлам проверяемого коммита (§7, AI-37). Известные
   # исторические находки перечислены в .gitleaks.toml; всё новое — красный CI.
   # Версия закреплена той, которой делался исходный разбор находок.

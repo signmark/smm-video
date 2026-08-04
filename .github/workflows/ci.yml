@@ -12,6 +12,11 @@ name: CI
 on:
   push:
   pull_request:
+  # Скан истории — по расписанию и по кнопке, а не на каждый push:
+  # история не меняется от коммита к коммиту, а полный клон дорогой (AI-37).
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
 
 # Пуш подряд в одну ветку не должен держать очередь: нужен результат по
 # последнему коммиту, промежуточные прогоны отменяем.
@@ -21,6 +26,8 @@ concurrency:
 
 jobs:
   checks:
+    # По расписанию гоняем только скан истории.
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
@@ -73,6 +80,7 @@ jobs:
   # исторические находки перечислены в .gitleaks.toml; всё новое — красный CI.
   # Версия закреплена той, которой делался исходный разбор находок.
   secrets:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -82,3 +90,60 @@ jobs:
         run: >
           docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.30.1
           detect --no-git --source /repo --config /repo/.gitleaks.toml --redact
+
+  # Вторая половина §7 (AI-37): скан по ИСТОРИИ коммитов, а не по рабочему
+  # дереву. Джоб выше ловит секрет, который добавляют сейчас; этот — то, что
+  # уже лежит в старых коммитах и остаётся выгружаемым из GitHub, даже если
+  # файл давно удалён.
+  #
+  # Почему отдельным джобом и по расписанию:
+  #  - fetch-depth: 0 это полный клон (9576 коммитов, ~127 МБ). Вешать его на
+  #    каждый push — замедлить весь CI ради данных, которые между коммитами
+  #    не меняются.
+  #  - без fetch-depth: 0 скан истории БЕСПОЛЕЗЕН и опасен: checkout по
+  #    умолчанию берёт один коммит, gitleaks просканирует его и отчитается
+  #    "no leaks found". Зелёный, который ничего не проверил, хуже красного.
+  #
+  # Почему continue-on-error: на 04.08 история даёт 800 находок (.env.prod,
+  # приватные ключи, токены ботов — всё из старых коммитов). Блокирующий гейт
+  # остановил бы работу всей команде и ничего бы не починил: из истории это
+  # убирается только переписыванием, а утёкшее чинится ротацией (AI-46).
+  # Разбор находок и снятие continue-on-error — отдельная задача.
+  secrets-history:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Обязательно: иначе скан истории проверит один коммит и всегда
+          # будет зелёным. См. комментарий к джобу.
+          fetch-depth: 0
+
+      - name: Secret scan (история коммитов)
+        continue-on-error: true
+        run: |
+          mkdir -p "$PWD/gitleaks-out"
+          docker run --rm \
+            -v "$PWD:/repo:ro" -v "$PWD/gitleaks-out:/out" \
+            zricethezav/gitleaks:v8.30.1 \
+            detect --source /repo --config /repo/.gitleaks.toml --redact \
+            --report-format json --report-path /out/history.json
+
+      - name: Сводка находок
+        if: always()
+        run: |
+          if [ -s gitleaks-out/history.json ]; then
+            echo "Находок в истории: $(jq length gitleaks-out/history.json)"
+            echo "По правилам:"
+            jq -r '[.[].RuleID] | group_by(.) | map({r: .[0], n: length}) | sort_by(-.n)[] | "\(.n)\t\(.r)"' gitleaks-out/history.json
+          else
+            echo "Отчёт пуст — находок нет."
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gitleaks-history-report
+          path: gitleaks-out/history.json
+          if-no-files-found: warn

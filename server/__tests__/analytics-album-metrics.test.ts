@@ -69,6 +69,21 @@ describe('SM-15: album metrics', () => {
     expect(result.posts).toBe(0);
   });
 
+  it('keeps two publications that landed in the same second apart', () => {
+    // Prod rows /7 and /8: consecutive ids, published 44ms apart, but they are
+    // two different campaign_content records. Treating them as one album lost
+    // the reach of the second one.
+    const rows = [
+      { platform_post_id: '7', published_date: '2026-07-16T14:40:27.683', views: 3, likes: 0 },
+      { platform_post_id: '8', published_date: '2026-07-16T14:40:27.727', views: 3, likes: 0 },
+    ];
+
+    const result = aggregateCampaignChannelPosts(rows, new Set(['7', '8']));
+
+    expect(result.posts).toBe(2);
+    expect(result.views).toBe(6);
+  });
+
   it('takes the latest snapshot of a post, not every capture', () => {
     const result = aggregateCampaignChannelPosts(
       [

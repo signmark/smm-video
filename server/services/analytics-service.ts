@@ -2,6 +2,7 @@ import { directusApi } from '../directus';
 import { log } from '../utils/logger';
 import axios from 'axios';
 import {
+  aggregateCampaignChannelPosts,
   aggregatePublishedPlatformAnalytics,
   getPublishedPlatformPostIds,
   matchesPublishedPlatformPostId,
@@ -42,31 +43,6 @@ function logAnalyticsTrace(event: string, payload: Record<string, unknown>): voi
     'analytics',
     'warn',
   );
-}
-
-function aggregateLatestChannelPosts(posts: ChannelPost[]) {
-  const latestByPostId = new Map<string, ChannelPost>();
-
-  for (const post of posts) {
-    const postId = String(post?.platform_post_id ?? '').trim();
-    if (!postId) continue;
-
-    const current = latestByPostId.get(postId);
-    const capturedAt = Date.parse(post?.captured_at || '') || 0;
-    const currentCapturedAt = Date.parse(current?.captured_at || '') || 0;
-    if (!current || capturedAt > currentCapturedAt) {
-      latestByPostId.set(postId, post);
-    }
-  }
-
-  const latestPosts = Array.from(latestByPostId.values());
-  return {
-    posts: latestPosts.length,
-    views: latestPosts.reduce((sum, post) => sum + metric(post.views), 0),
-    likes: latestPosts.reduce((sum, post) => sum + metric(post.likes), 0),
-    comments: latestPosts.reduce((sum, post) => sum + metric(post.comments), 0),
-    shares: latestPosts.reduce((sum, post) => sum + metric(post.shares), 0),
-  };
 }
 
 function getResolvableCampaignChannels(
@@ -401,8 +377,10 @@ export class AnalyticsService {
       const matchedChannelPosts = channelPosts?.filter(post => (
         matchesPublishedPlatformPostId(expectedPostIds, post.platform_post_id)
       )) ?? null;
-      const currentMetrics = matchedChannelPosts
-        ? aggregateLatestChannelPosts(matchedChannelPosts)
+      // Album messages share one publication: metrics must be read per group,
+      // otherwise the reaction on the sibling message is dropped (SM-15).
+      const currentMetrics = channelPosts
+        ? aggregateCampaignChannelPosts(channelPosts, expectedPostIds)
         : null;
       const responseSummary = {
         campaignId,
@@ -414,9 +392,7 @@ export class AnalyticsService {
         postRows: channelPosts?.length ?? null,
         expectedCampaignPostIds: expectedPostIds.size,
         matchedPostRows: matchedChannelPosts?.length ?? null,
-        uniquePosts: matchedChannelPosts
-          ? aggregateLatestChannelPosts(matchedChannelPosts).posts
-          : null,
+        uniquePosts: currentMetrics ? currentMetrics.posts : null,
         source: matchedChannelPosts ? 'campaign_posts_dedup' : null,
         metrics: currentMetrics || null,
       };

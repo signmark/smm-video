@@ -1,6 +1,6 @@
 ﻿import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Menu, X, User, LogOut, Settings, Sun, Moon, Sparkles, Send, CreditCard, Bot, Zap, SlidersHorizontal, GitMerge, ClipboardList } from "lucide-react";
+import { Menu, X, User, LogOut, Settings, Sun, Moon, Sparkles, Send, CreditCard, Bot, Zap, SlidersHorizontal, GitMerge, ClipboardList, Pause, Play } from "lucide-react";
 import { CampaignSelector } from "../CampaignSelector";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -71,6 +71,10 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
   });
 
   const isAutonomousActive = autonomousStatus?.isActive === true;
+  // SM-20: режим может быть на паузе — таймеры сняты, но прогресс сохранён.
+  // status появился вместе с паузой; на старом ответе его нет, поэтому
+  // отсутствие трактуем как «работает», а не как «на паузе».
+  const isAutonomousPaused = isAutonomousActive && autonomousStatus?.status === 'paused';
   const hasQuotaError = !isAutonomousActive && !!autonomousStatus?.quotaError;
 
   // Настройки автономного режима из кампании.
@@ -164,6 +168,65 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
       toast({
         title: 'Ошибка',
         description: err?.message || 'Не удалось остановить автономный режим',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  // SM-20: пауза и снятие с паузы. В отличие от /stop не теряют прогресс —
+  // счётчики циклов и постов сохраняются, расписание не сбрасывается.
+  const { mutate: pauseAutonomous, isPending: isPausingAutonomous } = useMutation({
+    mutationFn: async () => {
+      const res = await fetch('/api/autonomous/pause', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: token ? `Bearer ${token}` : '' },
+        body: JSON.stringify({ campaignId: selectedCampaignId }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || 'Не удалось поставить на паузу');
+      }
+      return res.json();
+    },
+    onSuccess: () => {
+      toast({ description: t('topbar.autonomous.pausedToast') });
+      queryClient.invalidateQueries({ queryKey: ['/api/autonomous/status', selectedCampaignId] });
+    },
+    onError: (err: any) => {
+      toast({
+        title: 'Ошибка',
+        description: err?.message || 'Не удалось поставить на паузу',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const { mutate: resumeAutonomous, isPending: isResumingAutonomous } = useMutation({
+    mutationFn: async () => {
+      const res = await fetch('/api/autonomous/resume', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: token ? `Bearer ${token}` : '' },
+        body: JSON.stringify({ campaignId: selectedCampaignId }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || 'Не удалось возобновить');
+      }
+      return res.json();
+    },
+    onSuccess: (data: any) => {
+      const mins = typeof data?.nextCycleMin === 'number' ? data.nextCycleMin : null;
+      toast({
+        description: mins !== null
+          ? `▶️ Автономный режим возобновлён, следующий цикл через ${mins} мин`
+          : '▶️ Автономный режим возобновлён',
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/autonomous/status', selectedCampaignId] });
+    },
+    onError: (err: any) => {
+      toast({
+        title: 'Ошибка',
+        description: err?.message || 'Не удалось возобновить',
         variant: 'destructive',
       });
     },
@@ -273,6 +336,34 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
 
         {/* Autonomous Mode Toggle */}
         {selectedCampaignId && (
+          <>
+          {/* SM-20: пауза — отдельная кнопка ВНЕ TooltipTrigger.
+              Внутрь asChild её класть нельзя: Radix Slot клонирует ровно
+              одного ребёнка и вешает на него props и ref, а фрагмент из
+              двух кнопок их не принимает — тултип теряет якорь. Ни tsc,
+              ни build этого не ловят: семантика Slot им неизвестна. */}
+          {isAutonomousActive && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => {
+              if (isAutonomousPaused) {
+                resumeAutonomous();
+              } else {
+                pauseAutonomous();
+              }
+            }}
+            className="h-9 w-9"
+            data-testid="button-autonomous-pause"
+            disabled={isPausingAutonomous || isResumingAutonomous}
+            aria-label={isAutonomousPaused ? t('nav.autonomous.resumeLabel') : t('nav.autonomous.pauseLabel')}
+            title={isAutonomousPaused ? t('nav.autonomous.resumeLabel') : t('nav.autonomous.pauseLabel')}
+          >
+            {isAutonomousPaused
+              ? <Play className="h-4 w-4 text-emerald-600" />
+              : <Pause className="h-4 w-4 text-amber-600" />}
+          </Button>
+          )}
           <TooltipProvider delayDuration={300}>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -381,6 +472,7 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
+          </>
         )}
 
         {/* TG Bot Assistant */}

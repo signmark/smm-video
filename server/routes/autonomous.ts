@@ -2,6 +2,8 @@ import { Router, Request, Response } from 'express';
 import {
   startAutonomousExternal,
   stopAutonomousExternal,
+  pauseAutonomousExternal,
+  resumeAutonomousExternal,
   getAutonomousStatusExternal,
   getAllAutonomousStatuses,
   getActiveAutonomousCampaignIds,
@@ -76,6 +78,32 @@ router.post('/stop', async (req: Request, res: Response) => {
     if (!campaignId) return res.status(400).json({ error: 'campaignId обязателен' });
     if (!(await ensureCampaignAccess(req, res, String(campaignId)))) return;
     const result = stopAutonomousExternal(campaignId);
+    return res.json(result);
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+// SM-20: пауза и возобновление. Остановка (/stop) удаляет состояние и
+// обнуляет прогресс — она не годится, когда нужно просто поправить настройки.
+router.post('/pause', async (req: Request, res: Response) => {
+  try {
+    const { campaignId } = req.body;
+    if (!campaignId) return res.status(400).json({ error: 'campaignId обязателен' });
+    if (!(await ensureCampaignAccess(req, res, String(campaignId)))) return;
+    const result = pauseAutonomousExternal(campaignId);
+    return res.json(result);
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/resume', async (req: Request, res: Response) => {
+  try {
+    const { campaignId } = req.body;
+    if (!campaignId) return res.status(400).json({ error: 'campaignId обязателен' });
+    if (!(await ensureCampaignAccess(req, res, String(campaignId)))) return;
+    const result = resumeAutonomousExternal(campaignId);
     return res.json(result);
   } catch (e: any) {
     return res.status(500).json({ error: e.message });

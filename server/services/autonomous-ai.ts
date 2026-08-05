@@ -333,10 +333,68 @@ export async function startAutonomousExternal(params: {
   return { success: true, interval, postsPerCycle, autoSchedule, platforms };
 }
 
+/**
+ * Пауза (SM-20).
+ *
+ * Отличие от остановки принципиальное: стоп удаляет состояние и персистенцию,
+ * то есть обнуляет прогресс — счётчики циклов и постов начинаются с нуля.
+ * Тестировщик просил возможность «поставить на паузу, поправить настройки и
+ * продолжить», для чего стоп не годится. Пауза снимает таймеры и оставляет
+ * всё остальное нетронутым.
+ */
+export function pauseAutonomousExternal(campaignId: string) {
+  const state = autonomousStates.get(campaignId);
+  if (!state) return { success: false, error: 'Автономный режим не активен' };
+  if (state.paused) return { success: false, error: 'Автономный режим уже на паузе' };
+
+  if (state.timer) { clearInterval(state.timer); state.timer = undefined; }
+  if (state.firstCycleTimer) { clearTimeout(state.firstCycleTimer); state.firstCycleTimer = undefined; }
+
+  state.paused = true;
+  state.pausedAt = new Date();
+  saveAutonomousPersistence();
+
+  return {
+    success: true,
+    pausedAt: state.pausedAt.toISOString(),
+    cyclesCompleted: state.cyclesCompleted,
+    postsCreated: state.postsCreated,
+  };
+}
+
+/**
+ * Снятие с паузы (SM-20).
+ *
+ * Ждём остаток исходного интервала, а не полный: пауза на пять минут не должна
+ * стоить пользователю ещё сутки ожидания. Немедленный цикл тоже не запускаем —
+ * иначе снятие паузы неожиданно опубликовало бы пост.
+ */
+export function resumeAutonomousExternal(campaignId: string) {
+  const state = autonomousStates.get(campaignId);
+  if (!state) return { success: false, error: 'Автономный режим не активен' };
+  if (!state.paused) return { success: false, error: 'Автономный режим не на паузе' };
+
+  state.paused = false;
+  state.pausedAt = undefined;
+  scheduleAutonomousTimers(state);
+  saveAutonomousPersistence();
+
+  return {
+    success: true,
+    nextCycleMin: Math.round(computeNextCycleDelayMs(state.lastCycleAt, state.interval) / 60000),
+    cyclesCompleted: state.cyclesCompleted,
+    postsCreated: state.postsCreated,
+  };
+}
+
 export function stopAutonomousExternal(campaignId: string) {
   const state = autonomousStates.get(campaignId);
   if (!state) return { success: false, error: 'Автономный режим не активен' };
   if (state.timer) clearInterval(state.timer);
+  // SM-20: раньше гасился только setInterval, а отложенный первый цикл
+  // (setTimeout после восстановления) оставался и срабатывал уже на удалённом
+  // состоянии.
+  if (state.firstCycleTimer) clearTimeout(state.firstCycleTimer);
   autonomousStates.delete(campaignId);
   deleteAutonomousPersistence(campaignId);
   return {
@@ -349,13 +407,18 @@ export function stopAutonomousExternal(campaignId: string) {
 export function getAutonomousStatusExternal(campaignId: string) {
   const quotaError = quotaErrorMap.get(campaignId) || null;
   const state = autonomousStates.get(campaignId);
-  if (!state) return { isActive: false, quotaError };
+  // SM-20: три состояния вместо двух. isActive оставлен для обратной
+  // совместимости с существующими потребителями и означает «режим заведён»,
+  // а фактическую работу показывает status.
+  if (!state) return { isActive: false, status: 'stopped' as const, quotaError };
   const runtimeMin = Math.round((Date.now() - state.startedAt.getTime()) / 60000);
   const nextCycleMin = state.lastCycleAt
     ? Math.max(0, Math.round(state.interval * 60 - (Date.now() - state.lastCycleAt.getTime()) / 60000))
     : state.interval * 60;
   return {
     isActive: true,
+    status: (state.paused ? 'paused' : 'running') as 'paused' | 'running',
+    pausedAt: state.pausedAt ? state.pausedAt.toISOString() : null,
     interval: state.interval,
     postsPerCycle: state.postsPerCycle,
     autoSchedule: state.autoSchedule,
@@ -435,6 +498,50 @@ export interface ContentPlanItem {
 }
 
 // Интерфейс для состояния автономного режима
+/**
+ * Ставит таймеры цикла, отсчитывая остаток от последнего выполненного цикла (SM-20).
+ *
+ * Смысл в том, что пауза не должна ни сбрасывать расписание, ни сдвигать его:
+ * пользователь ставит на паузу, правит настройки, снимает — и цикл продолжает
+ * идти по исходной сетке. Поэтому ждём не полный интервал, а `lastCycleAt +
+ * interval - now`. Если пользователь на паузе поменял сам интервал, новый
+ * подхватывается автоматически: он участвует в этом же вычислении.
+ *
+ * Регулярный setInterval ставится ТОЛЬКО после того, как отработает ближайший
+ * цикл, иначе две таймерные сетки разъезжаются: одна от момента запуска, другая
+ * от фактического цикла.
+ */
+function scheduleAutonomousTimers(state: AutonomousState): void {
+  const intervalMs = state.interval * 60 * 60 * 1000;
+
+  if (state.firstCycleTimer) clearTimeout(state.firstCycleTimer);
+  if (state.timer) clearInterval(state.timer);
+
+  const delayMs = computeNextCycleDelayMs(state.lastCycleAt, state.interval);
+
+  state.firstCycleTimer = setTimeout(() => {
+    state.firstCycleTimer = undefined;
+    runAutonomousCycle(state)
+      .catch((e) => {
+        console.error('[AUTONOMOUS] ❌ Ошибка цикла:', e);
+        state.errors.push(e.message);
+      })
+      .finally(() => {
+        // Регулярную сетку заводим от фактического цикла, а не от момента
+        // возобновления — иначе интервал поедет.
+        if (state.paused) return;
+        state.timer = setInterval(() => {
+          runAutonomousCycle(state).catch((e) => {
+            console.error('[AUTONOMOUS] ❌ Ошибка цикла:', e);
+            state.errors.push(e.message);
+          });
+        }, intervalMs);
+      });
+  }, delayMs);
+}
+
+import { computeNextCycleDelayMs } from './autonomous-ai-scheduling';
+
 interface AutonomousState {
   campaignId: string;
   userId: string;
@@ -455,6 +562,18 @@ interface AutonomousState {
   cycleRunning: boolean;
   errors: string[];
   timer?: NodeJS.Timeout;
+  /**
+   * Одноразовый таймер до ближайшего цикла (SM-20).
+   *
+   * Раньше его хендл нигде не хранился: восстановление после рестарта ставило
+   * setTimeout и забывало о нём, поэтому остановка гасила только setInterval, а
+   * отложенный первый цикл всё равно срабатывал — уже на удалённом состоянии.
+   */
+  firstCycleTimer?: NodeJS.Timeout;
+  /** Режим на паузе: таймеры сняты, состояние и счётчики сохранены (SM-20). */
+  paused?: boolean;
+  /** Когда поставлен на паузу — для отображения и диагностики (SM-20). */
+  pausedAt?: Date;
   // Пайплайн: ожидание одобрения
   pendingPlan?: ContentPlanItem[];
   pendingApprovalStep?: 'plan' | 'content' | 'images';

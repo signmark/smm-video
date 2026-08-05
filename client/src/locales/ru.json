@@ -834,7 +834,8 @@
       "sortTrend": "По трендовости",
       "sortDate": "По дате",
       "sortPlatform": "По соцсетям",
-      "searchPlaceholder": "Поиск по темам"
+      "searchPlaceholder": "Поиск по темам",
+      "onlyBookmarked": "Только закладки"
     },
     "trendList": {
       "totalCount": "Всего трендов: {{count}}",

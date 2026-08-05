@@ -23,7 +23,17 @@ function stateToRecord(state: AutonomousState): Record<string, any> {
     with_images: state.withImages,
     pipeline_mode: (state as any).pipelineMode || 'full_auto',
     started_at: state.startedAt.toISOString(),
+    // SM-20: is_active означает «режим заведён», а не «сейчас крутится».
+    // Пауза тоже активна — иначе DB-restore отфильтрует её и режим молча
+    // исчезнет после рестарта.
     is_active: true,
+    paused: state.paused === true,
+    paused_at: state.pausedAt ? state.pausedAt.toISOString() : null,
+    // Счётчики раньше не сохранялись и обнулялись при восстановлении. С паузой
+    // это стало заметно: «прогресс сохраняется» переставало быть правдой после
+    // первого же деплоя.
+    cycles_completed: state.cyclesCompleted,
+    posts_created: state.postsCreated,
     launch_command: state.launchCommand || null,
     last_cycle_at: state.lastCycleAt ? state.lastCycleAt.toISOString() : null,
   };
@@ -34,6 +44,8 @@ function activateRestoredState(saved: {
   interval: number; postsPerCycle: number; autoSchedule: boolean;
   platforms: string[]; withImages: boolean; pipelineMode?: string; startedAt: string;
   launchCommand?: string; lastCycleAt?: string;
+  paused?: boolean; pausedAt?: string;
+  cyclesCompleted?: number; postsCreated?: number;
 }) {
   if (autonomousStates.has(saved.campaignId)) return;
   const state: AutonomousState = {
@@ -50,38 +62,26 @@ function activateRestoredState(saved: {
     withImages: saved.withImages !== false,
     pipelineMode: saved.pipelineMode || 'full_auto',
     launchCommand: saved.launchCommand,
-    cyclesCompleted: 0,
-    postsCreated: 0,
+    cyclesCompleted: saved.cyclesCompleted ?? 0,
+    postsCreated: saved.postsCreated ?? 0,
     cycleRunning: false,
     errors: [],
     lastCycleAt: saved.lastCycleAt ? new Date(saved.lastCycleAt) : undefined,
+    paused: saved.paused === true,
+    pausedAt: saved.pausedAt ? new Date(saved.pausedAt) : undefined,
   } as any;
   autonomousStates.set(saved.campaignId, state);
-  const intervalMs = saved.interval * 60 * 60 * 1000;
-  state.timer = setInterval(async () => {
-    await runAutonomousCycle(state).catch(e => {
-      console.error(`[AUTONOMOUS] ❌ Ошибка цикла:`, e);
-      state.errors.push(e.message);
-    });
-  }, intervalMs);
-
-  // Вычисляем задержку до первого цикла после восстановления:
-  // если lastCycleAt известен — ждём оставшееся время интервала (мин. 5 сек),
-  // иначе — запускаем через 5 сек (первый запуск вообще).
-  let firstCycleDelayMs = 5000;
-  if (saved.lastCycleAt) {
-    const elapsed = Date.now() - new Date(saved.lastCycleAt).getTime();
-    const remaining = intervalMs - elapsed;
-    firstCycleDelayMs = Math.max(5000, remaining);
+  // SM-20: раньше здесь стояли свои таймеры — setInterval сразу (сетка от
+  // момента восстановления, а не от фактического цикла) и setTimeout, хендл
+  // которого нигде не сохранялся. Из-за второго остановка гасила только
+  // интервал, а отложенный цикл срабатывал уже на удалённом состоянии.
+  // Теперь общий планировщик: он хранит хендл и заводит сетку после цикла.
+  if (state.paused) {
+    console.log(`[AUTONOMOUS] ⏸ Восстановлен на ПАУЗЕ: ${saved.campaignId} — таймеры не ставим`);
+    return;
   }
-  const firstCycleMinutes = Math.round(firstCycleDelayMs / 60000);
-  console.log(`[AUTONOMOUS] ♻️ Восстановлен режим для кампании ${saved.campaignId}, следующий цикл через ${firstCycleMinutes} мин`);
-  setTimeout(() => {
-    runAutonomousCycle(state).catch(e => {
-      console.error(`[AUTONOMOUS] ❌ Ошибка первого цикла после восстановления:`, e);
-      state.errors.push(e.message);
-    });
-  }, firstCycleDelayMs);
+  scheduleAutonomousTimers(state);
+  console.log(`[AUTONOMOUS] ♻️ Восстановлен режим для кампании ${saved.campaignId}`);
 }
 
 // ── File persistence (dev / local fallback) ────────────────────────────────
@@ -106,6 +106,12 @@ function saveAutonomousPersistenceFile() {
         startedAt: state.startedAt.toISOString(),
         launchCommand: state.launchCommand,
         lastCycleAt: state.lastCycleAt ? state.lastCycleAt.toISOString() : undefined,
+        // SM-20: см. комментарий в stateToRecord — пауза и счётчики обязаны
+        // переживать рестарт, иначе фича бессмысленна при частых деплоях.
+        paused: state.paused === true,
+        pausedAt: state.pausedAt ? state.pausedAt.toISOString() : undefined,
+        cyclesCompleted: state.cyclesCompleted,
+        postsCreated: state.postsCreated,
       };
     });
     writeFileSync(AUTONOMOUS_PERSIST_FILE, JSON.stringify(toSave, null, 2));
@@ -229,6 +235,12 @@ export async function restoreAutonomousStates() {
         startedAt: rec.started_at,
         launchCommand: rec.launch_command || undefined,
         lastCycleAt: rec.last_cycle_at || undefined,
+        // SM-20: без этих полей пауза не переживала рестарт — режим молча
+        // возобновлялся при ближайшем деплое, а счётчики обнулялись.
+        paused: rec.paused === true,
+        pausedAt: rec.paused_at || undefined,
+        cyclesCompleted: typeof rec.cycles_completed === "number" ? rec.cycles_completed : 0,
+        postsCreated: typeof rec.posts_created === "number" ? rec.posts_created : 0,
       });
     }
     console.log(`[AUTONOMOUS] БД: восстановлено ${(sessions || []).length} сессий`);
@@ -412,9 +424,13 @@ export function getAutonomousStatusExternal(campaignId: string) {
   // а фактическую работу показывает status.
   if (!state) return { isActive: false, status: 'stopped' as const, quotaError };
   const runtimeMin = Math.round((Date.now() - state.startedAt.getTime()) / 60000);
-  const nextCycleMin = state.lastCycleAt
-    ? Math.max(0, Math.round(state.interval * 60 - (Date.now() - state.lastCycleAt.getTime()) / 60000))
-    : state.interval * 60;
+  // SM-20: на паузе обратный отсчёт врёт — таймеров нет, а число продолжало
+  // бы уменьшаться. Отдаём null: «неизвестно, пока не возобновят».
+  const nextCycleMin = state.paused
+    ? null
+    : state.lastCycleAt
+      ? Math.max(0, Math.round(state.interval * 60 - (Date.now() - state.lastCycleAt.getTime()) / 60000))
+      : state.interval * 60;
   return {
     isActive: true,
     status: (state.paused ? 'paused' : 'running') as 'paused' | 'running',
@@ -3529,6 +3545,15 @@ Respond with ONLY the image prompt, nothing else.`,
 
 // Функция выполнения одного цикла автономной работы
 async function runAutonomousCycle(state: AutonomousState) {
+  // SM-20: страховка от осиротевших таймеров. Сюда можно попасть из таймера,
+  // который поставили до остановки или паузы: остановка удаляет состояние из
+  // карты, пауза выставляет флаг. Без этой проверки цикл отработал бы на
+  // состоянии, которого уже нет в системе.
+  if (autonomousStates.get(state.campaignId) !== state || state.paused) {
+    console.log(`[AUTONOMOUS] ⏭ Цикл пропущен: режим остановлен или на паузе (${state.campaignId})`);
+    return;
+  }
+
   console.log(`[AUTONOMOUS-CYCLE] 🔄 Начало цикла ${state.cyclesCompleted + 1} для кампании ${state.campaignId}`);
   state.cycleRunning = true;
 

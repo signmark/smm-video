@@ -58,3 +58,84 @@ describe('computeNextCycleDelayMs (SM-20)', () => {
     expect(computeNextCycleDelayMs(lastCycle, 1.5, NOW)).toBe(HOUR);
   });
 });
+
+// ─── Круглый рейс через персистенцию (SM-20, находка ревью) ────────────────
+//
+// Первая версия фикса теряла паузу при рестарте: paused/pausedAt никуда не
+// сохранялись, и любой деплой молча возобновлял режим. Для фичи «поставил на
+// паузу, чтобы спокойно поправить настройки» это убивало весь смысл — деплой
+// у нас бывает по несколько раз в день. Здесь закреплён контракт сериализации,
+// без запуска самих таймеров.
+
+interface PersistedShape {
+  paused?: boolean;
+  pausedAt?: string;
+  cyclesCompleted?: number;
+  postsCreated?: number;
+  lastCycleAt?: string;
+}
+
+/** То, что пишет saveAutonomousPersistence, в минимальном виде. */
+function persist(state: {
+  paused?: boolean; pausedAt?: Date; cyclesCompleted: number; postsCreated: number; lastCycleAt?: Date;
+}): PersistedShape {
+  return {
+    paused: state.paused === true,
+    pausedAt: state.pausedAt ? state.pausedAt.toISOString() : undefined,
+    cyclesCompleted: state.cyclesCompleted,
+    postsCreated: state.postsCreated,
+    lastCycleAt: state.lastCycleAt ? state.lastCycleAt.toISOString() : undefined,
+  };
+}
+
+/** То, что читает activateRestoredState. */
+function restore(saved: PersistedShape) {
+  return {
+    paused: saved.paused === true,
+    pausedAt: saved.pausedAt ? new Date(saved.pausedAt) : undefined,
+    cyclesCompleted: saved.cyclesCompleted ?? 0,
+    postsCreated: saved.postsCreated ?? 0,
+    lastCycleAt: saved.lastCycleAt ? new Date(saved.lastCycleAt) : undefined,
+  };
+}
+
+describe('пауза переживает рестарт (SM-20)', () => {
+  it('paused и pausedAt сохраняются и читаются обратно', () => {
+    const pausedAt = new Date('2026-08-05T12:00:00Z');
+    const back = restore(persist({ paused: true, pausedAt, cyclesCompleted: 3, postsCreated: 7 }));
+
+    expect(back.paused).toBe(true);
+    expect(back.pausedAt?.toISOString()).toBe(pausedAt.toISOString());
+  });
+
+  // Ровно то, на что жаловался тестировщик в исходном тикете: цикл начинался
+  // заново. Пауза не должна повторять эту ошибку после рестарта.
+  it('счётчики не обнуляются после круглого рейса', () => {
+    const back = restore(persist({ paused: true, cyclesCompleted: 5, postsCreated: 12 }));
+    expect(back.cyclesCompleted).toBe(5);
+    expect(back.postsCreated).toBe(12);
+  });
+
+  it('lastCycleAt переживает рестарт — иначе остаток интервала не посчитать', () => {
+    const lastCycleAt = new Date('2026-08-05T09:00:00Z');
+    const back = restore(persist({ cyclesCompleted: 1, postsCreated: 1, lastCycleAt }));
+    expect(back.lastCycleAt?.getTime()).toBe(lastCycleAt.getTime());
+    // и остаток считается от восстановленного значения
+    expect(computeNextCycleDelayMs(back.lastCycleAt, 24, new Date('2026-08-05T21:00:00Z').getTime()))
+      .toBe(12 * HOUR);
+  });
+
+  it('незапаузенное состояние восстанавливается как работающее', () => {
+    const back = restore(persist({ cyclesCompleted: 2, postsCreated: 4 }));
+    expect(back.paused).toBe(false);
+    expect(back.pausedAt).toBeUndefined();
+  });
+
+  // Старые записи, сохранённые до появления паузы, не должны читаться как
+  // «на паузе» — иначе после деплоя все активные режимы встанут.
+  it('запись без полей паузы считается работающей, а не запаузенной', () => {
+    const back = restore({});
+    expect(back.paused).toBe(false);
+    expect(back.cyclesCompleted).toBe(0);
+  });
+});

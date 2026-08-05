@@ -16,8 +16,7 @@ import {
   Plus, Trash2, Pencil, ToggleLeft, ToggleRight, Copy, Eye,
   Percent, CalendarDays, Zap, Users, RefreshCw, ChevronDown, ChevronUp
 } from 'lucide-react';
-import { format } from 'date-fns';
-import { ru } from 'date-fns/locale';
+import { formatDateWithTimezone } from '@/lib/date-utils';
 
 type PromoType = 'discount' | 'extra_days' | 'pro_upgrade';
 
@@ -75,7 +74,7 @@ const emptyForm = {
 function formatDate(date: string | null) {
   if (!date) return '—';
   try {
-    return format(new Date(date), 'd MMM yyyy', { locale: ru });
+    return formatDateWithTimezone(date, 'd MMM yyyy');
   } catch {
     return date;
   }

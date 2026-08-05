@@ -1209,6 +1209,71 @@ ${content}
 // ПАЙПЛАЙН: генерация и доработка контент-плана
 // ─────────────────────────────────────────────────────────────────
 
+/**
+ * SM-18: Обеспечивает, что каждый элемент контент-плана имеет platform из
+ * фактически подключённых к кампании. AI может вернуть "facebook"/"instagram"
+ * даже если они не подключены — заменяем на platforms[0] или 'telegram'.
+ * SM-19: Обрезает план до count, чтобы не создавать постов больше запрошенного.
+ */
+export function sanitizeContentPlanItems(
+  parsed: ContentPlanItem[],
+  count: number,
+  platforms: string[]
+): ContentPlanItem[] {
+  if (parsed.length > count) {
+    console.warn(`[CONTENT-PLAN] ⚠️ AI вернул ${parsed.length} идеи при запросе ${count} — обрезаем`);
+  }
+  // SM-19: жёсткая граница сверху.
+  const capped = parsed.slice(0, count);
+  const validPlatforms = new Set(platforms);
+
+  return capped.map((item, i) => {
+    const rawPlatform = item.platform;
+    // SM-18: platform строго из фактически подключённых платформ.
+    const safePlatform = validPlatforms.has(rawPlatform) ? rawPlatform : (platforms[0] || 'telegram');
+    if (rawPlatform && rawPlatform !== safePlatform) {
+      console.warn(`[CONTENT-PLAN] ⚠️ AI предложил платформу "${rawPlatform}", заменяем на "${safePlatform}"`);
+    }
+    return {
+      id: item.id || String(i + 1),
+      topic: item.topic || '',
+      contentType: item.contentType || 'обучающий',
+      platform: safePlatform,
+      rationale: item.rationale || '',
+      approved: true,
+    };
+  });
+}
+
+/**
+ * SM-18: При доработке плана не даёт заменить platform на неподключённую.
+ * SM-19: Не даёт доработанному плану расшириться сверх входного.
+ */
+export function sanitizeRefinedContentPlan(
+  refined: ContentPlanItem[],
+  plan: ContentPlanItem[],
+  platforms: string[]
+): ContentPlanItem[] {
+  const validPlatforms = new Set(platforms);
+  if (refined.length > plan.length) {
+    console.warn(`[CONTENT-PLAN] ⚠️ Доработка вернула ${refined.length} идей (было ${plan.length}) — обрезаем`);
+  }
+  const capped = refined.slice(0, plan.length);
+  return capped.map((item, i) => {
+    const rawPlatform = item.platform;
+    const safePlatform = validPlatforms.has(rawPlatform) ? rawPlatform : (plan[i]?.platform || platforms[0] || 'telegram');
+    if (rawPlatform && rawPlatform !== safePlatform) {
+      console.warn(`[CONTENT-PLAN] ⚠️ Доработка вернула платформу "${rawPlatform}", сохраняем "${safePlatform}"`);
+    }
+    return {
+      ...plan[i],
+      ...item,
+      platform: safePlatform,
+      approved: true,
+    };
+  });
+}
+
 async function generateContentPlan(params: {
   count: number;
   keywords: string[];
@@ -1275,31 +1340,7 @@ ${analyticsInsights ? `Данные аналитики: ${analyticsInsights}` : 
     const parsed: ContentPlanItem[] = JSON.parse(jsonMatch[0]);
     if (!Array.isArray(parsed) || parsed.length === 0) throw new Error('Пустой план');
 
-    if (parsed.length > count) {
-      console.warn(`[CONTENT-PLAN] ⚠️ AI вернул ${parsed.length} идеи при запросе ${count} — обрезаем`);
-    }
-
-    // SM-19: жёстко ограничиваем сверху — AI может вернуть больше, чем просили.
-    const capped = parsed.slice(0, count);
-    const validPlatforms = new Set(platforms);
-
-    return capped.map((item, i) => {
-      const rawPlatform = item.platform;
-      // SM-18: platform строго из фактически подключённых платформ.
-      // AI может предложить Facebook/Instagram даже если они не подключены.
-      const safePlatform = validPlatforms.has(rawPlatform) ? rawPlatform : (platforms[0] || 'telegram');
-      if (rawPlatform && rawPlatform !== safePlatform) {
-        console.warn(`[CONTENT-PLAN] ⚠️ AI предложил платформу "${rawPlatform}", заменяем на "${safePlatform}"`);
-      }
-      return {
-        id: item.id || String(i + 1),
-        topic: item.topic || '',
-        contentType: item.contentType || 'обучающий',
-        platform: safePlatform,
-        rationale: item.rationale || '',
-        approved: true,
-      };
-    });
+    return sanitizeContentPlanItems(parsed, count, platforms);
   } catch (err: any) {
     console.warn('[CONTENT-PLAN] ⚠️ Ошибка генерации плана:', err.message);
     // Фоллбек — создаём базовые идеи из ключевых слов
@@ -1361,26 +1402,7 @@ ${globalPrompt ? `СТИЛЬ КАМПАНИИ: ${globalPrompt}\n` : ''}${alwaysI
     const refined: ContentPlanItem[] = JSON.parse(jsonMatch[0]);
     if (!Array.isArray(refined) || refined.length === 0) return plan;
 
-    // SM-19: не даём расширить план сверх входного.
-    // SM-18: не даём AI подменить платформу на не фактическую.
-    const validPlatforms = new Set(platforms);
-    if (refined.length > plan.length) {
-      console.warn(`[CONTENT-PLAN] ⚠️ Доработка вернула ${refined.length} идей (было ${plan.length}) — обрезаем`);
-    }
-    const capped = refined.slice(0, plan.length);
-    return capped.map((item, i) => {
-      const rawPlatform = item.platform;
-      const safePlatform = validPlatforms.has(rawPlatform) ? rawPlatform : (plan[i]?.platform || platforms[0] || 'telegram');
-      if (rawPlatform && rawPlatform !== safePlatform) {
-        console.warn(`[CONTENT-PLAN] ⚠️ Доработка вернула платформу "${rawPlatform}", сохраняем "${safePlatform}"`);
-      }
-      return {
-        ...plan[i],
-        ...item,
-        platform: safePlatform,
-        approved: true,
-      };
-    });
+    return sanitizeRefinedContentPlan(refined, plan, platforms);
   } catch {
     return plan;
   }

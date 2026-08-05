@@ -235,3 +235,112 @@ export function aggregatePublishedPlatformAnalytics(
     platformStatsMap,
   };
 }
+
+export interface ChannelPostRow {
+  platform_post_id?: string | number | null;
+  published_date?: string | null;
+  captured_at?: string | null;
+  views?: unknown;
+  likes?: unknown;
+  comments?: unknown;
+  shares?: unknown;
+}
+
+// Telegram albums arrive as several messages: the media carries no caption and
+// the sibling holds the text. Reactions attach to the sibling, but publication
+// stores only the first message id, so per-id matching lost every like (SM-15).
+// Sibling ids are consecutive and published within a couple of seconds.
+export const ALBUM_GROUP_WINDOW_MS = 5000;
+
+function latestSnapshotPerPost(posts: ChannelPostRow[]): ChannelPostRow[] {
+  const latestByPostId = new Map<string, ChannelPostRow>();
+
+  for (const post of posts) {
+    const postId = String(post?.platform_post_id ?? '').trim();
+    if (!postId) continue;
+
+    const current = latestByPostId.get(postId);
+    const capturedAt = Date.parse(post?.captured_at || '') || 0;
+    const currentCapturedAt = Date.parse(current?.captured_at || '') || 0;
+    if (!current || capturedAt > currentCapturedAt) {
+      latestByPostId.set(postId, post);
+    }
+  }
+
+  return Array.from(latestByPostId.values());
+}
+
+function numericPostId(post: ChannelPostRow): number | null {
+  const raw = String(post?.platform_post_id ?? '').trim();
+  return /^\d+$/.test(raw) ? Number(raw) : null;
+}
+
+/**
+ * Groups channel rows into publications: one album (several Telegram messages)
+ * counts as a single post. Only non-numeric-id platforms (VK) stay ungrouped.
+ */
+export function groupChannelPostsIntoPublications(
+  posts: ChannelPostRow[],
+): ChannelPostRow[][] {
+  const latest = latestSnapshotPerPost(posts);
+  const numbered = latest
+    .filter(post => numericPostId(post) !== null)
+    .sort((a, b) => numericPostId(a)! - numericPostId(b)!);
+  const groups: ChannelPostRow[][] = latest
+    .filter(post => numericPostId(post) === null)
+    .map(post => [post]);
+
+  let currentGroup: ChannelPostRow[] = [];
+  for (const post of numbered) {
+    const previous = currentGroup[currentGroup.length - 1];
+    const consecutive = previous
+      && numericPostId(post)! === numericPostId(previous)! + 1;
+    const previousTime = Date.parse(previous?.published_date || '');
+    const postTime = Date.parse(post?.published_date || '');
+    const withinWindow = Number.isFinite(previousTime)
+      && Number.isFinite(postTime)
+      && Math.abs(postTime - previousTime) <= ALBUM_GROUP_WINDOW_MS;
+
+    if (consecutive && withinWindow) {
+      currentGroup.push(post);
+      continue;
+    }
+    if (currentGroup.length) groups.push(currentGroup);
+    currentGroup = [post];
+  }
+  if (currentGroup.length) groups.push(currentGroup);
+
+  return groups;
+}
+
+/**
+ * Aggregates scraper rows for publications of this campaign.
+ * Metrics are taken as the maximum across an album's messages, never the sum:
+ * Telegram repeats the same view count on every message of the album, so summing
+ * would double reach, while the reaction lives on exactly one of them.
+ */
+export function aggregateCampaignChannelPosts(
+  channelPosts: ChannelPostRow[],
+  expectedIds: Set<string>,
+): { posts: number; views: number; likes: number; comments: number; shares: number } {
+  let posts = 0;
+  let views = 0;
+  let likes = 0;
+  let comments = 0;
+  let shares = 0;
+
+  for (const group of groupChannelPostsIntoPublications(channelPosts)) {
+    const belongsToCampaign = group.some(post => (
+      matchesPublishedPlatformPostId(expectedIds, post.platform_post_id)
+    ));
+    if (!belongsToCampaign) continue;
+
+    posts++;
+    views += Math.max(...group.map(post => metric(post.views)));
+    likes += Math.max(...group.map(post => metric(post.likes)));
+    comments += Math.max(...group.map(post => metric(post.comments)));
+    shares += Math.max(...group.map(post => metric(post.shares)));
+  }
+
+  return { posts, views, likes, comments, shares };
+}

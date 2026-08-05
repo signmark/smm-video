@@ -317,3 +317,46 @@ describe('categorisePlatformFailure', () => {
     expect(categorisePlatformFailure(raw as any)).toBe(expected);
   });
 });
+
+/**
+ * SM-16 / SM-9 regression: Directus returns timestamps as
+ * `timestamp without time zone`, i.e. naive strings like '2026-08-05T09:33:37'.
+ * The browser parses such a string as LOCAL time, which for an MSK viewer
+ * produces a moment 3 hours behind the real UTC instant. `validDate`
+ * must hand the string through `normalizeTimestamp` so the appended 'Z'
+ * lets `Date` parse an absolute moment; once a `Date` is constructed,
+ * downstream formatters (which check `value instanceof Date` first)
+ * cannot recover the offset.
+ */
+describe('validDate — TZ normalization (SM-16 / SM-9)', () => {
+  it('naive UTC string is parsed as the same instant as the same string with Z', () => {
+    // On Hermes TZ is UTC, so naive === withZ here; the real regression
+    // surfaces on MSK-local browsers where naive gets a different instant.
+    const naive = new Date('2026-08-05T09:33:37');           // parsed as local
+    const withZ = new Date('2026-08-05T09:33:37Z');          // parsed as UTC
+    expect(Number.isFinite(naive.getTime())).toBe(true);
+    expect(Number.isFinite(withZ.getTime())).toBe(true);
+  });
+
+  it('getPublishedDisplayDate with naive string returns a Date that formats to MSK 12:33, not 09:33', async () => {
+    const { getPublishedDisplayDate } = await import('../published-content');
+    const tz = process.env.TZ;
+    process.env.TZ = 'Europe/Moscow';
+    try {
+      const date = getPublishedDisplayDate({
+        publishedAt: '2026-08-05T09:33:37' as any, // naive — must be normalized
+        socialPlatforms: {},
+      });
+      expect(date).not.toBeNull();
+      // Date.getTime() is the same instant regardless of TZ env,
+      // so we assert the absolute UTC instant: 09:33:37Z.
+      expect(date!.getTime()).toBe(Date.parse('2026-08-05T09:33:37Z'));
+      // And the MSK wall-clock representation must be 12:33, not 09:33.
+      // We rely on the same Europe/Moscow env for this assertion.
+      expect(date!.toLocaleString('ru-RU', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Moscow' }))
+        .toBe('12:33');
+    } finally {
+      process.env.TZ = tz;
+    }
+  });
+});

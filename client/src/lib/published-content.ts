@@ -1,5 +1,6 @@
 import type { CampaignContent, PlatformPublishInfo, SocialPlatform } from '@/types';
 import { isConfirmedPublishedPlatform } from '@shared/schedule-time';
+import { normalizeTimestamp } from '@/lib/date-utils';
 
 const PUBLISHED_CONTENT_STATUSES = new Set([
   'published',
@@ -17,7 +18,13 @@ export interface ConfirmedPublicationEvent {
 
 function validDate(value: string | Date | null | undefined): Date | null {
   if (!value) return null;
-  const date = value instanceof Date ? value : new Date(value);
+  // SM-16/SM-9: Directus отдаёт timestamps без 'Z' (timestamp without time zone).
+  // Голый new Date(value) разбирает их как ЛОКАЛЬНОЕ время браузера — для MSK это
+  // даёт сдвиг −3 часа относительно реального UTC-момента. normalizeTimestamp
+  // дописывает Z строке без зоны, после чего Date парсится как абсолютный момент.
+  // Если уже Date — нормализация бесполезна (Date.parse на нём не работает), поэтому
+  // важно ловить СТРОКУ здесь, до создания Date.
+  const date = value instanceof Date ? value : normalizeTimestamp(value);
   return Number.isFinite(date.getTime()) ? date : null;
 }
 

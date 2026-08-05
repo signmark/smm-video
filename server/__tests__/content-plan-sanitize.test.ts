@@ -155,4 +155,18 @@ describe('sanitizeRefinedContentPlan', () => {
     const result = sanitizeRefinedContentPlan(refined, plan, ['vk']);
     expect(result[0].platform).toBe('vk');
   });
+
+  it('должен матчить платформу с разным регистром (case-insensitive)', () => {
+    const items = [mkItem({ platform: 'Telegram' }), mkItem({ platform: 'FACEBOOK' })];
+    const result = sanitizeContentPlanItems(items, 5, ['telegram']);
+    expect(result[0].platform).toBe('telegram'); // Telegram → telegram
+    expect(result[1].platform).toBe('telegram'); // FACEBOOK → telegram
+  });
+
+  it('должен матчить платформу с разным регистром в refined', () => {
+    const plan = [mkItem({ platform: 'VK' })];
+    const refined = [mkItem({ platform: 'vk' })];
+    const result = sanitizeRefinedContentPlan(refined, plan, ['telegram', 'vk']);
+    expect(result[0].platform).toBe('vk'); // нормализован к каноничному из platforms
+  });
 });

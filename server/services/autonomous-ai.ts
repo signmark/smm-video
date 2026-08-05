@@ -1225,12 +1225,16 @@ export function sanitizeContentPlanItems(
   }
   // SM-19: жёсткая граница сверху.
   const capped = parsed.slice(0, count);
-  const validPlatforms = new Set(platforms);
+  // Нормализуем к нижнему регистру: AI может вернуть "Telegram"/"FACEBOOK" с другой касой.
+  const validPlatformsLower = new Set(platforms.map(p => p.toLowerCase()));
 
   return capped.map((item, i) => {
     const rawPlatform = item.platform;
     // SM-18: platform строго из фактически подключённых платформ.
-    const safePlatform = validPlatforms.has(rawPlatform) ? rawPlatform : (platforms[0] || 'telegram');
+    const normalized = rawPlatform?.toLowerCase() || '';
+    const safePlatform = validPlatformsLower.has(normalized)
+      ? platforms.find(p => p.toLowerCase() === normalized) || (platforms[0] || 'telegram')
+      : (platforms[0] || 'telegram');
     if (rawPlatform && rawPlatform !== safePlatform) {
       console.warn(`[CONTENT-PLAN] ⚠️ AI предложил платформу "${rawPlatform}", заменяем на "${safePlatform}"`);
     }
@@ -1254,14 +1258,20 @@ export function sanitizeRefinedContentPlan(
   plan: ContentPlanItem[],
   platforms: string[]
 ): ContentPlanItem[] {
-  const validPlatforms = new Set(platforms);
+  const validPlatformsLower = new Set(platforms.map(p => p.toLowerCase()));
   if (refined.length > plan.length) {
     console.warn(`[CONTENT-PLAN] ⚠️ Доработка вернула ${refined.length} идей (было ${plan.length}) — обрезаем`);
   }
   const capped = refined.slice(0, plan.length);
   return capped.map((item, i) => {
     const rawPlatform = item.platform;
-    const safePlatform = validPlatforms.has(rawPlatform) ? rawPlatform : (plan[i]?.platform || platforms[0] || 'telegram');
+    const normalized = rawPlatform?.toLowerCase() || '';
+    const originalPlatform = plan[i]?.platform;
+    const originalNormalized = originalPlatform?.toLowerCase() || '';
+    // Если доработка вернула подключённую платформу — оставляем её (с каноничным регистром из platforms).
+    const safePlatform = validPlatformsLower.has(normalized)
+      ? platforms.find(p => p.toLowerCase() === normalized) || (originalPlatform || platforms[0] || 'telegram')
+      : (originalPlatform || platforms[0] || 'telegram');
     if (rawPlatform && rawPlatform !== safePlatform) {
       console.warn(`[CONTENT-PLAN] ⚠️ Доработка вернула платформу "${rawPlatform}", сохраняем "${safePlatform}"`);
     }
@@ -3879,7 +3889,7 @@ async function runAutonomousCycle(state: AutonomousState) {
                 threads: 'хорош для коротких текстовых постов, обсуждений',
               };
               const criteriaLines = selectedPlatforms
-                .map(p => `- ${PLATFORM_CRITERIA[p] || 'подходит для своего формата контента'}`)
+                .map(p => `- ${p}: ${PLATFORM_CRITERIA[p] || 'подходит для своего формата контента'}`)
                 .join('\n');
 
               const selectPrompt = `Выбери из доступных платформ те, которые лучше всего подходят для этого поста.

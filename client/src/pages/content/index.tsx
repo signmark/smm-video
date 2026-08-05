@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, createRef } from "react";
-import { toDisplayDateKey } from '@/lib/date-utils';
+import { toDisplayDateKey, formatDateWithTimezone } from '@/lib/date-utils';
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useTranslation } from "react-i18next";
@@ -1563,26 +1563,11 @@ export default function ContentPage() {
   // Фильтрация контента по активной вкладке
   // Функция для форматирования даты для группировки (только день, месяц, год)
   const formatDateForGrouping = (date: Date | string): string => {
-    // Если дата передана в формате ISO string (YYYY-MM-DD)
-    if (typeof date === 'string' && date.match(/^\d{4}-\d{2}-\d{2}$/)) {
-      // Создаем дату из строки ISO, используя localeDate для правильного часового пояса
-      const [year, month, day] = date.split('-').map(Number);
-      // Месяцы в JS начинаются с 0, поэтому вычитаем 1 из месяца
-      const localDate = new Date(year, month - 1, day);
-      return localDate.toLocaleDateString('ru-RU', {
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric'
-      });
-    } else {
-      // Для других форматов дат
-      const localDate = new Date(date);
-      return localDate.toLocaleDateString('ru-RU', {
-        day: 'numeric',
-        month: 'long',
-        year: 'numeric'
-      });
-    }
+    // SM-16: карточка группы отображала дату через toLocaleDateString без timeZone,
+    // что приводило к дрейфу относительно московского календаря для зрителей
+    // с TZ != Europe/Moscow. Ключ группировки (toDisplayDateKey) уже
+    // московский — заголовок группы должен совпадать с ключом.
+    return formatDateWithTimezone(date, 'd MMMM yyyy');
   };
 
   // Функция для сброса фильтрации по датам

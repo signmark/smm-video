@@ -15,8 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuthStore } from "@/lib/store";
 import { AutonomousLaunchDialog } from "@/components/AutonomousLaunchDialog";
-import { format } from "date-fns";
-import { ru } from "date-fns/locale";
+import { formatDateWithTimezone } from "@/lib/date-utils";
 
 const MAX_TRENDS = 20;
 
@@ -556,7 +555,7 @@ export function ContentPlanGenerator({
                         {topic.createdAt && (
                           <span className="inline-flex items-center">
                             <Clock className="h-3 w-3 mr-1" />
-                            {format(new Date(topic.createdAt), 'dd MMMM yyyy', {locale: ru})}
+                            {formatDateWithTimezone(topic.createdAt, 'dd MMMM yyyy')}
                           </span>
                         )}
                       </CardDescription>
@@ -767,7 +766,7 @@ export function ContentPlanGenerator({
                       <CardDescription className="flex items-center gap-2 text-xs">
                         <span className="inline-flex items-center">
                           <Calendar className="h-3 w-3 mr-1" />
-                          {item.scheduledAt ? format(new Date(item.scheduledAt), 'dd MMMM yyyy, HH:mm', {locale: ru}) : 'Не запланировано'}
+                          {item.scheduledAt ? formatDateWithTimezone(item.scheduledAt, 'dd MMMM yyyy, HH:mm') : 'Не запланировано'}
                         </span>
                         <span className="inline-flex items-center">
                           {item.contentType === 'text' && <FileText className="h-3 w-3 mr-1" />}

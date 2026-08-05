@@ -1209,6 +1209,81 @@ ${content}
 // ПАЙПЛАЙН: генерация и доработка контент-плана
 // ─────────────────────────────────────────────────────────────────
 
+/**
+ * SM-18: Обеспечивает, что каждый элемент контент-плана имеет platform из
+ * фактически подключённых к кампании. AI может вернуть "facebook"/"instagram"
+ * даже если они не подключены — заменяем на platforms[0] или 'telegram'.
+ * SM-19: Обрезает план до count, чтобы не создавать постов больше запрошенного.
+ */
+export function sanitizeContentPlanItems(
+  parsed: ContentPlanItem[],
+  count: number,
+  platforms: string[]
+): ContentPlanItem[] {
+  if (parsed.length > count) {
+    console.warn(`[CONTENT-PLAN] ⚠️ AI вернул ${parsed.length} идеи при запросе ${count} — обрезаем`);
+  }
+  // SM-19: жёсткая граница сверху.
+  const capped = parsed.slice(0, count);
+  // Нормализуем к нижнему регистру: AI может вернуть "Telegram"/"FACEBOOK" с другой касой.
+  const validPlatformsLower = new Set(platforms.map(p => p.toLowerCase()));
+
+  return capped.map((item, i) => {
+    const rawPlatform = item.platform;
+    // SM-18: platform строго из фактически подключённых платформ.
+    const normalized = rawPlatform?.toLowerCase() || '';
+    const safePlatform = validPlatformsLower.has(normalized)
+      ? platforms.find(p => p.toLowerCase() === normalized) || (platforms[0] || 'telegram')
+      : (platforms[0] || 'telegram');
+    if (rawPlatform && rawPlatform !== safePlatform) {
+      console.warn(`[CONTENT-PLAN] ⚠️ AI предложил платформу "${rawPlatform}", заменяем на "${safePlatform}"`);
+    }
+    return {
+      id: item.id || String(i + 1),
+      topic: item.topic || '',
+      contentType: item.contentType || 'обучающий',
+      platform: safePlatform,
+      rationale: item.rationale || '',
+      approved: true,
+    };
+  });
+}
+
+/**
+ * SM-18: При доработке плана не даёт заменить platform на неподключённую.
+ * SM-19: Не даёт доработанному плану расшириться сверх входного.
+ */
+export function sanitizeRefinedContentPlan(
+  refined: ContentPlanItem[],
+  plan: ContentPlanItem[],
+  platforms: string[]
+): ContentPlanItem[] {
+  const validPlatformsLower = new Set(platforms.map(p => p.toLowerCase()));
+  if (refined.length > plan.length) {
+    console.warn(`[CONTENT-PLAN] ⚠️ Доработка вернула ${refined.length} идей (было ${plan.length}) — обрезаем`);
+  }
+  const capped = refined.slice(0, plan.length);
+  return capped.map((item, i) => {
+    const rawPlatform = item.platform;
+    const normalized = rawPlatform?.toLowerCase() || '';
+    const originalPlatform = plan[i]?.platform;
+    const originalNormalized = originalPlatform?.toLowerCase() || '';
+    // Если доработка вернула подключённую платформу — оставляем её (с каноничным регистром из platforms).
+    const safePlatform = validPlatformsLower.has(normalized)
+      ? platforms.find(p => p.toLowerCase() === normalized) || (originalPlatform || platforms[0] || 'telegram')
+      : (originalPlatform || platforms[0] || 'telegram');
+    if (rawPlatform && rawPlatform !== safePlatform) {
+      console.warn(`[CONTENT-PLAN] ⚠️ Доработка вернула платформу "${rawPlatform}", сохраняем "${safePlatform}"`);
+    }
+    return {
+      ...plan[i],
+      ...item,
+      platform: safePlatform,
+      approved: true,
+    };
+  });
+}
+
 async function generateContentPlan(params: {
   count: number;
   keywords: string[];
@@ -1275,14 +1350,7 @@ ${analyticsInsights ? `Данные аналитики: ${analyticsInsights}` : 
     const parsed: ContentPlanItem[] = JSON.parse(jsonMatch[0]);
     if (!Array.isArray(parsed) || parsed.length === 0) throw new Error('Пустой план');
 
-    return parsed.map((item, i) => ({
-      id: item.id || String(i + 1),
-      topic: item.topic || '',
-      contentType: item.contentType || 'обучающий',
-      platform: item.platform || platforms[0] || 'telegram',
-      rationale: item.rationale || '',
-      approved: true,
-    }));
+    return sanitizeContentPlanItems(parsed, count, platforms);
   } catch (err: any) {
     console.warn('[CONTENT-PLAN] ⚠️ Ошибка генерации плана:', err.message);
     // Фоллбек — создаём базовые идеи из ключевых слов
@@ -1302,10 +1370,11 @@ async function refineContentPlan(params: {
   publishedTitles: string[];
   globalPrompt: string;
   alwaysInclude: string;
+  platforms: string[];
   launchCommand: string;
   request: { userId: string; authToken: string };
 }): Promise<ContentPlanItem[]> {
-  const { plan, publishedTitles, globalPrompt, alwaysInclude, launchCommand, request } = params;
+  const { plan, publishedTitles, globalPrompt, alwaysInclude, platforms, launchCommand, request } = params;
   if (publishedTitles.length === 0) return plan;
 
   const recentTitles = publishedTitles.slice(0, 20).join('\n- ');
@@ -1343,11 +1412,7 @@ ${globalPrompt ? `СТИЛЬ КАМПАНИИ: ${globalPrompt}\n` : ''}${alwaysI
     const refined: ContentPlanItem[] = JSON.parse(jsonMatch[0]);
     if (!Array.isArray(refined) || refined.length === 0) return plan;
 
-    return refined.map((item, i) => ({
-      ...plan[i],
-      ...item,
-      approved: true,
-    }));
+    return sanitizeRefinedContentPlan(refined, plan, platforms);
   } catch {
     return plan;
   }
@@ -3498,6 +3563,7 @@ async function runAutonomousCycle(state: AutonomousState) {
       publishedTitles: recentTitles,
       globalPrompt: autoSettings.globalPrompt || '',
       alwaysInclude: autoSettings.alwaysInclude || '',
+      platforms: state.platforms,
       launchCommand,
       request,
     });
@@ -3811,6 +3877,21 @@ async function runAutonomousCycle(state: AutonomousState) {
           let selectedPlatforms = state.platforms || ['telegram', 'vk'];
           if (autoSettings.autoSelectPlatforms && selectedPlatforms.length > 1) {
             try {
+              // SM-18: критерии строим динамически из фактически доступных платформ,
+              // чтобы в промт не попадали рекомендации для неподключённых соцсетей.
+              const PLATFORM_CRITERIA: Record<string, string> = {
+                telegram: 'подходит для ЛЮБОГО текстового контента, длинного и короткого',
+                vk: 'хорош для длинных экспертных текстов, новостей, кейсов, статей',
+                instagram: 'хорош для визуального контента, коротких эмоциональных постов, Reels',
+                facebook: 'хорош для длинных текстов, новостей, кейсов',
+                youtube: 'хорош для видео/клипов/роликов',
+                tiktok: 'хорош для коротких вертикальных видео, вирусного контента',
+                threads: 'хорош для коротких текстовых постов, обсуждений',
+              };
+              const criteriaLines = selectedPlatforms
+                .map(p => `- ${p}: ${PLATFORM_CRITERIA[p] || 'подходит для своего формата контента'}`)
+                .join('\n');
+
               const selectPrompt = `Выбери из доступных платформ те, которые лучше всего подходят для этого поста.
 
 ТИП КОНТЕНТА: ${contentType || 'текстовый пост'}
@@ -3819,14 +3900,8 @@ async function runAutonomousCycle(state: AutonomousState) {
 ТЕКСТ ПОСТА:
 ${postText.slice(0, 500)}
 
-КРИТЕРИИ:
-- Видео/клипы/ролики → YouTube, Instagram (Reels)
-- Сторис/вертикальный визуал → Instagram
-- Длинный экспертный текст (>600 символов) → VK, Facebook, Telegram
-- Короткий эмоциональный/мотивационный → Instagram, Telegram
-- Новости, аналитика, кейсы → Telegram, VK, Facebook
-- Контент с изображением → Instagram, Facebook, VK
-- Telegram подходит для ЛЮБОГО текстового контента
+КРИТЕРИИ (только по доступным платформам):
+${criteriaLines}
 - Выбери МИНИМУМ 1, МАКСИМУМ все доступные платформы
 
 Ответь ТОЛЬКО списком через запятую без пробелов (пример: telegram,vk):`;

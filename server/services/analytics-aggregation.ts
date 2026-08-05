@@ -281,6 +281,7 @@ function numericPostId(post: ChannelPostRow): number | null {
  */
 export function groupChannelPostsIntoPublications(
   posts: ChannelPostRow[],
+  claimedIds: Set<string> = new Set(),
 ): ChannelPostRow[][] {
   const latest = latestSnapshotPerPost(posts);
   const numbered = latest
@@ -301,7 +302,16 @@ export function groupChannelPostsIntoPublications(
       && Number.isFinite(postTime)
       && Math.abs(postTime - previousTime) <= ALBUM_GROUP_WINDOW_MS;
 
-    if (consecutive && withinWindow) {
+    // Every publication stores its own first message id. A row that is itself a
+    // stored id therefore anchors a separate publication and must never be
+    // absorbed as an album sibling - prod posts /7 and /8 are two different
+    // content rows published 44ms apart, and merging them lost their reach.
+    const anchorsOwnPublication = matchesPublishedPlatformPostId(
+      claimedIds,
+      post.platform_post_id,
+    );
+
+    if (consecutive && withinWindow && !anchorsOwnPublication) {
       currentGroup.push(post);
       continue;
     }
@@ -329,7 +339,7 @@ export function aggregateCampaignChannelPosts(
   let comments = 0;
   let shares = 0;
 
-  for (const group of groupChannelPostsIntoPublications(channelPosts)) {
+  for (const group of groupChannelPostsIntoPublications(channelPosts, expectedIds)) {
     const belongsToCampaign = group.some(post => (
       matchesPublishedPlatformPostId(expectedIds, post.platform_post_id)
     ));

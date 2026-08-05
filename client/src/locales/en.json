@@ -20,7 +20,9 @@
     "autonomous": {
       "startLabel": "Start autonomous mode",
       "stopLabel": "Stop autonomous mode",
-      "pendingLabel": "Open pending approval"
+      "pendingLabel": "Open pending approval",
+      "pauseLabel": "Pause autonomous mode",
+      "resumeLabel": "Resume autonomous mode"
     }
   },
   "topbar": {
@@ -43,7 +45,8 @@
       "quotaTitle": "Agent stopped",
       "quotaHint": "Click to restart",
       "offTitle": "Autonomous mode is off",
-      "offHint": "Click to start now"
+      "offHint": "Click to start now",
+      "pausedToast": "Autonomous mode paused, progress saved"
     },
     "pipelineDialog": {
       "title": "Start the autonomous assistant",

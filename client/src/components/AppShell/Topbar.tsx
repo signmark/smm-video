@@ -189,7 +189,7 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
       return res.json();
     },
     onSuccess: () => {
-      toast({ description: '⏸ Автономный режим на паузе, прогресс сохранён' });
+      toast({ description: t('topbar.autonomous.pausedToast') });
       queryClient.invalidateQueries({ queryKey: ['/api/autonomous/status', selectedCampaignId] });
     },
     onError: (err: any) => {
@@ -336,6 +336,34 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
 
         {/* Autonomous Mode Toggle */}
         {selectedCampaignId && (
+          <>
+          {/* SM-20: пауза — отдельная кнопка ВНЕ TooltipTrigger.
+              Внутрь asChild её класть нельзя: Radix Slot клонирует ровно
+              одного ребёнка и вешает на него props и ref, а фрагмент из
+              двух кнопок их не принимает — тултип теряет якорь. Ни tsc,
+              ни build этого не ловят: семантика Slot им неизвестна. */}
+          {isAutonomousActive && (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => {
+              if (isAutonomousPaused) {
+                resumeAutonomous();
+              } else {
+                pauseAutonomous();
+              }
+            }}
+            className="h-9 w-9"
+            data-testid="button-autonomous-pause"
+            disabled={isPausingAutonomous || isResumingAutonomous}
+            aria-label={isAutonomousPaused ? t('nav.autonomous.resumeLabel') : t('nav.autonomous.pauseLabel')}
+            title={isAutonomousPaused ? t('nav.autonomous.resumeLabel') : t('nav.autonomous.pauseLabel')}
+          >
+            {isAutonomousPaused
+              ? <Play className="h-4 w-4 text-emerald-600" />
+              : <Pause className="h-4 w-4 text-amber-600" />}
+          </Button>
+          )}
           <TooltipProvider delayDuration={300}>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -354,32 +382,6 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
                     </Button>
                   </Link>
                 ) : (
-                  <>
-                  {/* SM-20: пауза видна только когда режим заведён — тогда она
-                      и осмысленна. Остановка остаётся отдельной кнопкой и
-                      по-прежнему сбрасывает прогресс. */}
-                  {isAutonomousActive && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => {
-                        if (isAutonomousPaused) {
-                          resumeAutonomous();
-                        } else {
-                          pauseAutonomous();
-                        }
-                      }}
-                      className="h-9 w-9"
-                      data-testid="button-autonomous-pause"
-                      disabled={isPausingAutonomous || isResumingAutonomous}
-                      aria-label={isAutonomousPaused ? 'Возобновить автономный режим' : 'Поставить автономный режим на паузу'}
-                      title={isAutonomousPaused ? 'Возобновить' : 'Пауза'}
-                    >
-                      {isAutonomousPaused
-                        ? <Play className="h-4 w-4 text-emerald-600" />
-                        : <Pause className="h-4 w-4 text-amber-600" />}
-                    </Button>
-                  )}
                   <Button
                     variant="ghost"
                     size="icon"
@@ -426,7 +428,6 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
                       aria-hidden="true"
                     />
                   </Button>
-                  </>
                 )}
               </TooltipTrigger>
               <TooltipContent side="bottom" className="max-w-[220px] text-center">
@@ -471,6 +472,7 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
+          </>
         )}
 
         {/* TG Bot Assistant */}

@@ -20,7 +20,9 @@
     "autonomous": {
       "startLabel": "Iniciar modo autónomo",
       "stopLabel": "Detener modo autónomo",
-      "pendingLabel": "Abrir aprobación pendiente"
+      "pendingLabel": "Abrir aprobación pendiente",
+      "pauseLabel": "Pausar el modo autónomo",
+      "resumeLabel": "Reanudar el modo autónomo"
     }
   },
   "topbar": {
@@ -44,7 +46,8 @@
       "quotaTitle": "Agente detenido",
       "quotaHint": "Haz clic para reiniciar",
       "offTitle": "Modo autónomo desactivado",
-      "offHint": "Haz clic para iniciar ahora"
+      "offHint": "Haz clic para iniciar ahora",
+      "pausedToast": "Modo autónomo en pausa, progreso guardado"
     },
     "pipelineDialog": {
       "title": "Iniciar el asistente autónomo",

@@ -1275,14 +1275,31 @@ ${analyticsInsights ? `Данные аналитики: ${analyticsInsights}` : 
     const parsed: ContentPlanItem[] = JSON.parse(jsonMatch[0]);
     if (!Array.isArray(parsed) || parsed.length === 0) throw new Error('Пустой план');
 
-    return parsed.map((item, i) => ({
-      id: item.id || String(i + 1),
-      topic: item.topic || '',
-      contentType: item.contentType || 'обучающий',
-      platform: item.platform || platforms[0] || 'telegram',
-      rationale: item.rationale || '',
-      approved: true,
-    }));
+    if (parsed.length > count) {
+      console.warn(`[CONTENT-PLAN] ⚠️ AI вернул ${parsed.length} идеи при запросе ${count} — обрезаем`);
+    }
+
+    // SM-19: жёстко ограничиваем сверху — AI может вернуть больше, чем просили.
+    const capped = parsed.slice(0, count);
+    const validPlatforms = new Set(platforms);
+
+    return capped.map((item, i) => {
+      const rawPlatform = item.platform;
+      // SM-18: platform строго из фактически подключённых платформ.
+      // AI может предложить Facebook/Instagram даже если они не подключены.
+      const safePlatform = validPlatforms.has(rawPlatform) ? rawPlatform : (platforms[0] || 'telegram');
+      if (rawPlatform && rawPlatform !== safePlatform) {
+        console.warn(`[CONTENT-PLAN] ⚠️ AI предложил платформу "${rawPlatform}", заменяем на "${safePlatform}"`);
+      }
+      return {
+        id: item.id || String(i + 1),
+        topic: item.topic || '',
+        contentType: item.contentType || 'обучающий',
+        platform: safePlatform,
+        rationale: item.rationale || '',
+        approved: true,
+      };
+    });
   } catch (err: any) {
     console.warn('[CONTENT-PLAN] ⚠️ Ошибка генерации плана:', err.message);
     // Фоллбек — создаём базовые идеи из ключевых слов
@@ -1302,10 +1319,11 @@ async function refineContentPlan(params: {
   publishedTitles: string[];
   globalPrompt: string;
   alwaysInclude: string;
+  platforms: string[];
   launchCommand: string;
   request: { userId: string; authToken: string };
 }): Promise<ContentPlanItem[]> {
-  const { plan, publishedTitles, globalPrompt, alwaysInclude, launchCommand, request } = params;
+  const { plan, publishedTitles, globalPrompt, alwaysInclude, platforms, launchCommand, request } = params;
   if (publishedTitles.length === 0) return plan;
 
   const recentTitles = publishedTitles.slice(0, 20).join('\n- ');
@@ -1343,11 +1361,26 @@ ${globalPrompt ? `СТИЛЬ КАМПАНИИ: ${globalPrompt}\n` : ''}${alwaysI
     const refined: ContentPlanItem[] = JSON.parse(jsonMatch[0]);
     if (!Array.isArray(refined) || refined.length === 0) return plan;
 
-    return refined.map((item, i) => ({
-      ...plan[i],
-      ...item,
-      approved: true,
-    }));
+    // SM-19: не даём расширить план сверх входного.
+    // SM-18: не даём AI подменить платформу на не фактическую.
+    const validPlatforms = new Set(platforms);
+    if (refined.length > plan.length) {
+      console.warn(`[CONTENT-PLAN] ⚠️ Доработка вернула ${refined.length} идей (было ${plan.length}) — обрезаем`);
+    }
+    const capped = refined.slice(0, plan.length);
+    return capped.map((item, i) => {
+      const rawPlatform = item.platform;
+      const safePlatform = validPlatforms.has(rawPlatform) ? rawPlatform : (plan[i]?.platform || platforms[0] || 'telegram');
+      if (rawPlatform && rawPlatform !== safePlatform) {
+        console.warn(`[CONTENT-PLAN] ⚠️ Доработка вернула платформу "${rawPlatform}", сохраняем "${safePlatform}"`);
+      }
+      return {
+        ...plan[i],
+        ...item,
+        platform: safePlatform,
+        approved: true,
+      };
+    });
   } catch {
     return plan;
   }
@@ -3498,6 +3531,7 @@ async function runAutonomousCycle(state: AutonomousState) {
       publishedTitles: recentTitles,
       globalPrompt: autoSettings.globalPrompt || '',
       alwaysInclude: autoSettings.alwaysInclude || '',
+      platforms: state.platforms,
       launchCommand,
       request,
     });
@@ -3811,6 +3845,21 @@ async function runAutonomousCycle(state: AutonomousState) {
           let selectedPlatforms = state.platforms || ['telegram', 'vk'];
           if (autoSettings.autoSelectPlatforms && selectedPlatforms.length > 1) {
             try {
+              // SM-18: критерии строим динамически из фактически доступных платформ,
+              // чтобы в промт не попадали рекомендации для неподключённых соцсетей.
+              const PLATFORM_CRITERIA: Record<string, string> = {
+                telegram: 'подходит для ЛЮБОГО текстового контента, длинного и короткого',
+                vk: 'хорош для длинных экспертных текстов, новостей, кейсов, статей',
+                instagram: 'хорош для визуального контента, коротких эмоциональных постов, Reels',
+                facebook: 'хорош для длинных текстов, новостей, кейсов',
+                youtube: 'хорош для видео/клипов/роликов',
+                tiktok: 'хорош для коротких вертикальных видео, вирусного контента',
+                threads: 'хорош для коротких текстовых постов, обсуждений',
+              };
+              const criteriaLines = selectedPlatforms
+                .map(p => `- ${PLATFORM_CRITERIA[p] || 'подходит для своего формата контента'}`)
+                .join('\n');
+
               const selectPrompt = `Выбери из доступных платформ те, которые лучше всего подходят для этого поста.
 
 ТИП КОНТЕНТА: ${contentType || 'текстовый пост'}
@@ -3819,14 +3868,8 @@ async function runAutonomousCycle(state: AutonomousState) {
 ТЕКСТ ПОСТА:
 ${postText.slice(0, 500)}
 
-КРИТЕРИИ:
-- Видео/клипы/ролики → YouTube, Instagram (Reels)
-- Сторис/вертикальный визуал → Instagram
-- Длинный экспертный текст (>600 символов) → VK, Facebook, Telegram
-- Короткий эмоциональный/мотивационный → Instagram, Telegram
-- Новости, аналитика, кейсы → Telegram, VK, Facebook
-- Контент с изображением → Instagram, Facebook, VK
-- Telegram подходит для ЛЮБОГО текстового контента
+КРИТЕРИИ (только по доступным платформам):
+${criteriaLines}
 - Выбери МИНИМУМ 1, МАКСИМУМ все доступные платформы
 
 Ответь ТОЛЬКО списком через запятую без пробелов (пример: telegram,vk):`;

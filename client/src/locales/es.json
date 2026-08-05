@@ -829,7 +829,8 @@
       "sortTrend": "Por tendencia",
       "sortDate": "Por fecha",
       "sortPlatform": "Por red social",
-      "searchPlaceholder": "Buscar temas"
+      "searchPlaceholder": "Buscar temas",
+      "onlyBookmarked": "Solo marcadores"
     },
     "trendList": {
       "totalCount": "Total de tendencias: {{count}}",

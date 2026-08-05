@@ -828,7 +828,8 @@
       "sortTrend": "By trending",
       "sortDate": "By date",
       "sortPlatform": "By platform",
-      "searchPlaceholder": "Search topics"
+      "searchPlaceholder": "Search topics",
+      "onlyBookmarked": "Bookmarks only"
     },
     "trendList": {
       "totalCount": "Total trends: {{count}}",

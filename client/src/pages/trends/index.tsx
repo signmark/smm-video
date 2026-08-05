@@ -273,6 +273,10 @@ export default function Trends() {
   // пользователь при желании расширяет период до недели/месяца/всего.
   const [selectedPeriod, setSelectedPeriod] = useState<Period>("3days");
   const [searchQuery, setSearchQuery] = useState("");
+  // SM-17: раздела закладок в интерфейсе не было вовсе — положить тренд в
+  // закладки было можно, а посмотреть отложенное негде. Это фильтр списка, а
+  // не отдельная вкладка: список и так грузится целиком для клиентских фильтров.
+  const [onlyBookmarked, setOnlyBookmarked] = useState(false);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [isSearchingNewSources, setIsSearchingNewSources] = useState(false);
   const [foundSourcesData, setFoundSourcesData] = useState<{
@@ -521,6 +525,7 @@ export default function Trends() {
   const visibleTrends = useVisibleTrends({
     trends,
     hiddenTrendIds,
+    onlyBookmarked,
     searchQuery,
     selectedPlatform,
     selectedSourceId,
@@ -2345,6 +2350,24 @@ export default function Trends() {
                               onChange={(e) => setSearchQuery(e.target.value)}
                               className="flex-1 bg-muted text-foreground border-border"
                             />
+
+                            {/* SM-17: единственный способ увидеть отложенное.
+                                Закладки ставились и раньше, но списка не было. */}
+                            <Button
+                              type="button"
+                              variant={onlyBookmarked ? 'default' : 'outline'}
+                              size="sm"
+                              aria-pressed={onlyBookmarked}
+                              title={t('trends.filters.onlyBookmarked')}
+                              data-testid="button-filter-bookmarked"
+                              onClick={() => setOnlyBookmarked((v) => !v)}
+                              className="shrink-0"
+                            >
+                              <Bookmark
+                                className={`h-4 w-4 mr-2 ${onlyBookmarked ? 'fill-current' : ''}`}
+                              />
+                              {t('trends.filters.onlyBookmarked')}
+                            </Button>
                           </div>
 
                           {isLoadingTrends ? (

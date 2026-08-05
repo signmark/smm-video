@@ -27,6 +27,8 @@ export interface VisibleTrend {
 interface Params {
   trends: TrendLike[];
   hiddenTrendIds: Set<string>;
+  /** Показывать только тренды в закладках (SM-17). */
+  onlyBookmarked: boolean;
   searchQuery: string;
   selectedPlatform: string;
   selectedSourceId: string | null;
@@ -34,6 +36,18 @@ interface Params {
   sortDirection: "asc" | "desc";
   sourcesById: Map<string, any>;
   t: (key: string, opts?: any) => string;
+}
+
+/**
+ * Тренд лежит в закладках? (SM-17)
+ *
+ * Поле приходит в двух написаниях: snake_case из Directus и camelCase из
+ * клиентских мутаций — см. TrendTopic, где объявлены оба. Читаем оба и
+ * считаем закладкой ТОЛЬКО настоящий true: undefined, null и строка "true"
+ * закладкой не являются, иначе фильтр молча покажет всё подряд.
+ */
+export function isBookmarkedTrend(topic: any): boolean {
+  return topic?.is_bookmarked === true || topic?.isBookmarked === true;
 }
 
 function platformBySourceUrl(source: any): string {
@@ -50,6 +64,7 @@ export function useVisibleTrends(params: Params): VisibleTrend[] {
   const {
     trends,
     hiddenTrendIds,
+    onlyBookmarked,
     searchQuery,
     selectedPlatform,
     selectedSourceId,
@@ -66,6 +81,7 @@ export function useVisibleTrends(params: Params): VisibleTrend[] {
 
     const filtered = trends.filter((topic) => {
       if (hiddenTrendIds.has(topic.id)) return false;
+      if (onlyBookmarked && !isBookmarkedTrend(topic)) return false;
 
       const detected = detectPlatform((topic as any).sourceType || "");
       const matchesSearch = (topic.title || "").toLowerCase().includes(search);
@@ -159,6 +175,7 @@ export function useVisibleTrends(params: Params): VisibleTrend[] {
   }, [
     trends,
     hiddenTrendIds,
+    onlyBookmarked,
     searchQuery,
     selectedPlatform,
     selectedSourceId,

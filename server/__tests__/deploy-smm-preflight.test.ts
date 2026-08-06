@@ -162,10 +162,14 @@ describe('AI-38: предвыкаточные проверки', () => {
     // Набор по умолчанию: без build. Следом идёт docker build, а он выполняет
     // `npm run build` внутри образа и точно так же останавливает деплой при
     // ошибке — до переключения контейнера.
+    //
+    // test:dates:msk — те же date-файлы во втором часовом поясе. Прод и CI
+    // гоняют в UTC, где проверка, завязанная на смещение, может выродиться и
+    // стать зелёной при перепутанном знаке (так и случилось 06.08).
     const res = await runDeploy(work);
 
     expect(res.code).toBe(0);
-    expect(npmCalls()).toEqual(['check', 'check:client', 'test:run']);
+    expect(npmCalls()).toEqual(['check', 'check:client', 'test:run', 'test:dates:msk']);
   });
 
   it('падение любого шага останавливает деплой до сборки', async () => {

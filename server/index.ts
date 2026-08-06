@@ -336,6 +336,7 @@ app.use('/api', invalidateContentCacheOnMutation);
 // Обработчик вынесен в модуль: поле revision — часть проверки выкатки (AI-50)
 // и покрыто тестом, а импортировать ради этого весь index.ts нельзя.
 import { rootHealthHandler } from './routes/root-health';
+import { startPublicationLocks } from './services/publication-lock-manager';
 app.get('/health', rootHealthHandler);
 
 // Trends Collection API (регистрируем максимально рано для избежания 404)
@@ -1134,6 +1135,13 @@ app.use('/video-app', (req, res, next) => {
 
       // Инициализируем тяжелые сервисы после успешного запуска сервера
       initializeHeavyServices();
+
+      // Фоновая часть замков публикации (AI-55). Раньше стартовала прямо при
+      // импорте модуля — теперь явно, чтобы импорт оставался без побочных
+      // эффектов. Если этот вызов пропадёт, замки перестанут чиститься и
+      // проба коллекции не пойдёт: в логах не будет строки
+      // «PublicationLock: Collection health check passed».
+      startPublicationLocks();
 
       // Восстанавливаем автономный режим для кампаний которые были активны до рестарта
       scheduleBackgroundJob('restore-autonomous', 10000, () => {

@@ -24,6 +24,7 @@
  */
 
 import { detectEnvironment } from './environment-detector';
+import { currentRequestId } from './request-context';
 
 // Получаем конфигурацию окружения
 export let envConfig = detectEnvironment();
@@ -220,16 +221,22 @@ function emit(level: LogLevel, message: string, source: string, err?: any): void
   let line: string;
 
   if (envConfig.environment === 'production') {
+    // reqId проставляется здесь, а не в местах вызова: так корреляцию
+    // получают ВСЕ существующие строки лога без правки сотен вызовов.
+    // Вне запроса (фоновые задачи, старт процесса) поля просто нет.
+    const reqId = currentRequestId();
     line = safeStringify({
       ts: new Date().toISOString(),
       level,
       source,
+      ...(reqId !== undefined ? { reqId } : {}),
       msg: text,
       ...(details !== undefined ? { err: details } : {}),
     });
   } else {
     const time = new Date().toLocaleTimeString();
-    line = `${time} [DEV] [${source}] ${text}`;
+    const reqId = currentRequestId();
+    line = `${time} [DEV] [${source}]${reqId ? ` [${reqId}]` : ''} ${text}`;
   }
 
   recordLog(line);

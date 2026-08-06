@@ -30,7 +30,7 @@ import supportRoutes from "./routes/support-routes";
 import autonomousRouter from "./routes/autonomous";
 import { restoreAutonomousStates, getActiveAutonomousCampaignIds } from './services/autonomous-ai';
 // daily-trend-scheduler импорт удалён — планировщик отключён, сбор трендов только вручную
-import { log, logEnvironmentInfo } from "./utils/logger";
+import { log, logEnvironmentInfo, logMessage } from "./utils/logger";
 import { directusApiManager } from './directus';
 import { falAiUniversalService } from './services/fal-ai-universal';
 import { initializeHeavyServices } from './optimize-startup';
@@ -264,10 +264,21 @@ export { broadcastNotification };
 // Экспортируем WebSocket server для использования в других модулях
 export { wss };
 
-// Увеличиваем лимиты для обработки изображений Stories
+// Сквозной контекст запроса (AI-65). Ставится как можно раньше, чтобы reqId
+// был у всех последующих строк лога, включая ошибки парсинга тела.
+//
+// Здесь же раньше стоял `console.log('[HTTP] ' + req.originalUrl)`. Он убран
+// по двум причинам: писал ПОЛНЫЙ URL вместе с query мимо логгера, то есть мимо
+// редактирования секретов; и давал вторую строку на каждый запрос, включая
+// сканерный мусор из интернета. Итоговая строка теперь одна, на завершение.
 app.use((req, res, next) => {
-  console.log(`[HTTP] ${req.method} ${req.originalUrl}`);
-  next();
+  const incoming = sanitizeRequestId(req.headers[REQUEST_ID_HEADER]);
+  const reqId = incoming ?? generateRequestId();
+
+  // Отдаём наружу: по этому значению из ответа клиент или мы находим цепочку.
+  res.setHeader(REQUEST_ID_HEADER, reqId);
+
+  runWithRequestContext({ reqId }, () => next());
 });
 const corsOrigin = process.env.NODE_ENV === 'production'
   ? getAllowedOrigins()
@@ -336,6 +347,13 @@ app.use('/api', invalidateContentCacheOnMutation);
 // Обработчик вынесен в модуль: поле revision — часть проверки выкатки (AI-50)
 // и покрыто тестом, а импортировать ради этого весь index.ts нельзя.
 import { rootHealthHandler } from './routes/root-health';
+import {
+  REQUEST_ID_HEADER,
+  generateRequestId,
+  routePattern,
+  runWithRequestContext,
+  sanitizeRequestId,
+} from './utils/request-context';
 import { startPublicationLocks } from './services/publication-lock-manager';
 app.get('/health', rootHealthHandler);
 
@@ -579,32 +597,29 @@ API маршруты:
   return res.status(200).type('html').send(content);
 });
 
-// Middleware для логирования запросов
+// Одна строка на завершение запроса (AI-65, этап 2).
+//
+// Раньше сюда подмешивалось ТЕЛО ОТВЕТА (`capturedJsonResponse`), обрезанное до
+// 80 символов. Это прямой путь утечки: в теле бывают токены, адреса почты и
+// персональные данные, а обрезание по длине от этого не спасает — начало
+// токена всё равно уезжало в лог. Тело убрано полностью; для разбора хватает
+// статуса, длительности и reqId, по которому поднимается вся цепочка.
 app.use((req, res, next) => {
   const start = Date.now();
-  const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
-
-  const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
-  };
 
   res.on("finish", () => {
+    if (!req.path.startsWith("/api")) return;
+
     const duration = Date.now() - start;
-    if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
+    const level = res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info';
 
-      if (logLine.length > 80) {
-        logLine = logLine.slice(0, 79) + "…";
-      }
-
-      log(logLine);
-    }
+    // Шаблон, а не подставленный id: иначе на каждую кампанию заводится своя
+    // строка и поиск по логам теряет смысл.
+    logMessage(
+      `${req.method} ${routePattern(req.path)} ${res.statusCode} ${duration}ms`,
+      'http',
+      level,
+    );
   });
 
   next();

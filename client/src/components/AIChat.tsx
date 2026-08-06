@@ -487,11 +487,18 @@ export function AIChat({ isOpen: externalIsOpen, onOpenChange, showFloatingButto
             queryKey: ['/api/campaigns', userId] 
           });
           
-          // Если создана новая кампания, обновляем страницу
+          // AI-77: вместо window.location.reload() — инвалидируем кэш и навигируем через SPA
           if (data.response && data.response.includes('создана') && data.response.includes('🆔 ID кампании:')) {
+            // Извлекаем ID кампании из ответа для навигации
+            const idMatch = data.response.match(/🆔 ID кампании:\s*(\S+)/);
+            const campaignId = idMatch ? idMatch[1] : null;
             setTimeout(() => {
-              window.location.reload();
-            }, 2000); // Обновляем через 2 секунды после показа результата
+              queryClient.invalidateQueries({ queryKey: ['/api/campaigns'] });
+              queryClient.invalidateQueries({ queryKey: ['/api/campaign-content'] });
+              if (campaignId) {
+                setLocation(`/campaigns/${campaignId}`);
+              }
+            }, 2000);
           }
         }
 

@@ -72,9 +72,11 @@ export class PublicationLockManager {
         log(`🔒 PublicationLock: Lock already held for ${lockKey} (concurrent acquire)`, 'publication-lock');
         return false;
       }
-      // Network error, Directus down, etc. — fail open to avoid blocking publishing
-      log(`⚠️ PublicationLock: Error acquiring lock for ${lockKey}, failing open: ${err?.message}`, 'publication-lock');
-      return true;
+      // Network error, Directus down, etc.
+      // Fail-CLOSED: duplicate post is worse than a delayed one.
+      // The scheduler will retry on the next cycle (every minute).
+      log(`⛔ PublicationLock: Lock store unavailable for ${lockKey}, denying publish: ${err?.message}`, 'publication-lock');
+      return false;
     }
   }
 

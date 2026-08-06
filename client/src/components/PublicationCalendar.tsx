@@ -439,35 +439,28 @@ export default function PublicationCalendar({
       }
     };
 
-    // Отображаем только цветные точки для типов контента (макс 4 + счётчик)
-    const MAX_VISIBLE_DOTS = 4;
-    const allDots: { status: string; type: string }[] = [];
-    Object.entries(contentByStatus).forEach(([status, typesCounts]) => {
-      Object.entries(typesCounts).forEach(([type, count]) => {
-        for (let i = 0; i < count; i++) {
-          allDots.push({ status, type });
-        }
-      });
-    });
-    const remaining = allDots.length - MAX_VISIBLE_DOTS;
-    const visibleDots = allDots.slice(0, MAX_VISIBLE_DOTS);
-
+    // Отображаем цветные точки для типов контента (с переносом, без обрезания)
     return (
-      <div className="flex justify-center items-center gap-0.5 mt-0.5 overflow-hidden max-w-full">
-        {visibleDots.map(({ status, type }, idx) => {
-          const { opacity, ring } = getStatusStyle(status);
-          return (
-            <div 
-              key={idx} 
-              className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${getColorForType(type)} ${ring || ''}`}
-              style={{ opacity }}
-              title={`${status}: ${type}`}
-            ></div>
-          );
-        })}
-        {remaining > 0 && (
-          <span className="text-[8px] leading-none text-muted-foreground flex-shrink-0">+{remaining}</span>
-        )}
+      <div className="flex justify-center flex-wrap gap-0.5 mt-0.5 overflow-hidden max-w-full">
+        {Object.entries(contentByStatus).map(([status, typesCounts], statusIndex) => (
+          <React.Fragment key={statusIndex}>
+            {Object.entries(typesCounts).map(([type, count], typeIndex) => {
+              const { opacity, ring } = getStatusStyle(status);
+              const dots = [];
+              for (let i = 0; i < count; i++) {
+                dots.push(
+                  <div 
+                    key={`${statusIndex}-${typeIndex}-${i}`} 
+                    className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${getColorForType(type)} ${ring || ''}`}
+                    style={{ opacity }}
+                    title={`${status}: ${type}`}
+                  ></div>
+                );
+              }
+              return dots;
+            })}
+          </React.Fragment>
+        ))}
       </div>
     );
   };

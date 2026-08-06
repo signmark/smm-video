@@ -10,7 +10,6 @@
  * Токен читаем из тех же ключей, что и остальной клиент.
  */
 
-import { refreshAuthSession } from './refreshAuth';
 
 export function getStoredAuthToken(): string | null {
   return localStorage.getItem('auth_token')
@@ -63,6 +62,11 @@ export async function fetchWithAuth(
   let response = await fetch(url, { ...options, headers });
 
   if (response.status === 401) {
+    // Импорт ленивый: refreshAuth тянет за собой zustand-сторы, а те читают
+    // localStorage прямо при инициализации модуля. Со статическим импортом
+    // любой тест, импортирующий auth-headers, падал на ReferenceError ещё до
+    // своей первой строки — в node-окружении localStorage не существует.
+    const { refreshAuthSession } = await import('./refreshAuth');
     const refreshResult = await refreshAuthSession();
     if (refreshResult === 'refreshed' || refreshResult === 'superseded') {
       const newHeaders = authHeaders(

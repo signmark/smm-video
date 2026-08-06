@@ -3,10 +3,12 @@ import { DeepSeekService, DeepSeekMessage } from './services/deepseek';
 import { apiKeyService, ApiServiceName } from './services/api-keys';
 import { globalApiKeyManager } from './services/global-api-key-manager';
 import { log } from './utils/logger';
+import { authenticateUser } from './middleware/user-auth';
 
 export function registerDeepSeekRoutes(app: Router) {
   const router = Router();
-  // Монтируем на /api
+  // AI-74: Добавлена аутентификация. userId теперь из проверенной сессии.
+  router.use(authenticateUser);
   app.use('/api', router);
 
   /**
@@ -29,8 +31,8 @@ export function registerDeepSeekRoutes(app: Router) {
         log(`[deepseek-routes] Global API key retrieval failed: ${globalError instanceof Error ? globalError.message : 'Unknown error'}`);
       }
 
-      // Если глобального ключа нет, пробуем пользовательский ключ
-      const userId = req.userId;
+      // AI-74: userId из проверенной сессии (authenticateUser), не из заголовка
+      const userId = (req as any).user?.id as string | undefined;
       if (!userId) {
         log('Cannot get DeepSeek API key: userId is missing in request and no global key available');
         return null;
@@ -81,7 +83,8 @@ export function registerDeepSeekRoutes(app: Router) {
   router.post('/deepseek/improve-text', async (req: Request, res: Response) => {
     try {
       const { text, prompt, model } = req.body;
-      const userId = req.userId;
+      // AI-74: userId из проверенной сессии
+      const userId = (req as any).user?.id as string | undefined;
       
       log(`Received improve-text request from user ${userId}`);
       

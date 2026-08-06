@@ -444,20 +444,16 @@ export default function PublicationCalendar({
       <div className="flex justify-center flex-wrap gap-0.5 mt-0.5 overflow-hidden max-w-full">
         {Object.entries(contentByStatus).map(([status, typesCounts], statusIndex) => (
           <React.Fragment key={statusIndex}>
-            {Object.entries(typesCounts).map(([type, count], typeIndex) => {
+            {Object.keys(typesCounts).map((type, typeIndex) => {
               const { opacity, ring } = getStatusStyle(status);
-              const dots = [];
-              for (let i = 0; i < count; i++) {
-                dots.push(
-                  <div 
-                    key={`${statusIndex}-${typeIndex}-${i}`} 
-                    className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${getColorForType(type)} ${ring || ''}`}
-                    style={{ opacity }}
-                    title={`${status}: ${type}`}
-                  ></div>
-                );
-              }
-              return dots;
+              return (
+                <div 
+                  key={`${statusIndex}-${typeIndex}`} 
+                  className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${getColorForType(type)} ${ring || ''}`}
+                  style={{ opacity }}
+                  title={`${status}: ${type}`}
+                ></div>
+              );
             })}
           </React.Fragment>
         ))}

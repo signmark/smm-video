@@ -54,6 +54,16 @@ beforeEach(() => {
   mockAvailable();
 });
 
+/**
+ * Каждый вызов к Directus обязан нести статический токен: планировщик — фоновый
+ * процесс, пользовательского токена у него нет. Без заголовка Directus отвечает
+ * 403, а при fail-closed это означает молчаливую остановку всех публикаций,
+ * поэтому проверяем не только адрес запроса, но и авторизацию.
+ */
+const withLockAuth = expect.objectContaining({
+  headers: expect.objectContaining({ Authorization: expect.stringContaining('Bearer ') }),
+});
+
 describe('PublicationLockManager (Directus-based)', () => {
   it('acquireLock succeeds and remembers held id', async () => {
     const mgr = new PublicationLockManager();
@@ -63,7 +73,7 @@ describe('PublicationLockManager (Directus-based)', () => {
       lock_key: 'content-1:telegram',
       content_id: 'content-1',
       platform: 'telegram',
-    }));
+    }), withLockAuth);
   });
 
   it('acquireLock returns false when lock already exists (not expired)', async () => {
@@ -81,7 +91,7 @@ describe('PublicationLockManager (Directus-based)', () => {
     const mgr = new PublicationLockManager();
     const result = await mgr.acquireLock('content-1', 'telegram');
     expect(result).toBe(true);
-    expect(directusApi.delete).toHaveBeenCalledWith('/items/publication_locks/stale-id');
+    expect(directusApi.delete).toHaveBeenCalledWith('/items/publication_locks/stale-id', withLockAuth);
     expect(directusApi.post).toHaveBeenCalled();
   });
 
@@ -117,7 +127,7 @@ describe('PublicationLockManager (Directus-based)', () => {
     mockAvailable();
 
     await mgr.releaseLock('content-1', 'telegram');
-    expect(directusApi.delete).toHaveBeenCalledWith('/items/publication_locks/my-lock-id');
+    expect(directusApi.delete).toHaveBeenCalledWith('/items/publication_locks/my-lock-id', withLockAuth);
     // Should NOT do a get to find the lock — it uses the held id
     expect(directusApi.get).not.toHaveBeenCalled();
   });
@@ -144,7 +154,7 @@ describe('PublicationLockManager (Directus-based)', () => {
     const mgr = new PublicationLockManager();
     const result = await mgr.isLocked('content-1', 'telegram');
     expect(result).toBe(false);
-    expect(directusApi.delete).toHaveBeenCalledWith('/items/publication_locks/stale-id');
+    expect(directusApi.delete).toHaveBeenCalledWith('/items/publication_locks/stale-id', withLockAuth);
   });
 
   it('releaseAllLocks deletes all matching records by id', async () => {
@@ -160,8 +170,8 @@ describe('PublicationLockManager (Directus-based)', () => {
     const mgr = new PublicationLockManager();
     await mgr.releaseAllLocks('content-1');
     expect(directusApi.delete).toHaveBeenCalledTimes(2);
-    expect(directusApi.delete).toHaveBeenCalledWith('/items/publication_locks/lock-1');
-    expect(directusApi.delete).toHaveBeenCalledWith('/items/publication_locks/lock-2');
+    expect(directusApi.delete).toHaveBeenCalledWith('/items/publication_locks/lock-1', withLockAuth);
+    expect(directusApi.delete).toHaveBeenCalledWith('/items/publication_locks/lock-2', withLockAuth);
   });
 
   it('shutdown cleans up intervals and held ids', () => {

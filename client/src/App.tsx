@@ -113,8 +113,30 @@ function devOnly(Component: React.ComponentType | null): React.ComponentType {
 // Защищённые роуты: все маунтятся под одним <Layout>, поэтому при переходе
 // каркас (Sidebar/Topbar/AuthStore/CampaignStore/ThemeProvider/useCampaignOwnershipCheck)
 // остаётся стабильным, а меняется только содержимое внутри <Layout>.
+/**
+ * Загрузка ВНУТРИ каркаса, а не вместо него.
+ *
+ * Страницы грузятся лениво (React.lazy), и до этой правки ближайшей границей
+ * Suspense была внешняя — та, что оборачивает всё приложение. Поэтому при
+ * первом заходе на любой раздел React размонтировал вообще всё, включая
+ * Sidebar и Topbar, и показывал спиннер на весь экран. Каркас собирался
+ * заново на каждой новой странице — ровно то, на что жаловался владелец.
+ *
+ * Своя граница внутри <Layout> держит каркас смонтированным: подгружается
+ * только содержимое, а меню и верхняя панель не мигают.
+ */
+const ContentLoading = () => (
+  <div className="flex items-center justify-center py-24">
+    <div className="flex flex-col items-center gap-3">
+      <div className="animate-spin rounded-full h-8 w-8 border-4 border-primary/30 border-t-primary" />
+      <p className="text-sm text-muted-foreground">Загрузка…</p>
+    </div>
+  </div>
+);
+
 const ProtectedRoutes = () => (
   <Layout>
+    <Suspense fallback={<ContentLoading />}>
     <Switch>
       {/* Stories routes - нужно поставить ДО других роутов */}
       <Route path="/stories/:storyId/video-edit" component={VideoStoryEditorRoute} />
@@ -168,6 +190,7 @@ const ProtectedRoutes = () => (
       {/* NotFound должен быть последним */}
       <Route component={NotFound} />
     </Switch>
+    </Suspense>
   </Layout>
 );
 

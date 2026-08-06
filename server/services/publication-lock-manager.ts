@@ -1,193 +1,232 @@
 import { log } from '../utils/logger';
+import { directusApi } from '../directus';
 
 /**
- * Менеджер блокировок для предотвращения дублирования публикаций
- * Обеспечивает, что одна и та же платформа для одного контента
- * не может быть опубликована одновременно
+ * Distributed publication lock manager using Directus as the lock store.
+ *
+ * Replaces the previous in-memory Map-based implementation which could not
+ * prevent duplicate publications across multiple replicas. Uses a Directus
+ * collection `publication_locks` with a unique constraint on (content_id, platform)
+ * to guarantee atomicity.
+ *
+ * API is identical to the previous PublicationLockManager — all callers in
+ * publish-scheduler.ts are unchanged.
  */
+
+const LOCK_COLLECTION = 'publication_locks';
+const LOCK_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+
+interface LockRecord {
+  id: string;
+  content_id: string;
+  platform: string;
+  acquired_at: string;
+  expires_at: string;
+}
+
+function expiresAt(): string {
+  return new Date(Date.now() + LOCK_TIMEOUT_MS).toISOString();
+}
+
+function isExpired(record: LockRecord): boolean {
+  return new Date(record.expires_at).getTime() < Date.now();
+}
+
 export class PublicationLockManager {
-  private locks = new Map<string, Set<string>>(); // contentId -> Set<platform>
-  private lockTimeout = 15 * 60 * 1000; // 15 минут на публикацию (было 5)
-  private lockTimestamps = new Map<string, number>(); // lock key -> timestamp
-  private maxLocksSize = 500; // Максимальное количество блокировок
   private cleanupIntervalId: NodeJS.Timeout | null = null;
 
   /**
-   * Пытается получить блокировку для публикации
-   * @param contentId ID контента
-   * @param platform Платформа (instagram, facebook, vk, telegram)
-   * @returns true если блокировка получена, false если уже заблокирован
+   * Try to acquire a publication lock.
+   * Returns true if the lock was acquired, false if already held by another process.
    */
   async acquireLock(contentId: string, platform: string): Promise<boolean> {
     const lockKey = `${contentId}:${platform}`;
-    
-    // Проверяем существующую блокировку
-    if (this.isLocked(contentId, platform)) {
-      // Проверяем не истекла ли блокировка
-      const timestamp = this.lockTimestamps.get(lockKey);
-      if (timestamp && Date.now() - timestamp > this.lockTimeout) {
-        // Блокировка истекла, освобождаем и создаем новую
-        this.releaseLock(contentId, platform);
-        log(`🔓 PublicationLock: Истекшая блокировка освобождена для ${lockKey}`, 'publication-lock');
-      } else {
-        log(`🔒 PublicationLock: Контент ${contentId} уже публикуется в ${platform}`, 'publication-lock');
+
+    try {
+      // Check if a non-expired lock already exists
+      const existing = await this.findLock(contentId, platform);
+      if (existing) {
+        if (isExpired(existing)) {
+          // Stale lock — clean it up and retry
+          await this.deleteLock(existing.id);
+          log(`🔓 PublicationLock: Expired lock released for ${lockKey}`, 'publication-lock');
+        } else {
+          log(`🔒 PublicationLock: Content ${contentId} already publishing on ${platform}`, 'publication-lock');
+          return false;
+        }
+      }
+
+      // Attempt to insert — unique constraint ensures atomicity
+      await directusApi.post(`/items/${LOCK_COLLECTION}`, {
+        content_id: contentId,
+        platform,
+        acquired_at: new Date().toISOString(),
+        expires_at: expiresAt(),
+      });
+
+      log(`🔒 PublicationLock: Lock acquired for ${lockKey}`, 'publication-lock');
+      return true;
+    } catch (err: any) {
+      // Unique constraint violation — another process grabbed it first
+      if (err?.response?.status === 400 || err?.message?.includes('unique')) {
+        log(`🔒 PublicationLock: Lock already held for ${lockKey} (concurrent acquire)`, 'publication-lock');
         return false;
       }
+      // Network error, Directus down, etc. — fail open to avoid blocking publishing
+      log(`⚠️ PublicationLock: Error acquiring lock for ${lockKey}, failing open: ${err?.message}`, 'publication-lock');
+      return true;
     }
-
-    // Получаем новую блокировку
-    let platformSet = this.locks.get(contentId);
-    if (!platformSet) {
-      platformSet = new Set();
-      this.locks.set(contentId, platformSet);
-    }
-    
-    platformSet.add(platform);
-    this.lockTimestamps.set(lockKey, Date.now());
-    
-    log(`🔒 PublicationLock: Блокировка получена для ${lockKey}`, 'publication-lock');
-    return true;
   }
 
   /**
-   * Освобождает блокировку публикации
-   * @param contentId ID контента
-   * @param platform Платформа
+   * Release a publication lock.
    */
   async releaseLock(contentId: string, platform: string): Promise<void> {
     const lockKey = `${contentId}:${platform}`;
-    
-    const platformSet = this.locks.get(contentId);
-    if (platformSet) {
-      platformSet.delete(platform);
-      if (platformSet.size === 0) {
-        this.locks.delete(contentId);
+
+    try {
+      const existing = await this.findLock(contentId, platform);
+      if (existing) {
+        await this.deleteLock(existing.id);
+        log(`🔓 PublicationLock: Lock released for ${lockKey}`, 'publication-lock');
       }
+    } catch (err: any) {
+      log(`⚠️ PublicationLock: Error releasing lock for ${lockKey}: ${err?.message}`, 'publication-lock');
     }
-    
-    this.lockTimestamps.delete(lockKey);
-    log(`🔓 PublicationLock: Блокировка освобождена для ${lockKey}`, 'publication-lock');
   }
 
   /**
-   * Проверяет заблокирован ли контент для публикации на платформе
-   * @param contentId ID контента
-   * @param platform Платформа
-   * @returns true если заблокирован
+   * Check if a lock is currently held (and not expired).
    */
-  isLocked(contentId: string, platform: string): boolean {
-    const platformSet = this.locks.get(contentId);
-    return platformSet ? platformSet.has(platform) : false;
+  async isLocked(contentId: string, platform: string): Promise<boolean> {
+    try {
+      const existing = await this.findLock(contentId, platform);
+      if (!existing) return false;
+      if (isExpired(existing)) {
+        // Clean up stale lock on read
+        await this.deleteLock(existing.id).catch(() => {});
+        return false;
+      }
+      return true;
+    } catch {
+      // On error, assume not locked (fail open)
+      return false;
+    }
   }
 
   /**
-   * Освобождает все блокировки для контента
-   * @param contentId ID контента
+   * Release all locks for a given content ID.
    */
   async releaseAllLocks(contentId: string): Promise<void> {
-    const platformSet = this.locks.get(contentId);
-    if (platformSet) {
-      for (const platform of Array.from(platformSet)) {
-        const lockKey = `${contentId}:${platform}`;
-        this.lockTimestamps.delete(lockKey);
+    try {
+      const response = await directusApi.get(`/items/${LOCK_COLLECTION}`, {
+        params: {
+          filter: { content_id: { _eq: contentId } },
+          limit: -1,
+        },
+      });
+      const records: LockRecord[] = response.data?.data || [];
+      for (const record of records) {
+        await this.deleteLock(record.id);
       }
-      this.locks.delete(contentId);
-      log(`🔓 PublicationLock: Все блокировки освобождены для контента ${contentId}`, 'publication-lock');
+      if (records.length > 0) {
+        log(`🔓 PublicationLock: All locks released for content ${contentId} (${records.length})`, 'publication-lock');
+      }
+    } catch (err: any) {
+      log(`⚠️ PublicationLock: Error releasing all locks for ${contentId}: ${err?.message}`, 'publication-lock');
     }
   }
 
   /**
-   * Инициализирует автоматическую очистку с контролем памяти
+   * Remove expired locks. Called periodically.
    */
-  private initCleanupSchedule(): void {
+  async cleanupExpiredLocks(): Promise<void> {
+    try {
+      const response = await directusApi.get(`/items/${LOCK_COLLECTION}`, {
+        params: {
+          filter: {
+            expires_at: { _lt: new Date().toISOString() },
+          },
+          limit: 200,
+        },
+      });
+      const records: LockRecord[] = response.data?.data || [];
+      for (const record of records) {
+        await this.deleteLock(record.id);
+      }
+      if (records.length > 0) {
+        log(`🧹 PublicationLock: Cleaned up ${records.length} expired locks`, 'publication-lock');
+      }
+    } catch (err: any) {
+      // Non-critical — expired locks will be cleaned on next acquire attempt
+      log(`⚠️ PublicationLock: Cleanup error: ${err?.message}`, 'publication-lock');
+    }
+  }
+
+  /**
+   * Get statistics (best-effort, may be slow with many locks).
+   */
+  async getStats(): Promise<{ totalLocks: number }> {
+    try {
+      const response = await directusApi.get(`/items/${LOCK_COLLECTION}`, {
+        params: { aggregate: { count: '*' } },
+      });
+      return { totalLocks: response.data?.data?.[0]?.count ?? 0 };
+    } catch {
+      return { totalLocks: 0 };
+    }
+  }
+
+  /**
+   * Initialize periodic cleanup.
+   */
+  initCleanupSchedule(): void {
     if (this.cleanupIntervalId) {
       clearInterval(this.cleanupIntervalId);
     }
-    
     this.cleanupIntervalId = setInterval(() => {
       this.cleanupExpiredLocks();
-      this.enforceMemoryLimits();
-    }, 5 * 60 * 1000); // каждые 5 минут
+    }, 5 * 60 * 1000); // every 5 minutes
   }
 
   /**
-   * Принудительно ограничивает размер кэша для предотвращения утечек памяти
-   */
-  private enforceMemoryLimits(): void {
-    if (this.locks.size > this.maxLocksSize) {
-      // Удаляем 25% самых старых блокировок
-      const entries = Array.from(this.lockTimestamps.entries())
-        .sort(([, a], [, b]) => a - b) // сортируем по времени
-        .slice(0, Math.floor(this.lockTimestamps.size / 4));
-
-      for (const [lockKey] of entries) {
-        const [contentId, platform] = lockKey.split(':');
-        this.releaseLock(contentId, platform);
-      }
-      
-      log(`🚨 MEMORY: Принудительно очищено ${entries.length} блокировок (лимит: ${this.maxLocksSize})`, 'publication-lock');
-    }
-  }
-
-  /**
-   * Очищает истекшие блокировки
-   */
-  cleanupExpiredLocks(): void {
-    const now = Date.now();
-    const expiredLocks: string[] = [];
-
-    for (const [lockKey, timestamp] of Array.from(this.lockTimestamps.entries())) {
-      if (now - timestamp > this.lockTimeout) {
-        expiredLocks.push(lockKey);
-      }
-    }
-
-    for (const lockKey of expiredLocks) {
-      const [contentId, platform] = lockKey.split(':');
-      this.releaseLock(contentId, platform);
-    }
-
-    if (expiredLocks.length > 0) {
-      log(`🧹 PublicationLock: Очищено ${expiredLocks.length} истекших блокировок`, 'publication-lock');
-    }
-  }
-
-  /**
-   * Получает статистику блокировок
-   */
-  getStats(): { totalLocks: number; contentCount: number } {
-    let totalLocks = 0;
-    for (const platformSet of Array.from(this.locks.values())) {
-      totalLocks += platformSet.size;
-    }
-    
-    return {
-      totalLocks,
-      contentCount: this.locks.size
-    };
-  }
-
-  /**
-   * Полная очистка всех блокировок и остановка фоновых процессов
+   * Shutdown — clear interval, nothing to flush (state is in Directus).
    */
   shutdown(): void {
     if (this.cleanupIntervalId) {
       clearInterval(this.cleanupIntervalId);
       this.cleanupIntervalId = null;
     }
-    
-    this.locks.clear();
-    this.lockTimestamps.clear();
-    log('🔴 PublicationLockManager: Полная очистка памяти выполнена', 'publication-lock');
+    log('🔴 PublicationLockManager: Shutdown complete', 'publication-lock');
+  }
+
+  // ---- Private helpers ----
+
+  private async findLock(contentId: string, platform: string): Promise<LockRecord | null> {
+    const response = await directusApi.get(`/items/${LOCK_COLLECTION}`, {
+      params: {
+        filter: {
+          content_id: { _eq: contentId },
+          platform: { _eq: platform },
+        },
+        limit: 1,
+      },
+    });
+    const data = response.data?.data;
+    return data?.length ? data[0] : null;
+  }
+
+  private async deleteLock(id: string): Promise<void> {
+    await directusApi.delete(`/items/${LOCK_COLLECTION}/${id}`);
   }
 }
 
-// Создаем единственный экземпляр менеджера блокировок
+// Singleton
 export const publicationLockManager = new PublicationLockManager();
 
-// Инициализируем автоматическую очистку с контролем памяти
-publicationLockManager['initCleanupSchedule']();
+// Start cleanup schedule
+publicationLockManager.initCleanupSchedule();
 
-// Graceful shutdown при завершении процесса
+// Graceful shutdown
 process.on('SIGTERM', () => publicationLockManager.shutdown());
 process.on('SIGINT', () => publicationLockManager.shutdown());

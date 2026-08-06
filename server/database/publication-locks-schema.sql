@@ -1,0 +1,20 @@
+-- AI-55: Distributed publication locks
+-- Replace in-memory lock manager with Directus-based distributed locks.
+--
+-- Create this collection in Directus (Data Model → Create Collection):
+--   Name: publication_locks
+--   Singleton: NO
+--
+-- Fields:
+--   content_id  → Type: String (required)
+--   platform    → Type: String (required)  
+--   acquired_at → Type: Datetime (required)
+--   expires_at  → Type: Datetime (required)
+--
+-- IMPORTANT: Add a UNIQUE constraint on (content_id, platform) on the
+-- Directus collection settings page. This is what guarantees atomicity
+-- across replicas — the INSERT fails with a unique violation if another
+-- process already holds the lock.
+
+-- Or create via Directus API:
+-- POST /collections with the schema above.

@@ -64,8 +64,7 @@ test.describe('AI-36 Сценарий 1: Вход', () => {
     await page.waitForTimeout(3000);
     expect(page.url()).toMatch(/\/(auth\/login|login)/);
 
-    const errorIndicator = page.locator('[role="alert"], .error, .text-red-500, .text-red-600, [class*="error" i]')
-      .first();
+    const errorIndicator = page.getByText("Ошибка входа");
     await expect(errorIndicator).toBeVisible({ timeout: 5000 });
   });
 });

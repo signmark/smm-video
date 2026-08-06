@@ -69,6 +69,22 @@ SMM_KEEP_IMAGES="${SMM_KEEP_IMAGES:-3}"
 SMM_MIN_FREE_MB="${SMM_MIN_FREE_MB:-8000}"
 SMM_DOCKER_ROOT="${SMM_DOCKER_ROOT:-/var/lib/docker}"
 
+# Предвыкаточные проверки кода (AI-38). CI гоняет ровно эти шаги, но деплой на
+# статус CI не смотрит и обгоняет его: push и выкатка идут подряд, а прогон
+# длится минуты. Поэтому те же проверки выполняются здесь, до переключения
+# контейнера. SMM_SKIP_PREFLIGHT=1 — осознанный пропуск (инцидент, откат).
+SMM_NPM="${SMM_NPM:-npm}"
+SMM_SKIP_PREFLIGHT="${SMM_SKIP_PREFLIGHT:-}"
+# ВАЖНО: именно test:run, а не test. `npm run test` — это vitest в watch-режиме,
+# он не завершится никогда и подвесит деплой вместе с удерживаемым flock.
+#
+# `build` в набор осознанно НЕ входит, хотя CI его гоняет: следом за preflight
+# идёт docker build, а он выполняет `npm run build` внутри образа (Dockerfile).
+# Дублировать сборку — это лишние ~1.5 минуты на каждой выкатке ради проверки,
+# которая всё равно случится через минуту и так же остановит деплой до
+# переключения контейнера. Добавить обратно: SMM_PREFLIGHT_STEPS="... build".
+SMM_PREFLIGHT_STEPS="${SMM_PREFLIGHT_STEPS:-check check:client test:run}"
+
 SMM_DOCKER="${SMM_DOCKER:-docker}"
 SMM_GIT="${SMM_GIT:-git}"
 SMM_CURL="${SMM_CURL:-curl}"
@@ -350,6 +366,8 @@ do_deploy() {
   dirty="$("$SMM_GIT" -C "$CREATED_WORKTREE" status --porcelain)"
   [ -z "$dirty" ] || fail "worktree сборки не чист — это не должно случаться: $dirty"
 
+  preflight_code "$CREATED_WORKTREE"
+
   if [ "$DRY_RUN" = "yes" ]; then
     log "--dry-run: сборка и переключение пропущены (SHA $sha, контекст $CREATED_WORKTREE)"
     event dry_run_done "$sha"
@@ -387,6 +405,64 @@ do_deploy() {
   # Только после успешной проверки прода: неудачный деплой не должен
   # ничего удалять — старые образы это и есть пути отката.
   prune_old_images
+}
+
+# Прогоняет проверки CI на том же дереве, которое поедет в образ (AI-38).
+#
+# Почему здесь, а не «просто помнить руками»: у деплоя нет доступа к статусу CI
+# (на проде нет gh и GITHUB_TOKEN), а выкатка стартует раньше, чем прогон
+# успевает покраснеть. Полагаться на память исполнителя нельзя — 06.08 клиентская
+# правка уехала в прод без тайпчека именно так: `npm run check` смотрит
+# tsconfig.critical.json (пустой include, 7 файлов) и клиент не покрывает вовсе.
+#
+# Проверки идут в CREATED_WORKTREE — ровно тот SHA, что собирается. Каталог
+# свежий, node_modules в нём нет, поэтому подкладывается симлинк на дерево
+# основного репозитория. Отсюда ограничение: если в выкатываемом коммите менялся
+# package-lock.json, установленные модули ему не соответствуют — об этом
+# предупреждаем отдельно, потому что тогда прогон проверяет не то дерево.
+preflight_code() {
+  local dir="$1"
+
+  if [ -n "$SMM_SKIP_PREFLIGHT" ]; then
+    log "preflight пропущен (SMM_SKIP_PREFLIGHT=$SMM_SKIP_PREFLIGHT)"
+    event preflight_skipped "env"
+    return 0
+  fi
+
+  # Не JS-чекаут (используется в тестах скрипта) — проверять нечего.
+  if [ ! -f "${dir}/package.json" ]; then
+    log "preflight пропущен: в ${dir} нет package.json"
+    event preflight_skipped "no_package_json"
+    return 0
+  fi
+
+  local modules="${SMM_REPO_DIR}/node_modules"
+  if [ ! -d "$modules" ]; then
+    fail "preflight невозможен: нет $modules. Установите зависимости или запустите с SMM_SKIP_PREFLIGHT=1"
+  fi
+
+  if [ -f "${dir}/package-lock.json" ] && [ -f "${SMM_REPO_DIR}/package-lock.json" ]      && ! cmp -s "${dir}/package-lock.json" "${SMM_REPO_DIR}/package-lock.json"; then
+    log "ВНИМАНИЕ: package-lock.json в выкатываемом коммите отличается от установленного дерева."
+    log "          preflight прогонится на текущих node_modules, то есть проверит не тот набор зависимостей."
+    event preflight_lock_mismatch "$dir"
+  fi
+
+  ln -sfn "$modules" "${dir}/node_modules"
+
+  local step status
+  for step in $SMM_PREFLIGHT_STEPS; do
+    log "preflight: $step"
+    event preflight_step "$step"
+    status=0
+    ( cd "$dir" && "$SMM_NPM" run "$step" ) || status=$?
+    if [ "$status" -ne 0 ]; then
+      event preflight_failed "$step"
+      fail "preflight не прошёл на шаге '$step' (код $status). Прод не тронут. Осознанный пропуск: SMM_SKIP_PREFLIGHT=1"
+    fi
+  done
+
+  event preflight_done "$SMM_PREFLIGHT_STEPS"
+  log "preflight пройден: $SMM_PREFLIGHT_STEPS"
 }
 
 main() {

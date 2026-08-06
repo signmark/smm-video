@@ -116,6 +116,27 @@ describe('AI-65: убранные утечки не вернулись', () => {
     expect(indexSource()).not.toMatch(/\[HTTP\]\s*\$\{req\.method\}\s*\$\{req\.originalUrl\}/);
   });
 
+  it('итоговая запись регистрируется ДО монтирования роутеров', () => {
+    // Express не выполняет middleware, объявленные после обработчика, который
+    // уже ответил. Роутеры /health, auth и trends монтируются рано, поэтому
+    // логгер, стоящий ниже них, молчит — проверено на проде: строк source=http
+    // не было ни одной, пока запись не перенесли наверх.
+    const src = indexSource();
+    const finishAt = src.indexOf("res.on('finish'");
+    const firstRouter = Math.min(
+      ...[
+        "app.get('/health'",
+        'registerAuthRoutes(app)',
+        'registerTrendsRoutes(app)',
+      ]
+        .map((m) => src.indexOf(m))
+        .filter((i) => i >= 0),
+    );
+
+    expect(finishAt).toBeGreaterThan(0);
+    expect(finishAt).toBeLessThan(firstRouter);
+  });
+
   it('тело ответа не подмешивается в строку запроса', () => {
     // Было: перехват res.json в переменную и `logLine += JSON.stringify(...)`
     // с обрезкой до 80 символов — начало токена всё равно уезжало в лог.

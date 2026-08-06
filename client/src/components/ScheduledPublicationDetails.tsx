@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { DISPLAY_TIME_ZONE } from '@/lib/date-utils';
+import { DISPLAY_TIME_ZONE, serverDate } from '@/lib/date-utils';
 import { CampaignContent, SocialPlatform } from '@/types';
 import { formatInTimeZone } from 'date-fns-tz';
 import { ru } from 'date-fns/locale';
@@ -79,7 +79,7 @@ function formatDateBlock(date: string | Date | null | undefined) {
     if (typeof date === 'string' && !date.endsWith('Z') && !date.includes('+')) {
       dateStr += 'Z';
     }
-    const d = new Date(dateStr);
+    const d = serverDate(dateStr);
     if (isNaN(d.getTime())) return null;
     return {
       day: formatInTimeZone(d, userTZ, 'd', { locale: ru }),
@@ -100,7 +100,7 @@ function formatTime(date: string | Date | null | undefined): string | null {
     if (typeof date === 'string' && !date.endsWith('Z') && !date.includes('+')) {
       dateStr += 'Z';
     }
-    const d = new Date(dateStr);
+    const d = serverDate(dateStr);
     if (isNaN(d.getTime())) return null;
     return formatInTimeZone(d, userTZ, 'HH:mm', { locale: ru });
   } catch {

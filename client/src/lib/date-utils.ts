@@ -43,6 +43,40 @@ export function normalizeTimestamp(value: string | Date): Date {
 const toDate = normalizeTimestamp;
 
 /**
+ * Разбирает timestamp, ПРИШЕДШИЙ С СЕРВЕРА, в `Date`.
+ *
+ * Единственное отличие от `normalizeTimestamp` — имя: оно говорит, откуда
+ * значение. Читая `new Date(post.publishedAt)`, невозможно понять, ошибка это
+ * или нет; читая `serverDate(post.publishedAt)` — видно, что автор знал про
+ * нормализацию.
+ *
+ * Зачем вообще (AI-73). Directus хранит время в `timestamp without time zone`,
+ * поэтому часть значений приходит без `Z`: `'2026-08-05T09:33:37'`. Голый
+ * `new Date()` считает такую строку МЕСТНЫМ временем браузера, и в Москве
+ * получается момент на 3 часа раньше настоящего. Один и тот же дефект
+ * приезжал от тестировщиков трижды — SM-9, SM-14, SM-16.
+ *
+ * Применять для значений из API. Для того, что пользователь ввёл в форме, и
+ * для `new Date()` без аргументов нормализация не нужна и вредна: это уже
+ * местное время.
+ */
+export function serverDate(value: string | Date): Date {
+  return normalizeTimestamp(value);
+}
+
+/**
+ * То же, но терпит `null`/`undefined`/пустую строку и не бросает на мусоре.
+ * Возвращает `null`, если разобрать нечего — вызывающий сам решает, что
+ * показать вместо даты.
+ */
+export function serverDateOrNull(value: string | Date | null | undefined): Date | null {
+  if (value === null || value === undefined || value === '') return null;
+
+  const parsed = normalizeTimestamp(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+/**
  * Форматирует дату в московском времени.
  *
  * @param dateString строка с датой или объект даты

@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useCampaignStore } from "@/lib/campaignStore";
 import { api } from "@/lib/api";
 
+import { serverDate } from '@/lib/date-utils';
 interface InstagramOAuthSetupProps {
   campaignId: string;
   onAuthComplete?: () => void;
@@ -216,7 +217,7 @@ export function InstagramOAuthSetup({ campaignId, onAuthComplete }: InstagramOAu
                   @{authStatus.username || 'Instagram аккаунт'}
                 </p>
                 <p className="text-sm text-green-600">
-                  Подключен {authStatus.lastConnected ? new Date(authStatus.lastConnected).toLocaleDateString() : 'недавно'}
+                  Подключен {authStatus.lastConnected ? serverDate(authStatus.lastConnected).toLocaleDateString() : 'недавно'}
                 </p>
               </div>
             </div>

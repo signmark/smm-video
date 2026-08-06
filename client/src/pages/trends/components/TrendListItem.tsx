@@ -7,6 +7,7 @@ import { memo, useMemo } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { SentimentEmoji } from "@/components/trends/SentimentEmoji";
+import { serverDate } from '@/lib/date-utils';
 import {
   ThumbsUp,
   MessageSquare,
@@ -194,7 +195,7 @@ function TrendListItemInner({
                 <Clock className="h-3 w-3" />
                 <span>
                   {createdRaw
-                    ? formatRelativeTime(new Date(createdRaw))
+                    ? formatRelativeTime(serverDate(createdRaw))
                     : formatRelativeTime(new Date())}
                 </span>
               </div>

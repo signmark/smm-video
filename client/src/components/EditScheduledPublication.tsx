@@ -39,6 +39,7 @@ import * as z from 'zod';
 import PlatformSelector from './PlatformSelector';
 import { getCanonicalScheduledAt, setLocalScheduleTime } from '@shared/schedule-time';
 
+import { serverDate } from '@/lib/date-utils';
 // Создаем схему валидации
 const scheduledPublicationSchema = z.object({
   scheduledAt: z.date().nullable(),
@@ -134,7 +135,7 @@ export default function EditScheduledPublication({
 
   // Устанавливаем начальное состояние для времени публикации для каждой платформы
   const getInitialPlatformTimes = () => {
-    const scheduledDate = content.scheduledAt ? new Date(content.scheduledAt) : null;
+    const scheduledDate = content.scheduledAt ? serverDate(content.scheduledAt) : null;
     const defaultTime = getTimeFromDate(scheduledDate);
     
     const times: Record<string, { hour: string, minute: string }> = {};
@@ -142,7 +143,7 @@ export default function EditScheduledPublication({
     safeSocialPlatforms.forEach(platform => {
       if (content.socialPlatforms?.[platform]) {
         const platformDate = content.socialPlatforms[platform].scheduledAt 
-          ? new Date(content.socialPlatforms[platform].scheduledAt as string)
+          ? serverDate(content.socialPlatforms[platform].scheduledAt as string)
           : scheduledDate;
           
         times[platform] = getTimeFromDate(platformDate);
@@ -158,7 +159,7 @@ export default function EditScheduledPublication({
   const form = useForm<EditPublicationFormValues>({
     resolver: zodResolver(scheduledPublicationSchema),
     defaultValues: {
-      scheduledAt: content.scheduledAt ? new Date(content.scheduledAt) : null,
+      scheduledAt: content.scheduledAt ? serverDate(content.scheduledAt) : null,
       selectedPlatforms: getInitialPlatforms(),
       platformTimes: getInitialPlatformTimes()
     }

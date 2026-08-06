@@ -6,6 +6,7 @@ import { ru } from "date-fns/locale";
 import { Eye, MessageSquare, ThumbsUp, ExternalLink } from "lucide-react";
 import { SentimentEmoji } from "./SentimentEmoji";
 
+import { serverDate } from '@/lib/date-utils';
 interface TrendCardProps {
   trend: {
     id: string;
@@ -34,7 +35,7 @@ export function TrendCard({ trend, onClick }: TrendCardProps) {
     if (!dateString) return "";
     
     try {
-      const date = new Date(dateString);
+      const date = serverDate(dateString);
       return formatDistanceToNow(date, {
         addSuffix: true,
         locale: ru

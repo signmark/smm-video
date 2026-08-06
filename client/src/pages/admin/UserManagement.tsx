@@ -9,6 +9,7 @@ import { useToast } from '@/hooks/use-toast';
 import { Users, Calendar, Settings, AlertTriangle, Zap } from 'lucide-react';
 import { apiRequest } from '@/lib/queryClient';
 
+import { serverDate } from '@/lib/date-utils';
 const PLAN_BADGE_CLASS: Record<string, string> = {
   free: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
   basic: 'bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300',
@@ -105,7 +106,7 @@ export default function UserManagement() {
 
   const formatDate = (dateString?: string) => {
     if (!dateString) return um('notSpecified');
-    return new Date(dateString).toLocaleDateString();
+    return serverDate(dateString).toLocaleDateString();
   };
 
   const isExpiredDate = (expireDate?: string | null) => {

@@ -14,6 +14,7 @@ import { TrendDetailDialog } from "./TrendDetailDialog";
 import { formatDistanceToNow } from 'date-fns';
 import { ru } from 'date-fns/locale';
 
+import { serverDate } from '@/lib/date-utils';
 interface TrendsListProps {
   campaignId: string;
   onSelectTrends?: (trends: TrendTopic[]) => void;
@@ -608,7 +609,7 @@ export function TrendsList({ campaignId, onSelectTrends, onSelectTrend, selectab
                     }}>
                       {(trend.createdAt) && (
                         <span className="inline-block bg-red-500 text-white px-2 py-1 rounded mr-2 text-xs">
-                          {new Date(trend.createdAt).toLocaleDateString('ru-RU', { 
+                          {serverDate(trend.createdAt).toLocaleDateString('ru-RU', { 
                             day: 'numeric', 
                             month: 'long'
                           }).toUpperCase()}
@@ -651,7 +652,7 @@ export function TrendsList({ campaignId, onSelectTrends, onSelectTrend, selectab
                       
                       <div className="flex items-center gap-1">
                         <Clock className="h-3 w-3" />
-                        <span>{trend.createdAt ? formatDistanceToNow(new Date(trend.createdAt), { locale: ru, addSuffix: true }) : 'неизвестно'}</span>
+                        <span>{trend.createdAt ? formatDistanceToNow(serverDate(trend.createdAt), { locale: ru, addSuffix: true }) : 'неизвестно'}</span>
                       </div>
                       
                       <Button

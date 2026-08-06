@@ -4,6 +4,7 @@ import { ReactNode, useEffect, useState } from 'react';
 import { useAuthStore } from '@/lib/store';
 import { Lock, AlertTriangle } from 'lucide-react';
 
+import { serverDate } from '@/lib/date-utils';
 interface SubscriptionGuardProps {
   children: ReactNode;
   feature: string;
@@ -59,7 +60,7 @@ export function SubscriptionGuard({ children, feature, fallback }: SubscriptionG
         }
 
         const now = new Date();
-        const expireDate = new Date(user.expire_date);
+        const expireDate = serverDate(user.expire_date);
         const timeDiff = expireDate.getTime() - now.getTime();
         const daysLeft = Math.ceil(timeDiff / (1000 * 3600 * 24));
 
@@ -157,7 +158,7 @@ export function useSubscriptionStatus() {
         }
 
         const now = new Date();
-        const expireDate = new Date(user.expire_date);
+        const expireDate = serverDate(user.expire_date);
         const timeDiff = expireDate.getTime() - now.getTime();
         const daysLeft = Math.ceil(timeDiff / (1000 * 3600 * 24));
 

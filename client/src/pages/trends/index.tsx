@@ -45,6 +45,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { useCampaignStore } from "@/lib/campaignStore";
 
+import { serverDate } from '@/lib/date-utils';
 // Интерфейс для анализа данных
 interface Analysis {
   характеристики_аудитории?: string;
@@ -2694,7 +2695,7 @@ export default function Trends() {
                                     </div>
                                     {((sourceAnalysis as any).analyzedAt || (sourceAnalysis as any).analyzed_at) && (
                                       <div>
-                                        {new Date((sourceAnalysis as any).analyzedAt || (sourceAnalysis as any).analyzed_at).toLocaleString('ru-RU', {
+                                        {serverDate((sourceAnalysis as any).analyzedAt || (sourceAnalysis as any).analyzed_at).toLocaleString('ru-RU', {
                                           day: '2-digit',
                                           month: '2-digit',
                                           hour: '2-digit',
@@ -2995,7 +2996,7 @@ export default function Trends() {
                                               )}
                                               {(comment.published_at || comment.date) && (
                                                 <span className="text-xs text-muted-foreground/70">
-                                                  {new Date(comment.published_at || comment.date!).toLocaleDateString('ru-RU')}
+                                                  {serverDate(comment.published_at || comment.date!).toLocaleDateString('ru-RU')}
                                                 </span>
                                               )}
                                             </div>

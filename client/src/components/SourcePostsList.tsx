@@ -7,6 +7,7 @@ import { ThumbsUp, Eye, RefreshCw, Calendar, ImageOff, Video } from "lucide-reac
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { createProxyImageUrl, createStreamVideoUrl, createVideoThumbnailUrl, isVideoUrl } from "../utils/media";
 
+import { serverDate } from '@/lib/date-utils';
 interface SourcePost {
   id: string;
   post_content: string | null;
@@ -156,7 +157,7 @@ export function SourcePostsList({ posts, isLoading }: SourcePostsListProps) {
                           {post.date && (
                             <span className="text-xs text-muted-foreground flex items-center gap-1">
                               <Calendar className="h-3 w-3" />
-                              {formatDistanceToNow(new Date(post.date), { addSuffix: true, locale: ru })}
+                              {formatDistanceToNow(serverDate(post.date), { addSuffix: true, locale: ru })}
                             </span>
                           )}
                         </div>
@@ -331,7 +332,7 @@ export function SourcePostsList({ posts, isLoading }: SourcePostsListProps) {
                   </div>
                   {post.date && (
                     <span className="text-xs">
-                      {new Date(post.date).toLocaleDateString('ru-RU')}
+                      {serverDate(post.date).toLocaleDateString('ru-RU')}
                     </span>
                   )}
                 </div>

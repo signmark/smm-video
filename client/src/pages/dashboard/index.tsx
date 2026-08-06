@@ -14,6 +14,11 @@ import { format, subDays, eachDayOfInterval, startOfDay } from "date-fns";
 import { ru, enUS, es } from "date-fns/locale";
 import { useLocation } from "wouter";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import {
+  CHART_TOOLTIP_CONTENT_STYLE,
+  CHART_TOOLTIP_ITEM_STYLE,
+  CHART_TOOLTIP_LABEL_STYLE,
+} from '@/lib/chart-styles';
 import { useTranslation } from 'react-i18next';
 
 // Интерфейсы для типизации данных
@@ -569,12 +574,9 @@ export default function Dashboard() {
                       width={20}
                     />
                     <Tooltip 
-                      labelStyle={{ color: 'var(--foreground)' }}
-                      contentStyle={{ 
-                        backgroundColor: 'var(--background)',
-                        border: '1px solid var(--border)',
-                        borderRadius: '6px'
-                      }}
+                      labelStyle={CHART_TOOLTIP_LABEL_STYLE}
+                      itemStyle={CHART_TOOLTIP_ITEM_STYLE}
+                      contentStyle={CHART_TOOLTIP_CONTENT_STYLE}
                       formatter={(value: number, name: string) => [
                         value,
                         name === 'published' ? t('dashboard.published') : 

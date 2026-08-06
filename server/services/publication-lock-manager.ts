@@ -28,6 +28,16 @@ const LOCK_COLLECTION = 'publication_locks';
 const LOCK_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
 const PROBE_RETRY_MINUTES = 5;
 
+/** Auth header for background (non-user) access to the lock collection. */
+function lockAuthHeaders(): Record<string, string> {
+  const token = process.env.DIRECTUS_STATIC_TOKEN;
+  if (!token) {
+    log('🚨 PublicationLock: DIRECTUS_STATIC_TOKEN is not set — locks will not work', 'publication-lock');
+    return {};
+  }
+  return { Authorization: `Bearer ${token}` };
+}
+
 interface LockRecord {
   id: string;
   lock_key: string;
@@ -70,7 +80,7 @@ export class PublicationLockManager {
   async probeCollectionHealth(): Promise<void> {
     const probe = async () => {
       try {
-        await directusApi.get(`/items/${LOCK_COLLECTION}`, { params: { limit: 1 } });
+        await directusApi.get(`/items/${LOCK_COLLECTION}`, { params: { limit: 1 }, headers: lockAuthHeaders() });
         log('✅ PublicationLock: Collection health check passed', 'publication-lock');
         if (this.probeIntervalId) {
           clearInterval(this.probeIntervalId);
@@ -113,7 +123,7 @@ export class PublicationLockManager {
         platform,
         acquired_at: new Date().toISOString(),
         expires_at: expiresAt(),
-      });
+      }, { headers: lockAuthHeaders() });
 
       const record: LockRecord = response.data?.data;
       if (record?.id) {
@@ -182,6 +192,7 @@ export class PublicationLockManager {
           filter: { content_id: { _eq: contentId } },
           limit: -1,
         },
+        headers: lockAuthHeaders(),
       });
       const records: LockRecord[] = response.data?.data || [];
       for (const record of records) {
@@ -205,6 +216,7 @@ export class PublicationLockManager {
           filter: { expires_at: { _lt: new Date().toISOString() } },
           limit: 200,
         },
+        headers: lockAuthHeaders(),
       });
       const records: LockRecord[] = response.data?.data || [];
       for (const record of records) {
@@ -222,6 +234,7 @@ export class PublicationLockManager {
     try {
       const response = await directusApi.get(`/items/${LOCK_COLLECTION}`, {
         params: { aggregate: { count: '*' } },
+        headers: lockAuthHeaders(),
       });
       return { totalLocks: response.data?.data?.[0]?.count ?? 0 };
     } catch {
@@ -257,13 +270,14 @@ export class PublicationLockManager {
         filter: { lock_key: { _eq: key } },
         limit: 1,
       },
+      headers: lockAuthHeaders(),
     });
     const data = response.data?.data;
     return data?.length ? data[0] : null;
   }
 
   private async deleteById(id: string): Promise<void> {
-    await directusApi.delete(`/items/${LOCK_COLLECTION}/${id}`);
+    await directusApi.delete(`/items/${LOCK_COLLECTION}/${id}`, { headers: lockAuthHeaders() });
   }
 }
 

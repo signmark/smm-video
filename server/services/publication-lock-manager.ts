@@ -17,6 +17,8 @@ import { directusApi } from '../directus';
  *   Directus record id, and releases only by that id.
  * - Fail-CLOSED on Directus errors: a duplicate post is worse than a delayed one.
  *   The scheduler retries every minute.
+ * - Startup probe: on init, verifies the collection exists and is accessible.
+ *   Without it, fail-closed would silently freeze ALL publishing.
  *
  * API is identical to the previous PublicationLockManager — all callers in
  * publish-scheduler.ts are unchanged.
@@ -24,6 +26,7 @@ import { directusApi } from '../directus';
 
 const LOCK_COLLECTION = 'publication_locks';
 const LOCK_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+const PROBE_RETRY_MINUTES = 5;
 
 interface LockRecord {
   id: string;
@@ -46,9 +49,6 @@ function isExpired(record: LockRecord): boolean {
   return new Date(record.expires_at).getTime() < Date.now();
 }
 
-/**
- * Check if an error is a Directus unique constraint violation.
- */
 function isUniqueViolation(err: any): boolean {
   try {
     return err?.response?.data?.errors?.[0]?.extensions?.code === 'RECORD_NOT_UNIQUE';
@@ -59,8 +59,34 @@ function isUniqueViolation(err: any): boolean {
 
 export class PublicationLockManager {
   private cleanupIntervalId: NodeJS.Timeout | null = null;
-  // In-process map: lockKey → Directus record id (for safe release)
-  private heldLockIds = new Map<string, string>();
+  private probeIntervalId: NodeJS.Timeout | null = null;
+  private heldLockIds = new Map<string, string>(); // lockKey → Directus record id
+
+  /**
+   * Startup health probe — verifies the lock collection exists.
+   * If the collection is missing, fail-closed would silently freeze all publishing.
+   * This probe logs a loud ERROR every PROBE_RETRY_MINUTES until the collection is available.
+   */
+  async probeCollectionHealth(): Promise<void> {
+    const probe = async () => {
+      try {
+        await directusApi.get(`/items/${LOCK_COLLECTION}`, { params: { limit: 1 } });
+        log('✅ PublicationLock: Collection health check passed', 'publication-lock');
+        if (this.probeIntervalId) {
+          clearInterval(this.probeIntervalId);
+          this.probeIntervalId = null;
+        }
+      } catch (err: any) {
+        log(`🚨 PublicationLock: Collection '${LOCK_COLLECTION}' NOT FOUND or inaccessible! ` +
+          `Publishing is FROZEN until this is fixed. Error: ${err?.message}`, 'publication-lock');
+      }
+    };
+
+    await probe();
+    if (!this.probeIntervalId) {
+      this.probeIntervalId = setInterval(probe, PROBE_RETRY_MINUTES * 60 * 1000);
+    }
+  }
 
   /**
    * Try to acquire a publication lock.
@@ -70,7 +96,6 @@ export class PublicationLockManager {
     const key = lockKey(contentId, platform);
 
     try {
-      // Check if a non-expired lock already exists
       const existing = await this.findLock(key);
       if (existing) {
         if (isExpired(existing)) {
@@ -82,7 +107,6 @@ export class PublicationLockManager {
         }
       }
 
-      // Attempt INSERT — unique constraint guarantees atomicity
       const response = await directusApi.post(`/items/${LOCK_COLLECTION}`, {
         lock_key: key,
         content_id: contentId,
@@ -100,14 +124,11 @@ export class PublicationLockManager {
       return true;
     } catch (err: any) {
       if (isUniqueViolation(err)) {
-        // Another process grabbed it first
         log(`🔒 PublicationLock: Lock already held for ${key} (concurrent acquire)`, 'publication-lock');
         return false;
       }
 
-      // Network error, Directus down, missing collection, etc.
-      // FAIL-CLOSED: duplicate post is worse than delayed post.
-      // Scheduler retries every minute.
+      // FAIL-CLOSED: duplicate post is worse than delayed post
       log(`⛔ PublicationLock: Lock store unavailable for ${key}, denying publish: ${err?.message}`, 'publication-lock');
       return false;
     }
@@ -126,8 +147,7 @@ export class PublicationLockManager {
         this.heldLockIds.delete(key);
         log(`🔓 PublicationLock: Lock released for ${key}`, 'publication-lock');
       } else {
-        // We don't hold this lock — might be from another process or expired.
-        // Check if it still exists and is expired, clean up.
+        // Not held by us — check if expired and clean up
         const existing = await this.findLock(key);
         if (existing && isExpired(existing)) {
           await this.deleteById(existing.id);
@@ -136,14 +156,10 @@ export class PublicationLockManager {
       }
     } catch (err: any) {
       log(`⚠️ PublicationLock: Error releasing lock for ${key}: ${err?.message}`, 'publication-lock');
-      // Release from in-process map even if Directus delete failed
       if (heldId) this.heldLockIds.delete(key);
     }
   }
 
-  /**
-   * Check if a lock is currently held (and not expired).
-   */
   async isLocked(contentId: string, platform: string): Promise<boolean> {
     try {
       const key = lockKey(contentId, platform);
@@ -155,14 +171,10 @@ export class PublicationLockManager {
       }
       return true;
     } catch {
-      // On error, assume not locked (fail-safe for the check; acquireLock is the gate)
       return false;
     }
   }
 
-  /**
-   * Release all locks for a given content ID.
-   */
   async releaseAllLocks(contentId: string): Promise<void> {
     try {
       const response = await directusApi.get(`/items/${LOCK_COLLECTION}`, {
@@ -174,7 +186,6 @@ export class PublicationLockManager {
       const records: LockRecord[] = response.data?.data || [];
       for (const record of records) {
         await this.deleteById(record.id);
-        // Also clean up in-process map
         for (const [k, id] of this.heldLockIds) {
           if (id === record.id) this.heldLockIds.delete(k);
         }
@@ -187,16 +198,11 @@ export class PublicationLockManager {
     }
   }
 
-  /**
-   * Remove expired locks. Called periodically.
-   */
   async cleanupExpiredLocks(): Promise<void> {
     try {
       const response = await directusApi.get(`/items/${LOCK_COLLECTION}`, {
         params: {
-          filter: {
-            expires_at: { _lt: new Date().toISOString() },
-          },
+          filter: { expires_at: { _lt: new Date().toISOString() } },
           limit: 200,
         },
       });
@@ -212,9 +218,6 @@ export class PublicationLockManager {
     }
   }
 
-  /**
-   * Get statistics.
-   */
   async getStats(): Promise<{ totalLocks: number }> {
     try {
       const response = await directusApi.get(`/items/${LOCK_COLLECTION}`, {
@@ -238,6 +241,10 @@ export class PublicationLockManager {
       clearInterval(this.cleanupIntervalId);
       this.cleanupIntervalId = null;
     }
+    if (this.probeIntervalId) {
+      clearInterval(this.probeIntervalId);
+      this.probeIntervalId = null;
+    }
     this.heldLockIds.clear();
     log('🔴 PublicationLockManager: Shutdown complete', 'publication-lock');
   }
@@ -260,10 +267,11 @@ export class PublicationLockManager {
   }
 }
 
-// Singleton
+// Singleton — created at module init, starts cleanup, probes health
 export const publicationLockManager = new PublicationLockManager();
 
 publicationLockManager.initCleanupSchedule();
+publicationLockManager.probeCollectionHealth();
 
 process.on('SIGTERM', () => publicationLockManager.shutdown());
 process.on('SIGINT', () => publicationLockManager.shutdown());

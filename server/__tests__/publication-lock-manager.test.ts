@@ -164,10 +164,30 @@ describe('PublicationLockManager (Directus-based)', () => {
     expect(directusApi.delete).toHaveBeenCalledWith('/items/publication_locks/lock-2');
   });
 
-  it('shutdown cleans up interval and held ids', () => {
+  it('shutdown cleans up intervals and held ids', () => {
     const mgr = new PublicationLockManager();
     mgr.initCleanupSchedule();
     mgr.shutdown();
     // No error = pass
+  });
+
+  it('probeCollectionHealth logs error when collection missing, does not throw', async () => {
+    (directusApi as any).get.mockRejectedValue({ response: { status: 403 } });
+
+    const mgr = new PublicationLockManager();
+    // Should not throw — probe is advisory
+    await expect(mgr.probeCollectionHealth()).resolves.toBeUndefined();
+  });
+
+  it('acquireLock returns false on 403 (missing collection) — fail-closed', async () => {
+    const err = new Error('Forbidden');
+    (err as any).response = { status: 403, data: { errors: [{ extensions: { code: 'FORBIDDEN' } }] } };
+    (directusApi as any).get.mockResolvedValue({ data: { data: [] } });
+    (directusApi as any).post.mockRejectedValue(err);
+
+    const mgr = new PublicationLockManager();
+    const result = await mgr.acquireLock('content-1', 'telegram');
+    // 403 is not RECORD_NOT_UNIQUE → should go to fail-closed branch
+    expect(result).toBe(false);
   });
 });

@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, createRef } from "react";
-import { toDisplayDateKey, formatDateWithTimezone } from '@/lib/date-utils';
+import { formatDateWithTimezone, serverDate, serverDateOrNull, toDisplayDateKey } from '@/lib/date-utils';
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useTranslation } from "react-i18next";
@@ -83,7 +83,7 @@ import { DateTimePicker } from "@/components/ui/date-time-picker";
 // Создаем формат даты
 const formatDate = (date: string | Date) => {
   if (!date) return "";
-  return formatDistanceToNow(new Date(date), { addSuffix: true, locale: ru });
+  return formatDistanceToNow(serverDate(date), { addSuffix: true, locale: ru });
 };
 
 // Типы контента, поддерживаемые системой (совпадают с опциями дропдауна ниже).
@@ -1600,7 +1600,11 @@ export default function ContentPage() {
 
       // Фильтр по диапазону дат, если указан
       if (dateRange.from || dateRange.to) {
-        const contentDate = new Date(content.publishedAt || content.scheduledAt || content.createdAt || 0);
+        // Значения приходят от API без 'Z' — через serverDate, иначе фильтр
+        // отсекает по моменту на 3 часа раньше настоящего (AI-73).
+        const contentDate = serverDateOrNull(
+          content.publishedAt || content.scheduledAt || content.createdAt,
+        ) ?? new Date(0);
 
         // Проверка начальной даты диапазона
         if (dateRange.from && contentDate < startOfDay(dateRange.from)) {
@@ -1800,8 +1804,8 @@ export default function ContentPage() {
         'publishedAt' in platform &&
         platform.status === 'published' &&
         platform.publishedAt) {
-        const publishedTime = new Date(platform.publishedAt as string);
-        if (!latestTime || publishedTime > new Date(latestTime as string)) {
+        const publishedTime = serverDate(platform.publishedAt as string);
+        if (!latestTime || publishedTime > serverDate(latestTime as string)) {
           latestTime = platform.publishedAt;
         }
       }
@@ -4324,7 +4328,7 @@ export default function ContentPage() {
                               <div className="flex items-center gap-2">
                                 <span className={`text-sm ${isPublished ? 'text-green-700' : 'text-red-700'}`}>
                                   {isCurrentlyRetrying ? 'Публикуем...' : displayStatusText} {isPublished && platformData.publishedAt && (() => {
-                                    const date = new Date(platformData.publishedAt);
+                                    const date = serverDate(platformData.publishedAt);
                                     return date.toLocaleString('ru-RU', {
                                       day: '2-digit',
                                       month: 'long',

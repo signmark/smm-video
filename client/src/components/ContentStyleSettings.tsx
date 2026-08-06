@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 
+import { serverDate } from '@/lib/date-utils';
 interface StyleData {
   tone?: string;
   vocabulary?: string;
@@ -155,7 +156,7 @@ export function ContentStyleSettings({ campaignId, initialStyle, onStyleUpdated 
             <Sparkles className="h-4 w-4 text-purple-500" />
             <span className="text-sm text-muted-foreground">
               Проанализировано {initialStyle.rawPostCount} постов ·{' '}
-              {new Date(initialStyle.analyzedAt).toLocaleDateString('ru-RU')}
+              {serverDate(initialStyle.analyzedAt).toLocaleDateString('ru-RU')}
             </span>
           </div>
           <div className="flex gap-2">

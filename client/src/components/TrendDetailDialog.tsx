@@ -18,6 +18,7 @@ import { Separator } from "@/components/ui/separator";
 import { handleInstagramVideoError } from "./instagram-error-handler";
 import { TrendTopic } from "../lib/interfaces";
 
+import { serverDate } from '@/lib/date-utils';
 interface MediaData {
   images: string[];
   videos: string[];
@@ -511,7 +512,7 @@ export function TrendDetailDialog({
                 <span>
                   {/* Отображаем дату в полном формате */}
                   {(topic.created_at) ?
-                    new Date(topic.created_at).toLocaleString('ru-RU', {
+                    serverDate(topic.created_at).toLocaleString('ru-RU', {
                       day: 'numeric',
                       month: 'long',
                       year: 'numeric',

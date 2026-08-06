@@ -8,6 +8,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { Loader2 } from "lucide-react";
 import { platformNames } from "@/lib/social-platforms";
 
+import { serverDate } from '@/lib/date-utils';
 interface PublicationPanelProps {
   campaignId: string;
 }
@@ -62,7 +63,7 @@ export function PublicationPanel({ campaignId }: PublicationPanelProps) {
                         {item.scheduledFor && (
                           <div className="flex items-center gap-2 text-sm text-muted-foreground">
                             <Calendar className="h-4 w-4" />
-                            {new Date(item.scheduledFor).toLocaleString()}
+                            {serverDate(item.scheduledFor).toLocaleString()}
                           </div>
                         )}
                       </div>

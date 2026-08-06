@@ -9,6 +9,7 @@ import { Search, Plus, MoreHorizontal, Pencil, Settings, Trash, Eye, Calendar, A
 import { formatDistanceToNow } from "date-fns";
 import { ru } from "date-fns/locale";
 
+import { serverDate } from '@/lib/date-utils';
 interface UserCampaign {
   id: string;
   name?: string;
@@ -296,7 +297,7 @@ export function CampaignsGrid({
                         <Calendar className="h-3 w-3" />
                         <span>
                           {campaign.createdAt 
-                            ? formatDistanceToNow(new Date(campaign.createdAt), { 
+                            ? formatDistanceToNow(serverDate(campaign.createdAt), { 
                                 addSuffix: true, 
                                 locale: ru 
                               })

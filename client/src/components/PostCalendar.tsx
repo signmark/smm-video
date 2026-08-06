@@ -10,6 +10,7 @@ import { Loader2 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { apiRequest } from "@/lib/queryClient";
 
+import { serverDate } from '@/lib/date-utils';
 interface Post {
   id: string;
   campaignId: string;
@@ -72,7 +73,7 @@ export function PostCalendar({ campaignId }: { campaignId: string }) {
 
   // Format time for display
   const formatTime = (dateStr: string) => {
-    const date = new Date(dateStr);
+    const date = serverDate(dateStr);
     // JavaScript автоматически отображает время в локальном часовом поясе пользователя
     return date.toLocaleTimeString('ru-RU', {
       hour: '2-digit',
@@ -162,7 +163,7 @@ export function PostCalendar({ campaignId }: { campaignId: string }) {
   const getDayContent = (day: Date) => {
     const postsForDay = posts?.filter((post: Post) => {
       // Используем правильное имя поля scheduledAt вместо scheduled_at
-      const postDate = new Date(post.scheduledAt);
+      const postDate = serverDate(post.scheduledAt);
       return postDate.getDate() === day.getDate() &&
              postDate.getMonth() === day.getMonth() &&
              postDate.getFullYear() === day.getFullYear();
@@ -198,7 +199,7 @@ export function PostCalendar({ campaignId }: { campaignId: string }) {
 
     return posts.filter((post: Post) => {
       // Используем правильное имя поля scheduledAt вместо scheduled_at
-      const postDate = new Date(post.scheduledAt);
+      const postDate = serverDate(post.scheduledAt);
       return postDate.getDate() === selectedDate.getDate() &&
              postDate.getMonth() === selectedDate.getMonth() &&
              postDate.getFullYear() === selectedDate.getFullYear();

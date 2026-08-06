@@ -14,6 +14,7 @@ import {
 import { formatDistanceToNow } from 'date-fns';
 import { ru } from 'date-fns/locale';
 
+import { serverDate } from '@/lib/date-utils';
 interface MonitoredChannel {
   id: string;
   platform: string;
@@ -347,7 +348,7 @@ export function ScraperAnalyticsPanel({ campaignId }: Props) {
                     <div className="flex items-center gap-1.5 shrink-0">
                       {channel.last_parsed_at && (
                         <span className="text-xs text-muted-foreground hidden sm:block">
-                          {formatDistanceToNow(new Date(channel.last_parsed_at), { addSuffix: true, locale: ru })}
+                          {formatDistanceToNow(serverDate(channel.last_parsed_at), { addSuffix: true, locale: ru })}
                         </span>
                       )}
                       <Button

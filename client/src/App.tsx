@@ -115,6 +115,14 @@ function devOnly(Component: React.ComponentType | null): React.ComponentType {
 // остаётся стабильным, а меняется только содержимое внутри <Layout>.
 const ProtectedRoutes = () => (
   <Layout>
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-[50vh]">
+        <div className="flex flex-col items-center gap-4">
+          <div className="animate-spin rounded-full h-8 w-8 border-4 border-primary/30 border-t-primary"></div>
+          <p className="text-sm text-muted-foreground">Загрузка...</p>
+        </div>
+      </div>
+    }>
     <Switch>
       {/* Stories routes - нужно поставить ДО других роутов */}
       <Route path="/stories/:storyId/video-edit" component={VideoStoryEditorRoute} />
@@ -168,6 +176,7 @@ const ProtectedRoutes = () => (
       {/* NotFound должен быть последним */}
       <Route component={NotFound} />
     </Switch>
+    </Suspense>
   </Layout>
 );
 
@@ -223,16 +232,7 @@ function App() {
       <CookieBanner />
       <AuthProvider>
         <AuthGuard>
-          <Suspense fallback={
-            <div className="flex items-center justify-center min-h-screen bg-background">
-              <div className="flex flex-col items-center gap-4">
-                <div className="animate-spin rounded-full h-12 w-12 border-4 border-primary/30 border-t-primary"></div>
-                <p className="text-sm text-muted-foreground animate-pulse">Загрузка...</p>
-              </div>
-            </div>
-          }>
             <AppWithWebSocket />
-          </Suspense>
         </AuthGuard>
       </AuthProvider>
     </QueryClientProvider>

@@ -274,9 +274,28 @@ export { wss };
 app.use((req, res, next) => {
   const incoming = sanitizeRequestId(req.headers[REQUEST_ID_HEADER]);
   const reqId = incoming ?? generateRequestId();
+  const start = Date.now();
 
   // Отдаём наружу: по этому значению из ответа клиент или мы находим цепочку.
   res.setHeader(REQUEST_ID_HEADER, reqId);
+
+  // Итоговая запись вешается ЗДЕСЬ, а не ниже по файлу. Express не выполняет
+  // middleware, зарегистрированные после обработчика, который уже ответил, —
+  // а роутеры /health, auth и trends монтируются раньше. Поставь эту строку
+  // ниже, и все ранние маршруты останутся без единой записи о запросе.
+  // Проверено на проде: до переноса ни одной строки source=http не было.
+  res.on('finish', () => {
+    if (!req.path.startsWith('/api')) return;
+
+    const duration = Date.now() - start;
+    const level = res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info';
+
+    logMessage(
+      `${req.method} ${routePattern(req.path)} ${res.statusCode} ${duration}ms`,
+      'http',
+      level,
+    );
+  });
 
   runWithRequestContext({ reqId }, () => next());
 });
@@ -597,33 +616,7 @@ API маршруты:
   return res.status(200).type('html').send(content);
 });
 
-// Одна строка на завершение запроса (AI-65, этап 2).
-//
-// Раньше сюда подмешивалось ТЕЛО ОТВЕТА (`capturedJsonResponse`), обрезанное до
-// 80 символов. Это прямой путь утечки: в теле бывают токены, адреса почты и
-// персональные данные, а обрезание по длине от этого не спасает — начало
-// токена всё равно уезжало в лог. Тело убрано полностью; для разбора хватает
-// статуса, длительности и reqId, по которому поднимается вся цепочка.
-app.use((req, res, next) => {
-  const start = Date.now();
 
-  res.on("finish", () => {
-    if (!req.path.startsWith("/api")) return;
-
-    const duration = Date.now() - start;
-    const level = res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info';
-
-    // Шаблон, а не подставленный id: иначе на каждую кампанию заводится своя
-    // строка и поиск по логам теряет смысл.
-    logMessage(
-      `${req.method} ${routePattern(req.path)} ${res.statusCode} ${duration}ms`,
-      'http',
-      level,
-    );
-  });
-
-  next();
-});
 
 // Middleware: предупреждаем о заголовке x-user-id, но НЕ кладём его в req.
 //

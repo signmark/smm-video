@@ -451,7 +451,7 @@ export class PublishScheduler {
             // ... (YouTube quota logic unchanged)
             
             // 🛡️ УРОВЕНЬ 3: Lock Manager блокировки
-            const level3Check = publicationLockManager.isLocked(content.id, platformName);
+            const level3Check = await publicationLockManager.isLocked(content.id, platformName);
             if (level3Check) {
               log(`  ⛔ ${content.id}:${platformName} BLOCKED by Level 3 (lock manager)`, 'scheduler', 'debug');
               continue;

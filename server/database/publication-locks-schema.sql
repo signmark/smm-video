@@ -1,0 +1,20 @@
+-- AI-55: Distributed publication locks
+-- Replace in-memory lock manager with Directus-based distributed locks.
+--
+-- HOW TO CREATE IN DIRECTUS:
+-- 1. Go to Data Model → Create Collection
+-- 2. Name: publication_locks
+-- 3. Singleton: NO
+--
+-- FIELDS:
+--   lock_key    → Type: String, UNIQUE (checkbox "Unique" in field settings)
+--   content_id  → Type: String
+--   platform    → Type: String
+--   acquired_at → Type: Datetime
+--   expires_at  → Type: Datetime
+--
+-- CRITICAL: the unique constraint on lock_key is what guarantees atomicity.
+-- Single-field unique IS configurable through Directus UI (field → "Unique" checkbox).
+-- 
+-- The lock_key format is: `${contentId}:${platform}`
+-- Example: "abc-123:telegram"

@@ -1,8 +1,7 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PublicationLockManager } from '../services/publication-lock-manager';
-import axios from 'axios';
 
-// Mock directusApi — it's a named export from ../directus
+// Mock directusApi
 vi.mock('../directus', () => ({
   directusApi: {
     get: vi.fn(),
@@ -13,48 +12,62 @@ vi.mock('../directus', () => ({
 
 import { directusApi } from '../directus';
 
-function mockDirectusAvailable() {
+function mockAvailable() {
   const m = directusApi as any;
   m.get.mockResolvedValue({ data: { data: [] } });
-  m.post.mockResolvedValue({ data: {} });
+  m.post.mockResolvedValue({ data: { data: { id: 'new-lock-id', lock_key: 'content-1:tg' } } });
   m.delete.mockResolvedValue({ data: {} });
 }
 
-function mockDirectusDown() {
+function mockDown() {
   const m = directusApi as any;
   m.get.mockRejectedValue(new Error('ECONNREFUSED'));
   m.post.mockRejectedValue(new Error('ECONNREFUSED'));
   m.delete.mockRejectedValue(new Error('ECONNREFUSED'));
 }
 
+function mockUniqueViolation() {
+  const err = new Error('Unique violation');
+  (err as any).response = {
+    data: { errors: [{ extensions: { code: 'RECORD_NOT_UNIQUE' } }] },
+  };
+  (directusApi as any).post.mockRejectedValue(err);
+}
+
+function mockExistingLock(id: string, lockKey: string, expiresOffset: number = 600000) {
+  (directusApi as any).get.mockResolvedValue({
+    data: {
+      data: [{
+        id,
+        lock_key: lockKey,
+        content_id: lockKey.split(':')[0],
+        platform: lockKey.split(':')[1],
+        acquired_at: new Date().toISOString(),
+        expires_at: new Date(Date.now() + expiresOffset).toISOString(),
+      }],
+    },
+  });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
-  mockDirectusAvailable();
+  mockAvailable();
 });
 
 describe('PublicationLockManager (Directus-based)', () => {
-  it('acquireLock returns true on first attempt', async () => {
+  it('acquireLock succeeds and remembers held id', async () => {
     const mgr = new PublicationLockManager();
     const result = await mgr.acquireLock('content-1', 'telegram');
     expect(result).toBe(true);
     expect(directusApi.post).toHaveBeenCalledWith('/items/publication_locks', expect.objectContaining({
+      lock_key: 'content-1:telegram',
       content_id: 'content-1',
       platform: 'telegram',
     }));
   });
 
-  it('acquireLock returns false when lock already exists', async () => {
-    (directusApi.get as any).mockResolvedValue({
-      data: {
-        data: [{
-          id: 'lock-1',
-          content_id: 'content-1',
-          platform: 'telegram',
-          acquired_at: new Date().toISOString(),
-          expires_at: new Date(Date.now() + 600000).toISOString(),
-        }],
-      },
-    });
+  it('acquireLock returns false when lock already exists (not expired)', async () => {
+    mockExistingLock('existing-id', 'content-1:telegram', 600000);
 
     const mgr = new PublicationLockManager();
     const result = await mgr.acquireLock('content-1', 'telegram');
@@ -63,28 +76,27 @@ describe('PublicationLockManager (Directus-based)', () => {
   });
 
   it('acquireLock cleans up expired lock and acquires', async () => {
-    // Return an expired lock
-    (directusApi.get as any).mockResolvedValue({
-      data: {
-        data: [{
-          id: 'stale-lock',
-          content_id: 'content-1',
-          platform: 'telegram',
-          acquired_at: new Date(Date.now() - 3600000).toISOString(),
-          expires_at: new Date(Date.now() - 1000).toISOString(), // expired
-        }],
-      },
-    });
+    mockExistingLock('stale-id', 'content-1:telegram', -1000); // expired 1s ago
 
     const mgr = new PublicationLockManager();
     const result = await mgr.acquireLock('content-1', 'telegram');
     expect(result).toBe(true);
-    expect(directusApi.delete).toHaveBeenCalledWith('/items/publication_locks/stale-lock');
+    expect(directusApi.delete).toHaveBeenCalledWith('/items/publication_locks/stale-id');
     expect(directusApi.post).toHaveBeenCalled();
   });
 
+  it('acquireLock returns false on RECORD_NOT_UNIQUE (concurrent acquire)', async () => {
+    // First get returns empty (no existing lock visible), then post fails with unique violation
+    (directusApi as any).get.mockResolvedValue({ data: { data: [] } });
+    mockUniqueViolation();
+
+    const mgr = new PublicationLockManager();
+    const result = await mgr.acquireLock('content-1', 'telegram');
+    expect(result).toBe(false);
+  });
+
   it('acquireLock returns false (fail-closed) when Directus is down', async () => {
-    mockDirectusDown();
+    mockDown();
 
     const mgr = new PublicationLockManager();
     const result = await mgr.acquireLock('content-1', 'telegram');
@@ -92,29 +104,55 @@ describe('PublicationLockManager (Directus-based)', () => {
     expect(result).toBe(false);
   });
 
+  it('releaseLock deletes by held id, never by content/platform alone', async () => {
+    // Acquire
+    (directusApi as any).post.mockResolvedValue({
+      data: { data: { id: 'my-lock-id', lock_key: 'content-1:tg' } },
+    });
+    const mgr = new PublicationLockManager();
+    await mgr.acquireLock('content-1', 'telegram');
+
+    // Reset mocks for release
+    vi.clearAllMocks();
+    mockAvailable();
+
+    await mgr.releaseLock('content-1', 'telegram');
+    expect(directusApi.delete).toHaveBeenCalledWith('/items/publication_locks/my-lock-id');
+    // Should NOT do a get to find the lock — it uses the held id
+    expect(directusApi.get).not.toHaveBeenCalled();
+  });
+
+  it('releaseLock does not delete when no held id (was from another process)', async () => {
+    const mgr = new PublicationLockManager();
+    // No acquire — no held id
+    await mgr.releaseLock('content-1', 'telegram');
+    // Should check if expired and clean up, but not blindly delete
+    expect(directusApi.delete).not.toHaveBeenCalled();
+  });
+
   it('isLocked returns false when Directus is down (fail-safe)', async () => {
-    mockDirectusDown();
+    mockDown();
 
     const mgr = new PublicationLockManager();
     const result = await mgr.isLocked('content-1', 'telegram');
-    // On error, assume not locked — let the acquireLock handle the check
     expect(result).toBe(false);
   });
 
-  it('releaseLock is no-op when Directus is down', async () => {
-    mockDirectusDown();
+  it('isLocked returns false for expired lock (and cleans it up)', async () => {
+    mockExistingLock('stale-id', 'content-1:telegram', -1000);
 
     const mgr = new PublicationLockManager();
-    // Should not throw
-    await expect(mgr.releaseLock('content-1', 'telegram')).resolves.toBeUndefined();
+    const result = await mgr.isLocked('content-1', 'telegram');
+    expect(result).toBe(false);
+    expect(directusApi.delete).toHaveBeenCalledWith('/items/publication_locks/stale-id');
   });
 
-  it('releaseAllLocks deletes all matching records', async () => {
-    (directusApi.get as any).mockResolvedValue({
+  it('releaseAllLocks deletes all matching records by id', async () => {
+    (directusApi as any).get.mockResolvedValue({
       data: {
         data: [
-          { id: 'lock-1', content_id: 'content-1', platform: 'tg' },
-          { id: 'lock-2', content_id: 'content-1', platform: 'vk' },
+          { id: 'lock-1', lock_key: 'content-1:tg', content_id: 'content-1' },
+          { id: 'lock-2', lock_key: 'content-1:vk', content_id: 'content-1' },
         ],
       },
     });
@@ -122,9 +160,11 @@ describe('PublicationLockManager (Directus-based)', () => {
     const mgr = new PublicationLockManager();
     await mgr.releaseAllLocks('content-1');
     expect(directusApi.delete).toHaveBeenCalledTimes(2);
+    expect(directusApi.delete).toHaveBeenCalledWith('/items/publication_locks/lock-1');
+    expect(directusApi.delete).toHaveBeenCalledWith('/items/publication_locks/lock-2');
   });
 
-  it('shutdown cleans up interval', () => {
+  it('shutdown cleans up interval and held ids', () => {
     const mgr = new PublicationLockManager();
     mgr.initCleanupSchedule();
     mgr.shutdown();

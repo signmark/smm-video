@@ -281,11 +281,25 @@ export class PublicationLockManager {
   }
 }
 
-// Singleton — created at module init, starts cleanup, probes health
 export const publicationLockManager = new PublicationLockManager();
 
-publicationLockManager.initCleanupSchedule();
-publicationLockManager.probeCollectionHealth();
+/**
+ * Запускает фоновую часть замков: чистку истёкших, пробу коллекции и снятие
+ * состояния по сигналу.
+ *
+ * Вынесено из уровня модуля намеренно. Раньше эти три вызова выполнялись прямо
+ * при импорте, а значит любой файл, затянувший этот модуль хотя бы транзитивно,
+ * поднимал таймер и уходил в сеть — включая тесты, которые про замки ничего не
+ * знают. Тот же дефект мы разбирали в auth-headers по AI-45: статический импорт
+ * тянул zustand-стор, и падал посторонний тест, ничего не менявший.
+ *
+ * Вызывается один раз из точки старта приложения. Повторный вызов безопасен:
+ * initCleanupSchedule и probeCollectionHealth сами не создают второй таймер.
+ */
+export function startPublicationLocks(): void {
+  publicationLockManager.initCleanupSchedule();
+  publicationLockManager.probeCollectionHealth();
 
-process.on('SIGTERM', () => publicationLockManager.shutdown());
-process.on('SIGINT', () => publicationLockManager.shutdown());
+  process.on('SIGTERM', () => publicationLockManager.shutdown());
+  process.on('SIGINT', () => publicationLockManager.shutdown());
+}

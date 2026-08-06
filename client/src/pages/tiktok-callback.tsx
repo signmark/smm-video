@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
-import { useSearch } from 'wouter';
+import { useSearch, useLocation } from 'wouter';
 
 export default function TikTokCallbackPage() {
+  const [, navigate] = useLocation();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [message, setMessage] = useState('');
   const search = useSearch();
@@ -45,7 +46,7 @@ export default function TikTokCallbackPage() {
         setTimeout(() => window.close(), 2000);
       } else {
         setTimeout(() => {
-          window.location.href = campaignId ? `/campaigns/${campaignId}` : '/';
+          navigate(campaignId ? `/campaigns/${campaignId}` : '/');
         }, 2000);
       }
     } else {

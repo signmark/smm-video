@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Loader2, Bookmark, BookmarkCheck, ImageOff, ExternalLink, ThumbsUp, Eye, MessageSquare, Calendar, Clock, Flame, Video, Check } from "lucide-react";
@@ -94,6 +95,7 @@ interface TrendTopic {
 // Используем импортированную функцию createProxyImageUrl из utils/media
 
 export function TrendsList({ campaignId, onSelectTrends, onSelectTrend, selectable = false }: TrendsListProps) {
+  const [, navigate] = useLocation();
   const [selectedPeriod, setSelectedPeriod] = useState<Period>("7days");
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -288,7 +290,7 @@ export function TrendsList({ campaignId, onSelectTrends, onSelectTrend, selectab
                 variant="outline"
                 size="sm"
                 className="mt-2"
-                onClick={() => window.location.href = '/trends'}
+                onClick={() => navigate('/trends')}
               >
                 Перейти к трендам
               </Button>

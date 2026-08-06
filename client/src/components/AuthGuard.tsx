@@ -60,13 +60,8 @@ export function AuthGuard({ children }: Props) {
     } finally {
       clearAuth();
       queryClient.clear();
-      // Use wouter navigation when the AuthGuard is mounted, fall back
-      // to a hard redirect for the rare case wouter is not yet ready.
-      if (!isPublicRoute(location)) {
-        navigate('/auth/login');
-      } else {
-        window.location.href = '/auth/login';
-      }
+      // AI-77: Always use wouter navigate — AuthGuard is inside Router context
+      navigate('/auth/login');
       setIsLoggingOut(false);
     }
   };

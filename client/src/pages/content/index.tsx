@@ -4351,7 +4351,7 @@ export default function ContentPage() {
                                 <div className="flex items-center gap-2">
                                   {isTokenExpired && platformData.campaignId && (
                                     <button
-                                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); window.location.href = `/campaigns/${platformData.campaignId}/settings`; }}
+                                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); navigate(`/campaigns/${platformData.campaignId}/settings`); }}
                                       className="text-xs text-orange-700 underline hover:text-orange-900"
                                       data-testid="button-vk-reauth-content"
                                     >

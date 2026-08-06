@@ -21,7 +21,7 @@ import {
   Settings,
   Clock
 } from 'lucide-react';
-import { useParams } from 'wouter';
+import { useParams, useLocation } from 'wouter';
 import { useCampaignStore } from '@/lib/campaignStore';
 
 interface VideoContent {
@@ -44,6 +44,7 @@ interface VideoContent {
 }
 
 export default function VideoEditor() {
+  const [, navigate] = useLocation();
   const { campaignId: urlCampaignId } = useParams();
   const selectedCampaign = useCampaignStore((state) => state.selectedCampaign);
   // Дефолта нет намеренно: пустое значение = «кампания не выбрана» (см. заглушку ниже)
@@ -322,7 +323,7 @@ export default function VideoEditor() {
   };
 
   const handleGoBack = () => {
-    window.location.href = campaignId ? `/campaigns/${campaignId}/content` : '/campaigns';
+    navigate(campaignId ? `/campaigns/${campaignId}/content` : '/campaigns');
   };
 
   // Кампания не выбрана — сохранять и публиковать видео некуда
@@ -336,7 +337,7 @@ export default function VideoEditor() {
               <p className="text-sm text-muted-foreground mb-4">
                 Для создания видео выберите кампанию в селекторе выше или создайте новую
               </p>
-              <Button variant="outline" onClick={() => { window.location.href = '/campaigns'; }}>
+              <Button variant="outline" onClick={() => { navigate('/campaigns'); }}>
                 Перейти к кампаниям
               </Button>
             </div>

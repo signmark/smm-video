@@ -277,7 +277,7 @@ app.use(cors({
   origin: corsOrigin,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-user-id'],
 }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: false, limit: '50mb' }));
@@ -620,16 +620,11 @@ app.use((req, res, next) => {
 // Глобальная подстановка больше не нужна и вредна: следующий, кто напишет
 // `if (x.user_id !== req.userId)`, получит дыру бесплатно.
 //
-// Заголовок оставлен в CORS (обратная совместимость), но значение игнорируется.
-app.use((req, _res, next) => {
-  const headerUserId = req.headers['x-user-id'];
-  if (headerUserId) {
-    log(
-      `⚠️ Deprecated x-user-id header received: ${headerUserId}. ` +
-      `This header is no longer trusted. Use Bearer token authentication.`,
-      'security',
-    );
-  }
+// Заголовок оставлен в CORS для обратной совместимости (наш клиент шлёт
+// его в каждом запросе после AI-45), но значение игнорируется.
+app.use((_req, _res, next) => {
+  // No-op: x-user-id больше не записывается в req.
+  // Клиенты должны использовать Bearer token (authenticateUser).
   next();
 });
 

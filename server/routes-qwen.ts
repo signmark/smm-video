@@ -3,8 +3,11 @@ import axios from 'axios';
 import * as logger from './utils/logger';
 import { GlobalApiKeysService } from './services/global-api-keys';
 import { ApiServiceName } from './services/api-keys';
+import { authenticateUser } from './middleware/user-auth';
 
 const router = Router();
+// AI-74: Добавлена аутентификация
+router.use(authenticateUser);
 
 /**
  * Сервис для работы с Qwen API
@@ -119,7 +122,8 @@ async function getQwenService(req: Request): Promise<QwenService | null> {
 router.post('/qwen/improve-text', async (req: Request, res: Response) => {
   try {
     const { text, prompt, model } = req.body;
-    const userId = req.userId;
+    // AI-74: userId из проверенной сессии
+    const userId = (req as any).user?.id as string | undefined;
     
     logger.log(`[qwen-routes] Received improve-text request from user ${userId}`, 'qwen');
     logger.log(`[qwen-routes] Request data: text length=${text?.length}, prompt length=${prompt?.length}, model=${model}`, 'qwen');

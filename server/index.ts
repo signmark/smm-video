@@ -277,7 +277,7 @@ app.use(cors({
   origin: corsOrigin,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-user-id']
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: false, limit: '50mb' }));
@@ -609,11 +609,26 @@ app.use((req, res, next) => {
   next();
 });
 
-// Middleware для извлечения userId из заголовка и сохранения в req.userId
-app.use((req, res, next) => {
-  const userId = req.headers['x-user-id'] as string;
-  if (userId) {
-    (req as any).userId = userId;
+// Middleware: предупреждаем о заголовке x-user-id, но НЕ кладём его в req.
+//
+// Раньше этот заголовок принимался без проверки и записывался в req.userId.
+// На нём были завязаны routes-deepseek/qwen/claude, у которых не было своей
+// аутентификации — это единственный источник userId.
+//
+// После AI-74 маршруты deepseek/qwen/claude получили authenticateUser и
+// читают userId из проверенной сессии (req.user.id), как proxy-routes.
+// Глобальная подстановка больше не нужна и вредна: следующий, кто напишет
+// `if (x.user_id !== req.userId)`, получит дыру бесплатно.
+//
+// Заголовок оставлен в CORS (обратная совместимость), но значение игнорируется.
+app.use((req, _res, next) => {
+  const headerUserId = req.headers['x-user-id'];
+  if (headerUserId) {
+    log(
+      `⚠️ Deprecated x-user-id header received: ${headerUserId}. ` +
+      `This header is no longer trusted. Use Bearer token authentication.`,
+      'security',
+    );
   }
   next();
 });

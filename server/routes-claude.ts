@@ -2,20 +2,16 @@ import { Router, Request, Response } from 'express';
 import { ClaudeService } from './services/claude';
 import { ApiKeyService, ApiServiceName } from './services/api-keys';
 import * as logger from './utils/logger';
+import { authenticateUser } from './middleware/user-auth';
 
 /**
- * Расширяем интерфейс Request для поддержки userId
+ * AI-74: Глобальный declare userId удалён. userId теперь из проверенной
+ * сессии (req.user.id), а не из непроверенного заголовка x-user-id.
  */
-declare global {
-  namespace Express {
-    interface Request {
-      userId?: string;
-    }
-  }
-}
 
 export function registerClaudeRoutes(app: Router) {
   const router = Router();
+  router.use(authenticateUser);
   // Монтируем на /api
   app.use('/api', router);
   
@@ -104,7 +100,8 @@ export function registerClaudeRoutes(app: Router) {
   router.post('/claude/save-api-key', async (req: Request, res: Response) => {
     try {
       const { apiKey } = req.body;
-      const userId = req.userId;
+      // AI-74: userId from authenticated session
+      const userId = (req as any).user?.id as string | undefined;
       
       if (!userId) {
         return res.status(401).json({
@@ -159,7 +156,8 @@ export function registerClaudeRoutes(app: Router) {
   router.post('/claude/improve-text', async (req: Request, res: Response) => {
     try {
       const { text, prompt, model } = req.body;
-      const userId = req.userId;
+      // AI-74: userId from authenticated session
+      const userId = (req as any).user?.id as string | undefined;
       
       logger.log(`[claude-routes] Received improve-text request from user ${userId}`, 'claude');
       logger.log(`[claude-routes] Request data: text length=${text?.length}, prompt length=${prompt?.length}, model=${model}`, 'claude');
@@ -334,7 +332,8 @@ export function registerClaudeRoutes(app: Router) {
   router.post('/claude/generate-social-content', async (req: Request, res: Response) => {
     try {
       const { keywords, prompt, platform, tone, model } = req.body;
-      const userId = req.userId;
+      // AI-74: userId from authenticated session
+      const userId = (req as any).user?.id as string | undefined;
       
       logger.log(`[claude-routes] Received generate-social-content request from user ${userId} for platform ${platform}`, 'claude');
       

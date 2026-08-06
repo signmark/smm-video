@@ -123,11 +123,12 @@ describe('fetchWithAuth', () => {
     });
     vi.stubGlobal('fetch', mockFetch);
 
-    // Simulate: refresh succeeded, token updated
-    mockRefresh.mockResolvedValue('refreshed');
-    // refreshAuthSession doesn't actually update localStorage — fetchWithAuth
-    // reads the token again after refresh, so we simulate the update.
-    storage.setItem('auth_token', 'fresh-token');
+    // Simulate: refresh succeeded, token updated INSIDE the refresh mock
+    // so fetchWithAuth re-reads it after refresh, not before
+    mockRefresh.mockImplementation(async () => {
+      storage.setItem('auth_token', 'fresh-token');
+      return 'refreshed';
+    });
 
     const { fetchWithAuth } = await import('../auth-headers');
     const response = await fetchWithAuth('/api/protected');

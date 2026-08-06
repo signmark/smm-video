@@ -439,23 +439,23 @@ export default function PublicationCalendar({
       }
     };
 
-    // Отображаем только цветные точки для типов контента
+    // Отображаем цветные точки для типов контента (с переносом, без обрезания)
     return (
-      <div className="flex justify-center gap-1 mt-1">
+      <div className="flex justify-center flex-wrap gap-0.5 mt-0.5 overflow-hidden max-w-full">
         {Object.entries(contentByStatus).map(([status, typesCounts], statusIndex) => (
-          <div key={statusIndex} className="flex gap-0.5">
+          <React.Fragment key={statusIndex}>
             {Object.keys(typesCounts).map((type, typeIndex) => {
               const { opacity, ring } = getStatusStyle(status);
               return (
                 <div 
                   key={`${statusIndex}-${typeIndex}`} 
-                  className={`h-1.5 w-1.5 rounded-full ${getColorForType(type)} ${ring || ''}`}
+                  className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${getColorForType(type)} ${ring || ''}`}
                   style={{ opacity }}
                   title={`${status}: ${type}`}
                 ></div>
               );
             })}
-          </div>
+          </React.Fragment>
         ))}
       </div>
     );
@@ -510,16 +510,16 @@ export default function PublicationCalendar({
       <Card>
         <CardContent className="pt-6">
           <div className="grid gap-6 md:grid-cols-[300px_1fr]">
-            <div className="space-y-4">
+            <div className="space-y-4 flex flex-col h-full min-h-0">
             <Calendar
               mode="single"
               selected={selectedDate}
               onSelect={(date) => date && setSelectedDate(date)}
-              className="rounded-md border"
+              className="rounded-md border flex-shrink-0"
               components={{
                 DayContent: ({ date }) => (
                   <DroppableDay day={date} onDropPost={handleDropPost}>
-                    <div className="flex flex-col items-center">
+                    <div className="flex flex-col items-center overflow-hidden">
                       <span>{date.getDate()}</span>
                       {getDayContent(date)}
                     </div>
@@ -529,16 +529,18 @@ export default function PublicationCalendar({
               initialFocus
             />
             
-            <SocialMediaFilter 
-              onFilterChange={handleFilterChange}
-              showCounts
-              platformCounts={platformCounts}
-            />
+            <div className="flex-shrink-0">
+              <SocialMediaFilter 
+                onFilterChange={handleFilterChange}
+                showCounts
+                platformCounts={platformCounts}
+              />
+            </div>
             
             {onCreateClick && (
               <Button 
                 onClick={onCreateClick} 
-                className="w-full mt-4"
+                className="w-full mt-auto flex-shrink-0"
               >
                 Создать пост
               </Button>

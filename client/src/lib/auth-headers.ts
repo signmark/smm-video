@@ -10,7 +10,9 @@
  * Токен читаем из тех же ключей, что и остальной клиент.
  */
 
-import { refreshAuthSession } from './refreshAuth';
+// refreshAuthSession is imported dynamically inside fetchWithAuth
+// to avoid the static import chain refreshAuth → store → campaignStore
+// which breaks vitest in node environment (no localStorage).
 
 export function getStoredAuthToken(): string | null {
   return localStorage.getItem('auth_token')
@@ -43,6 +45,9 @@ export function authHeaders(extra: Record<string, string> = {}): Record<string, 
  *
  * При 401 делает одну попытку обновить токен через refreshAuthSession и
  * повторяет исходный запрос. Если refresh не удался — пробрасывает 401.
+ *
+ * Импорт refreshAuthSession — динамический, чтобы статическая цепочка
+ * refreshAuth → store → campaignStore не ломала vitest node-окружение.
  */
 export async function fetchWithAuth(
   url: string,
@@ -63,6 +68,8 @@ export async function fetchWithAuth(
   let response = await fetch(url, { ...options, headers });
 
   if (response.status === 401) {
+    // Dynamic import — see module-level comment
+    const { refreshAuthSession } = await import('./refreshAuth');
     const refreshResult = await refreshAuthSession();
     if (refreshResult === 'refreshed' || refreshResult === 'superseded') {
       const newHeaders = authHeaders(

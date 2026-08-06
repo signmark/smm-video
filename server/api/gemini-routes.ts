@@ -1,6 +1,6 @@
 import express from 'express';
 import { geminiService } from '../services/gemini';
-import { apiKeyService } from '../services/api-key-service';
+import { apiKeyService, ApiServiceName } from '../services/api-keys';
 import * as logger from '../utils/logger';
 
 export const geminiRouter = express.Router();
@@ -24,8 +24,8 @@ const checkGeminiApiKey = async (req: express.Request, res: express.Response, ne
       });
     }
 
-    // Получаем API ключ Gemini из хранилища ключей
-    const apiKey = await apiKeyService.getApiKey(userId, 'gemini', token);
+    // AI-75: migrated from api-key-service (wrong fields) to api-keys (correct)
+    const apiKey = await apiKeyService.getApiKey(userId, ApiServiceName.GEMINI, token);
     
     if (!apiKey) {
       logger.log(`[gemini-routes] Gemini API key not configured for user ${userId}`);

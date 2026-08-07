@@ -1,4 +1,5 @@
 /**
+import { log } from './logger';
  * Helper function to normalize Instagram URLs
  */
 export function normalizeInstagramUrl(url: string): string {
@@ -18,7 +19,7 @@ export function normalizeInstagramUrl(url: string): string {
 
     return `https://instagram.com/${username}`;
   } catch (error) {
-    console.error(`Error normalizing Instagram URL ${url}:`, error);
+    log.error(`Error normalizing Instagram URL ${url}:`, error);
     return url;
   }
 }

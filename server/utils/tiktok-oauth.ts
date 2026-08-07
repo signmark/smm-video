@@ -1,4 +1,5 @@
 /**
+import { log } from './logger';
  * TikTok OAuth 2.0 Helper
  * Documentation: https://developers.tiktok.com/doc/login-kit-web
  */
@@ -45,10 +46,10 @@ export class TikTokOAuth {
     this.clientSecret = config.clientSecret;
     this.redirectUri = config.redirectUri || this.getDefaultRedirectUri();
 
-    console.log('[tiktok-oauth] Конфигурация TikTok OAuth:');
-    console.log('[tiktok-oauth] - clientKey:', this.clientKey ? '***установлен***' : 'НЕ ЗАДАН');
-    console.log('[tiktok-oauth] - clientSecret:', this.clientSecret ? '***установлен***' : 'НЕ ЗАДАН');
-    console.log('[tiktok-oauth] - redirectUri:', this.redirectUri);
+    log('[tiktok-oauth] Конфигурация TikTok OAuth:');
+    log('[tiktok-oauth] - clientKey:', this.clientKey ? '***установлен***' : 'НЕ ЗАДАН');
+    log('[tiktok-oauth] - clientSecret:', this.clientSecret ? '***установлен***' : 'НЕ ЗАДАН');
+    log('[tiktok-oauth] - redirectUri:', this.redirectUri);
   }
 
   private getDefaultRedirectUri(): string {

@@ -1,4 +1,5 @@
 /**
+import { log } from './logger';
  * Environment detector for multi-server deployments
  * Handles different admin credentials across Docker, Replit, and production environments
  */
@@ -31,7 +32,7 @@ export function detectEnvironment(): EnvironmentConfig {
     (environment === 'development' ? 'http://localhost:8055' : 'https://directus.nplanner.ru');
 
   if (!_logged) {
-    console.log(`[ENV-DETECTOR] Detected environment: ${environment}, Directus URL: ${directusUrl}`);
+    log(`[ENV-DETECTOR] Detected environment: ${environment}, Directus URL: ${directusUrl}`);
     _logged = true;
   }
 

@@ -99,6 +99,9 @@ export const DEBUG_LEVELS: Record<string, boolean> = new Proxy({} as any, {
       default: return false;
     }
   },
+  set(_target, prop) {
+    throw new Error(`DEBUG_LEVELS.${String(prop)} управляется env-переменными, не присваиванием`);
+  },
   ownKeys() {
     return ['GLOBAL', 'SCHEDULER', 'PUBLISHING', 'SOCIAL', 'STATUS_CHECKER'];
   },

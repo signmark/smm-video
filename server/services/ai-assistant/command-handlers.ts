@@ -1852,6 +1852,9 @@ export async function handleCreateCampaign(request: AIAssistantRequest, paramete
 Кампания готова к работе! 🚀`,
       success: true,
       action: `Создана кампания "${campaignName}"${websiteUrl ? ` для ${websiteUrl}` : ''}`,
+      // AI-78: id отдаётся отдельным полем. Клиент раньше выковыривал его
+      // регулярным выражением из текста ответа — формулировка не контракт.
+      campaignId,
       data: { campaign: campaignData }
     };
   } catch (error) {

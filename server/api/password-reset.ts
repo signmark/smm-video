@@ -4,6 +4,7 @@ import { sendEmail } from '../services/email';
 import { escapeHtml } from '../utils/html-escape';
 import { getAppBaseUrl } from '../utils/app-base-url';
 import {
+import { log } from '../utils/logger';
   rememberResetToken,
   consumeResetToken,
   invalidateUserResetTokens,
@@ -99,7 +100,7 @@ export function registerPasswordResetRoutes(app: Express) {
 
       return res.json({ success: true });
     } catch (err: any) {
-      console.error('[password-reset/request]', err?.message);
+      log.error('[password-reset/request]', err?.message);
       return res.status(500).json({ error: 'Ошибка сервера' });
     }
   });
@@ -126,7 +127,7 @@ export function registerPasswordResetRoutes(app: Express) {
     try {
       expected = makeResetToken(userId, tsNum);
     } catch (configErr: any) {
-      console.error('[password-reset/confirm]', configErr?.message);
+      log.error('[password-reset/confirm]', configErr?.message);
       return res.status(500).json({ error: 'Ошибка конфигурации сервера' });
     }
 
@@ -156,7 +157,7 @@ export function registerPasswordResetRoutes(app: Express) {
 
       if (!updateResp.ok) {
         const errText = await updateResp.text();
-        console.error('[password-reset/confirm] Directus error:', errText);
+        log.error('[password-reset/confirm] Directus error:', errText);
         return res.status(500).json({ error: 'Не удалось обновить пароль' });
       }
 
@@ -190,12 +191,12 @@ export function registerPasswordResetRoutes(app: Express) {
           }
         }
       } catch (notifyErr: any) {
-        console.error('[password-reset/confirm] Не удалось отправить уведомление:', notifyErr?.message);
+        log.error('[password-reset/confirm] Не удалось отправить уведомление:', notifyErr?.message);
       }
 
       return res.json({ success: true });
     } catch (err: any) {
-      console.error('[password-reset/confirm]', err?.message);
+      log.error('[password-reset/confirm]', err?.message);
       return res.status(500).json({ error: 'Ошибка сервера' });
     }
   });

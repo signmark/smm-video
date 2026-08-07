@@ -44,7 +44,7 @@ export function registerValidationRoutes(app: Express): void {
         details: result.details
       });
     } catch (error) {
-      console.error('Error validating Telegram token:', error);
+      log.error('Error validating Telegram token:', error);
       return res.status(500).json({ 
         success: false, 
         message: 'Внутренняя ошибка сервера' 
@@ -113,7 +113,7 @@ export function registerValidationRoutes(app: Express): void {
           const { markVkAuthExpired } = await import('../services/vk-token-refresh');
           await markVkAuthExpired(campaignId);
         } catch (e: any) {
-          console.error('[validate/vk] Ошибка при выставлении authExpired:', e.message);
+          log.error('[validate/vk] Ошибка при выставлении authExpired:', e.message);
         }
       } else if (checkedStoredToken && result.isValid) {
         // Симметрия: сохранённый токен снова прошёл проверку — снимаем флаг.
@@ -125,7 +125,7 @@ export function registerValidationRoutes(app: Express): void {
           const { clearVkAuthExpired } = await import('../services/vk-token-refresh');
           await clearVkAuthExpired(campaignId);
         } catch (e: any) {
-          console.error('[validate/vk] Ошибка при снятии authExpired:', e.message);
+          log.error('[validate/vk] Ошибка при снятии authExpired:', e.message);
         }
       }
 
@@ -154,7 +154,7 @@ export function registerValidationRoutes(app: Express): void {
         details: result.details
       });
     } catch (error) {
-      console.error('Error validating VK token:', error);
+      log.error('Error validating VK token:', error);
       return res.status(500).json({ 
         success: false, 
         message: 'Внутренняя ошибка сервера' 
@@ -179,7 +179,7 @@ export function registerValidationRoutes(app: Express): void {
         details: result.details
       });
     } catch (error) {
-      console.error('Error validating Instagram token:', error);
+      log.error('Error validating Instagram token:', error);
       return res.status(500).json({ 
         success: false, 
         message: 'Внутренняя ошибка сервера' 
@@ -204,7 +204,7 @@ export function registerValidationRoutes(app: Express): void {
         details: result.details
       });
     } catch (error) {
-      console.error('Error validating Facebook token:', error);
+      log.error('Error validating Facebook token:', error);
       return res.status(500).json({ 
         success: false, 
         message: 'Внутренняя ошибка сервера' 
@@ -229,7 +229,7 @@ export function registerValidationRoutes(app: Express): void {
         details: result.details
       });
     } catch (error) {
-      console.error('Error validating YouTube API key:', error);
+      log.error('Error validating YouTube API key:', error);
       return res.status(500).json({ 
         success: false, 
         message: 'Внутренняя ошибка сервера' 

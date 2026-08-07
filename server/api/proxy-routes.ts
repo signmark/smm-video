@@ -12,6 +12,7 @@
 import { Router, Request, Response } from 'express';
 import { directusProxy } from '../services/directus-proxy';
 import { authenticateUser } from '../middleware/user-auth';
+import { log } from '../utils/logger';
 
 export const proxyRouter = Router();
 
@@ -48,7 +49,7 @@ const asyncHandler = (fn: (req: Request, res: Response) => Promise<any>) => {
     try {
       await fn(req, res);
     } catch (error: any) {
-      console.error('API Error:', error.message);
+      log.error('API Error:', error.message);
       
       if (error.message === 'Missing authentication headers') {
         return res.status(401).json({ error: 'Unauthorized' });

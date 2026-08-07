@@ -84,7 +84,7 @@ export function registerAuthRoutes(app: Express): void {
         }
       });
     } catch (error) {
-      console.error('Error checking token:', error);
+      log.error('Error checking token:', error);
       res.status(401).json({ 
         valid: false,
         error: 'Недействительный токен'
@@ -123,7 +123,7 @@ export function registerAuthRoutes(app: Express): void {
           
           if (!token) {
             // Логируем ошибку конфигурации, но не палим детали клиенту
-            console.error('CRITICAL: Admin token retrieval failed. Check DIRECTUS_ADMIN_EMAIL/PASSWORD or DIRECTUS_STATIC_TOKEN.');
+            log.error('CRITICAL: Admin token retrieval failed. Check DIRECTUS_ADMIN_EMAIL/PASSWORD or DIRECTUS_STATIC_TOKEN.');
             throw new Error('Не удалось получить токен администратора. Обратитесь к системному администратору.');
           }
           
@@ -173,7 +173,7 @@ export function registerAuthRoutes(app: Express): void {
           });
           log(`Trial Pro (14 days) activated for new user: ${newUserId} until ${trialExpireDateStr}`, 'auth');
         } catch (trialErr: any) {
-          console.warn('[auth/register] Не удалось активировать пробный период Pro:', trialErr?.message);
+          log.warn('[auth/register] Не удалось активировать пробный период Pro:', trialErr?.message);
         }
 
         // Сохраняем партнёрский код и отправляем registration postback (не блокирует ответ)
@@ -187,7 +187,7 @@ export function registerAuthRoutes(app: Express): void {
             });
             log(`[auth/register] partnerCode=${normalizedCode} сохранён для user ${newUserId}`, 'auth');
           } catch (pcErr: any) {
-            console.warn('[auth/register] Не удалось сохранить partnerCode:', pcErr?.message);
+            log.warn('[auth/register] Не удалось сохранить partnerCode:', pcErr?.message);
           }
 
           // Читаем актуальные данные юзера из Directus для постбека (email, telegram_chat_id)
@@ -225,7 +225,7 @@ export function registerAuthRoutes(app: Express): void {
           refreshToken = loginResponse.data?.data?.refresh_token || null;
           log(`Auto-login after registration successful for: ${email}`, 'auth');
         } catch (loginErr) {
-          console.warn('Auto-login after registration failed (non-critical):', loginErr);
+          log.warn('Auto-login after registration failed (non-critical):', loginErr);
         }
 
         return res.status(201).json({
@@ -237,7 +237,7 @@ export function registerAuthRoutes(app: Express): void {
         });
         
       } catch (createError: any) {
-        console.error('User creation error:', createError);
+        log.error('User creation error:', createError);
         
         // Обрабатываем специфичные ошибки Directus
         let errorMessage = 'Не удалось создать пользователя';
@@ -269,7 +269,7 @@ export function registerAuthRoutes(app: Express): void {
         throw new Error(errorMessage);
       }
     } catch (error: any) {
-      console.error('Error during registration:', error.message);
+      log.error('Error during registration:', error.message);
       
       // Возвращаем конкретное сообщение об ошибке
       return res.status(400).json({ 
@@ -356,7 +356,7 @@ export function registerAuthRoutes(app: Express): void {
         }
       });
     } catch (error: any) {
-      console.error('Error during login:', error);
+      log.error('Error during login:', error);
       
       // Обрабатываем ошибку авторизации
       if (error.response?.status === 401) {
@@ -422,7 +422,7 @@ export function registerAuthRoutes(app: Express): void {
         expires_at: result.expiresAt,
       });
     } catch (error: any) {
-      console.error('Error in refresh endpoint:', error);
+      log.error('Error in refresh endpoint:', error);
       
       return res.status(503).json({ code: 'AUTH_VALIDATION_UNAVAILABLE', error: 'Authentication service is unavailable' });
     }
@@ -711,7 +711,7 @@ export function registerAuthRoutes(app: Express): void {
         user: activeSession.user
       });
     } catch (error) {
-      console.error('Error getting active session:', error);
+      log.error('Error getting active session:', error);
       res.status(401).json({ 
         error: 'Недействительный токен'
       });
@@ -789,7 +789,7 @@ export function registerAuthRoutes(app: Express): void {
         refresh_token: session.refreshToken
       });
     } catch (error) {
-      console.error('Error getting refresh token:', error);
+      log.error('Error getting refresh token:', error);
       res.status(401).json({ 
         error: 'Недействительный токен'
       });

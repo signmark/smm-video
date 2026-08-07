@@ -4,11 +4,11 @@ import { sendEmail } from '../services/email';
 import { escapeHtml } from '../utils/html-escape';
 import { getAppBaseUrl } from '../utils/app-base-url';
 import {
-import { log } from '../utils/logger';
   rememberResetToken,
   consumeResetToken,
   invalidateUserResetTokens,
 } from '../utils/password-reset-tokens';
+import { log } from '../utils/logger';
 
 const RESET_TOKEN_TTL_SEC = 3600; // 1 час
 

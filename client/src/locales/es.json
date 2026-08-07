@@ -490,7 +490,9 @@
       "analyzingWebsite": "Analizando sitio web...",
       "foundKeywords": "Se encontraron {{count}} palabras clave",
       "enterUrlPrompt": "Ingrese URL del sitio web y haga clic en \"Analizar\""
-    }
+    },
+    "channelValue": "canal: {{value}}",
+    "channelHint": "El primer número cuenta las publicaciones de la campaña. El segundo cuenta todo el canal en el mismo período, incluidas las publicaciones hechas manualmente fuera del sistema."
   },
   "auth": {
     "login": "Iniciar sesión",

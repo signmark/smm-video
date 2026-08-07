@@ -5,6 +5,19 @@ export interface PlatformAnalyticsStats {
   likes: number;
   shares: number;
   comments: number;
+  /**
+   * SM-15: те же метрики, но по всему каналу за период, включая ручные и чужие
+   * публикации. Показываются рядом с кампанийными, чтобы человек видел, сколько
+   * отклика уходит мимо системы. Отсутствует, если по платформе нет пост-уровневой
+   * атрибуции (тогда сравнивать не с чем и врать цифрой нельзя).
+   */
+  channelTotals?: {
+    posts: number;
+    views: number;
+    likes: number;
+    shares: number;
+    comments: number;
+  };
 }
 
 export interface AggregatedPublicationAnalytics {
@@ -329,28 +342,65 @@ export function groupChannelPostsIntoPublications(
  * Telegram repeats the same view count on every message of the album, so summing
  * would double reach, while the reaction lives on exactly one of them.
  */
+/**
+ * Метрики канала целиком: и наши публикации, и чужие/ручные.
+ *
+ * SM-15: тестировщик считал лайки по каналу (их было 4), система показывала по
+ * кампании (3) -- четвёртый стоял на посте, опубликованном руками мимо системы.
+ * Оба числа верны, но снаружи неразличимы. Владелец решил (07.08) показывать
+ * ОБА, а не подписывать одно: тогда видно не только «наша цифра честная», но и
+ * сколько отклика уходит на ручные публикации.
+ */
+export interface ChannelWideStats {
+  posts: number;
+  views: number;
+  likes: number;
+  comments: number;
+  shares: number;
+}
+
+export interface CampaignChannelStats extends ChannelWideStats {
+  /** То же самое, но по всем публикациям канала за период, включая не наши. */
+  channelTotals: ChannelWideStats;
+}
+
 export function aggregateCampaignChannelPosts(
   channelPosts: ChannelPostRow[],
   expectedIds: Set<string>,
-): { posts: number; views: number; likes: number; comments: number; shares: number } {
+): CampaignChannelStats {
   let posts = 0;
   let views = 0;
   let likes = 0;
   let comments = 0;
   let shares = 0;
 
+  const channelTotals: ChannelWideStats = { posts: 0, views: 0, likes: 0, comments: 0, shares: 0 };
+
   for (const group of groupChannelPostsIntoPublications(channelPosts, expectedIds)) {
+    // Метрики берутся максимумом по группе, а не суммой: Telegram повторяет
+    // счётчик просмотров на каждом сообщении альбома (SM-15).
+    const groupViews = Math.max(...group.map(post => metric(post.views)));
+    const groupLikes = Math.max(...group.map(post => metric(post.likes)));
+    const groupComments = Math.max(...group.map(post => metric(post.comments)));
+    const groupShares = Math.max(...group.map(post => metric(post.shares)));
+
+    channelTotals.posts++;
+    channelTotals.views += groupViews;
+    channelTotals.likes += groupLikes;
+    channelTotals.comments += groupComments;
+    channelTotals.shares += groupShares;
+
     const belongsToCampaign = group.some(post => (
       matchesPublishedPlatformPostId(expectedIds, post.platform_post_id)
     ));
     if (!belongsToCampaign) continue;
 
     posts++;
-    views += Math.max(...group.map(post => metric(post.views)));
-    likes += Math.max(...group.map(post => metric(post.likes)));
-    comments += Math.max(...group.map(post => metric(post.comments)));
-    shares += Math.max(...group.map(post => metric(post.shares)));
+    views += groupViews;
+    likes += groupLikes;
+    comments += groupComments;
+    shares += groupShares;
   }
 
-  return { posts, views, likes, comments, shares };
+  return { posts, views, likes, comments, shares, channelTotals };
 }

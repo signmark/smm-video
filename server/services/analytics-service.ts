@@ -452,6 +452,12 @@ export class AnalyticsService {
       stats.likes = currentMetrics.likes;
       stats.comments = currentMetrics.comments;
       stats.shares = currentMetrics.shares;
+      // SM-15: рядом с кампанийными отдаём метрики канала целиком. Только когда
+      // считали по постам -- иначе channelTotals неоткуда взять и число было бы
+      // выдумано.
+      if ('channelTotals' in currentMetrics && currentMetrics.channelTotals) {
+        stats.channelTotals = currentMetrics.channelTotals;
+      }
       platformStatsMap.set(ch.platform, stats);
     }
   }

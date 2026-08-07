@@ -33,7 +33,45 @@ interface AnalyticsData {
     likes: number;
     shares: number;
     comments: number;
+    /**
+     * AI-81: те же метрики по всему каналу за период, включая ручные и чужие
+     * публикации. Приходит только там, где считали по постам; где атрибуции
+     * нет, поля не будет вовсе -- показывать ноль значило бы выдумать число.
+     */
+    channelTotals?: {
+      posts: number;
+      views: number;
+      likes: number;
+      shares: number;
+      comments: number;
+    };
   }>;
+}
+
+/**
+ * AI-81: вторая цифра — та же метрика по всему каналу за период.
+ *
+ * Показывается ТОЛЬКО когда она отличается от кампанийной. Если совпадает,
+ * значит мимо системы в канал не публиковали, и вторая цифра ничего не
+ * добавляет — а лишнее число рядом с каждой метрикой читается как шум и
+ * обесценивает те случаи, когда расхождение действительно есть.
+ *
+ * Отсутствие `channel` (нет пост-уровневой атрибуции) — тоже причина молчать:
+ * подставить ноль или продублировать нашу цифру значило бы выдумать данные.
+ */
+function ChannelTotal({ own, channel }: { own: number; channel?: number }) {
+  const { t } = useTranslation();
+  if (channel === undefined || channel === own) return null;
+
+  return (
+    <span
+      className="text-muted-foreground text-xs"
+      title={t('analytics.channelHint')}
+      data-testid="channel-total"
+    >
+      ({t('analytics.channelValue', { value: channel.toLocaleString() })})
+    </span>
+  );
 }
 
 export default function AnalyticsPage() {
@@ -242,18 +280,22 @@ export default function AnalyticsPage() {
             <div className="flex items-center gap-2">
               <Eye className="h-4 w-4 text-blue-500" />
               <span>{platform.views.toLocaleString()} {t('analytics.viewsCount')}</span>
+              <ChannelTotal own={platform.views} channel={platform.channelTotals?.views} />
             </div>
             <div className="flex items-center gap-2">
               <Heart className="h-4 w-4 text-red-500" />
               <span>{platform.likes.toLocaleString()} {t('analytics.likesCount')}</span>
+              <ChannelTotal own={platform.likes} channel={platform.channelTotals?.likes} />
             </div>
             <div className="flex items-center gap-2">
               <Share2 className="h-4 w-4 text-green-500" />
               <span>{platform.shares.toLocaleString()} {t('analytics.sharesCount')}</span>
+              <ChannelTotal own={platform.shares} channel={platform.channelTotals?.shares} />
             </div>
             <div className="flex items-center gap-2">
               <MessageCircle className="h-4 w-4 text-purple-500" />
               <span>{platform.comments.toLocaleString()} {t('analytics.commentsCount')}</span>
+              <ChannelTotal own={platform.comments} channel={platform.channelTotals?.comments} />
             </div>
           </div>
         </CardContent>

@@ -489,7 +489,9 @@
       "analyzingWebsite": "Analyzing website...",
       "foundKeywords": "Found {{count}} keywords",
       "enterUrlPrompt": "Enter website URL and click \"Analyze\""
-    }
+    },
+    "channelValue": "channel: {{value}}",
+    "channelHint": "The first number counts campaign publications. The second counts the whole channel over the same period, including posts published manually outside the system."
   },
   "auth": {
     "login": "Login",

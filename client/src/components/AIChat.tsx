@@ -33,6 +33,7 @@ import { useCampaignStore } from "@/lib/campaignStore";
 import { queryClient } from "@/lib/queryClient";
 import { useCampaignDetail } from "@/hooks/use-campaigns";
 import { useLocation } from "wouter";
+import { resolveCreatedCampaignId } from '@/lib/ai-chat-navigation';
 
 interface Message {
   id: string;
@@ -487,17 +488,16 @@ export function AIChat({ isOpen: externalIsOpen, onOpenChange, showFloatingButto
             queryKey: ['/api/campaigns', userId] 
           });
           
-          // AI-77: вместо window.location.reload() — инвалидируем кэш и навигируем через SPA
-          if (data.response && data.response.includes('создана') && data.response.includes('🆔 ID кампании:')) {
-            // Извлекаем ID кампании из ответа для навигации
-            const idMatch = data.response.match(/🆔 ID кампании:\s*(\S+)/);
-            const campaignId = idMatch ? idMatch[1] : null;
+          // AI-77: вместо window.location.reload() — инвалидируем кэш и навигируем через SPA.
+          // AI-78: id берём из структурного поля ответа, а не из его текста.
+          // Прежнее условие искало в тексте `🆔 ID кампании:` — такой строки сервер
+          // не производит нигде, поэтому переход не срабатывал вообще.
+          const createdCampaignId = resolveCreatedCampaignId(data);
+          if (createdCampaignId) {
             setTimeout(() => {
               queryClient.invalidateQueries({ queryKey: ['/api/campaigns'] });
               queryClient.invalidateQueries({ queryKey: ['/api/campaign-content'] });
-              if (campaignId) {
-                setLocation(`/campaigns/${campaignId}`);
-              }
+              setLocation(`/campaigns/${createdCampaignId}`);
             }, 2000);
           }
         }

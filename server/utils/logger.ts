@@ -9,7 +9,7 @@
  *   debug — трассировки, промпты, тела запросов.
  *
  * error/warn/info печатаются всегда, включая production. debug — только при
- * LOG_LEVEL=debug. Порог берётся из envConfig.logLevel, который читает LOG_LEVEL.
+ * LOG_LEVEL=debug. Порог берётся из getEnvConfig().logLevel, который читает LOG_LEVEL.
  *
  * Почему так: раньше в production выкидывались все info и debug, а error —
  * всё, кроме совпадений с коротким списком русских фраз. Вдобавок существовал
@@ -26,8 +26,20 @@
 import { detectEnvironment } from './environment-detector';
 import { currentRequestId } from './request-context';
 
-// Получаем конфигурацию окружения
-export let envConfig = detectEnvironment();
+// AI-82: getEnvConfig() вызывает detectEnvironment() лениво при первом
+// обращении, а не на уровне модуля. Модули, импортирующие log, больше
+// не платят за вызов detectEnvironment при import.
+//
+// Исключение: сам detectEnvironment() НЕ может использовать log() —
+// это bootstrap-вывод (см. комментарий в environment-detector.ts).
+let _envConfig: ReturnType<typeof detectEnvironment> | null = null;
+
+export function getEnvConfig(): ReturnType<typeof detectEnvironment> {
+  if (!_envConfig) {
+    _envConfig = detectEnvironment();
+  }
+  return _envConfig;
+}
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'fatal';
 
@@ -48,7 +60,7 @@ function isLogLevel(value: unknown): value is LogLevel {
  * без исключений по тексту сообщения.
  */
 function threshold(): number {
-  const configured = envConfig?.logLevel;
+  const configured = getEnvConfig()?.logLevel;
   return LEVEL_ORDER[isLogLevel(configured) ? configured : 'info'];
 }
 
@@ -73,14 +85,30 @@ export function getRecentLogs(limit = LOG_BUFFER_SIZE): string[] {
 /**
  * Режим подробной отладки отдельных подсистем. Влияет только на то, что сам
  * вызывающий код решает логировать; порогом уровней управляет LOG_LEVEL.
+ *
+ * Вычисляется лениво при первом обращении через getEnvConfig().
  */
-export const DEBUG_LEVELS = {
-  GLOBAL: envConfig.environment === 'development' && envConfig.verboseLogs,
-  SCHEDULER: envConfig.environment === 'development' ? envConfig.debugScheduler : false,
-  PUBLISHING: envConfig.environment === 'development',
-  SOCIAL: envConfig.environment === 'development',
-  STATUS_CHECKER: envConfig.environment === 'development',
-};
+export const DEBUG_LEVELS: Record<string, boolean> = new Proxy({} as any, {
+  get(_target, prop: string) {
+    const cfg = getEnvConfig();
+    switch (prop) {
+      case 'GLOBAL': return cfg.environment === 'development' && cfg.verboseLogs;
+      case 'SCHEDULER': return cfg.environment === 'development' ? cfg.debugScheduler : false;
+      case 'PUBLISHING': case 'SOCIAL': case 'STATUS_CHECKER':
+        return cfg.environment === 'development';
+      default: return false;
+    }
+  },
+  set(_target, prop) {
+    throw new Error(`DEBUG_LEVELS.${String(prop)} управляется env-переменными, не присваиванием`);
+  },
+  ownKeys() {
+    return ['GLOBAL', 'SCHEDULER', 'PUBLISHING', 'SOCIAL', 'STATUS_CHECKER'];
+  },
+  getOwnPropertyDescriptor() {
+    return { enumerable: true, configurable: true };
+  },
+});
 
 // --- Редакция секретов ---------------------------------------------------
 // Режем по имени поля и на любой глубине: расставлять '[REDACTED]' руками по
@@ -220,7 +248,7 @@ function emit(level: LogLevel, message: string, source: string, err?: any): void
   const details = serializeError(err);
   let line: string;
 
-  if (envConfig.environment === 'production') {
+  if (getEnvConfig().environment === 'production') {
     // reqId проставляется здесь, а не в местах вызова: так корреляцию
     // получают ВСЕ существующие строки лога без правки сотен вызовов.
     // Вне запроса (фоновые задачи, старт процесса) поля просто нет.
@@ -244,7 +272,7 @@ function emit(level: LogLevel, message: string, source: string, err?: any): void
   if (level === 'error' || level === 'fatal') {
     // В development детали ошибки отдаём вторым аргументом — так их видно
     // раскрытыми в консоли; в production они уже внутри JSON-строки.
-    if (envConfig.environment === 'production' || details === undefined) console.error(line);
+    if (getEnvConfig().environment === 'production' || details === undefined) console.error(line);
     else console.error(line, err);
   } else if (level === 'warn') {
     console.warn(line);
@@ -314,22 +342,21 @@ export function debug(message: string, source = 'express'): void {
  * Выводит информацию о конфигурации окружения
  */
 export function logEnvironmentInfo(): void {
-  info(`Running in ${envConfig.environment} mode`, 'env');
-  info(`Log level: ${envConfig.logLevel}`, 'env');
-  info(`Directus URL: ${envConfig.directusUrl}`, 'env');
+  info(`Running in ${getEnvConfig().environment} mode`, 'env');
+  info(`Log level: ${getEnvConfig().logLevel}`, 'env');
+  info(`Directus URL: ${getEnvConfig().directusUrl}`, 'env');
 }
 
 /**
  * Перечитывает окружение (используется в тестах и при смене конфигурации)
  */
 export function refreshEnvironmentConfig(): void {
-  envConfig = detectEnvironment();
+  // Reset cache so getEnvConfig() re-reads from detectEnvironment()
+  _envConfig = null;
+  const cfg = getEnvConfig();
 
-  DEBUG_LEVELS.GLOBAL = envConfig.environment === 'development' && envConfig.verboseLogs;
-  DEBUG_LEVELS.SCHEDULER = envConfig.environment === 'development' ? envConfig.debugScheduler : false;
-  DEBUG_LEVELS.PUBLISHING = envConfig.environment === 'development';
-  DEBUG_LEVELS.SOCIAL = envConfig.environment === 'development';
-  DEBUG_LEVELS.STATUS_CHECKER = envConfig.environment === 'development';
+  // DEBUG_LEVELS is a Proxy — individual properties are computed on read,
+  // so we just need the cache primed. Nothing else to do here.
 
   debug('Environment configuration refreshed', 'env');
 }

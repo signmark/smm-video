@@ -2,9 +2,9 @@
  * Environment detector for multi-server deployments
  * Handles different admin credentials across Docker, Replit, and production environments
  *
- * AI-41: console.* оставлен намеренно — логгер импортирует этот модуль
- * на уровне модуля, обратный импорт создаёт цикл (log = undefined).
- * После выноса detectEnvironment() из области модуля можно мигрировать.
+ * AI-41: console.* оставлен намеренно. detectEnvironment() вызывается из
+ * getEnvConfig() при инициализации логгера, поэтому не может использовать log() —
+ * это bootstrap-вывод, как logToConsole в самом logger.ts.
  */
 
 export interface EnvironmentConfig {

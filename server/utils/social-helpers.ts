@@ -1,5 +1,4 @@
 /**
-import { log } from './logger';
  * Helper function to normalize Instagram URLs
  */
 export function normalizeInstagramUrl(url: string): string {
@@ -27,6 +26,7 @@ export function normalizeInstagramUrl(url: string): string {
 /**
  * Helper function to add delay between requests
  */
+import { log } from './logger';
 export function delay(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }

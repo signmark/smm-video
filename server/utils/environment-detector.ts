@@ -1,5 +1,4 @@
 /**
-import { log } from './logger';
  * Environment detector for multi-server deployments
  * Handles different admin credentials across Docker, Replit, and production environments
  */
@@ -19,6 +18,7 @@ let _logged = false;
 /**
  * Detects current environment and returns appropriate admin credentials
  */
+import { log } from './logger';
 export function detectEnvironment(): EnvironmentConfig {
   // Используем переменную ENV для определения окружения
   const envVariable = process.env.ENV || process.env.NODE_ENV || 'production';

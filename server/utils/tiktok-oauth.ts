@@ -1,5 +1,4 @@
 /**
-import { log } from './logger';
  * TikTok OAuth 2.0 Helper
  * Documentation: https://developers.tiktok.com/doc/login-kit-web
  */
@@ -188,6 +187,7 @@ export class TikTokOAuth {
   /**
    * Получает базовую информацию о пользователе (требует только user.info.basic scope)
    */
+import { log } from './logger';
   async getUserBasicInfo(accessToken: string): Promise<{ displayName: string; avatarUrl: string; unionId: string }> {
     const response = await axios.get(
       'https://open.tiktokapis.com/v2/user/info/',

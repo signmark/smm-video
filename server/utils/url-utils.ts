@@ -1,7 +1,7 @@
 /**
-import { log } from './logger';
  * Утилиты для работы с URL
  */
+import { log } from './logger';
 
 export function normalizeSourceUrl(url: string | null | undefined, domain: string): string | undefined {
   if (!url) return undefined;

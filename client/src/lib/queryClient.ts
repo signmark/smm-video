@@ -273,14 +273,14 @@ export const queryClient = new QueryClient({
     queries: {
       queryFn: getQueryFn({ on401: "throw" }),
       refetchInterval: false,
-      // AI-80: Кэширование для мгновенного отклика UI.
-      // refetchOnWindowFocus отключён — возврат на вкладку не дёргает сеть.
-      // refetchOnMount отключён — переход между страницами не дёргает сеть.
-      // staleTime 5 минут — данные из кэша показываются мгновенно,
-      //   но если инвалидацию где-то забыли, оно само вылечится.
+      // AI-80: Мгновенный отклик UI.
+      // staleTime 5 минут — данные из кэша показываются мгновенно при
+      //   переходах и возврате фокуса (refetchOnMount/WindowFocus срабатывают
+      //   только на stale-данных, на свежих они no-op без сети).
+      //   Если инвалидацию где-то забыли — кэш самоисцелится за 5 минут.
       //   (Infinity было бы ошибкой: забытая инвалидация = вечно старые данные.)
-      refetchOnWindowFocus: false,
-      refetchOnMount: false,
+      refetchOnWindowFocus: true,
+      refetchOnMount: true,
       staleTime: 5 * 60 * 1000, // 5 минут
       gcTime: 1000 * 60 * 5,
       retry: false,

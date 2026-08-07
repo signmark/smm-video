@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { DirectusCrud } from '../services/directus-crud';
+import { log } from '../utils/logger';
 
 const directusCrud = new DirectusCrud();
 
@@ -58,7 +59,7 @@ export const checkSubscription = async (req: AuthenticatedRequest, res: Response
     req.user = userData;
     next();
   } catch (error) {
-    console.error('Ошибка при проверке подписки:', error);
+    log.error('Ошибка при проверке подписки:', error);
     res.status(500).json({ 
       error: 'Внутренняя ошибка сервера',
       message: 'Не удалось проверить статус подписки'
@@ -96,7 +97,7 @@ export const checkSubscriptionWithWarning = async (req: AuthenticatedRequest, re
     req.user = userData;
     next();
   } catch (error) {
-    console.error('Ошибка при проверке подписки с предупреждением:', error);
+    log.error('Ошибка при проверке подписки с предупреждением:', error);
     next();
   }
 };

@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { directusApiManager } from '../directus';
 import { validateDirectusSession } from '../services/directus-session-validator';
 import { adminTokenManager } from '../services/admin-token-manager';
+import { log } from '../utils/logger';
 
 const adminStatusCache = new Map<string, { is_smm_admin: boolean; cachedAt: number }>();
 const ADMIN_CACHE_TTL = 30 * 1000;
@@ -21,30 +22,30 @@ async function fetchAdminStatus(userId: string): Promise<boolean> {
     // приходил false, и админка (список пользователей и т.п.) отдавала 403.
     const adminToken = await adminTokenManager.getAdminToken();
     if (!adminToken) {
-      console.error('[user-auth] fetchAdminStatus: не удалось получить служебный токен');
+      log.error('[user-auth] fetchAdminStatus: не удалось получить служебный токен');
       return false;
     }
     const directusUrl = (process.env.DIRECTUS_URL || '').replace(/\/$/, '');
     const url = `${directusUrl}/users/${userId}?fields=is_smm_admin`;
-    console.log(`[user-auth] fetchAdminStatus: GET ${url}`);
+    log(`[user-auth] fetchAdminStatus: GET ${url}`);
     const resp = await fetch(url, {
       headers: { Authorization: `Bearer ${adminToken}` },
       signal: AbortSignal.timeout(5_000),
     });
-    console.log(`[user-auth] fetchAdminStatus: status=${resp.status}`);
+    log(`[user-auth] fetchAdminStatus: status=${resp.status}`);
     if (!resp.ok) {
       const errText = await resp.text();
-      console.error(`[user-auth] fetchAdminStatus: ошибка ${resp.status}: ${errText}`);
+      log.error(`[user-auth] fetchAdminStatus: ошибка ${resp.status}: ${errText}`);
       return false;
     }
     const data = await resp.json() as any;
     const val = data?.data?.is_smm_admin;
-    console.log(`[user-auth] fetchAdminStatus: userId=${userId}, is_smm_admin=${val}`);
+    log(`[user-auth] fetchAdminStatus: userId=${userId}, is_smm_admin=${val}`);
     const isAdmin = val === true || val === 1 || val === '1' || val === 'true';
     adminStatusCache.set(userId, { is_smm_admin: isAdmin, cachedAt: Date.now() });
     return isAdmin;
   } catch (e: any) {
-    console.error('[user-auth] fetchAdminStatus: исключение:', e?.message);
+    log.error('[user-auth] fetchAdminStatus: исключение:', e?.message);
     return false;
   }
 }
@@ -152,15 +153,15 @@ export const authenticateUser = async (req: Request, res: Response, next: NextFu
 
         next();
       } catch (e) {
-        console.error('[AUTH] Ошибка декодирования токена:', e);
+        log.error('[AUTH] Ошибка декодирования токена:', e);
         return res.status(401).json({ error: 'Не авторизован: Ошибка валидации токена' });
       }
     } catch (error) {
-      console.error('[AUTH] Критическая ошибка middleware:', error);
+      log.error('[AUTH] Критическая ошибка middleware:', error);
       return res.status(500).json({ error: 'Внутренняя ошибка сервера при авторизации' });
     }
   } catch (globalError) {
-    console.error('[AUTH] Глобальная ошибка middleware:', globalError);
+    log.error('[AUTH] Глобальная ошибка middleware:', globalError);
     next(globalError);
   }
 };

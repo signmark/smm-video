@@ -26,8 +26,27 @@
 import { detectEnvironment } from './environment-detector';
 import { currentRequestId } from './request-context';
 
-// Получаем конфигурацию окружения
-export let envConfig = detectEnvironment();
+// AI-82: detectEnvironment() вызывается лениво при первом обращении к getEnvConfig(),
+// а не на уровне модуля. Это разрывает циклическую зависимость:
+// logger.ts → environment-detector.ts → (хотел импортировать) → logger.ts
+// Теперь environment-detector может импортировать log без цикла.
+let _envConfig: ReturnType<typeof detectEnvironment> | null = null;
+
+export function getEnvConfig(): ReturnType<typeof detectEnvironment> {
+  if (!_envConfig) {
+    _envConfig = detectEnvironment();
+  }
+  return _envConfig;
+}
+
+// Обратная совместимость: код, который читал envConfig как переменную,
+// теперь вызывает getEnvConfig(). Переменная оставлена как deprecated alias.
+export const envConfig: ReturnType<typeof detectEnvironment> = new Proxy({} as any, {
+  get(_target, prop) {
+    const cfg = getEnvConfig();
+    return (cfg as any)[prop];
+  },
+});
 
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error' | 'fatal';
 
@@ -323,11 +342,12 @@ export function logEnvironmentInfo(): void {
  * Перечитывает окружение (используется в тестах и при смене конфигурации)
  */
 export function refreshEnvironmentConfig(): void {
-  envConfig = detectEnvironment();
+  _envConfig = detectEnvironment();
+  const cfg = getEnvConfig();
 
-  DEBUG_LEVELS.GLOBAL = envConfig.environment === 'development' && envConfig.verboseLogs;
-  DEBUG_LEVELS.SCHEDULER = envConfig.environment === 'development' ? envConfig.debugScheduler : false;
-  DEBUG_LEVELS.PUBLISHING = envConfig.environment === 'development';
+  DEBUG_LEVELS.GLOBAL = cfg.environment === 'development' && cfg.verboseLogs;
+  DEBUG_LEVELS.SCHEDULER = cfg.environment === 'development' ? cfg.debugScheduler : false;
+  DEBUG_LEVELS.PUBLISHING = cfg.environment === 'development';
   DEBUG_LEVELS.SOCIAL = envConfig.environment === 'development';
   DEBUG_LEVELS.STATUS_CHECKER = envConfig.environment === 'development';
 

@@ -1,11 +1,9 @@
 /**
  * Environment detector for multi-server deployments
  * Handles different admin credentials across Docker, Replit, and production environments
- *
- * AI-41: console.* оставлен намеренно — логгер импортирует этот модуль
- * на уровне модуля, обратный импорт создаёт цикл (log = undefined).
- * После выноса detectEnvironment() из области модуля можно мигрировать.
  */
+
+import { log } from './logger';
 
 export interface EnvironmentConfig {
   adminEmail: string;
@@ -35,7 +33,7 @@ export function detectEnvironment(): EnvironmentConfig {
     (environment === 'development' ? 'http://localhost:8055' : 'https://directus.nplanner.ru');
 
   if (!_logged) {
-    console.log(`[ENV-DETECTOR] Detected environment: ${environment}, Directus URL: ${directusUrl}`);
+    log(`[ENV-DETECTOR] Detected environment: ${environment}, Directus URL: ${directusUrl}`, 'env');
     _logged = true;
   }
 

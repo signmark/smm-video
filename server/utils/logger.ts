@@ -26,9 +26,12 @@
 import { detectEnvironment } from './environment-detector';
 import { currentRequestId } from './request-context';
 
-// AI-82: detectEnvironment() вызывается лениво при первом обращении к getEnvConfig(),
-// а не на уровне модуля. Это разрывает циклическую зависимость:
-// logger.ts → environment-detector.ts → (хотел импортировать) → logger.ts
+// AI-82: getEnvConfig() вызывает detectEnvironment() лениво при первом
+// обращении, а не на уровне модуля. Модули, импортирующие log, больше
+// не платят за вызов detectEnvironment при import.
+//
+// Исключение: сам detectEnvironment() НЕ может использовать log() —
+// это bootstrap-вывод (см. комментарий в environment-detector.ts).
 let _envConfig: ReturnType<typeof detectEnvironment> | null = null;
 
 export function getEnvConfig(): ReturnType<typeof detectEnvironment> {

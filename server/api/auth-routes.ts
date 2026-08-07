@@ -173,7 +173,7 @@ export function registerAuthRoutes(app: Express): void {
           });
           log(`Trial Pro (14 days) activated for new user: ${newUserId} until ${trialExpireDateStr}`, 'auth');
         } catch (trialErr: any) {
-          log.warn('[auth/register] Не удалось активировать пробный период Pro:', trialErr?.message);
+          log.warn(`[auth/register] Не удалось активировать пробный период Pro: ${trialErr?.message}`, 'auth');
         }
 
         // Сохраняем партнёрский код и отправляем registration postback (не блокирует ответ)
@@ -187,7 +187,7 @@ export function registerAuthRoutes(app: Express): void {
             });
             log(`[auth/register] partnerCode=${normalizedCode} сохранён для user ${newUserId}`, 'auth');
           } catch (pcErr: any) {
-            log.warn('[auth/register] Не удалось сохранить partnerCode:', pcErr?.message);
+            log.warn(`[auth/register] Не удалось сохранить partnerCode: ${pcErr?.message}`, 'auth');
           }
 
           // Читаем актуальные данные юзера из Directus для постбека (email, telegram_chat_id)
@@ -225,7 +225,7 @@ export function registerAuthRoutes(app: Express): void {
           refreshToken = loginResponse.data?.data?.refresh_token || null;
           log(`Auto-login after registration successful for: ${email}`, 'auth');
         } catch (loginErr) {
-          log.warn('Auto-login after registration failed (non-critical):', loginErr);
+          log.warn(`Auto-login after registration failed (non-critical): ${loginErr?.message || loginErr}`, 'auth');
         }
 
         return res.status(201).json({

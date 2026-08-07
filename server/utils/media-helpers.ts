@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { log } from './logger';
 
 /**
  * Fetch video thumbnail from various sources
@@ -6,7 +7,7 @@ import axios from 'axios';
 export async function fetchVideoThumbnail(videoUrl: string, res: any) {
   try {
     // Basic implementation for now - could be enhanced with FFmpeg or specific platform APIs
-    console.log(`[Video Thumbnail Helper] Fetching thumbnail for: ${videoUrl}`);
+    log(`[Video Thumbnail Helper] Fetching thumbnail for: ${videoUrl}`, 'media');
     
     // Default fallback image if thumbnail cannot be generated
     const fallbackThumbnail = 'https://nplanner.ru/wp-content/uploads/2023/09/video-placeholder.png';
@@ -22,7 +23,7 @@ export async function fetchVideoThumbnail(videoUrl: string, res: any) {
     // For now, redirect to fallback
     res.redirect(fallbackThumbnail);
   } catch (error) {
-    console.error('Error in fetchVideoThumbnail:', error);
+    log.error('Error in fetchVideoThumbnail:', error);
     res.status(404).send('Thumbnail not found');
   }
 }
@@ -92,7 +93,7 @@ export async function fetchAndProxyImage(url: string, res: any, options: { isRet
     
     res.send(response.data);
   } catch (error: any) {
-    console.error(`Error proxying media ${url}:`, error);
+    log.error(`Error proxying media ${url}:`, error);
     res.status(404).send('Media not found');
   }
 }
@@ -148,7 +149,7 @@ export async function streamVideo(videoUrl: string, res: any, options: {
     
     response.data.pipe(res);
   } catch (error: any) {
-    console.error(`Error streaming video: ${error}`);
+    log.error(`Error streaming video: ${error}`);
     res.status(500).send('Error streaming video');
   }
 }

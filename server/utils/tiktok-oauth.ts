@@ -45,10 +45,10 @@ export class TikTokOAuth {
     this.clientSecret = config.clientSecret;
     this.redirectUri = config.redirectUri || this.getDefaultRedirectUri();
 
-    console.log('[tiktok-oauth] Конфигурация TikTok OAuth:');
-    console.log('[tiktok-oauth] - clientKey:', this.clientKey ? '***установлен***' : 'НЕ ЗАДАН');
-    console.log('[tiktok-oauth] - clientSecret:', this.clientSecret ? '***установлен***' : 'НЕ ЗАДАН');
-    console.log('[tiktok-oauth] - redirectUri:', this.redirectUri);
+    log('[tiktok-oauth] Конфигурация TikTok OAuth:');
+    log('[tiktok-oauth] - clientKey:', this.clientKey ? '***установлен***' : 'НЕ ЗАДАН');
+    log('[tiktok-oauth] - clientSecret:', this.clientSecret ? '***установлен***' : 'НЕ ЗАДАН');
+    log('[tiktok-oauth] - redirectUri:', this.redirectUri);
   }
 
   private getDefaultRedirectUri(): string {
@@ -187,6 +187,7 @@ export class TikTokOAuth {
   /**
    * Получает базовую информацию о пользователе (требует только user.info.basic scope)
    */
+import { log } from './logger';
   async getUserBasicInfo(accessToken: string): Promise<{ displayName: string; avatarUrl: string; unionId: string }> {
     const response = await axios.get(
       'https://open.tiktokapis.com/v2/user/info/',

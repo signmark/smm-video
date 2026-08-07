@@ -17,7 +17,7 @@ export function cleanupExpiredCache() {
   // Очищаем кеш для обычных запросов
   for (const [key, entry] of searchCache.entries()) {
     if (now - entry.timestamp > CACHE_DURATION) {
-      console.log(`Removing expired cache entry for keyword: ${key}`);
+      log(`Removing expired cache entry for keyword: ${key}`);
       searchCache.delete(key);
       removedCount++;
     }
@@ -26,13 +26,13 @@ export function cleanupExpiredCache() {
   // Очищаем кеш для URL-запросов
   for (const [url, entry] of urlKeywordsCache.entries()) {
     if (now - entry.timestamp > CACHE_DURATION) {
-      console.log(`Removing expired cache entry for URL: ${url}`);
+      log(`Removing expired cache entry for URL: ${url}`);
       urlKeywordsCache.delete(url);
       removedCount++;
     }
   }
   
-  console.log(`Cache cleanup completed. Removed ${removedCount} expired entries. Current state: Keywords cache: ${searchCache.size} entries, URL cache: ${urlKeywordsCache.size} entries`);
+  log(`Cache cleanup completed. Removed ${removedCount} expired entries. Current state: Keywords cache: ${searchCache.size} entries, URL cache: ${urlKeywordsCache.size} entries`);
 }
 
 /**
@@ -41,7 +41,7 @@ export function cleanupExpiredCache() {
 export function getCachedResults(keyword: string): any[] | null {
   const cached = searchCache.get(keyword);
   if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-    console.log(`Using cached results for keyword: ${keyword}`);
+    log(`Using cached results for keyword: ${keyword}`);
     return cached.results;
   }
   return null;
@@ -55,7 +55,7 @@ export function getCachedKeywordsByUrl(url: string): any[] | null {
   const cached = urlKeywordsCache.get(normalizedUrl);
   
   if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-    console.log(`Using cached URL keywords for: ${url}, found ${cached.results.length} items`);
+    log(`Using cached URL keywords for: ${url}, found ${cached.results.length} items`);
     return cached.results;
   }
   return null;
@@ -221,7 +221,7 @@ export async function extractFullSiteContent(url: string): Promise<string> {
     
     return contentParts.filter(Boolean).join('\n\n');
   } catch (error: any) {
-    console.error(`❌ Ошибка анализа сайта ${url}:`, error.message);
+    log.error(`❌ Ошибка анализа сайта ${url}:`, error.message);
     return `URL: ${url}\nОшибка загрузки сайта: ${error.message}`;
   }
 }

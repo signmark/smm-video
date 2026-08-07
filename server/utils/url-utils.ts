@@ -1,6 +1,7 @@
 /**
  * Утилиты для работы с URL
  */
+import { log } from './logger';
 
 export function normalizeSourceUrl(url: string | null | undefined, domain: string): string | undefined {
   if (!url) return undefined;
@@ -11,7 +12,7 @@ export function normalizeSourceUrl(url: string | null | undefined, domain: strin
     }
     return undefined;
   } catch(e){
-    console.error('Error normalizing source URL', url, e);
+    log.error('Error normalizing source URL', url, e);
     return undefined;
   }
 }

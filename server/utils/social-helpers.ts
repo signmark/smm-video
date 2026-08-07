@@ -18,7 +18,7 @@ export function normalizeInstagramUrl(url: string): string {
 
     return `https://instagram.com/${username}`;
   } catch (error) {
-    console.error(`Error normalizing Instagram URL ${url}:`, error);
+    log.error(`Error normalizing Instagram URL ${url}:`, error);
     return url;
   }
 }
@@ -26,6 +26,7 @@ export function normalizeInstagramUrl(url: string): string {
 /**
  * Helper function to add delay between requests
  */
+import { log } from './logger';
 export function delay(ms: number) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }

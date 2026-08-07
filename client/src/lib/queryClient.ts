@@ -249,12 +249,14 @@ export const getQueryFn: <T>(options: {
   };
 
 /**
- * Конфигурация React Query для кеширования данных между страницами
- * - staleTime: Infinity - данные никогда не считаются устаревшими 
- * - cacheTime: 1000 * 60 * 30 - кеш живет 30 минут
- * - structuralSharing: true - автоматически сравнивает структуру данных
- * - refetchOnMount: false - не запрашивать данные при монтировании компонента
- * - refetchOnWindowFocus: false - не запрашивать данные при фокусе окна
+ * AI-80: Мгновенный отклик UI через кэширование данных.
+ *
+ * Данные показываются из кэша мгновенно при переходах между страницами.
+ * Фоновое обновление происходит если данные старше 5 минут или явно
+ * инвалидированы мутацией. Это даёт субъективную мгновенность без риска
+ * показывать вечно устаревшие данные при забытой инвалидации.
+ *
+ * Параметры заданы в defaultOptions ниже.
  */
 // Глобальный обработчик ошибок для QueryClient
 const globalErrorHandler = (error: any) => {
@@ -271,11 +273,17 @@ export const queryClient = new QueryClient({
     queries: {
       queryFn: getQueryFn({ on401: "throw" }),
       refetchInterval: false,
+      // AI-80: Мгновенный отклик UI.
+      // staleTime 5 минут — данные из кэша показываются мгновенно при
+      //   переходах и возврате фокуса (refetchOnMount/WindowFocus срабатывают
+      //   только на stale-данных, на свежих они no-op без сети).
+      //   Если инвалидацию где-то забыли — кэш самоисцелится за 5 минут.
+      //   (Infinity было бы ошибкой: забытая инвалидация = вечно старые данные.)
       refetchOnWindowFocus: true,
-      staleTime: 30 * 1000,
-      gcTime: 1000 * 60 * 5,
-      retry: false,
       refetchOnMount: true,
+      staleTime: 5 * 60 * 1000, // 5 минут
+      gcTime: 30 * 60 * 1000, // 30 минут — кэш живёт дольше чем staleTime
+      retry: false,
       structuralSharing: true,
     },
     mutations: {

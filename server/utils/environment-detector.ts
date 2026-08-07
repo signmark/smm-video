@@ -1,9 +1,11 @@
 /**
  * Environment detector for multi-server deployments
  * Handles different admin credentials across Docker, Replit, and production environments
+ *
+ * AI-41: console.* оставлен намеренно. detectEnvironment() вызывается из
+ * getEnvConfig() при инициализации логгера, поэтому не может использовать log() —
+ * это bootstrap-вывод, как logToConsole в самом logger.ts.
  */
-
-import { log } from './logger';
 
 export interface EnvironmentConfig {
   adminEmail: string;
@@ -33,7 +35,7 @@ export function detectEnvironment(): EnvironmentConfig {
     (environment === 'development' ? 'http://localhost:8055' : 'https://directus.nplanner.ru');
 
   if (!_logged) {
-    log(`[ENV-DETECTOR] Detected environment: ${environment}, Directus URL: ${directusUrl}`, 'env');
+    console.log(`[ENV-DETECTOR] Detected environment: ${environment}, Directus URL: ${directusUrl}`);
     _logged = true;
   }
 

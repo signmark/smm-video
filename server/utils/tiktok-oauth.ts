@@ -5,6 +5,7 @@
 
 import axios from 'axios';
 import { oauthRedirectUri } from './public-url';
+import { log } from './logger';
 
 export interface TikTokConfig {
   clientKey: string;
@@ -187,7 +188,6 @@ export class TikTokOAuth {
   /**
    * Получает базовую информацию о пользователе (требует только user.info.basic scope)
    */
-import { log } from './logger';
   async getUserBasicInfo(accessToken: string): Promise<{ displayName: string; avatarUrl: string; unionId: string }> {
     const response = await axios.get(
       'https://open.tiktokapis.com/v2/user/info/',

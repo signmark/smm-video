@@ -1,4 +1,5 @@
-import React, { Suspense, lazy } from "react";
+import React, { Suspense, lazy, useEffect } from "react";
+import { registerSessionReset } from "@/lib/session-reset";
 import { Switch, Route, useParams } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider } from "@tanstack/react-query";
@@ -240,6 +241,12 @@ function AppWithWebSocket() {
 }
 
 function App() {
+  // Подписка на выход из аккаунта (AI-79): черновики сторис должны исчезать
+  // вместе с сессией. Регистрируем явно и один раз — подписка на уровне модуля
+  // была бы побочным эффектом импорта, а такой код у нас уже дважды ломал
+  // посторонние тесты.
+  useEffect(() => registerSessionReset(), []);
+
   return (
     <QueryClientProvider client={queryClient}>
       <Toaster />

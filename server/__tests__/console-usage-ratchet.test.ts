@@ -33,7 +33,7 @@ import { join } from 'node:path';
  *
  * Число обязано только уменьшаться.
  */
-const BASELINE = 2085;
+const BASELINE = 2074;
 
 const CONSOLE_CALL = /\bconsole\.(log|error|warn|info|debug)\s*\(/g;
 

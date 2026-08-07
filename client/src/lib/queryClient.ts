@@ -282,7 +282,7 @@ export const queryClient = new QueryClient({
       refetchOnWindowFocus: true,
       refetchOnMount: true,
       staleTime: 5 * 60 * 1000, // 5 минут
-      gcTime: 1000 * 60 * 5,
+      gcTime: 30 * 60 * 1000, // 30 минут — кэш живёт дольше чем staleTime
       retry: false,
       structuralSharing: true,
     },

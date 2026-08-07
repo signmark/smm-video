@@ -487,7 +487,7 @@ export function registerAuthRoutes(app: Express): void {
       }
       
       const token = authHeader.substring(7);
-      log(`Проверка статуса админа с токеном: ${token.substring(0, 10)}...`, 'auth');
+      log(`Проверка статуса админа (токен: [redacted len=${token.length}])`, 'auth');
       
       const isAdmin = await isUserAdmin(req, token);
       log(`Результат проверки администратора: ${isAdmin}`, 'auth');

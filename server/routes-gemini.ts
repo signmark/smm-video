@@ -50,7 +50,7 @@ export function registerGeminiRoutes(app: Express) {
       
       if (apiKey) {
         logger.log(`[gemini-routes] Successfully retrieved Gemini API key from Global API Keys (length: ${apiKey.length})`, 'gemini');
-        const maskedKey = apiKey.substring(0, 8) + '...' + apiKey.substring(apiKey.length - 4);
+        const maskedKey = `[redacted len=${apiKey.length}]`;
         logger.log(`[gemini-routes] Gemini API key: ${maskedKey}`, 'gemini');
       } else {
         logger.error('[gemini-routes] Gemini API key not found in Global API Keys collection', 'gemini');
@@ -90,7 +90,7 @@ export function registerGeminiRoutes(app: Express) {
           logger.log('[gemini-routes] GEMINI_API_KEY not found in env', 'warn');
         }
         
-        logger.log(`[gemini-routes] Using Google AI Studio for model: ${model}, key prefix: ${apiKey.substring(0, 8)}...`, 'gemini');
+        logger.log(`[gemini-routes] Using Google AI Studio for model: ${model}, key: [redacted]`, 'gemini');
         
         const hasHtml = text.includes('<p') || text.includes('<b>') || text.includes('<em>') || text.includes('<ul') || text.includes('<li');
         const systemNote = hasHtml

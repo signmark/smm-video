@@ -272,7 +272,7 @@ export class ApiKeyService {
           const originalKey = apiKey;
           apiKey = apiKey.substring(4);
           console.log(`[${serviceName}] Удаляем префикс "Key " у ключа для сохранения в БД`);
-          console.log(`[${serviceName}] Исходный ключ: ${originalKey.substring(0, 8)}... => Сохраняемый: ${apiKey.substring(0, 4)}...`);
+          console.log(`[${serviceName}] Префикс 'Key ' удалён перед сохранением (len ${originalKey.length} => ${apiKey.length})`);
         }
         
         // Проверка формата ключа (должен содержать ":")

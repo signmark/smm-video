@@ -184,7 +184,7 @@ export class AiService {
         }
       }
 
-      log(`[AiService] Using API Key from source: ${keySource}, prefix: ${apiKey?.substring(0, 8)}...`, 'info');
+      log(`[AiService] Using API Key from source: ${keySource} ([redacted len=${apiKey?.length}])`, 'info');
 
       // 2. Формируем промпт
       const keywordContext = keywords.length > 0 ? `\nКлючевые слова для использования: ${keywords.join(', ')}.` : '';

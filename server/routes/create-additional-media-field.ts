@@ -28,7 +28,7 @@ createFieldsRoute.post('/create-additional-media-field', async (req: Request, re
       });
     }
 
-    log(`Получен административный токен: ${adminToken.substring(0, 10)}...`);
+    log(`Получен административный токен ([redacted len=${adminToken.length}])`);
 
     // Проверяем наличие поля additional_media в схеме
     try {

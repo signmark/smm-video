@@ -125,7 +125,7 @@ export class ClaudeService {
       }
       
       // Маскируем ключ для логирования
-      const maskedKey = this.apiKey.substring(0, 4) + '...' + this.apiKey.substring(this.apiKey.length - 4);
+      const maskedKey = `[redacted len=${this.apiKey.length}]`;
       logger.log(`Testing Claude API key starting with: ${maskedKey}`, 'claude');
       
       // Небольшой prompt для проверки ключа
@@ -596,7 +596,7 @@ ${text}
         logger.debug(`Using model: ${requestData.model}`, 'claude');
         
         // ДИАГНОСТИКА СЕТИ для выявления разности между Replit и стейджем
-        const maskedKey = this.apiKey.substring(0, 8) + '...' + this.apiKey.substring(this.apiKey.length - 4);
+        const maskedKey = `[redacted len=${this.apiKey.length}]`;
         console.log(`[NETWORK-DEBUG] Claude API call environment check:`);
         console.log(`[NETWORK-DEBUG] - API URL: ${this.apiUrl}`);
         console.log(`[NETWORK-DEBUG] - API Key (masked): ${maskedKey}`);

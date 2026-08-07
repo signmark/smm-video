@@ -163,7 +163,7 @@ router.post('/', async (req, res) => {
       });
     }
     
-    log.info(`[Facebook Direct] Используются настройки из кампании: токен ${facebookAccessToken.substring(0, 10)}... и страница ${facebookPageId}`);
+    log.info(`[Facebook Direct] Используются настройки из кампании: токен [redacted] и страница ${facebookPageId}`);
     
     
     // Подготавливаем данные для публикации

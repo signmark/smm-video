@@ -89,7 +89,7 @@ async function getQwenApiKey(req: Request): Promise<string | null> {
     
     if (apiKey) {
       logger.log(`[qwen-routes] Successfully retrieved Qwen API key from Global API Keys (length: ${apiKey.length})`, 'qwen');
-      logger.log(`[qwen-routes] Qwen API key: ${apiKey.substring(0, 10)}...${apiKey.substring(apiKey.length - 4)}`, 'qwen');
+      logger.log(`[qwen-routes] Qwen API key: [redacted len=${apiKey.length}]`, 'qwen');
       return apiKey;
     } else {
       logger.log('[qwen-routes] Qwen API key not found in Global API Keys collection', 'qwen');

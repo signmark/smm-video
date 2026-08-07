@@ -23,7 +23,7 @@ export function registerDeepSeekRoutes(app: Router) {
         const globalKey = await globalApiKeyManager.getApiKey(ApiServiceName.DEEPSEEK);
         if (globalKey) {
           log(`[deepseek-routes] Successfully retrieved DeepSeek API key from Global API Keys (length: ${globalKey.length})`);
-          const maskedKey = globalKey.substring(0, 8) + '...' + globalKey.substring(globalKey.length - 4);
+          const maskedKey = `[redacted len=${globalKey.length}]`;
           log(`[deepseek-routes] DeepSeek API key: ${maskedKey}`);
           return globalKey;
         }
@@ -50,7 +50,7 @@ export function registerDeepSeekRoutes(app: Router) {
       if (apiKey) {
         log(`Successfully retrieved DeepSeek API key for user ${userId} (length: ${apiKey.length})`);
         // Маскируем ключ для логирования - показываем только первые 4 символа
-        const maskedKey = apiKey.substring(0, 4) + '...' + apiKey.substring(apiKey.length - 4);
+        const maskedKey = `[redacted len=${apiKey.length}]`;
         log(`DeepSeek API key starts with: ${maskedKey}`);
       } else {
         log(`DeepSeek API key not found for user ${userId}`);

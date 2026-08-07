@@ -35,7 +35,7 @@ export function registerValidationRoutes(app: Express): void {
         return res.status(400).json({ success: false, message: 'Токен не указан' });
       }
       
-      log(`Валидация токена Telegram: ${token.substring(0, 5)}...`, 'api-validation');
+      log(`Валидация токена Telegram: [redacted len=${token.length}]`, 'api-validation');
       const result = await validateTelegramToken(token);
       
       return res.json({
@@ -94,7 +94,7 @@ export function registerValidationRoutes(app: Express): void {
         return res.status(400).json({ success: false, message: 'Токен не указан' });
       }
 
-      log(`Валидация токена VK: ${token.substring(0, 5)}...${groupId ? ` для группы ${groupId}` : ''}`, 'api-validation');
+      log(`Валидация токена VK: [redacted]${groupId ? ` для группы ${groupId}` : ''}`, 'api-validation');
       const result = await validateVkToken(token, groupId);
 
       // authExpired = «сохранённое подключение мертво, нужно переподключение».
@@ -170,7 +170,7 @@ export function registerValidationRoutes(app: Express): void {
         return res.status(400).json({ success: false, message: 'Токен не указан' });
       }
       
-      log(`Валидация токена Instagram: ${token.substring(0, 5)}...`, 'api-validation');
+      log(`Валидация токена Instagram: [redacted len=${token.length}]`, 'api-validation');
       const result = await validateInstagramToken(token);
       
       return res.json({
@@ -195,7 +195,7 @@ export function registerValidationRoutes(app: Express): void {
         return res.status(400).json({ success: false, message: 'Токен не указан' });
       }
       
-      log(`Валидация токена Facebook: ${token.substring(0, 5)}...${pageId ? ` для страницы ${pageId}` : ''}`, 'api-validation');
+      log(`Валидация токена Facebook: [redacted]${pageId ? ` для страницы ${pageId}` : ''}`, 'api-validation');
       const result = await validateFacebookToken(token, pageId);
       
       return res.json({
@@ -220,7 +220,7 @@ export function registerValidationRoutes(app: Express): void {
         return res.status(400).json({ success: false, message: 'API ключ не указан' });
       }
       
-      log(`Валидация API ключа YouTube: ${apiKey.substring(0, 5)}...${channelId ? ` для канала ${channelId}` : ''}`, 'api-validation');
+      log(`Валидация API ключа YouTube: [redacted]${channelId ? ` для канала ${channelId}` : ''}`, 'api-validation');
       const result = await validateYoutubeApiKey(apiKey, channelId);
       
       return res.json({

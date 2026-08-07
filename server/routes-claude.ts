@@ -34,7 +34,7 @@ export function registerClaudeRoutes(app: Router) {
       if (apiKey) {
         logger.log(`[claude-routes] Successfully retrieved Claude API key from Global API Keys (length: ${apiKey.length})`, 'claude');
         // Маскируем ключ для логирования - показываем только первые 4 символа
-        const maskedKey = apiKey.substring(0, 8) + '...' + apiKey.substring(apiKey.length - 4);
+        const maskedKey = `[redacted len=${apiKey.length}]`;
         logger.log(`[claude-routes] Claude API key: ${maskedKey}`, 'claude');
       } else {
         logger.error('[claude-routes] Claude API key not found in Global API Keys collection', 'claude');
@@ -75,7 +75,7 @@ export function registerClaudeRoutes(app: Router) {
         });
       }
       
-      logger.log(`[claude-routes] Testing Claude API key, length: ${apiKey.length}, starts with: ${apiKey.substring(0, 4)}...`);
+      logger.log(`[claude-routes] Testing Claude API key, length: ${apiKey.length}`);
       const claudeService = new ClaudeService(apiKey);
       const isValid = await claudeService.testApiKey();
       

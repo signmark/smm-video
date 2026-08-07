@@ -14,7 +14,7 @@ import { directusApiManager } from './directus';
 function extractUserIdFromToken(token: string): string | null {
   try {
     if (!token || !token.includes('.')) {
-      console.log('Получен неверный формат токена: токен не содержит точек', token.substring(0, 15) + '...');
+      console.log(`Получен неверный формат токена: токен не содержит точек (len=${token.length})`);
       return null;
     }
 
@@ -80,7 +80,7 @@ export function registerUserApiKeysRoutes(app: Application) {
       }
       
       const token = authHeader.split(' ')[1];
-      console.log(`Token for API keys check: ${token.substring(0, 10)}...`);
+      console.log(`Token for API keys check: [redacted len=${token.length}]`);
       
       // Извлекаем ID пользователя из токена
       const userId = extractUserIdFromToken(token);

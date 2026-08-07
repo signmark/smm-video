@@ -150,7 +150,7 @@ export class FalAiJuggernautService {
    */
   initialize(apiKey: string): void {
     this.apiKey = apiKey;
-    console.log(`[fal-ai-juggernaut] Сервис инициализирован с ключом API (маскировано): ${apiKey ? '****' + apiKey.substring(apiKey.length - 6) : 'null'}`);
+    console.log(`[fal-ai-juggernaut] Сервис инициализирован с ключом API: ${apiKey ? '[redacted]' : 'null'}`);
   }
   
   /**

@@ -38,9 +38,9 @@ export class GeminiProxyService {
         originalUrl.host = proxyUrl.host;
         originalUrl.protocol = proxyUrl.protocol;
         baseUrl = originalUrl.toString();
-        const keyPreview = apiKey && apiKey.length > 18
-          ? `${apiKey.substring(0, 10)}...${apiKey.substring(apiKey.length - 8)}`
-          : 'short-key';
+        // AI-84: фрагменты ключа (10+8 символов) однозначно опознавали
+        // настоящий ключ в проде. Печатаем только факт наличия и длину.
+        const keyPreview = apiKey ? `[redacted len=${apiKey.length}]` : 'no-key';
         logger.log(`[gemini-proxy] REDIRECTING to Worker Proxy with key=${keyPreview}`, 'gemini');
       } catch (e) {
         logger.log(`[gemini-proxy] Invalid GEMINI_PROXY_URL: ${workerProxy}`, 'error');

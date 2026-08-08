@@ -1076,13 +1076,10 @@ export function registerPublishingRoutes(app: Express): void {
             data: {
               status: 'draft',
               scheduled_at: null,
-              // AI-85: НЕ стираем social_platforms при отмене.
-              // Раньше здесь было `social_platforms: {}` — это уничтожало
-              // историю публикации (postId, статусы платформ, ссылки).
-              // Пост при этом из канала не исчезал, а мы теряли факт
-              // публикации — аналитика показывала неверные цифры.
-              // Теперь только статус меняется на draft, данные платформ
-              // сохраняются для истории.
+              // AI-87: Сохраняем историю платформ с пометкой 'cancelled'
+              // вместо полной очистки. Отмена = "не публиковать дальше",
+              // а не "этого никогда не было".
+              social_platforms: updatedPlatforms,
             },
             headers: {
               'Authorization': `Bearer ${authToken}`
@@ -1106,7 +1103,7 @@ export function registerPublishingRoutes(app: Express): void {
         await storage.updateCampaignContent(contentId, {
           status: 'draft', // Возвращаем в статус черновика
           scheduledAt: null, // Убираем планирование
-          socialPlatforms: {} // Полностью очищаем платформы при отмене
+          // AI-87: НЕ стираем socialPlatforms при отмене — сохраняем историю публикации
         }, authToken);
         log(`Публикация ${contentId} отменена через storage`, 'api');
       } catch (storageError: any) {

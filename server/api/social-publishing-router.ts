@@ -157,8 +157,8 @@ router.post('/stories/publish', authMiddleware, async (req, res) => {
   try {
     const { contentId, platforms, generatedImageUrl, generatedVideoUrl, useGeneratedImage, useGeneratedVideo, scheduledAt } = req.body;
 
-    console.log('[PUBLISH] === НАЧАЛО ПУБЛИКАЦИИ STORIES ===');
-    console.log('[PUBLISH] Запрос на публикацию:', {
+    log('[PUBLISH] === НАЧАЛО ПУБЛИКАЦИИ STORIES ===');
+    log('[PUBLISH] Запрос на публикацию:', {
       contentId,
       platforms,
       generatedImageUrl: generatedImageUrl ? 'есть' : 'нет',
@@ -166,8 +166,8 @@ router.post('/stories/publish', authMiddleware, async (req, res) => {
       useGeneratedImage,
       useGeneratedVideo
     });
-    console.log('[PUBLISH] Полный body запроса:', JSON.stringify(req.body, null, 2));
-    console.log('[PUBLISH] Полный body запроса:', JSON.stringify(req.body, null, 2));
+    log('[PUBLISH] Полный body запроса:', JSON.stringify(req.body, null, 2));
+    log('[PUBLISH] Полный body запроса:', JSON.stringify(req.body, null, 2));
 
     if (!contentId) {
       return res.status(400).json({
@@ -227,12 +227,12 @@ router.post('/stories/publish', authMiddleware, async (req, res) => {
 
       const storyContent = contentResponse.data.data;
 
-      console.log('[PUBLISH] === ДАННЫЕ ИЗ DIRECTUS ===');
-      console.log('[PUBLISH] storyContent.video_url:', storyContent.video_url || 'НЕТ');
-      console.log('[PUBLISH] storyContent.image_url:', storyContent.image_url || 'НЕТ');
-      console.log('[PUBLISH] storyContent.backgroundVideoUrl:', storyContent.backgroundVideoUrl || 'НЕТ');
-      console.log('[PUBLISH] storyContent.mediaType:', storyContent.mediaType || 'НЕТ');
-      console.log('[PUBLISH] storyContent.additional_media:', storyContent.additional_media ? 'есть' : 'нет');
+      log('[PUBLISH] === ДАННЫЕ ИЗ DIRECTUS ===');
+      log('[PUBLISH] storyContent.video_url:', storyContent.video_url || 'НЕТ');
+      log('[PUBLISH] storyContent.image_url:', storyContent.image_url || 'НЕТ');
+      log('[PUBLISH] storyContent.backgroundVideoUrl:', storyContent.backgroundVideoUrl || 'НЕТ');
+      log('[PUBLISH] storyContent.mediaType:', storyContent.mediaType || 'НЕТ');
+      log('[PUBLISH] storyContent.additional_media:', storyContent.additional_media ? 'есть' : 'нет');
 
       // Проверяем, что это действительно Stories контент
       if (storyContent.content_type !== 'story') {
@@ -344,7 +344,7 @@ router.post('/stories/publish', authMiddleware, async (req, res) => {
         if (platform === 'instagram') {
           webhookUrl = `${n8nUrl}/webhook/publish-stories`;
 
-          console.log('[PUBLISH] Определяем тип медиа для Instagram:', {
+          log('[PUBLISH] Определяем тип медиа для Instagram:', {
             useGeneratedVideo,
             generatedVideoUrl: generatedVideoUrl ? 'есть' : 'нет',
             generatedImageUrl: generatedImageUrl ? 'есть' : 'нет',
@@ -382,11 +382,11 @@ router.post('/stories/publish', authMiddleware, async (req, res) => {
                   );
                   if (generatedVideo?.url) {
                     videoUrl = generatedVideo.url;
-                    console.log('[PUBLISH] Найдено видео в additional_media:', generatedVideo.url);
+                    log('[PUBLISH] Найдено видео в additional_media:', generatedVideo.url);
                   }
                 }
               } catch (e) {
-                console.warn('[PUBLISH] Ошибка парсинга additional_media:', e);
+                log.warn('[PUBLISH] Ошибка парсинга additional_media:', e);
               }
             }
           }
@@ -394,7 +394,7 @@ router.post('/stories/publish', authMiddleware, async (req, res) => {
           // ВАЖНО: Если video_url заполнено в storyContent, но videoUrl еще не установлен - устанавливаем его
           if (storyContent.video_url && !videoUrl) {
             videoUrl = storyContent.video_url;
-            console.log('[PUBLISH] Устанавливаем videoUrl из storyContent.video_url:', videoUrl);
+            log('[PUBLISH] Устанавливаем videoUrl из storyContent.video_url:', videoUrl);
           }
 
           // Определяем тип медиа
@@ -414,7 +414,7 @@ router.post('/stories/publish', authMiddleware, async (req, res) => {
               storyContent.backgroundVideoUrl
             ));
 
-          console.log('[PUBLISH] Проверка полей контента:', {
+          log('[PUBLISH] Проверка полей контента:', {
             hasVideoUrl,
             hasImageUrl,
             isVideo,
@@ -444,11 +444,11 @@ router.post('/stories/publish', authMiddleware, async (req, res) => {
                   );
                   if (generatedVideo?.url) {
                     videoUrlToSave = generatedVideo.url;
-                    console.log('[PUBLISH] Найден generatedVideoUrl в additional_media:', videoUrlToSave);
+                    log('[PUBLISH] Найден generatedVideoUrl в additional_media:', videoUrlToSave);
                   }
                 }
               } catch (e) {
-                console.warn('[PUBLISH] Ошибка поиска видео в additional_media:', e);
+                log.warn('[PUBLISH] Ошибка поиска видео в additional_media:', e);
               }
             }
 
@@ -457,7 +457,7 @@ router.post('/stories/publish', authMiddleware, async (req, res) => {
               videoUrlToSave = videoUrl;
             }
 
-            console.log('[PUBLISH] Публикуем видео Stories в Instagram:', {
+            log('[PUBLISH] Публикуем видео Stories в Instagram:', {
               useGeneratedVideo,
               generatedVideoUrl: generatedVideoUrl || 'нет',
               videoUrl: videoUrl || 'нет',
@@ -506,17 +506,17 @@ router.post('/stories/publish', authMiddleware, async (req, res) => {
                     headers: { 'Authorization': `Bearer ${userToken}` }
                   });
 
-                  console.log('[PUBLISH] generatedVideoUrl сохранен в additional_media:', videoUrlToSave);
+                  log('[PUBLISH] generatedVideoUrl сохранен в additional_media:', videoUrlToSave);
 
                   // Обновляем videoUrl из сохраненных данных
                   videoUrl = videoUrlToSave;
                 } else {
-                  console.log('[PUBLISH] generatedVideoUrl уже есть в additional_media');
+                  log('[PUBLISH] generatedVideoUrl уже есть в additional_media');
                   // Используем существующий URL
                   videoUrl = existingVideo.url;
                 }
               } catch (saveError: any) {
-                console.warn('[PUBLISH] Не удалось сохранить generatedVideoUrl в additional_media:', saveError?.message);
+                log.warn(`[PUBLISH] Не удалось сохранить generatedVideoUrl в additional_media: ${saveError?.message}`, 'publish');
                 // Продолжаем публикацию даже если не удалось сохранить
               }
             }
@@ -524,10 +524,10 @@ router.post('/stories/publish', authMiddleware, async (req, res) => {
             // ШАГ 3: Используем videoUrlToSave для публикации
             const finalVideoUrl = videoUrlToSave;
 
-            console.log('[PUBLISH] Финальный videoUrl для публикации:', finalVideoUrl ? 'есть' : 'нет', finalVideoUrl);
+            log('[PUBLISH] Финальный videoUrl для публикации:', finalVideoUrl ? 'есть' : 'нет', finalVideoUrl);
 
             if (!finalVideoUrl) {
-              console.warn('[PUBLISH] URL видео не найден для публикации, пропускаем');
+              log.warn('[PUBLISH] URL видео не найден для публикации, пропускаем');
               webhookPromises.push(Promise.resolve({
                 platform: 'instagram',
                 success: false,
@@ -536,7 +536,7 @@ router.post('/stories/publish', authMiddleware, async (req, res) => {
               continue;
             }
 
-            console.log('[PUBLISH] Видео сохранено в additional_media, отправляем contentId в workflow:', contentId);
+            log('[PUBLISH] Видео сохранено в additional_media, отправляем contentId в workflow:', contentId);
 
             // ШАГ 4: Отправляем только contentId в workflow
             // Workflow сам получит данные контента из Directus
@@ -880,13 +880,13 @@ router.post('/publish/now', authMiddleware, async (req, res) => {
       }
 
       log(`[Social Publishing] Успешно сохранены выбранные платформы для контента ${contentId}`);
-      console.log(`✅ [PUBLISH-NOW] Platforms saved for ${contentId}, starting publication to: ${selectedPlatforms.join(', ')}`);
+      log(`✅ [PUBLISH-NOW] Platforms saved for ${contentId}, starting publication to: ${selectedPlatforms.join(', ')}`);
 
       // Запускаем публикацию в каждую выбранную платформу
       const publishResults = [];
 
       log(`[Social Publishing] 🚀 НАЧАЛО ПУБЛИКАЦИИ: contentId=${contentId}, платформы=${selectedPlatforms.join(', ')}, количество=${selectedPlatforms.length}`);
-      console.log(`🚀 [PUBLISH-NOW] Starting publication loop for ${selectedPlatforms.length} platforms`);
+      log(`🚀 [PUBLISH-NOW] Starting publication loop for ${selectedPlatforms.length} platforms`);
 
       for (const platform of selectedPlatforms) {
         log(`[Social Publishing] 📤 Обработка платформы: ${platform}`);
@@ -1740,7 +1740,7 @@ async function publishViaN8nAsync(contentId: string, platform: string): Promise<
     const baseUrlWithoutTrailingSlash = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
     const webhookUrl = `${baseUrlWithoutTrailingSlash}/${webhookName}`;
 
-    console.log(`🚀 [PUBLISH-NOW-N8N] Calling: ${webhookUrl} for content ${contentId}, platform: ${platform}`);
+    log(`🚀 [PUBLISH-NOW-N8N] Calling: ${webhookUrl} for content ${contentId}, platform: ${platform}`);
 
     // Логируем URL для отладки
     log(`[Social Publishing] Сформирован URL для n8n webhook: ${webhookUrl}`);
@@ -1751,11 +1751,11 @@ async function publishViaN8nAsync(contentId: string, platform: string): Promise<
     let response;
     try {
       response = await axios.post(webhookUrl, webhookPayload, { timeout: 30000 });
-      console.log(`✅ [PUBLISH-NOW-N8N] Request successful to ${webhookUrl}, status: ${response.status}`);
+      log(`✅ [PUBLISH-NOW-N8N] Request successful to ${webhookUrl}, status: ${response.status}`);
     } catch (axiosError: any) {
-      console.log(`❌ [PUBLISH-NOW-N8N] Request failed to ${webhookUrl}: ${axiosError.message}`);
+      log(`❌ [PUBLISH-NOW-N8N] Request failed to ${webhookUrl}: ${axiosError.message}`);
       if (axiosError.response) {
-        console.log(`❌ [PUBLISH-NOW-N8N] Response status: ${axiosError.response.status}, data: ${JSON.stringify(axiosError.response.data)}`);
+        log(`❌ [PUBLISH-NOW-N8N] Response status: ${axiosError.response.status}, data: ${JSON.stringify(axiosError.response.data)}`);
       }
       throw axiosError;
     }

@@ -109,6 +109,26 @@ describe('POST /api/campaigns/:campaignId/generate-assistant-prompt (SM-18)', ()
     expect(prompt).not.toContain('Facebook');
   });
 
+  it('сводит literal подключённого Telegram к переменной [socialNetworks]', async () => {
+    // Критичный кейс ревью: модель назвала УЖЕ подключённую сеть (Telegram).
+    H.generateContent.mockResolvedValue({
+      content:
+        'Ты — SMM-менеджер с опытом 3-5 лет. Целевая аудитория — пользователи Telegram. ' +
+        'Пиши под формат Telegram, адаптируй под Telegram и учитывай особенности Telegram.',
+    });
+
+    const res = await request(app)
+      .post('/api/campaigns/camp-1/generate-assistant-prompt')
+      .send(PAYLOAD);
+
+    expect(res.status).toBe(200);
+    const prompt = String(res.body.prompt || '');
+    // Даже подключённая сеть на границе генератора сводится к переменной,
+    // чтобы после смены подключений текст не устарел.
+    expect(prompt).toContain('[socialNetworks]');
+    expect(prompt).not.toContain('Telegram');
+  });
+
   it('сохраняет отрицание «не использовать Facebook» без инверсии', async () => {
     H.generateContent.mockResolvedValue({
       content:

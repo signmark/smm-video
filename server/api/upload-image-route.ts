@@ -10,6 +10,7 @@ import { Express, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import { randomBytes } from 'node:crypto';
 import { authMiddleware } from '../middleware/auth';
+import { log } from '../utils/logger';
 
 export const UPLOAD_IMAGE_MAX_BYTES = 10 * 1024 * 1024; // 10 MB
 
@@ -103,7 +104,7 @@ export function registerUploadImageRoute(app: Express, createS3: () => S3Uploade
             .status(413)
             .json({ success: false, error: 'Файл слишком большой (макс. 10 МБ)' });
         }
-        console.error('[s3-upload-file] Ошибка приёма файла:', (err as Error)?.message);
+        log.error('[s3-upload-file] Ошибка приёма файла:', (err as Error)?.message);
         return res.status(400).json({ success: false, error: 'Не удалось принять файл' });
       }
       return next();
@@ -133,14 +134,14 @@ export function registerUploadImageRoute(app: Express, createS3: () => S3Uploade
         throw new Error(result.error || 'S3 upload failed');
       }
 
-      console.log('[s3-upload-file] Загружено на S3:', result.url);
+      log('[s3-upload-file] Загружено на S3:', result.url);
       return res.json({
         success: true,
         data: { url: result.url, display_url: result.url, link: result.url },
       });
     } catch (error: any) {
       // Детали — только в серверный лог; клиенту generic-ответ (security §4).
-      console.error('[s3-upload-file] Ошибка загрузки:', error?.message);
+      log.error('[s3-upload-file] Ошибка загрузки:', error?.message);
       return res.status(500).json({ success: false, error: 'Ошибка загрузки изображения' });
     }
   });

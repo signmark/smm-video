@@ -4,6 +4,7 @@ import { sendEmail } from '../services/email';
 import { escapeHtml } from '../utils/html-escape';
 import { getAppBaseUrl } from '../utils/app-base-url';
 import { invalidateUserResetTokens } from '../utils/password-reset-tokens';
+import { log } from '../utils/logger';
 
 /**
  * Смена почты в профиле — с подтверждением по ссылке.
@@ -189,7 +190,7 @@ export function registerEmailChangeRoutes(app: Express) {
         headers: { Authorization: `Bearer ${adminToken}` },
       });
       if (!currentResp.ok) {
-        console.error(`[email-change/confirm] Чтение профиля ${userId}: HTTP ${currentResp.status}`);
+        log.error(`[email-change/confirm] Чтение профиля ${userId}: HTTP ${currentResp.status}`);
         return res.status(500).json({ error: 'Ошибка сервера' });
       }
       const currentUser = ((await currentResp.json()) as any)?.data;
@@ -202,7 +203,7 @@ export function registerEmailChangeRoutes(app: Express) {
       try {
         expected = makeEmailChangeToken(String(userId), tsNum, currentEmail, newEmail);
       } catch (configErr: any) {
-        console.error('[email-change/confirm]', configErr?.message);
+        log.error('[email-change/confirm]', configErr?.message);
         return res.status(500).json({ error: 'Ошибка конфигурации сервера' });
       }
 
@@ -222,7 +223,7 @@ export function registerEmailChangeRoutes(app: Express) {
 
       if (!updateResp.ok) {
         const errText = await updateResp.text();
-        console.error('[email-change/confirm] Directus error:', errText);
+        log.error('[email-change/confirm] Directus error:', errText);
         return res.status(500).json({ error: 'Не удалось изменить адрес' });
       }
 
@@ -248,12 +249,12 @@ export function registerEmailChangeRoutes(app: Express) {
           ),
         });
       } catch (notifyErr: any) {
-        console.error('[email-change/confirm] Не удалось отправить уведомление:', notifyErr?.message);
+        log.error('[email-change/confirm] Не удалось отправить уведомление:', notifyErr?.message);
       }
 
       return res.json({ success: true, email: newEmail });
     } catch (err: any) {
-      console.error('[email-change/confirm]', err?.message);
+      log.error('[email-change/confirm]', err?.message);
       return res.status(500).json({ error: 'Ошибка сервера' });
     }
   });

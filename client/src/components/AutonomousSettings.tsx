@@ -11,7 +11,7 @@ import { apiRequest } from "@/lib/queryClient";
 import {
   Loader2, Save, Bot, Pencil, Users, Share2, Target, Shuffle,
   Sparkles, ChevronDown, ChevronUp, Check, Wand2, RotateCcw,
-  BookOpen, Lightbulb, Settings2, BarChart3
+  BookOpen, Lightbulb, Eye, Settings2, BarChart3
 } from "lucide-react";
 
 /* ─────────────────────────────────────────────
@@ -664,18 +664,33 @@ export default function AutonomousSettings({ campaignId, initialSettings, onSett
           value={values.globalPrompt || ""}
           onChange={updateValue("globalPrompt")}
         />
-        {/* SM-18 follow-up: подсказка про переменную [socialNetworks] */}
-        <div className="flex items-start gap-1.5 text-xs text-muted-foreground bg-muted/40 rounded px-3 py-2" title={connectedPlatforms.length > 0 ? `Подключённые соцсети: ${connectedPlatforms.join(', ')}` : 'Соцсети не подключены'}>          <Lightbulb className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
-          <p>
-            Доступная переменная: <code className="bg-background px-1 rounded border border-border font-mono">[socialNetworks]</code> —
-            {' '}заменится на подключённые соцсети автоматически.{' '}
-            {connectedPlatforms.length > 0 ? (
-              <span className="font-medium">Текущие: {connectedPlatforms.join(', ')}</span>
-            ) : (
-              <span className="italic">Соцсети не подключены — подставится «социальных сетей кампании»</span>
-            )}
-          </p>
-        </div>
+        {/* SM-18 follow-up: живой предпросмотр подстановки [socialNetworks] */}
+        {values.globalPrompt && values.globalPrompt.includes("[socialNetworks]") ? (
+          <div className="rounded border border-border bg-muted/40 px-3 py-2 text-xs">
+            <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1 flex items-center gap-1.5">
+              <Eye className="h-3 w-3" /> Как это увидит модель
+            </p>
+            <p className="text-foreground/90 whitespace-pre-wrap">
+              {values.globalPrompt.split("[socialNetworks]").join(
+                connectedPlatforms.length > 0
+                  ? connectedPlatforms.join(", ")
+                  : "социальных сетей кампании"
+              )}
+            </p>
+          </div>
+        ) : (
+          <div className="flex items-start gap-1.5 text-xs text-muted-foreground bg-muted/40 rounded px-3 py-2" title={connectedPlatforms.length > 0 ? `Подключённые соцсети: ${connectedPlatforms.join(', ')}` : 'Соцсети не подключены'}>            <Lightbulb className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+            <p>
+              Доступная переменная: <code className="bg-background px-1 rounded border border-border font-mono">[socialNetworks]</code> —{' '}
+              заменится на подключённые соцсети автоматически.{' '}
+              {connectedPlatforms.length > 0 ? (
+                <span className="font-medium">Текущие: {connectedPlatforms.join(', ')}</span>
+              ) : (
+                <span className="italic">Соцсети не подключены — подставится «социальных сетей кампании»</span>
+              )}
+            </p>
+          </div>
+        )}
       </div>
 
       <div className="space-y-2">

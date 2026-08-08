@@ -2,6 +2,22 @@ import { directusCrud } from './directus-crud';
 import { log } from '../utils/logger';
 import { aiService } from './ai-service';
 
+/**
+ * SM-18 follow-up: заменяет [socialNetworks] переменную в пользовательском
+ * промте на фактически подключённые соцсети кампании.
+ */
+function substituteSocialNetworks(text: string, connectedPlatforms: string[]): string {
+  if (!text || !text.includes('[socialNetworks]')) return text;
+  const PLATFORM_NAMES_RU: Record<string, string> = {
+    telegram: 'Telegram', vk: 'ВКонтакте', instagram: 'Instagram',
+    facebook: 'Facebook', youtube: 'YouTube', tiktok: 'TikTok', threads: 'Threads',
+  };
+  const value = connectedPlatforms.length > 0
+    ? connectedPlatforms.map(p => PLATFORM_NAMES_RU[p] || p).join(', ')
+    : 'социальных сетей кампании';
+  return text.replace(/\[socialNetworks\]/g, value);
+}
+
 export interface ContentPlanSettings {
   postsCount: number;
   contentType?: string;
@@ -52,10 +68,11 @@ async function runEditorPass(
   contentPlan: any[],
   autonomousSettings: { globalPrompt?: string; alwaysInclude?: string; signature?: string },
   userId: string,
-  userToken?: string
+  userToken?: string,
+  connectedPlatforms: string[] = []
 ): Promise<any[]> {
   const styleBlock = autonomousSettings.globalPrompt
-    ? `Стиль и тон: ${autonomousSettings.globalPrompt}\n` : '';
+    ? `Стиль и тон: ${substituteSocialNetworks(autonomousSettings.globalPrompt, connectedPlatforms)}\n` : '';
   const includeBlock = autonomousSettings.alwaysInclude
     ? `Обязательно органично включить в каждый пост: ${autonomousSettings.alwaysInclude}\n` : '';
   const signatureBlock = autonomousSettings.signature
@@ -259,15 +276,25 @@ export async function generateContentPlan(params: GeneratePlanParams): Promise<{
 
   // Загружаем autonomous_settings кампании (globalPrompt, alwaysInclude, signature, useEditorPass)
   let autonomousSettings: { globalPrompt?: string; alwaysInclude?: string; signature?: string; useEditorPass?: boolean } = {};
+  let connectedPlatforms: string[] = [];
   try {
-    // Коллекция называется user_campaigns; 'campaigns' не существует, и запрос к
-    // ней отдавал 403 — autonomous_settings молча терялись, и globalPrompt,
-    // alwaysInclude, signature, useEditorPass не доезжали до генерации.
     const campaignData = await directusCrud.getById('user_campaigns', campaignId, { authToken: userToken });
     if (campaignData?.autonomous_settings) {
       const raw = campaignData.autonomous_settings;
       autonomousSettings = typeof raw === 'string' ? JSON.parse(raw) : raw;
       log(`[CONTENT-PLAN] Загружены autonomous_settings: globalPrompt=${!!autonomousSettings.globalPrompt}, alwaysInclude=${!!autonomousSettings.alwaysInclude}, signature=${!!autonomousSettings.signature}, editorPass=${autonomousSettings.useEditorPass}`, 'content-plan');
+    }
+    // SM-18 follow-up: подтягиваем подключённые соцсети для [socialNetworks] переменной.
+    const s = campaignData?.social_media_settings;
+    if (s && typeof s === 'object') {
+      const KNOWN = ['telegram', 'vk', 'instagram', 'facebook', 'youtube', 'tiktok', 'threads'];
+      connectedPlatforms = KNOWN.filter((p) => {
+        const cfg = s[p];
+        if (!cfg || typeof cfg !== 'object') return false;
+        const enabled = cfg.enabled === true;
+        const hasToken = !!(cfg.token || cfg.accessToken || cfg.access_token || cfg.botToken);
+        return enabled || hasToken;
+      });
     }
   } catch (e: any) {
     log(`[CONTENT-PLAN] Не удалось загрузить autonomous_settings: ${e.message}`, 'content-plan');
@@ -389,7 +416,7 @@ export async function generateContentPlan(params: GeneratePlanParams): Promise<{
 
   // Блоки из autonomous_settings кампании
   const autonomousPromptBlock = autonomousSettings.globalPrompt
-    ? `\nСтиль и тон (обязательно соблюдать):\n${autonomousSettings.globalPrompt}`
+    ? `\nСтиль и тон (обязательно соблюдать):\n${substituteSocialNetworks(autonomousSettings.globalPrompt, connectedPlatforms)}`
     : '';
   const autonomousIncludeBlock = autonomousSettings.alwaysInclude
     ? `\nОбязательно органично включить в каждый пост:\n${autonomousSettings.alwaysInclude}`
@@ -462,7 +489,7 @@ ${autonomousSignatureBlock}
 
     if (autonomousSettings.useEditorPass) {
       progress('AI-редактор', 90, `Редактирование ${contentPlan.length} постов...`);
-      contentPlan = await runEditorPass(contentPlan, autonomousSettings, userId, userToken);
+      contentPlan = await runEditorPass(contentPlan, autonomousSettings, userId, userToken, connectedPlatforms);
     }
 
     progress('Готово', 100, `ИИ создал ${contentPlan.length} постов`);
@@ -502,7 +529,7 @@ ${autonomousSignatureBlock}
 
     if (autonomousSettings.useEditorPass) {
       progress('AI-редактор', 90, `Редактирование ${contentPlan.length} постов...`);
-      contentPlan = await runEditorPass(contentPlan, autonomousSettings, userId, userToken);
+      contentPlan = await runEditorPass(contentPlan, autonomousSettings, userId, userToken, connectedPlatforms);
     }
 
     progress('Готово', 100, `Создано ${contentPlan.length} постов`);
@@ -574,7 +601,7 @@ ${autonomousSignatureBlock}
 
   if (autonomousSettings.useEditorPass) {
     progress('AI-редактор', 92, `Редактирование ${contentPlan.length} постов...`);
-    contentPlan = await runEditorPass(contentPlan, autonomousSettings, userId, userToken);
+    contentPlan = await runEditorPass(contentPlan, autonomousSettings, userId, userToken, connectedPlatforms);
   }
 
   progress('Готово', 100, `Создано ${contentPlan.length} постов`);

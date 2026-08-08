@@ -1076,7 +1076,13 @@ export function registerPublishingRoutes(app: Express): void {
             data: {
               status: 'draft',
               scheduled_at: null,
-              social_platforms: {} // Полностью очищаем платформы при отмене
+              // AI-85: НЕ стираем social_platforms при отмене.
+              // Раньше здесь было `social_platforms: {}` — это уничтожало
+              // историю публикации (postId, статусы платформ, ссылки).
+              // Пост при этом из канала не исчезал, а мы теряли факт
+              // публикации — аналитика показывала неверные цифры.
+              // Теперь только статус меняется на draft, данные платформ
+              // сохраняются для истории.
             },
             headers: {
               'Authorization': `Bearer ${authToken}`

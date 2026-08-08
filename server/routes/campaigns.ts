@@ -13,6 +13,7 @@ import { getPlanLimits, getEffectivePlan } from '../services/plan-limits';
 import { directusCrud } from '../services/directus-crud';
 import { authorizeCampaignAccess, CampaignAccessError } from '../services/campaign-access';
 import { mergeOAuthSettings, sanitizeOAuthSecrets } from '../services/oauth-response-sanitizer';
+import { normalizePlatformMentionsToPlaceholder } from '../services/social-prompt';
 
 /**
  * Удаляет все связанные элементы указанной коллекции для кампании
@@ -955,7 +956,7 @@ ${campaignBusinessContext ? `КОНТЕКСТ БИЗНЕСА:\n${campaignBusines
 4. Опиши структуру идеального поста (зацепка → развитие → CTA)
 5. Дай 5–7 тем для ротации с учётом миксa контента
 6. Блок ЗАПРЕЩЕНО: клише, шаблонные фразы, стилистические ошибки
-7. **ПЛАТФОРМЫ**: в местах, где нужно упомянуть конкретные соцсети для адаптации контента, используй плейсхолдер `[socialNetworks]` (это переменная, которая подставит реальные соцсети кампании автоматически). НЕ пиши Facebook, Instagram, VK и другие конкретные сети в тексте промта — всегда используй `[socialNetworks]`. Если нужен список для читаемости — напиши "и т. д. в [socialNetworks]" или расшифруй в скобках через [socialNetworks]. Например, "Подстраивай тексты под формат каждой площадки из [socialNetworks]", а не "под Facebook, Instagram, VK".
+7. **ПЛАТФОРМЫ**: в местах, где нужно упомянуть конкретные соцсети для адаптации контента, используй плейсхолдер \`[socialNetworks]\` (это переменная, которая подставит реальные соцсети кампании автоматически). НЕ пиши Facebook, Instagram, VK и другие конкретные сети в тексте промта — всегда используй \`[socialNetworks]\`. Если нужен список для читаемости — напиши "и т. д. в [socialNetworks]" или расшифруй в скобках через [socialNetworks]. Например, "Подстраивай тексты под формат каждой площадки из [socialNetworks]", а не "под Facebook, Instagram, VK".
 
 Верни ТОЛЬКО текст промта — без заголовков, без объяснений, без markdown.`;
 
@@ -972,7 +973,13 @@ ${campaignBusinessContext ? `КОНТЕКСТ БИЗНЕСА:\n${campaignBusines
         return res.status(500).json({ error: 'Не удалось сгенерировать промт, попробуйте ещё раз' });
       }
 
-      res.json({ success: true, prompt: generatedPrompt });
+      // SM-18 (review @Codex_HM): детерминированно гарантируем, что в поле/базе
+      // лежит переменная [socialNetworks], а не literal название сети. Модель
+      // могла проигнорировать инструкцию и написать «Facebook» — сводим такие
+      // упоминания к плейсхолдеру (вне отрицающих контекстов).
+      const normalizedPrompt = normalizePlatformMentionsToPlaceholder(generatedPrompt, connectedPlatforms);
+
+      res.json({ success: true, prompt: normalizedPrompt });
     } catch (error: any) {
       console.error('[generate-assistant-prompt] error:', error.message);
       res.status(500).json({ error: error.message || 'Ошибка генерации промта' });

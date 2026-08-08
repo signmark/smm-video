@@ -9,6 +9,7 @@ import { storage } from '../storage';
 import { log } from '../utils/logger';
 import { aiService } from '../services/ai-service';
 import { toSafeErrorDetails } from '../utils/safe-error';
+import { substituteSocialNetworks } from '../services/social-prompt';
 import axios from 'axios';
 
 import { buildCacheKey, getFromCache, setToCache, invalidateContentCache } from '../utils/content-cache';
@@ -815,8 +816,7 @@ export function registerContentRoutes(app: Express) {
       } catch (_) {}
 
       const resolvedGlobalPrompt = autoSettings.globalPrompt
-        ? autoSettings.globalPrompt.replace(/\[socialNetworks\]/g,
-            connectedPlatforms.length > 0 ? connectedPlatforms.join(', ') : 'социальных сетей кампании')
+        ? substituteSocialNetworks(autoSettings.globalPrompt, connectedPlatforms)
         : '';
 
       const styleBlock = resolvedGlobalPrompt

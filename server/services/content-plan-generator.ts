@@ -1,22 +1,8 @@
 import { directusCrud } from './directus-crud';
 import { log } from '../utils/logger';
 import { aiService } from './ai-service';
-
-/**
- * SM-18 follow-up: заменяет [socialNetworks] переменную в пользовательском
- * промте на фактически подключённые соцсети кампании.
- */
-function substituteSocialNetworks(text: string, connectedPlatforms: string[]): string {
-  if (!text || !text.includes('[socialNetworks]')) return text;
-  const PLATFORM_NAMES_RU: Record<string, string> = {
-    telegram: 'Telegram', vk: 'ВКонтакте', instagram: 'Instagram',
-    facebook: 'Facebook', youtube: 'YouTube', tiktok: 'TikTok', threads: 'Threads',
-  };
-  const value = connectedPlatforms.length > 0
-    ? connectedPlatforms.map(p => PLATFORM_NAMES_RU[p] || p).join(', ')
-    : 'социальных сетей кампании';
-  return text.replace(/\[socialNetworks\]/g, value);
-}
+// SM-18: единый канонический helper подстановки [socialNetworks] (один для всех ingress).
+import { substituteSocialNetworks } from './social-prompt';
 
 export interface ContentPlanSettings {
   postsCount: number;

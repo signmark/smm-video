@@ -64,9 +64,13 @@ vi.mock('../load-env', () => ({ loadEnv: vi.fn() }));
 import {
   sanitizeContentPlanItems,
   sanitizeRefinedContentPlan,
-  substituteSocialNetworks,
   generateContentPlan,
 } from '../services/autonomous-ai';
+// SM-18: канонический helper (один источник правды) тестируем напрямую.
+import {
+  substituteSocialNetworks,
+  normalizePlatformMentionsToPlaceholder,
+} from '../services/social-prompt';
 import type { ContentPlanItem } from '../services/autonomous-ai';
 import { aiService } from '../services/ai-service';
 
@@ -107,12 +111,14 @@ describe('substituteSocialNetworks', () => {
     expect(result).toBe(text);
   });
 
-  // SM-18 review (@Codex_HM): уже сохранённый промт с literal Facebook должен
-  // чиниться при рантайме, а не требовать ручной перегенерации.
-  it('заменяет literal Facebook в уже сохранённом промте, если он НЕ подключён', () => {
+  // SM-18 review (@Codex_HM): legacy-промт с literal Facebook, сохранённый старым
+  // генератором («целевая аудитория — пользователи Facebook»), обязан при рантайме
+  // уходить в модель уже без literal Facebook — на каждом тракте.
+  it('legacy literal Facebook (НЕподключён) сводится к подключённой соцсети', () => {
     const text = 'Ты — SMM-менеджер. Целевая аудитория — пользователи Facebook.';
     const result = substituteSocialNetworks(text, ['telegram']);
     expect(result).toBe('Ты — SMM-менеджер. Целевая аудитория — пользователи Telegram.');
+    expect(result).not.toContain('Facebook');
   });
 
   it('сохраняет подключённую соцсеть в уже сохранённом промте', () => {
@@ -121,10 +127,44 @@ describe('substituteSocialNetworks', () => {
     expect(result).toBe('Аудитория — пользователи Telegram и VK.');
   });
 
-  it('заменяет список неподключённых соцсетей нейтральной фразой', () => {
-    const text = 'Подстраивай под Facebook, Instagram и YouTube.';
-    const result = substituteSocialNetworks(text, []);
-    expect(result).toBe('Подстраивай под социальных сетей кампании, социальных сетей кампании и социальных сетей кампании.');
+  // SM-18 review (@Codex_HM): НЕЛЬЗЯ глобально переписывать названия сетей в
+  // произвольном пользовательском промте. «Не используй Facebook; пиши для
+  // Telegram» при подключённом Telegram НЕ должно превращаться в
+  // «Не используй Telegram; пиши для Telegram» (смысл инвертирован).
+  it('НЕ инвертирует отрицание «Не используй Facebook» в подключённой платформе', () => {
+    const text = 'Не используй Facebook; пиши только для Telegram';
+    const result = substituteSocialNetworks(text, ['telegram']);
+    expect(result).toBe('Не используй Facebook; пиши только для Telegram');
+  });
+
+  it('сохраняет отрицание про подключённую сеть тоже без правок', () => {
+    const text = 'Не упоминай Facebook и не используй Instagram';
+    const result = substituteSocialNetworks(text, ['telegram']);
+    expect(result).toBe('Не упоминай Facebook и не используй Instagram');
+  });
+});
+
+describe('normalizePlatformMentionsToPlaceholder (граница генератора)', () => {
+  // SM-18 review (@Codex_HM): маршрут должен возвращать ПЕРЕМЕННУЮ, даже если
+  // mock-модель вернула literal Facebook. Отрицательные случаи сохраняем.
+  it('сводит literal Facebook к [socialNetworks], если сеть не подключена', () => {
+    const text = 'Целевая аудитория — пользователи Facebook.';
+    const result = normalizePlatformMentionsToPlaceholder(text, ['telegram']);
+    // На границе генератора мы НЕ раскрываем подключённые — сохраняем переменную.
+    expect(result).toContain('[socialNetworks]');
+    expect(result).not.toContain('Facebook');
+  });
+
+  it('не трогает подключённую платформу', () => {
+    const text = 'Аудитория — пользователи Telegram';
+    const result = normalizePlatformMentionsToPlaceholder(text, ['telegram']);
+    expect(result).toBe(text);
+  });
+
+  it('сохраняет отрицание «не использовать Facebook» без инверсии', () => {
+    const text = 'Не использовать Facebook; пиши для Telegram';
+    const result = normalizePlatformMentionsToPlaceholder(text, ['telegram']);
+    expect(result).toBe('Не использовать Facebook; пиши для Telegram');
   });
 });
 
@@ -250,5 +290,36 @@ describe('generateContentPlan integration (тракт, а не хелпер)', (
     expect(capturedPrompt).not.toContain('[socialNetworks]');
     expect(capturedPrompt).toContain('Telegram, ВКонтакте');
     expect(capturedPrompt).toContain('Платформы: telegram, vk');
+  });
+
+  it('legacy-промт с literal Facebook уходит в модель без literal Facebook (autonomous-ai тракт)', async () => {
+    let capturedPrompt: string | undefined;
+    (aiService.generateContent as any).mockImplementation(
+      async (opts: { prompt: string }) => {
+        capturedPrompt = opts.prompt;
+        return { content: JSON.stringify([
+          { id: '1', topic: 'Тема', contentType: 'обучающий', platform: 'telegram', rationale: 'Причина' }
+        ]) };
+      }
+    );
+
+    // globalPrompt — РОВНО как у тестировщика: сохранённый legacy-текст с literal Facebook.
+    const legacyPrompt = 'Ты — SMM-менеджер с опытом работы 3-5 лет. Твоя целевая аудитория — широкая и разнородная группа пользователей Facebook. Это предприниматели, маркетологи, владельцы малого и среднего бизнеса.';
+
+    await generateContentPlan({
+      count: 1,
+      keywords: ['кейс'],
+      trends: [],
+      platforms: ['telegram'],
+      globalPrompt: legacyPrompt,
+      alwaysInclude: '',
+      launchCommand: '',
+      analyticsInsights: '',
+      request: { userId: 'u1', authToken: 't1' },
+    });
+
+    expect(capturedPrompt).toBeDefined();
+    expect(capturedPrompt).not.toContain('Facebook');
+    expect(capturedPrompt).toContain('Telegram');
   });
 });

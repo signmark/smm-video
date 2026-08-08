@@ -5,6 +5,9 @@ import { aiService } from './ai-service';
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { toSafeErrorDetails } from '../utils/safe-error';
+// SM-18: единый помощник подстановки [socialNetworks] — один источник правды.
+import { substituteSocialNetworks } from './social-prompt';
+export { substituteSocialNetworks };
 
 const AUTONOMOUS_PERSIST_FILE = join(process.cwd(), 'data', 'autonomous-states.json');
 
@@ -1344,46 +1347,9 @@ ${content}
 // ПАЙПЛАЙН: генерация и доработка контент-плана
 // ─────────────────────────────────────────────────────────────────
 
-/**
- * SM-18 follow-up: заменяет плейсхолдер [socialNetworks] в пользовательском
- * глобальном промте на фактически подключённые соцсети кампании.
- * Если платформ нет — заменяет на "социальных сетей кампании".
- * Также заменяет упоминания НЕподключённых соцсетей (например stale "Facebook"
- * из авто-сгенерированных промтов) на подключённые/нейтральную фразу — иначе
- * уже сохранённый промт у тестировщика продолжит показывать тот же дефект.
- */
-export function substituteSocialNetworks(text: string, platforms: string[]): string {
-  const PLATFORM_NAMES_RU: Record<string, string> = {
-    telegram: 'Telegram', vk: 'ВКонтакте', instagram: 'Instagram',
-    facebook: 'Facebook', youtube: 'YouTube', tiktok: 'TikTok', threads: 'Threads',
-  };
-  const connectedSet = new Set(platforms);
-  const platformValues = platforms.length > 0
-    ? platforms.map(p => PLATFORM_NAMES_RU[p] || p).join(', ')
-    : 'социальных сетей кампании';
-
-  // 1) Заменяем плейсхолдер [socialNetworks].
-  let result = text.replace(/\[socialNetworks\]/g, platformValues);
-
-  // 2) Упоминания конкретных соцсетей, которые НЕ подключены — заменяем на
-  //    подключённые/нейтральную фразу. Регэкспп ловит целые слова, чтобы не
-  //    порезать подстроки вроде "instagram-стратегия" нечаянно не трогаем.
-  const unconnectedPatterns: Array<{ key: string; re: RegExp; label: string }> = [
-    { key: 'facebook', re: /\bFacebook\b/g, label: 'Facebook' },
-    { key: 'instagram', re: /\bInstagram\b/g, label: 'Instagram' },
-    { key: 'vk', re: /\bВКонтакте\b/g, label: 'ВКонтакте' },
-    { key: 'vk', re: /\bVK\b/g, label: 'VK' },
-    { key: 'youtube', re: /\bYouTube\b/g, label: 'YouTube' },
-    { key: 'tiktok', re: /\bTikTok\b/g, label: 'TikTok' },
-    { key: 'threads', re: /\bThreads\b/g, label: 'Threads' },
-  ];
-  for (const pat of unconnectedPatterns) {
-    if (connectedSet.has(pat.key)) continue; // подключена — оставляем
-    result = result.replace(pat.re, platformValues);
-  }
-
-  return result;
-}
+// SM-18: `substituteSocialNetworks` живёт в `./social-prompt` (единый канонический
+// helper, импортируется всеми модельными ingress). Здесь только ре-экспорт для
+// обратной совместимости с тестами.
 
 /**
  * SM-18: Обеспечивает, что каждый элемент контент-плана имеет platform из

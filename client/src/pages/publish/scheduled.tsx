@@ -138,14 +138,18 @@ export default function ScheduledPublications() {
     queryFn: async () => {
       // Запрос ТОЛЬКО для выбранной кампании — без кампании данные не загружаем
       const result = await apiRequest(
-        `/api/campaign-content?campaignId=${selectedCampaign!.id}&limit=500`,
+        // AI-83: раньше клиент тянул ?limit=500 — на кампаниях с десятками/сотнями записей
+        // это 5+ МБ JSON. Сервер ограничивает limit по умолчанию (50), плюс фильтруем
+        // по статусу на сервере — клиенту остаётся только передать статус.
+        `/api/campaign-content?campaignId=${selectedCampaign!.id}&status=scheduled`,
         { method: 'GET' }
       );
 
       // Преобразуем ключи из snake_case в camelCase
       const allContent = keysToCamel<CampaignContent[]>(result.data || []);
 
-      // Показываем только посты со статусом 'scheduled'
+      // Сервер уже фильтрует по статусу (см. ?status=scheduled в URL),
+      // но это дополнительная страховка на случай пустого ответа/несовпадения.
       const scheduled = allContent.filter((content: any) => content.status === 'scheduled');
 
       console.log(`[scheduled] Кампания ${selectedCampaign!.id}: ${scheduled.length} запланированных`);
@@ -356,8 +360,10 @@ export default function ScheduledPublications() {
     return campaign ? campaign.name : "Неизвестная кампания";
   };
   
-  // Расчет количества публикаций для каждой платформы
+  // AI-86: не показывать 0 пока данные грузятся — 0 это утверждение, а не "неизвестно"
   const platformCounts = React.useMemo(() => {
+    if (scheduledLoading) return null; // null = "ещё считаем"
+    
     const counts: Record<string, number> = {
       all: filteredContent.length
     };
@@ -436,7 +442,7 @@ export default function ScheduledPublications() {
                   <div className="flex justify-between w-full">
                     <span>{platformNames[platform]}</span>
                     <span className="ml-2 text-xs px-2 py-0.5 bg-muted rounded-full">
-                      {platformCounts[platform]}
+                      {platformCounts ? platformCounts[platform] : '…'}
                     </span>
                   </div>
                 </SelectItem>

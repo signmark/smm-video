@@ -267,7 +267,10 @@ export function registerContentRoutes(app: Express) {
       const campaignId = (req.query.campaignId as string) || '';
       const page = parseInt(req.query.page as string) || 1;
       const parsedLimit = parseInt(req.query.limit as string);
-      const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : -1;
+      // AI-83: раньше дефолт был -1 (вся коллекция). На кампаниях с десятками/сотнями
+      // записей это 5+ МБ JSON и 5+ секунд ожидания в UI. Дефолт 50 — типичная
+      // неделя расписания; больше — только по явному ?limit=N.
+      const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? parsedLimit : 50;
       const offset = limit === -1 ? 0 : (page - 1) * limit;
       const noCache = req.query.nocache === '1';
       // Режим сводки: только поля, нужные для счётчиков и графиков.
@@ -283,7 +286,7 @@ export function registerContentRoutes(app: Express) {
       if (!userId || !token) return res.status(401).json({ error: "Unauthorized" });
 
       // ── Кеш ──────────────────────────────────────────────────
-      const key = buildCacheKey(userId, campaignId, page, limit, summary ? 'summary' : 'full');
+      const key = buildCacheKey(userId, campaignId, page, limit, String(req.query.status || 'all') + ':' + (summary ? 'summary' : 'full'));
       if (!noCache) {
         const cached = getFromCache(key);
         if (cached) {
@@ -297,7 +300,8 @@ export function registerContentRoutes(app: Express) {
       const params: any = {
         filter: JSON.stringify({
           user_id: { _eq: userId },
-          ...(campaignId ? { campaign_id: { _eq: campaignId } } : {})
+          ...(campaignId ? { campaign_id: { _eq: campaignId } } : {}),
+          ...(req.query.status ? { status: { _eq: String(req.query.status) } } : {})
         }),
         sort: ['-created_at', '-id'],
         meta: 'total_count,filter_count',

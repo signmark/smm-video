@@ -3,6 +3,7 @@ import { promisify } from 'util';
 import path from 'path';
 import fs from 'fs/promises';
 import { Request, Response } from 'express';
+import { log } from '../utils/logger';
 
 const execAsync = promisify(exec);
 
@@ -30,7 +31,7 @@ export async function generateStoryPreviews(storyData: any): Promise<string[]> {
     const { stdout, stderr } = await execAsync(command);
     
     if (stderr) {
-      console.error('Python stderr:', stderr);
+      log.error('Python stderr:', stderr);
     }
     
     // Парсим результат
@@ -58,7 +59,7 @@ export async function generateStoryPreviews(storyData: any): Promise<string[]> {
     return publicUrls;
     
   } catch (error) {
-    console.error('Ошибка генерации превью Stories:', error);
+    log.error('Ошибка генерации превью Stories:', error);
     throw new Error('Не удалось сгенерировать превью Stories');
   }
 }
@@ -85,7 +86,7 @@ export async function handleGenerateStoryPreviews(req: Request, res: Response) {
     });
     
   } catch (error) {
-    console.error('Ошибка API генерации Stories:', error);
+    log.error('Ошибка API генерации Stories:', error);
     res.status(500).json({
       success: false,
       error: 'Внутренняя ошибка сервера'

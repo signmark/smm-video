@@ -125,7 +125,7 @@ async function generateStoryImageWithText(content: any): Promise<string | null> 
  * @param app Express приложение
  */
 export function registerPublishingRoutes(app: Express): void {
-  console.log('[publishing-routes] Регистрация маршрутов управления публикациями...');
+  log('[publishing-routes] Регистрация маршрутов управления публикациями...');
   
   // Маршрут для ручной публикации YouTube (для тестирования)
   // Ручной прогон планировщика по конкретной записи. Только админ И только по
@@ -144,7 +144,7 @@ export function registerPublishingRoutes(app: Express): void {
 
       if (!(await assertContentBelongsToRequester(contentId, req, res))) return;
 
-      console.log(`[manual-publish] Ручная публикация ${contentId} в ${platform}`);
+      log(`[manual-publish] Ручная публикация ${contentId} в ${platform}`);
       
         if (platform === 'youtube') {
           // Принудительно запустить планировщик для конкретного контента
@@ -170,7 +170,7 @@ export function registerPublishingRoutes(app: Express): void {
       });
       
     } catch (error: any) {
-      console.error(`[manual-publish] Ошибка: ${error.message}`);
+      log.error(`[manual-publish] Ошибка: ${error.message}`);
       res.status(500).json({
         success: false,
         message: error.message
@@ -551,7 +551,7 @@ export function registerPublishingRoutes(app: Express): void {
           }
           
           // Обновляем контент через хранилище
-          console.log(`🔄 [PUBLISH] ПЕРЕД updateCampaignContent для ${content.id}`);
+          log(`🔄 [PUBLISH] ПЕРЕД updateCampaignContent для ${content.id}`);
           const publishUpdateToken = updateToken || activeToken;
           const publishUpdates = {
             socialPlatforms: {
@@ -565,19 +565,19 @@ export function registerPublishingRoutes(app: Express): void {
             ? storage.updateCampaignContent(content.id, publishUpdates, publishUpdateToken)
             : storage.updateCampaignContentPrivileged(content.id, publishUpdates));
           
-          console.log(`✅ [PUBLISH] ПОСЛЕ updateCampaignContent для ${content.id}`);
+          log(`✅ [PUBLISH] ПОСЛЕ updateCampaignContent для ${content.id}`);
           log(`Статус публикации установлен в pending для контента ${content.id}`, 'api');
         }
         
-        console.log(`🚀 [PUBLISH] НАЧИНАЕМ ПУБЛИКАЦИЮ в платформы: ${platformsToPublish.join(', ')}`);
+        log(`🚀 [PUBLISH] НАЧИНАЕМ ПУБЛИКАЦИЮ в платформы: ${platformsToPublish.join(', ')}`);
         
         // Публикуем ТОЛЬКО на платформы, которые нужно опубликовать
         for (const platformName of platformsToPublish) {
-          console.log(`📤 [PUBLISH] ВХОДИМ В ЦИКЛ для платформы: ${platformName}`);
+          log(`📤 [PUBLISH] ВХОДИМ В ЦИКЛ для платформы: ${platformName}`);
           const platform = platformName as SocialPlatform;
           
           try {
-            console.log(`📤 [PUBLISH] TRY блок для: ${platform}`);
+            log(`📤 [PUBLISH] TRY блок для: ${platform}`);
             log(`Публикация контента в ${platform}`, 'api');
             
             let result;

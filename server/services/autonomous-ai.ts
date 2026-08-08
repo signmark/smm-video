@@ -1345,6 +1345,22 @@ ${content}
 // ─────────────────────────────────────────────────────────────────
 
 /**
+ * SM-18 follow-up: заменяет плейсхолдер [socialNetworks] в пользовательском
+ * глобальном промте на фактически подключённые соцсети кампании.
+ * Если платформ нет — заменяет на "социальных сетей кампании".
+ */
+export function substituteSocialNetworks(text: string, platforms: string[]): string {
+  const PLATFORM_NAMES_RU: Record<string, string> = {
+    telegram: 'Telegram', vk: 'ВКонтакте', instagram: 'Instagram',
+    facebook: 'Facebook', youtube: 'YouTube', tiktok: 'TikTok', threads: 'Threads',
+  };
+  const platformValues = platforms.length > 0
+    ? platforms.map(p => PLATFORM_NAMES_RU[p] || p).join(', ')
+    : 'социальных сетей кампании';
+  return text.replace(/\[socialNetworks\]/g, platformValues);
+}
+
+/**
  * SM-18: Обеспечивает, что каждый элемент контент-плана имеет platform из
  * фактически подключённых к кампании. AI может вернуть "facebook"/"instagram"
  * даже если они не подключены — заменяем на platforms[0] или 'telegram'.
@@ -1440,11 +1456,13 @@ async function generateContentPlan(params: {
 
   const kwList = keywords.slice(0, 15).join(', ');
   const platformList = platforms.join(', ');
+  // SM-18 follow-up: подставляем реальные платформы в [socialNetworks] плейсхолдер промта.
+  const globalPromptResolved = globalPrompt ? substituteSocialNetworks(globalPrompt, platforms) : '';
 
   const prompt = `Ты — опытный SMM-стратег. Составь контент-план из ${count} постов для публикации в соцсетях.
 
 КОНТЕКСТ КАМПАНИИ:
-${launchCommand ? `[ГЛАВНАЯ ИНСТРУКЦИЯ]\n${launchCommand}\n\n` : ''}${globalPrompt ? `Стиль и аудитория: ${globalPrompt}\n` : ''}${alwaysInclude ? `Обязательно включать в посты: ${alwaysInclude}\n` : ''}Платформы: ${platformList}
+${launchCommand ? `[ГЛАВНАЯ ИНСТРУКЦИЯ]\n${launchCommand}\n\n` : ''}${globalPromptResolved ? `Стиль и аудитория: ${globalPromptResolved}\n` : ''}${alwaysInclude ? `Обязательно включать в посты: ${alwaysInclude}\n` : ''}Платформы: ${platformList}
 Ключевые слова: ${kwList || 'не заданы'}
 ${topTrends ? `Актуальные тренды:\n- ${topTrends}` : ''}
 ${analyticsInsights ? `Данные аналитики: ${analyticsInsights}` : ''}
@@ -1514,6 +1532,7 @@ async function refineContentPlan(params: {
 
   const recentTitles = publishedTitles.slice(0, 20).join('\n- ');
 
+  const globalPromptResolved = globalPrompt ? substituteSocialNetworks(globalPrompt, platforms) : '';
   const prompt = `Ты — SMM-стратег. Проверь контент-план и улучши его.
 
 ${launchCommand ? `[ГЛАВНАЯ ИНСТРУКЦИЯ]\n${launchCommand}\n\n` : ''}УЖЕ ОПУБЛИКОВАННЫЕ ТЕМЫ (не повторять):
@@ -1522,7 +1541,7 @@ ${launchCommand ? `[ГЛАВНАЯ ИНСТРУКЦИЯ]\n${launchCommand}\n\n` 
 ТЕКУЩИЙ ПЛАН (JSON):
 ${JSON.stringify(plan, null, 2)}
 
-${globalPrompt ? `СТИЛЬ КАМПАНИИ: ${globalPrompt}\n` : ''}${alwaysInclude ? `ОБЯЗАТЕЛЬНО ВКЛЮЧАТЬ В ПОСТЫ: ${alwaysInclude}\n` : ''}
+${globalPromptResolved ? `СТИЛЬ КАМПАНИИ: ${globalPromptResolved}\n` : ''}${alwaysInclude ? `ОБЯЗАТЕЛЬНО ВКЛЮЧАТЬ В ПОСТЫ: ${alwaysInclude}\n` : ''}
 ЗАДАЧА:
 1. Удали или замени идеи, которые похожи на уже опубликованные
 2. Убедись в разнообразии форматов и соответствии главной инструкции
@@ -3759,7 +3778,7 @@ async function runAutonomousCycle(state: AutonomousState) {
         ? `\n\nКЛЮЧЕВЫЕ СЛОВА КАМПАНИИ (используй органично, не перечислением): ${topKeywords.join(', ')}`
         : '';
       const globalBlock = autoSettings.globalPrompt
-        ? `\n\n[USER_INSTRUCTION_START]\nГЛОБАЛЬНЫЕ ПРАВИЛА КАМПАНИИ:\n${autoSettings.globalPrompt}\n[USER_INSTRUCTION_END]`
+        ? `\n\n[USER_INSTRUCTION_START]\nГЛОБАЛЬНЫЕ ПРАВИЛА КАМПАНИИ:\n${substituteSocialNetworks(autoSettings.globalPrompt, state.platforms)}\n[USER_INSTRUCTION_END]`
         : '';
       const alwaysBlock = autoSettings.alwaysInclude
         ? `\n\nОБЯЗАТЕЛЬНО ВПЛЕТИ В ПОСТ (органично): ${autoSettings.alwaysInclude}`
@@ -3812,15 +3831,20 @@ async function runAutonomousCycle(state: AutonomousState) {
           `ЦЕЛЕВАЯ ПЛАТФОРМА: ${planItem.platform}` +
           trendContext +
           userBlocks;
+        // SM-18 follow-up: подстраховка — если плейсхолдер остался в userBlocks/теме,
+        // заменяем его фактическими площадками.
+        const finalTheme = substituteSocialNetworks(theme, state.platforms);
 
         console.log(`[PIPELINE] ✍️ Пост ${i + 1}/${contentPlan.length}: "${topic}" (${contentType})`);
 
         const contentResult = await TOOL_IMPLEMENTATIONS.createContent({
           campaignId: state.campaignId,
           topic,
-          theme,
+          theme: finalTheme,
           count: 1,
-          editorGuide: autoSettings.globalPrompt || '',
+          editorGuide: autoSettings.globalPrompt
+            ? substituteSocialNetworks(autoSettings.globalPrompt, state.platforms)
+            : '',
           useEditorPass: autoSettings.useEditorPass ?? false,
           humanize: autoSettings.humanize ?? false
         }, request);

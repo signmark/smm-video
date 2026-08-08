@@ -64,6 +64,7 @@ vi.mock('../load-env', () => ({ loadEnv: vi.fn() }));
 import {
   sanitizeContentPlanItems,
   sanitizeRefinedContentPlan,
+  substituteSocialNetworks,
 } from '../services/autonomous-ai';
 import type { ContentPlanItem } from '../services/autonomous-ai';
 
@@ -78,6 +79,32 @@ function mkItem(partial: Partial<ContentPlanItem> = {}): ContentPlanItem {
     ...partial,
   };
 }
+
+describe('substituteSocialNetworks', () => {
+  it('заменяет [socialNetworks] на подключённые платформы', () => {
+    const text = 'Аудитория — пользователи [socialNetworks]';
+    const result = substituteSocialNetworks(text, ['telegram', 'vk']);
+    expect(result).toBe('Аудитория — пользователи Telegram, ВКонтакте');
+  });
+
+  it('заменяет несколько вхождений плейсхолдера', () => {
+    const text = '1: [socialNetworks], 2: [socialNetworks]';
+    const result = substituteSocialNetworks(text, ['telegram']);
+    expect(result).toBe('1: Telegram, 2: Telegram');
+  });
+
+  it('использует «социальных сетей кампании» если платформ нет', () => {
+    const text = 'Опиши аудиторию [socialNetworks]';
+    const result = substituteSocialNetworks(text, []);
+    expect(result).toBe('Опиши аудиторию социальных сетей кампании');
+  });
+
+  it('не трогает текст без [socialNetworks]', () => {
+    const text = 'Обычный текст без переменных';
+    const result = substituteSocialNetworks(text, ['telegram']);
+    expect(result).toBe(text);
+  });
+});
 
 describe('sanitizeContentPlanItems', () => {
   it('должен обрезать до count, если AI вернул больше', () => {

@@ -258,8 +258,36 @@ export default function AutonomousSettings({ campaignId, initialSettings, onSett
   const [showBuilder, setShowBuilder] = useState(false);
   const [appliedTemplate, setAppliedTemplate] = useState<string | null>(null);
   const [builder, setBuilder] = useState<AssistantBuilderConfig>(DEFAULT_BUILDER);
+  // SM-18 follow-up: подключённые соцсети для подсказки про [socialNetworks]
+  const [connectedPlatforms, setConnectedPlatforms] = useState<string[]>([]);
 
   useEffect(() => { setValues(parseSettings(initialSettings)); }, [initialSettings]);
+
+  // SM-18 follow-up: читаем подключённые соцсети кампании для подсказки в промте.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiRequest(`/api/campaigns/${campaignId}`);
+        const s = (res as any)?.social_media_settings;
+        if (cancelled || !s || typeof s !== 'object') return;
+        const KNOWN = ['telegram', 'vk', 'instagram', 'facebook', 'youtube', 'tiktok', 'threads'];
+        const names: Record<string, string> = {
+          telegram: 'Telegram', vk: 'ВКонтакте', instagram: 'Instagram',
+          facebook: 'Facebook', youtube: 'YouTube', tiktok: 'TikTok', threads: 'Threads',
+        };
+        const connected = KNOWN.filter((p) => {
+          const cfg = s[p];
+          if (!cfg || typeof cfg !== 'object') return false;
+          const enabled = cfg.enabled === true;
+          const hasToken = !!(cfg.token || cfg.accessToken || cfg.access_token || cfg.botToken);
+          return enabled || hasToken;
+        }).map(p => names[p] || p);
+        if (!cancelled) setConnectedPlatforms(connected);
+      } catch { /* не критично */ }
+    })();
+    return () => { cancelled = true; };
+  }, [campaignId]);
 
   const updateValue = (key: keyof AutonomousSettingsValue) => (e: React.ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
     setValues((prev) => ({ ...prev, [key]: e.target.value }));
@@ -636,6 +664,18 @@ export default function AutonomousSettings({ campaignId, initialSettings, onSett
           value={values.globalPrompt || ""}
           onChange={updateValue("globalPrompt")}
         />
+        {/* SM-18 follow-up: подсказка про переменную [socialNetworks] */}
+        <div className="flex items-start gap-1.5 text-xs text-muted-foreground bg-muted/40 rounded px-3 py-2" title={connectedPlatforms.length > 0 ? `Подключённые соцсети: ${connectedPlatforms.join(', ')}` : 'Соцсети не подключены'}>          <Lightbulb className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+          <p>
+            Доступная переменная: <code className="bg-background px-1 rounded border border-border font-mono">[socialNetworks]</code> —
+            {' '}заменится на подключённые соцсети автоматически.{' '}
+            {connectedPlatforms.length > 0 ? (
+              <span className="font-medium">Текущие: {connectedPlatforms.join(', ')}</span>
+            ) : (
+              <span className="italic">Соцсети не подключены — подставится «социальных сетей кампании»</span>
+            )}
+          </p>
+        </div>
       </div>
 
       <div className="space-y-2">

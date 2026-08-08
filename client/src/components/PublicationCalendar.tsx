@@ -439,24 +439,36 @@ export default function PublicationCalendar({
       }
     };
 
-    // Отображаем цветные точки для типов контента (с переносом, без обрезания)
+    // Отображаем цветные точки для типов контента.
+    // SM-22: максимум 4 видимых маркера + индикатор "+N" для остальных.
+    // При 15+ публикациях в день точки вываливались за границы ячейки.
+    const MAX_VISIBLE_DOTS = 4;
+    const allDots: { status: string; type: string; opacity: string; ring?: string; color: string }[] = [];
+    Object.entries(contentByStatus).forEach(([status, typesCounts]) => {
+      const { opacity, ring } = getStatusStyle(status);
+      Object.keys(typesCounts).forEach((type) => {
+        const count = typesCounts[type];
+        for (let i = 0; i < count; i++) {
+          allDots.push({ status, type, opacity, ring, color: getColorForType(type) });
+        }
+      });
+    });
+    const remaining = allDots.length - MAX_VISIBLE_DOTS;
+    const visibleDots = allDots.slice(0, MAX_VISIBLE_DOTS);
+
     return (
       <div className="flex justify-center flex-wrap gap-0.5 mt-0.5 overflow-hidden max-w-full">
-        {Object.entries(contentByStatus).map(([status, typesCounts], statusIndex) => (
-          <React.Fragment key={statusIndex}>
-            {Object.keys(typesCounts).map((type, typeIndex) => {
-              const { opacity, ring } = getStatusStyle(status);
-              return (
-                <div 
-                  key={`${statusIndex}-${typeIndex}`} 
-                  className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${getColorForType(type)} ${ring || ''}`}
-                  style={{ opacity }}
-                  title={`${status}: ${type}`}
-                ></div>
-              );
-            })}
-          </React.Fragment>
+        {visibleDots.map((dot, idx) => (
+          <div
+            key={idx}
+            className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${dot.color} ${dot.ring || ''}`}
+            style={{ opacity: dot.opacity }}
+            title={`${dot.status}: ${dot.type}`}
+          ></div>
         ))}
+        {remaining > 0 && (
+          <span className="text-[9px] leading-none text-muted-foreground font-medium">+{remaining}</span>
+        )}
       </div>
     );
   };

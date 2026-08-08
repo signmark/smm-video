@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { getConnectedPlatformsMap } from "@/lib/platform-connection";
 import {
   Loader2, Save, Bot, Pencil, Users, Share2, Target, Shuffle,
   Sparkles, ChevronDown, ChevronUp, Check, Wand2, RotateCcw,
@@ -269,20 +270,23 @@ export default function AutonomousSettings({ campaignId, initialSettings, onSett
     (async () => {
       try {
         const res = await apiRequest(`/api/campaigns/${campaignId}`);
-        const s = (res as any)?.social_media_settings;
-        if (cancelled || !s || typeof s !== 'object') return;
-        const KNOWN = ['telegram', 'vk', 'instagram', 'facebook', 'youtube', 'tiktok', 'threads'];
+        // endpoint возвращает envelope { success, data: campaign } — берём data
+        const campaign = (res as any)?.data || (res as any) || null;
+        if (cancelled || !campaign) return;
+
         const names: Record<string, string> = {
           telegram: 'Telegram', vk: 'ВКонтакте', instagram: 'Instagram',
           facebook: 'Facebook', youtube: 'YouTube', tiktok: 'TikTok', threads: 'Threads',
         };
-        const connected = KNOWN.filter((p) => {
-          const cfg = s[p];
-          if (!cfg || typeof cfg !== 'object') return false;
-          const enabled = cfg.enabled === true;
-          const hasToken = !!(cfg.token || cfg.accessToken || cfg.access_token || cfg.botToken);
-          return enabled || hasToken;
-        }).map(p => names[p] || p);
+        // Каноничный helper: не зависит от секретных токенов (их вырезает sanitizeOAuthSecrets).
+        const map = getConnectedPlatformsMap(campaign.social_media_settings);
+        if (!map) {
+          if (!cancelled) setConnectedPlatforms([]);
+          return;
+        }
+        const connected = (['telegram', 'vk', 'instagram', 'facebook', 'youtube', 'tiktok', 'threads'] as const)
+          .filter(p => (map as any)[p] === true)
+          .map(p => names[p] || p);
         if (!cancelled) setConnectedPlatforms(connected);
       } catch { /* не критично */ }
     })();

@@ -106,6 +106,26 @@ describe('substituteSocialNetworks', () => {
     const result = substituteSocialNetworks(text, ['telegram']);
     expect(result).toBe(text);
   });
+
+  // SM-18 review (@Codex_HM): уже сохранённый промт с literal Facebook должен
+  // чиниться при рантайме, а не требовать ручной перегенерации.
+  it('заменяет literal Facebook в уже сохранённом промте, если он НЕ подключён', () => {
+    const text = 'Ты — SMM-менеджер. Целевая аудитория — пользователи Facebook.';
+    const result = substituteSocialNetworks(text, ['telegram']);
+    expect(result).toBe('Ты — SMM-менеджер. Целевая аудитория — пользователи Telegram.');
+  });
+
+  it('сохраняет подключённую соцсеть в уже сохранённом промте', () => {
+    const text = 'Аудитория — пользователи Telegram и VK.';
+    const result = substituteSocialNetworks(text, ['telegram', 'vk']);
+    expect(result).toBe('Аудитория — пользователи Telegram и VK.');
+  });
+
+  it('заменяет список неподключённых соцсетей нейтральной фразой', () => {
+    const text = 'Подстраивай под Facebook, Instagram и YouTube.';
+    const result = substituteSocialNetworks(text, []);
+    expect(result).toBe('Подстраивай под социальных сетей кампании, социальных сетей кампании и социальных сетей кампании.');
+  });
 });
 
 describe('sanitizeContentPlanItems', () => {

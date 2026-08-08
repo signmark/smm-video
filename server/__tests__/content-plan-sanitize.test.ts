@@ -43,7 +43,7 @@ vi.mock('../gemini-direct', () => ({
   geminiDirect: { generateContent: vi.fn() },
 }));
 
-vi.mock('../ai-service', () => ({
+vi.mock('../services/ai-service', () => ({
   aiService: {
     generateContent: vi.fn(),
     generateContentWithFallback: vi.fn(),
@@ -65,8 +65,10 @@ import {
   sanitizeContentPlanItems,
   sanitizeRefinedContentPlan,
   substituteSocialNetworks,
+  generateContentPlan,
 } from '../services/autonomous-ai';
 import type { ContentPlanItem } from '../services/autonomous-ai';
+import { aiService } from '../services/ai-service';
 
 function mkItem(partial: Partial<ContentPlanItem> = {}): ContentPlanItem {
   return {
@@ -195,5 +197,38 @@ describe('sanitizeRefinedContentPlan', () => {
     const refined = [mkItem({ platform: 'vk' })];
     const result = sanitizeRefinedContentPlan(refined, plan, ['telegram', 'vk']);
     expect(result[0].platform).toBe('vk'); // нормализован к каноничному из platforms
+  });
+});
+
+describe('generateContentPlan integration (тракт, а не хелпер)', () => {
+  it('промт, ушедший в модель, не содержит [socialNetworks] — подставлены реальные платформы', async () => {
+    // Перехватываем промпт, который aiService отправляет в модель
+    let capturedPrompt: string | undefined;
+    (aiService.generateContent as any).mockImplementation(
+      async (opts: { prompt: string }) => {
+        capturedPrompt = opts.prompt;
+        return { content: JSON.stringify([
+          { id: '1', topic: 'Тема', contentType: 'обучающий', platform: 'telegram', rationale: 'Причина' }
+        ]) };
+      }
+    );
+
+    await generateContentPlan({
+      count: 1,
+      keywords: ['кейс'],
+      trends: [],
+      platforms: ['telegram', 'vk'],
+      globalPrompt: 'Ты — SMM-менеджер. Аудитория — пользователи [socialNetworks].',
+      alwaysInclude: '',
+      launchCommand: '',
+      analyticsInsights: '',
+      request: { userId: 'u1', authToken: 't1' },
+    });
+
+    expect(capturedPrompt).toBeDefined();
+    // Ключевое: плейсхолдер ДОЛЖЕН быть заменён фактическими платформами до отправки в модель
+    expect(capturedPrompt).not.toContain('[socialNetworks]');
+    expect(capturedPrompt).toContain('Telegram, ВКонтакте');
+    expect(capturedPrompt).toContain('Платформы: telegram, vk');
   });
 });

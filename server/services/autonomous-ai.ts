@@ -1435,7 +1435,7 @@ export function sanitizeRefinedContentPlan(
   });
 }
 
-async function generateContentPlan(params: {
+export async function generateContentPlan(params: {
   count: number;
   keywords: string[];
   trends: any[];

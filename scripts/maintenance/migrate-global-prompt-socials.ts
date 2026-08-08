@@ -43,8 +43,6 @@ if (!DIRECTUS_URL || !DIRECTUS_TOKEN) {
   process.exit(1);
 }
 
-const KNOWN = ['telegram', 'vk', 'instagram', 'facebook', 'youtube', 'tiktok', 'threads'];
-
 function parseAutonomousSettings(raw: unknown): Record<string, any> | null {
   if (!raw) return null;
   if (typeof raw === 'string') {
@@ -56,18 +54,6 @@ function parseAutonomousSettings(raw: unknown): Record<string, any> | null {
     }
   }
   return typeof raw === 'object' ? (raw as Record<string, any>) : null;
-}
-
-function connectedPlatforms(settings: unknown): string[] {
-  if (!settings || typeof settings !== 'object') return [];
-  const s = settings as Record<string, any>;
-  return KNOWN.filter((p) => {
-    const cfg = s[p];
-    if (!cfg || typeof cfg !== 'object') return false;
-    const enabled = cfg.enabled === true;
-    const hasToken = !!(cfg.token || cfg.accessToken || cfg.access_token || cfg.botToken);
-    return enabled || hasToken;
-  });
 }
 
 async function main() {
@@ -98,8 +84,7 @@ async function main() {
         ? settings.globalPrompt
         : String((settings as any).global_prompt || '');
 
-      const platforms = connectedPlatforms(row.social_media_settings);
-      const normalized = normalizePlatformMentionsToPlaceholder(prompt, platforms);
+      const normalized = normalizePlatformMentionsToPlaceholder(prompt);
 
       if (normalized !== prompt) {
         changed += 1;

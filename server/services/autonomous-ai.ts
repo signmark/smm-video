@@ -5,6 +5,7 @@ import { aiService } from './ai-service';
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { toSafeErrorDetails } from '../utils/safe-error';
+import { log } from '../utils/logger';
 // SM-18: единый помощник подстановки [socialNetworks] — один источник правды.
 import { substituteSocialNetworks } from './social-prompt';
 export { substituteSocialNetworks };
@@ -1363,7 +1364,7 @@ export function sanitizeContentPlanItems(
   platforms: string[]
 ): ContentPlanItem[] {
   if (parsed.length > count) {
-    console.warn(`[CONTENT-PLAN] ⚠️ AI вернул ${parsed.length} идеи при запросе ${count} — обрезаем`);
+    log(`[CONTENT-PLAN] ⚠️ AI вернул ${parsed.length} идеи при запросе ${count} — обрезаем`, 'content-plan');
   }
   // SM-19: жёсткая граница сверху.
   const capped = parsed.slice(0, count);
@@ -1378,7 +1379,7 @@ export function sanitizeContentPlanItems(
       ? platforms.find(p => p.toLowerCase() === normalized) || (platforms[0] || 'telegram')
       : (platforms[0] || 'telegram');
     if (rawPlatform && rawPlatform !== safePlatform) {
-      console.warn(`[CONTENT-PLAN] ⚠️ AI предложил платформу "${rawPlatform}", заменяем на "${safePlatform}"`);
+      log(`[CONTENT-PLAN] ⚠️ AI предложил платформу "${rawPlatform}", заменяем на "${safePlatform}"`, 'content-plan');
     }
     return {
       id: item.id || String(i + 1),
@@ -1402,7 +1403,7 @@ export function sanitizeRefinedContentPlan(
 ): ContentPlanItem[] {
   const validPlatformsLower = new Set(platforms.map(p => p.toLowerCase()));
   if (refined.length > plan.length) {
-    console.warn(`[CONTENT-PLAN] ⚠️ Доработка вернула ${refined.length} идей (было ${plan.length}) — обрезаем`);
+    log(`[CONTENT-PLAN] ⚠️ Доработка вернула ${refined.length} идей (было ${plan.length}) — обрезаем`, 'content-plan');
   }
   const capped = refined.slice(0, plan.length);
   return capped.map((item, i) => {
@@ -1415,7 +1416,7 @@ export function sanitizeRefinedContentPlan(
       ? platforms.find(p => p.toLowerCase() === normalized) || (originalPlatform || platforms[0] || 'telegram')
       : (originalPlatform || platforms[0] || 'telegram');
     if (rawPlatform && rawPlatform !== safePlatform) {
-      console.warn(`[CONTENT-PLAN] ⚠️ Доработка вернула платформу "${rawPlatform}", сохраняем "${safePlatform}"`);
+      log(`[CONTENT-PLAN] ⚠️ Доработка вернула платформу "${rawPlatform}", сохраняем "${safePlatform}"`, 'content-plan');
     }
     return {
       ...plan[i],

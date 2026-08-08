@@ -977,7 +977,7 @@ ${campaignBusinessContext ? `КОНТЕКСТ БИЗНЕСА:\n${campaignBusines
       // лежит переменная [socialNetworks], а не literal название сети. Модель
       // могла проигнорировать инструкцию и написать «Facebook» — сводим такие
       // упоминания к плейсхолдеру (вне отрицающих контекстов).
-      const normalizedPrompt = normalizePlatformMentionsToPlaceholder(generatedPrompt, connectedPlatforms);
+      const normalizedPrompt = normalizePlatformMentionsToPlaceholder(generatedPrompt);
 
       res.json({ success: true, prompt: normalizedPrompt });
     } catch (error: any) {

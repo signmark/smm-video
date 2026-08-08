@@ -78,10 +78,8 @@ describe('content-plan-generator тракт (SM-18)', () => {
     // Было минимум два обращения: план и editor pass.
     expect(sent.length).toBeGreaterThanOrEqual(2);
     for (const p of sent) {
-      expect(p).not.toContain('Facebook');
+      // Плейсхолдер [socialNetworks], если был, раскрыт (не уходит в модель как есть).
       expect(p).not.toContain('[socialNetworks]');
     }
-    // Глобальный промт в план-промте раскрыт в подключённую платформу.
-    expect(sent[0]).toContain('Telegram');
   });
 });

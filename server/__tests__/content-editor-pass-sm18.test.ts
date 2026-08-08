@@ -67,7 +67,7 @@ const legacyPrompt =
   'Ты — SMM-менеджер. Твоя целевая аудитория — пользователи Facebook. Это предприниматели и маркетологи.';
 
 describe('editor-pass тракт (SM-18, routes/content.ts)', () => {
-  it('legacy literal Facebook не уходит в модель — раскрывается в подключённую платформу', async () => {
+  it('runtime сохраняет literal Facebook в legacy-промте (чинит миграция, не рантайм)', async () => {
     H.directusGet.mockResolvedValue({
       data: { data: { id: 'item-1', campaign_id: 'camp-1', content: '<p>Исходный текст поста</p>' } },
     });
@@ -86,8 +86,10 @@ describe('editor-pass тракт (SM-18, routes/content.ts)', () => {
 
     expect(res.status).toBe(200);
     expect(capturedPrompt).toBeDefined();
-    expect(capturedPrompt).not.toContain('Facebook');
-    expect(capturedPrompt).toContain('Telegram');
+    // Рантайм не переписывает произвольный текст: literal Facebook сохраняется.
+    expect(capturedPrompt).toContain('Facebook');
+    // Плейсхолдер [socialNetworks], если бы был, раскрылся бы в Telegram.
+    expect(capturedPrompt).not.toContain('[socialNetworks]');
   });
 
   it('не инвертирует отрицание «не использовать Facebook»', async () => {

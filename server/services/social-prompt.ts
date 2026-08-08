@@ -82,23 +82,23 @@ const LITERAL_NAME_PATTERNS: Array<{ key: string; re: RegExp }> = [
 ];
 
 /**
- * Шаг 1 (генераторная граница / legacy-миграция): заменяет литеральные названия
- * НЕподключённых соцсетей на плейсхолдер `[socialNetworks]`.
+ * Шаг 1 (генераторная граница): заменяет литеральные названия соцсетей на
+ * плейсхолдер `[socialNetworks]` в СВЕЖЕМ AI-сгенерированном промте.
  *
  * Ограничения:
- *  - Только сети, которых НЕТ в platforms (подключённые не трогаются).
  *  - Название в отрицающем контексте («не использовать Facebook») сохраняется,
- *    чтобы не инвертировать смысл пользовательского указания.
+ *    чтобы не инвертировать смысл.
+ *  - Нормализуются ВСЕ положительные упоминания (включая уже подключённые сети),
+ *    по формуле ревью: чтобы в поле/в базе была именно переменная, а не literal,
+ *    иначе после смены подключений текст устареет.
  *
- * Применение: на выводе `/generate-assistant-prompt` (чтобы в поле/в базе была
- * переменная) и как безопасное правило миграции legacy-промтов.
+ * Применение только на выводе `/generate-assistant-prompt` (граница свежего вывода).
+ * НЕ применяется к произвольному/уже сохранённому пользовательскому тексту.
  */
-export function normalizePlatformMentionsToPlaceholder(text: string, platforms: string[]): string {
+export function normalizePlatformMentionsToPlaceholder(text: string): string {
   if (!text) return text;
-  const connected = new Set(platforms.map((p) => p.toLowerCase()));
   let out = text;
   for (const pat of LITERAL_NAME_PATTERNS) {
-    if (connected.has(pat.key)) continue; // подключена — не трогаем
     out = out.replace(pat.re, (match, offset: number) => {
       // Отрицание перед названием — сохраняем как есть (не инвертируем смысл).
       if (isNegatedBefore(out, offset)) return match;
@@ -118,14 +118,15 @@ export function placeholderValue(platforms: string[]): string {
 /**
  * Единая подстановка для промта перед отправкой в модель (все модельные ingress).
  *
- * 1. Сначала литеральные названия НЕподключённых сетей (вне отрицаний) сводятся
- *    к плейсхолдеру `[socialNetworks]`.
- * 2. Затем плейсхолдер раскрывается в подключённые соцсети (или нейтральную фразу).
+ * СТРОГО: заменяет только плейсхолдер `[socialNetworks]` на подключённые соцсети
+ * (или нейтральную фразу). НЕ трогает и НЕ нормализует произвольный пользовательский
+ * текст с literal названиями сетей — иначе портим смысл (см. SM-18 ревью: «Сравни
+ * Facebook с Telegram» не должно превращаться в «Telegram с Telegram»).
  *
- * Чистая функция; не мутирует входящую строку, не путает смысл отрицаний.
+ * Нормализация literal-имён в плейсхолдер живёт ТОЛЬКО на границе свежего
+ * AI-сгенерированного промта (см. normalizePlatformMentionsToPlaceholder).
  */
 export function substituteSocialNetworks(text: string, platforms: string[]): string {
   if (!text) return text;
-  const normalized = normalizePlatformMentionsToPlaceholder(text, platforms);
-  return normalized.replace(/\[socialNetworks\]/g, placeholderValue(platforms));
+  return text.replace(/\[socialNetworks\]/g, placeholderValue(platforms));
 }

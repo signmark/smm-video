@@ -892,12 +892,38 @@ export function registerCampaignRoutes(app: Express) {
       // Берём ЦА и описание бизнеса из уже заполненной анкеты кампании
       let campaignAudience = 'широкая аудитория';
       let campaignBusinessContext = '';
+      let connectedPlatforms: string[] = [];
       try {
         const { directusCrud } = await import('../services/directus-crud');
         const camp = await directusCrud.getById('user_campaigns', campaignId, { authToken: token });
         if (camp?.target_audience) campaignAudience = camp.target_audience;
         if (camp?.business_description) campaignBusinessContext = camp.business_description;
+
+        // SM-18 follow-up: определяем фактически подключённые соцсети, чтобы
+        // сгенерированный промт упоминал ТОЛЬКО их, а не дефолтный Facebook.
+        const s = camp?.social_media_settings;
+        if (s && typeof s === 'object') {
+          const KNOWN = ['telegram', 'vk', 'instagram', 'facebook', 'youtube', 'tiktok', 'threads'];
+          connectedPlatforms = KNOWN.filter((p) => {
+            const cfg = s[p];
+            if (!cfg || typeof cfg !== 'object') return false;
+            const enabled = cfg.enabled === true;
+            const hasToken = !!(cfg.token || cfg.accessToken || cfg.access_token || cfg.botToken);
+            return enabled || hasToken;
+          });
+        }
+        if (connectedPlatforms.length > 0) {
+          console.log(`[generate-assistant-prompt] 🔌 Подключённые платформы: ${connectedPlatforms.join(', ')}`);
+        }
       } catch { /* не критично — используем дефолты */ }
+
+      const PLATFORM_NAMES_RU: Record<string, string> = {
+        telegram: 'Telegram', vk: 'ВКонтакте', instagram: 'Instagram',
+        facebook: 'Facebook', youtube: 'YouTube', tiktok: 'TikTok', threads: 'Threads',
+      };
+      const platformCtx = connectedPlatforms.length > 0
+        ? `Подключённые соцсети: ${connectedPlatforms.map(p => PLATFORM_NAMES_RU[p] || p).join(', ')}`
+        : 'Подключённые соцсети: не указаны';
 
       const knowledgeStr = knowledge.length ? knowledge.join(', ') : 'не указано';
       const skillsStr = skills.length ? skills.join(', ') : 'не указано';
@@ -918,6 +944,7 @@ export function registerCampaignRoutes(app: Express) {
 - Целевая аудитория: ${campaignAudience}
 - Длина постов: ${postLength || 'смешанная'}
 - Микс контента: ${mixStr}
+- ${platformCtx}
 
 ${campaignBusinessContext ? `КОНТЕКСТ БИЗНЕСА:\n${campaignBusinessContext}\n` : ''}
 
@@ -928,6 +955,7 @@ ${campaignBusinessContext ? `КОНТЕКСТ БИЗНЕСА:\n${campaignBusines
 4. Опиши структуру идеального поста (зацепка → развитие → CTA)
 5. Дай 5–7 тем для ротации с учётом миксa контента
 6. Блок ЗАПРЕЩЕНО: клише, шаблонные фразы, стилистические ошибки
+7. **ПЛАТФОРМЫ**: упоминай в тексте промта ТОЛЬКО те соцсети, что перечислены в "Подключённые соцсети". НЕ пиши про Facebook, Instagram, VK или другие, если их нет в списке. Если площадки не указаны — не упоминай конкретные соцсети вообще, только формулируй "в социальных сетях"/"на площадках кампании". Не приводи список сценариев адаптации для неподключённых соцсетей.
 
 Верни ТОЛЬКО текст промта — без заголовков, без объяснений, без markdown.`;
 

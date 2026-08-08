@@ -115,6 +115,68 @@ export function placeholderValue(platforms: string[]): string {
     : 'социальных сетей кампании';
 }
 
+/** Слово-триггер аудиторной фразы старого авто-генератора, после которого
+ *  перечисляются сети («группа пользователей Facebook»). Без него произвольный
+ *  пользовательский текст (сравнения, инструкции, списки «пиши для X») НЕ
+ *  является legacy-кандидатом и не трогается. */
+const AUDIENCE_NOUN_STEM_RE = /пользовател(?:ь|и|ей|ям|ями|ями?)/giu;
+
+/** Окно символов после триггера «пользовател...», в котором сеть считается частью
+ *  перечисления старого генератора. Заканчивается на границе предложения. */
+const LEGACY_WINDOW = 80;
+
+/**
+ * NARROW legacy-миграция (для скрипта migrate-global-prompt-socials): приводит к
+ * плейсхолдеру `[socialNetworks]` ТОЛЬКО те имена сетей, что стоят в аудиторной
+ * фразе старого авто-генератора — «...пользователи Facebook», «группа пользователей
+ * Facebook», «...пользователи Facebook, Instagram и VK».
+ *
+ * В отличие от `normalizePlatformMentionsToPlaceholder` (граница СВЕЖЕГО вывода,
+ * нормализует все положительные literal), эта функция действует как безопасное
+ * миграционное правило над УЖЕ СОХРАНЁННЫМ произвольным текстом: сравнение
+ * «Сравни Facebook с Telegram», инструкции «пиши для Facebook», отрицания
+ * «не используй Facebook» кандидатами НЕ являются и не меняются.
+ */
+export function migrateLegacyGlobalPrompt(text: string): string {
+  if (!text) return text;
+
+  // Один проход: ищем аудиторные триггеры «пользовател...», в окне после каждого
+  // заменяем сети на плейсхолдер, и продолжаем с конца окна (не пересекая уже
+  // обработанное). Множественные окна не пересекаются, поэтому индексовый сплайс
+  // безопасен.
+  let out = text;
+  let cursor = 0;
+  while (cursor < out.length) {
+    AUDIENCE_NOUN_STEM_RE.lastIndex = cursor;
+    const trigger = AUDIENCE_NOUN_STEM_RE.exec(out);
+    if (!trigger) break;
+    const start = trigger.index;
+    // Окно: от триггера до границы предложения, но не длиннее LEGACY_WINDOW.
+    let end = -1;
+    for (const sep of [';', '!', '?', '…', '.']) {
+      const p = out.indexOf(sep, start + 1);
+      if (p !== -1 && (end === -1 || p < end)) end = p;
+    }
+    if (end === -1) end = Math.min(out.length, start + LEGACY_WINDOW);
+    else end = Math.min(end, start + LEGACY_WINDOW);
+
+    const windowText = out.slice(start, end);
+    let windowOut = windowText;
+    for (const pat of LITERAL_NAME_PATTERNS) {
+      windowOut = windowOut.replace(pat.re, (match: string, offset: number) => {
+        if (isNegatedBefore(windowText, offset)) return match;
+        return '[socialNetworks]';
+      });
+    }
+    if (windowOut !== windowText) {
+      out = out.slice(0, start) + windowOut + out.slice(end);
+    }
+    // Продолжаем сканирование после конца окна.
+    cursor = start + windowOut.length;
+  }
+  return out;
+}
+
 /**
  * Единая подстановка для промта перед отправкой в модель (все модельные ingress).
  *

@@ -1,33 +1,36 @@
 /**
- * SM-18: разовая миграция legacy-промтов — сводит литеральные названия
- * НЕподключённых соцсетей в `autonomous_settings.globalPrompt` к переменной
- * `[socialNetworks]`.
+ * SM-18: разовая миграция legacy-промтов — сводит к переменной `[socialNetworks]`
+ * ТОЛЬКО те имена сетей, что стоят в аудиторной фразе старого авто-генератора
+ * («...пользователи Facebook», «...пользователи Facebook, Instagram и VK»).
  *
  * ЗАЧЕМ. Промты, сгенерированные старым «Конфигуратором ассистента» до фикса
  * SM-18, уже сохранены в базе и содержат «...пользователи Facebook» и т.п.
- * Починка генератора старые тексты не трогает. Этот скрипт — то безопасное,
- * явно ограниченное действие, о котором просил ревью (@Codex_HM): он НЕ
- * перегенерирует текст (не затирает ручные правки) и НЕ меняет смысл отрицаний
- * («не использовать Facebook» останется как есть).
+ * Починка генератора старые тексты не трогает. Этот скрипт — безопасное,
+ * явно ограниченное правило (rev @Codex_HM, см. `migrateLegacyGlobalPrompt`):
  *
- * Правило замены ровно такое же, как в рантайм-подстановке
- * server/services/social-prompt.ts (normalizePlatformMentionsToPlaceholder):
- * подставляемая сеть должна быть НЕ подключена к кампании, а упоминание — вне
- * отрицающего контекста. Подключённые сети и отрицания не трогаем.
+ *   - НЕ трогает произвольный текст: сравнения «Сравни Facebook с Telegram»,
+ *     инструкции «пиши для Facebook», отрицания «не используй Facebook» и
+ *     любые ручные промты кандидатами НЕ становятся и не меняются.
+ *   - НЕ перегенерирует текст и НЕ затирает ручные правки.
  *
- * БЕЗОПАСНОСТЬ. По умолчанию dry-run: ничего не пишет. Запись — явным флагом
- * --apply. Перед --apply сделать бэкап user_campaigns.
+ * ДВУХФАЗНЫЙ reviewable ПОТОК (rev @Codex_HM):
+ *   1) dry-run (по умолчанию) ничего не пишет, а формирует артефакт-план с
+ *      before/after по каждой кампании (campaign id + старый → новый промт).
+ *      Флаг `--out=<path>` сохраняет этот артефакт в файл для ревью владельца.
+ *   2) --apply пишет ТОЛЬКО явно одобренные ID: обязателен `--ids=<csv>`.
+ *      Без явного allowlist ничего не записывается. Перед --apply — бэкап
+ *      user_campaigns и ревью артефакта из шага 1.
  *
  * Использование:
- *   # 1) посмотреть, что будет заменено (ничего не меняет)
- *   DIRECTUS_URL=... DIRECTUS_TOKEN=... npx tsx scripts/maintenance/migrate-global-prompt-socials.ts
+ *   # 1) посмотреть кандидатов (ничего не меняет; сохранить план в файл):
+ *   DIRECTUS_URL=... DIRECTUS_TOKEN=... npx tsx scripts/maintenance/migrate-global-prompt-socials.ts --out=./migrate-plan.json
  *
- *   # 2) применить
- *   DIRECTUS_URL=... DIRECTUS_TOKEN=... npx tsx scripts/maintenance/migrate-global-prompt-socials.ts --apply
+ *   # 2) применить ТОЛЬКО для одобренных id (пример):
+ *   DIRECTUS_URL=... DIRECTUS_TOKEN=... npx tsx scripts/maintenance/migrate-global-prompt-socials.ts --apply --ids=camp-1,camp-2
  */
 
 import axios from 'axios';
-import { normalizePlatformMentionsToPlaceholder } from '../../server/services/social-prompt';
+import { migrateLegacyGlobalPrompt } from '../../server/services/social-prompt';
 
 const DIRECTUS_URL = process.env.DIRECTUS_URL;
 const DIRECTUS_TOKEN =
@@ -38,8 +41,23 @@ const DIRECTUS_TOKEN =
 const APPLY = process.argv.includes('--apply');
 const PAGE_SIZE = 100;
 
+function flagValue(flag: string): string | undefined {
+  const hit = process.argv.find((a) => a.startsWith(flag + '='));
+  return hit ? hit.slice(flag.length + 1) : undefined;
+}
+
+const OUT_FILE = flagValue('--out');
+const IDS_PARAM = flagValue('--ids');
+const ALLOWED_IDS: Set<string> | null = APPLY
+  ? new Set((IDS_PARAM || '').split(',').map((s) => s.trim()).filter(Boolean))
+  : null;
+
 if (!DIRECTUS_URL || !DIRECTUS_TOKEN) {
   console.error('[migrate-global-prompt-socials] Требуются DIRECTUS_URL и DIRECTUS_TOKEN');
+  process.exit(1);
+}
+if (APPLY && (!ALLOWED_IDS || ALLOWED_IDS.size === 0)) {
+  console.error('[migrate-global-prompt-socials] --apply требует явный allowlist: --ids=camp-1,camp-2');
   process.exit(1);
 }
 
@@ -59,7 +77,8 @@ function parseAutonomousSettings(raw: unknown): Record<string, any> | null {
 async function main() {
   let offset = 0;
   let scanned = 0;
-  let changed = 0;
+  const candidates: Array<{ id: string; before: string; after: string; fieldKey: string }> = [];
+  const written: string[] = [];
 
   while (true) {
     const res = await axios.get(`${DIRECTUS_URL}/items/user_campaigns`, {
@@ -76,30 +95,20 @@ async function main() {
 
     for (const row of rows) {
       const settings = parseAutonomousSettings(row.autonomous_settings);
-      if (!settings || typeof settings.globalPrompt !== 'string') {
-        // и под нижним регистром global_prompt для перестраховки
-        if (typeof (settings as any)?.global_prompt !== 'string') continue;
+      if (!settings) continue;
+      let fieldKey = 'globalPrompt';
+      let prompt = '';
+      if (typeof settings.globalPrompt === 'string') {
+        prompt = settings.globalPrompt;
+      } else if (typeof (settings as any)?.global_prompt === 'string') {
+        fieldKey = 'global_prompt';
+        prompt = String((settings as any).global_prompt);
       }
-      const prompt = typeof settings.globalPrompt === 'string'
-        ? settings.globalPrompt
-        : String((settings as any).global_prompt || '');
+      if (!prompt) continue;
 
-      const normalized = normalizePlatformMentionsToPlaceholder(prompt);
-
-      if (normalized !== prompt) {
-        changed += 1;
-        console.log(
-          `[migrate-global-prompt-socials] campaign ${row.id}: globalPrompt меняется`,
-          APPLY ? '(APPLY)' : '(dry-run, см. --apply)',
-        );
-        if (APPLY) {
-          const next = { ...settings, globalPrompt: normalized };
-          await axios.patch(
-            `${DIRECTUS_URL}/items/user_campaigns/${row.id}`,
-            { autonomous_settings: JSON.stringify(next) },
-            { headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` } },
-          );
-        }
+      const after = migrateLegacyGlobalPrompt(prompt);
+      if (after !== prompt) {
+        candidates.push({ id: row.id, before: prompt, after, fieldKey });
       }
     }
 
@@ -107,9 +116,57 @@ async function main() {
     offset += PAGE_SIZE;
   }
 
-  console.log(
-    `[migrate-global-prompt-socials] сканировано кампаний: ${scanned}; промтов к замене: ${changed}`,
-  );
+  if (candidates.length === 0) {
+    console.log(`[migrate-global-prompt-socials] сканировано кампаний: ${scanned}; кандидатов: 0. Ничего не менять.`);
+    return;
+  }
+
+  if (APPLY) {
+    for (const c of candidates) {
+      if (!ALLOWED_IDS!.has(c.id)) continue;
+      // Для применимого id перечитываем автономные настройки, чтобы не потерять другие поля.
+      const rowRes = await axios.get(`${DIRECTUS_URL}/items/user_campaigns/${c.id}`, {
+        headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+        params: { fields: ['id', 'autonomous_settings', 'social_media_settings'] },
+      });
+      const row = rowRes.data?.data;
+      const cur = parseAutonomousSettings(row?.autonomous_settings) || {};
+      const curPrompt = typeof cur[c.fieldKey] === 'string' ? cur[c.fieldKey] : c.before;
+      // Применяем только если текущее значение совпадает с тем, что ревьюилось
+      // (не затираем ручную правку, сделанную между dry-run и apply).
+      if (curPrompt === c.before) {
+        cur[c.fieldKey] = c.after;
+        await axios.patch(
+          `${DIRECTUS_URL}/items/user_campaigns/${c.id}`,
+          { autonomous_settings: JSON.stringify(cur) },
+          { headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` } },
+        );
+        written.push(c.id);
+        console.log(`[migrate-global-prompt-socials] APPLY обновил кампанию ${c.id}`);
+      } else {
+        console.log(`[migrate-global-prompt-socials] ПРОПУСК ${c.id}: значение изменилось с момента dry-run, пересмотри`);
+      }
+    }
+    console.log(
+      `[migrate-global-prompt-socials] сканировано: ${scanned}; кандидатов: ${candidates.length}; записано: ${written.length} (allowlist ${written.length === 0 ? 'пуст или не пересекается' : written.join(',')})`,
+    );
+    return;
+  }
+
+  // dry-run
+  const plan = { scanned, candidates };
+  if (OUT_FILE) {
+    const fs = await import('node:fs');
+    fs.writeFileSync(OUT_FILE, JSON.stringify(plan, null, 2), 'utf-8');
+  }
+  console.log(`[migrate-global-prompt-socials] dry-run: сканировано ${scanned}, кандидатов к миграции ${candidates.length}.`);
+  for (const c of candidates) {
+    console.log(`  campaign ${c.id}:`);
+    console.log(`    before: ${c.before.slice(0, 200)}`);
+    console.log(`    after:  ${c.after.slice(0, 200)}`);
+  }
+  if (OUT_FILE) console.log(`   план сохранён: ${OUT_FILE}`);
+  console.log('   Для записи укажи --apply --ids=<campaign ids> (только одобренные).');
 }
 
 main().catch((e) => {

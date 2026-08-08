@@ -70,6 +70,7 @@ import {
 import {
   substituteSocialNetworks,
   normalizePlatformMentionsToPlaceholder,
+  migrateLegacyGlobalPrompt,
 } from '../services/social-prompt';
 import type { ContentPlanItem } from '../services/autonomous-ai';
 import { aiService } from '../services/ai-service';
@@ -165,6 +166,40 @@ describe('normalizePlatformMentionsToPlaceholder (граница генерат�
     const result = normalizePlatformMentionsToPlaceholder(text);
     expect(result).toContain('Не использовать Facebook');
     expect(result).toContain('[socialNetworks]');
+  });
+});
+
+describe('migrateLegacyGlobalPrompt (NARROW миграция, rev @Codex_HM)', () => {
+  it('сводит аудиторную фразу «пользователи Facebook» к [socialNetworks]', () => {
+    const text = 'Ты — SMM-менеджер. Целевая аудитория — широкая и разнородная группа пользователей Facebook.';
+    const result = migrateLegacyGlobalPrompt(text);
+    expect(result).toContain('[socialNetworks]');
+    expect(result).not.toContain('Facebook');
+  });
+
+  it('сводит перечисление сетей после «пользователи»', () => {
+    const text = 'Аудитория — пользователи Facebook, Instagram и VK.';
+    const result = migrateLegacyGlobalPrompt(text);
+    expect(result).toBe('Аудитория — пользователи [socialNetworks], [socialNetworks] и [socialNetworks].');
+  });
+
+  // rev @Codex_HM: сравнение/ручной промт НЕ должен становиться кандидатом.
+  it('НЕ трогает сравнение «Сравни Facebook с Telegram»', () => {
+    const text = 'Сравни Facebook с Telegram';
+    const result = migrateLegacyGlobalPrompt(text);
+    expect(result).toBe(text);
+  });
+
+  it('НЕ трогает инструкцию «Пиши для Facebook»', () => {
+    const text = 'Всегда пиши для Facebook и Telegram, используй живой тон';
+    const result = migrateLegacyGlobalPrompt(text);
+    expect(result).toBe(text);
+  });
+
+  it('НЕ трогает отрицание «не используй Facebook»', () => {
+    const text = 'Не используй Facebook; пиши для Telegram';
+    const result = migrateLegacyGlobalPrompt(text);
+    expect(result).toBe(text);
   });
 });
 

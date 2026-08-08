@@ -356,8 +356,10 @@ export default function ScheduledPublications() {
     return campaign ? campaign.name : "Неизвестная кампания";
   };
   
-  // Расчет количества публикаций для каждой платформы
+  // AI-86: не показывать 0 пока данные грузятся — 0 это утверждение, а не "неизвестно"
   const platformCounts = React.useMemo(() => {
+    if (scheduledLoading) return null; // null = "ещё считаем"
+    
     const counts: Record<string, number> = {
       all: filteredContent.length
     };
@@ -436,7 +438,7 @@ export default function ScheduledPublications() {
                   <div className="flex justify-between w-full">
                     <span>{platformNames[platform]}</span>
                     <span className="ml-2 text-xs px-2 py-0.5 bg-muted rounded-full">
-                      {platformCounts[platform]}
+                      {platformCounts ? platformCounts[platform] : '…'}
                     </span>
                   </div>
                 </SelectItem>

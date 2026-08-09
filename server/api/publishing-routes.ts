@@ -1076,7 +1076,10 @@ export function registerPublishingRoutes(app: Express): void {
             data: {
               status: 'draft',
               scheduled_at: null,
-              social_platforms: {} // Полностью очищаем платформы при отмене
+              // AI-87: Сохраняем историю платформ с пометкой 'cancelled'
+              // вместо полной очистки. Отмена = "не публиковать дальше",
+              // а не "этого никогда не было".
+              social_platforms: updatedPlatforms,
             },
             headers: {
               'Authorization': `Bearer ${authToken}`
@@ -1100,7 +1103,10 @@ export function registerPublishingRoutes(app: Express): void {
         await storage.updateCampaignContent(contentId, {
           status: 'draft', // Возвращаем в статус черновика
           scheduledAt: null, // Убираем планирование
-          socialPlatforms: {} // Полностью очищаем платформы при отмене
+          // AI-87: Передаём updatedPlatforms со статусом cancelled
+          // вместо очистки. Если прямой PATCH упал, storage должен
+          // записать то же самое состояние.
+          socialPlatforms: updatedPlatforms,
         }, authToken);
         log(`Публикация ${contentId} отменена через storage`, 'api');
       } catch (storageError: any) {

@@ -93,20 +93,35 @@ describe('AI-87: cancel preserves platform history', () => {
 
     expect(res.status).toBe(200);
 
-    // Directus PATCH должен получить updatedPlatforms
+    // Directus PATCH должен получить updatedPlatforms с полным сохранением published
     expect(storedDirectusPatch).toBeDefined();
     expect(storedDirectusPatch.social_platforms).toBeDefined();
-    expect(storedDirectusPatch.social_platforms.telegram.status).toBe('published');
-    expect(storedDirectusPatch.social_platforms.telegram.postId).toBe('tg-post-123');
-    expect(storedDirectusPatch.social_platforms.vk.status).toBe('cancelled');
+    expect(storedDirectusPatch.social_platforms.telegram).toEqual({
+      status: 'published',
+      postId: 'tg-post-123',
+      postUrl: 'https://t.me/c/123/456',
+      publishedAt: '2026-08-05T14:00:00Z',
+    });
+    expect(storedDirectusPatch.social_platforms.vk).toEqual({
+      status: 'cancelled',
+      scheduledAt: '2026-08-06T10:00:00Z',
+    });
     // НЕ должно быть пустого объекта
     expect(storedDirectusPatch.social_platforms).not.toEqual({});
 
-    // Storage тоже должен получить updatedPlatforms
+    // Storage тоже должен получить updatedPlatforms с полным сохранением published
     expect(storedStorageUpdate).toBeDefined();
     expect(storedStorageUpdate.socialPlatforms).toBeDefined();
-    expect(storedStorageUpdate.socialPlatforms.telegram.status).toBe('published');
-    expect(storedStorageUpdate.socialPlatforms.vk.status).toBe('cancelled');
+    expect(storedStorageUpdate.socialPlatforms.telegram).toEqual({
+      status: 'published',
+      postId: 'tg-post-123',
+      postUrl: 'https://t.me/c/123/456',
+      publishedAt: '2026-08-05T14:00:00Z',
+    });
+    expect(storedStorageUpdate.socialPlatforms.vk).toEqual({
+      status: 'cancelled',
+      scheduledAt: '2026-08-06T10:00:00Z',
+    });
     expect(storedStorageUpdate.socialPlatforms).not.toEqual({});
   });
 
@@ -118,11 +133,22 @@ describe('AI-87: cancel preserves platform history', () => {
       .set('Authorization', AUTH_TOKEN)
       .send();
 
-    // Storage должен отработать (fallback)
+    // Route должен вернуть 200 даже при падении direct PATCH
+    expect(res.status).toBe(200);
+
+    // Storage должен отработать (fallback) с полным сохранением published
     expect(storedStorageUpdate).toBeDefined();
     expect(storedStorageUpdate.socialPlatforms).toBeDefined();
-    expect(storedStorageUpdate.socialPlatforms.telegram.status).toBe('published');
-    expect(storedStorageUpdate.socialPlatforms.vk.status).toBe('cancelled');
+    expect(storedStorageUpdate.socialPlatforms.telegram).toEqual({
+      status: 'published',
+      postId: 'tg-post-123',
+      postUrl: 'https://t.me/c/123/456',
+      publishedAt: '2026-08-05T14:00:00Z',
+    });
+    expect(storedStorageUpdate.socialPlatforms.vk).toEqual({
+      status: 'cancelled',
+      scheduledAt: '2026-08-06T10:00:00Z',
+    });
     expect(storedStorageUpdate.socialPlatforms).not.toEqual({});
   });
 });

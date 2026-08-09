@@ -235,6 +235,9 @@ function runDeploy(work: string, opts: RunOpts = {}): Promise<{ code: number; st
     // результат, ни на то, сработает ли порог. Отдельные тесты
     // переопределяют это значение осознанно.
     SMM_DOCKER_ROOT: root,
+    // Тестовая tmpfs может быть маленькой — отключаем порог свободного места.
+    // Тест «место на диске и ротация образов» явно задаёт SMM_MIN_FREE_MB.
+    SMM_MIN_FREE_MB: '0',
     SMM_HEALTH_RETRIES: '3',
     SMM_HEALTH_DELAY: '0',
     SMM_LOCK_WAIT: '60',

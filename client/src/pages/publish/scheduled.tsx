@@ -433,7 +433,7 @@ export default function ScheduledPublications() {
                     className="ml-2 text-xs px-2 py-0.5 bg-muted rounded-full"
                     data-testid="scheduled-all-count"
                   >
-                    {scheduledError ? '—' : scheduledCounts.total}
+                    {scheduledError ? '—' : scheduledLoading ? '…' : scheduledCounts.total}
                   </span>
                 </div>
               </SelectItem>

@@ -13,17 +13,20 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 
-// Mock аутентификации — всегда пропускаем
-vi.mock('../middleware/user-auth', () => ({
-  authenticateUser: (req: any, _res: any, next: any) => {
-    req.user = { id: 'test-user', token: 'test-token' };
-    next();
-  },
-}));
+// Partial mock: сохраняем requireSmmAdmin из оригинала
+vi.mock('../middleware/user-auth', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../middleware/user-auth')>();
+  return {
+    ...actual,
+    authenticateUser: (req: any, _res: any, next: any) => {
+      req.user = { id: 'test-user', token: 'test-token' };
+      next();
+    },
+  };
+});
 
-// Mock проверки принадлежности контента
-vi.mock('../middleware/content-ownership', () => ({
-  assertContentBelongsToRequester: (req: any, _res: any, next: any) => next(),
+vi.mock('../services/content-access', () => ({
+  assertContentBelongsToRequester: vi.fn().mockResolvedValue(true),
 }));
 
 let storedDirectusPatch: any = null;
@@ -66,7 +69,7 @@ vi.mock('../storage', () => ({
   },
 }));
 
-// Синхронная регистрация как в рабочем harness
+// Синхронная регистрация маршрутов
 const { registerPublishingRoutes } = await vi.importActual<typeof import('../api/publishing-routes')>('../api/publishing-routes');
 const app = express();
 app.use(express.json());

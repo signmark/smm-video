@@ -23,7 +23,7 @@ export interface ApiKeyValidationResult {
  */
 export async function validateTelegramToken(token: string): Promise<ApiKeyValidationResult> {
   try {
-    log(`Проверка токена Telegram: ${token.slice(0, 5)}...`, 'api-validator');
+    log(`Проверка токена Telegram: [redacted len=${token?.length}]`, 'api-validator');
     
     // Запрос к Telegram API для получения информации о боте
     const response = await axios.get(`https://api.telegram.org/bot${token}/getMe`, {
@@ -83,7 +83,7 @@ function extractVkGroup(body: any): any | undefined {
  */
 export async function validateVkToken(token: string, groupId?: string): Promise<ApiKeyValidationResult> {
   try {
-    log(`Проверка токена VK: ${token.slice(0, 5)}...${groupId ? ` для группы ${groupId}` : ''}`, 'api-validator');
+    log(`Проверка токена VK: [redacted len=${token?.length}]${groupId ? ` для группы ${groupId}` : ''}`, 'api-validator');
 
     // Токены VK ID (`vk2.…`) авторизуются заголовком Bearer и требуют v≥5.199;
     // старые сервисные токены передаются параметром access_token с v5.131.
@@ -198,7 +198,7 @@ export async function validateVkToken(token: string, groupId?: string): Promise<
  */
 export async function validateInstagramToken(token: string): Promise<ApiKeyValidationResult> {
   try {
-    log(`Проверка токена Instagram: ${token.slice(0, 5)}...`, 'api-validator');
+    log(`Проверка токена Instagram: [redacted len=${token?.length}]`, 'api-validator');
     
     // Проверяем, что токен имеет правильный формат для Instagram/Facebook Graph API
     if (!token || token.trim().length < 20) {
@@ -306,7 +306,7 @@ export async function validateInstagramToken(token: string): Promise<ApiKeyValid
  */
 export async function validateFacebookToken(token: string, pageId?: string): Promise<ApiKeyValidationResult> {
   try {
-    log(`Проверка токена Facebook: ${token.slice(0, 5)}...${pageId ? ` для страницы ${pageId}` : ''}`, 'api-validator');
+    log(`Проверка токена Facebook: [redacted len=${token?.length}]${pageId ? ` для страницы ${pageId}` : ''}`, 'api-validator');
     
     // Проверяем, что токен имеет правильный формат
     if (!token || token.trim().length < 20) {
@@ -477,7 +477,7 @@ export async function validateFacebookToken(token: string, pageId?: string): Pro
  */
 export async function validateYoutubeApiKey(apiKey: string, channelId?: string): Promise<ApiKeyValidationResult> {
   try {
-    log(`Проверка API ключа YouTube: ${apiKey.slice(0, 5)}...${channelId ? ` для канала ${channelId}` : ''}`, 'api-validator');
+    log(`Проверка API ключа YouTube: [redacted len=${apiKey?.length}]${channelId ? ` для канала ${channelId}` : ''}`, 'api-validator');
     
     // Запрос к YouTube API для получения информации о каналах
     let url = 'https://www.googleapis.com/youtube/v3/channels';

@@ -2,6 +2,42 @@ import express from 'express';
 import axios from 'axios';
 import { log } from '../utils/logger';
 import { GlobalApiKeysService } from '../services/global-api-keys';
+
+/**
+ * Сужение `unknown` в catch (AI-38).
+ *
+ * Ошибки здесь приходят из axios к Facebook Graph API, и причина отказа лежит в
+ * теле ответа, а не в тексте исключения. Поэтому одного `message` мало: без тела
+ * ответа диагностика беднеет, и прежнее поведение логирования сохранено.
+ */
+function errMessage(e: unknown): string {
+  return e instanceof Error ? e.message : String(e);
+}
+
+function errResponseData(e: unknown): unknown {
+  return axios.isAxiosError(e) ? e.response?.data : undefined;
+}
+
+/** Страница Facebook из ответа Graph API. Поля необязательны: данные внешние. */
+interface FacebookPage {
+  id?: string;
+  name?: string;
+  access_token?: string;
+  instagram_business_account?: {
+    id: string;
+    username?: string;
+    name?: string;
+    profile_picture_url?: string;
+  };
+}
+
+/** Страница с подключённым Instagram — гарантируется предикатом hasInstagram. */
+type FacebookPageWithInstagram = FacebookPage & {
+  instagram_business_account: NonNullable<FacebookPage['instagram_business_account']>;
+};
+
+const hasInstagram = (page: FacebookPage): page is FacebookPageWithInstagram =>
+  Boolean(page.instagram_business_account);
 import { directusApiManager } from '../directus';
 
 const router = express.Router();
@@ -86,12 +122,12 @@ router.post('/save-config', async (req, res) => {
       state: state
     });
 
-  } catch (error) {
-    log(`Error saving Instagram config: ${error.message}`, 'instagram-setup');
+  } catch (error: unknown) {
+    log(`Error saving Instagram config: ${errMessage(error)}`, 'instagram-setup');
     res.status(500).json({ 
       success: false,
       error: 'Ошибка при сохранении конфигурации',
-      details: error.message
+      details: errMessage(error)
     });
   }
 });
@@ -128,12 +164,12 @@ router.get('/status/:userId', async (req, res) => {
       connected: false
     });
 
-  } catch (error) {
-    log(`Error checking Instagram status: ${error.message}`, 'instagram-setup');
+  } catch (error: unknown) {
+    log(`Error checking Instagram status: ${errMessage(error)}`, 'instagram-setup');
     res.status(500).json({ 
       success: false,
       error: 'Ошибка при проверке статуса Instagram',
-      details: error.message
+      details: errMessage(error)
     });
   }
 });
@@ -188,8 +224,8 @@ router.post('/start', async (req, res) => {
       message: 'Перенаправьте пользователя на authUrl для авторизации Facebook'
     });
 
-  } catch (error) {
-    log(`Error starting Instagram OAuth: ${error.message}`, 'instagram-setup');
+  } catch (error: unknown) {
+    log(`Error starting Instagram OAuth: ${errMessage(error)}`, 'instagram-setup');
     res.status(500).json({ error: 'Ошибка инициализации OAuth' });
   }
 });
@@ -270,14 +306,12 @@ router.get('/callback', async (req, res) => {
     });
 
     // Фильтруем только страницы с подключенным Instagram
-    const pagesWithInstagram = pagesResponse.data.data?.filter(page => 
-      page.instagram_business_account
-    ) || [];
+    const pagesWithInstagram = pagesResponse.data.data?.filter(hasInstagram) || [];
 
     log(`Найдено ${pagesWithInstagram.length} страниц с Instagram`, 'instagram-setup');
 
     // Формируем данные для Instagram аккаунтов
-    const instagramAccounts = pagesWithInstagram.map(page => ({
+    const instagramAccounts = pagesWithInstagram.map((page: FacebookPageWithInstagram) => ({
       instagramId: page.instagram_business_account.id,
       username: page.instagram_business_account.username,
       name: page.instagram_business_account.name,
@@ -306,8 +340,8 @@ router.get('/callback', async (req, res) => {
     try {
       await directusApiManager.createItem('instagram_credentials', instagramData);
       log(`Instagram credentials saved for user ${session.userId}`, 'instagram-setup');
-    } catch (dbError) {
-      log(`Error saving Instagram credentials: ${dbError.message}`, 'instagram-setup');
+    } catch (dbError: unknown) {
+      log(`Error saving Instagram credentials: ${errMessage(dbError)}`, 'instagram-setup');
       // Продолжаем выполнение, но логируем ошибку
     }
 
@@ -323,16 +357,16 @@ router.get('/callback', async (req, res) => {
       }
     });
 
-  } catch (error) {
-    log(`Error in Instagram OAuth callback: ${error.message}`, 'instagram-setup');
+  } catch (error: unknown) {
+    log(`Error in Instagram OAuth callback: ${errMessage(error)}`, 'instagram-setup');
     
-    if (error.response?.data) {
-      log(`Facebook API error: ${JSON.stringify(error.response.data)}`, 'instagram-setup');
+    if (errResponseData(error)) {
+      log(`Facebook API error: ${JSON.stringify(errResponseData(error))}`, 'instagram-setup');
     }
     
     res.status(500).json({ 
       error: 'Ошибка при обработке авторизации',
-      details: error.response?.data || error.message
+      details: errResponseData(error) || errMessage(error)
     });
   }
 });
@@ -423,14 +457,12 @@ router.post('/callback', async (req, res) => {
     });
 
     // Фильтруем только страницы с подключенным Instagram
-    const pagesWithInstagram = pagesResponse.data.data.filter(page =>
-      page.instagram_business_account
-    );
+    const pagesWithInstagram = pagesResponse.data.data.filter(hasInstagram);
 
     log(`Found ${pagesWithInstagram.length} pages with Instagram accounts`, 'instagram-setup');
 
     // Обрабатываем Instagram аккаунты
-    const instagramAccounts = pagesWithInstagram.map(page => ({
+    const instagramAccounts = pagesWithInstagram.map((page: FacebookPageWithInstagram) => ({
       instagramId: page.instagram_business_account.id,
       username: page.instagram_business_account.username,
       name: page.instagram_business_account.name,
@@ -459,8 +491,8 @@ router.post('/callback', async (req, res) => {
     try {
       await directusApiManager.createItem('instagram_credentials', instagramData);
       log(`Instagram credentials saved for user ${session.userId}`, 'instagram-setup');
-    } catch (dbError) {
-      log(`Error saving Instagram credentials: ${dbError.message}`, 'instagram-setup');
+    } catch (dbError: unknown) {
+      log(`Error saving Instagram credentials: ${errMessage(dbError)}`, 'instagram-setup');
     }
 
     // Отправляем успешный ответ
@@ -476,17 +508,17 @@ router.post('/callback', async (req, res) => {
       }
     });
 
-  } catch (error) {
-    log(`Error in Instagram OAuth POST callback: ${error.message}`, 'instagram-setup');
+  } catch (error: unknown) {
+    log(`Error in Instagram OAuth POST callback: ${errMessage(error)}`, 'instagram-setup');
     
-    if (error.response?.data) {
-      log(`Facebook API error: ${JSON.stringify(error.response.data)}`, 'instagram-setup');
+    if (errResponseData(error)) {
+      log(`Facebook API error: ${JSON.stringify(errResponseData(error))}`, 'instagram-setup');
     }
     
     res.status(500).json({ 
       success: false,
       error: 'Ошибка при обработке авторизации',
-      details: error.response?.data || error.message
+      details: errResponseData(error) || errMessage(error)
     });
   }
 });
@@ -521,8 +553,8 @@ router.get('/status/:userId', async (req, res) => {
       tokenExpiresAt: cred.token_expires_at
     });
 
-  } catch (error) {
-    log(`Error getting Instagram status: ${error.message}`, 'instagram-setup');
+  } catch (error: unknown) {
+    log(`Error getting Instagram status: ${errMessage(error)}`, 'instagram-setup');
     res.status(500).json({ error: 'Ошибка получения статуса' });
   }
 });
@@ -545,8 +577,8 @@ router.delete('/disconnect/:userId', async (req, res) => {
       message: 'Instagram отключен'
     });
 
-  } catch (error) {
-    log(`Error disconnecting Instagram: ${error.message}`, 'instagram-setup');
+  } catch (error: unknown) {
+    log(`Error disconnecting Instagram: ${errMessage(error)}`, 'instagram-setup');
     res.status(500).json({ error: 'Ошибка отключения Instagram' });
   }
 });
@@ -599,8 +631,8 @@ router.post('/refresh-token/:userId', async (req, res) => {
       tokenExpiresAt: new Date(Date.now() + (newExpiresIn * 1000))
     });
 
-  } catch (error) {
-    log(`Error refreshing Instagram token: ${error.message}`, 'instagram-setup');
+  } catch (error: unknown) {
+    log(`Error refreshing Instagram token: ${errMessage(error)}`, 'instagram-setup');
     res.status(500).json({ error: 'Ошибка обновления токена' });
   }
 });

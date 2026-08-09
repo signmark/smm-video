@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import axios from 'axios';
-import { log } from '../utils/logging';
+import { log } from '../utils/logger';
 
 /**
  * Маршрут для принудительной проверки и обновления статуса контента
@@ -57,7 +57,7 @@ export default function registerForceCheckRoute(app: any) {
       const errorPlatforms = [];
       
       for (const [platform, data] of Object.entries(platforms)) {
-        const status = data.status;
+        const status = (data as Record<string, unknown>).status;
         
         if (status === 'published') {
           publishedPlatforms.push(platform);
@@ -115,12 +115,14 @@ export default function registerForceCheckRoute(app: any) {
           }
         });
       }
-    } catch (error) {
-      log(`Ошибка при проверке статуса контента ${contentId}: ${error.message}`, 'force-check');
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      const stack = err instanceof Error ? err.stack : undefined;
+      log(`Ошибка при проверке статуса контента ${contentId}: ${message}`, 'force-check');
       return res.status(500).json({ 
         error: 'Error checking content status', 
-        message: error.message,
-        stack: process.env.NODE_ENV === 'production' ? undefined : error.stack
+        message,
+        stack: process.env.NODE_ENV === 'production' ? undefined : stack
       });
     }
   });

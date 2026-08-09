@@ -579,7 +579,7 @@ router.post('/story/:id/publish', authenticateUser, async (req, res) => {
         // Если изображение изменилось — сохраняем в Directus перед публикацией
         if (instagramImageUrl && instagramImageUrl !== updatedStory.image_url) {
           try {
-            await directus.request(updateItem('campaign_content', updatedStory.id, { image_url: instagramImageUrl }));
+            await directusApi.patch(`/items/campaign_content/${updatedStory.id}`, { image_url: instagramImageUrl });
           } catch (updateErr) {
             // продолжаем с тем, что есть
           }

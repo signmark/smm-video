@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { log } from '../../utils/logger';
+import type { SocialPlatform } from '@shared/schema';
 import { BaseSocialService } from './base-service';
 
 // Define interfaces for types not available in shared schema

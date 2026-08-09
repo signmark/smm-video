@@ -3,6 +3,7 @@ import { geminiDirect } from './gemini-direct';
 import * as logger from '../utils/logger';
 import { execSync } from 'child_process';
 import { aiService } from './ai-service';
+import { log } from '../utils/logger';
 
 // Puppeteer опционален — если не установлен, работаем через Axios
 import { resolveSafeUrl } from '../utils/ssrf-guard';

@@ -22,19 +22,6 @@ export abstract class BaseSocialService {
       const adminUserId = '53921f16-f51d-4591-80b9-8caa4fde4d13';
       
       // Используем только системную авторизацию через DirectusAuthManager
-      if (false) {
-        log(`Попытка авторизации администратора с учетными данными из env`, 'social-publishing');
-        try {
-          // Используем метод login вместо loginUserWithCredentials
-          const adminSession = await directusAuthManager.login(email, password);
-          if (adminSession) {
-            log(`Авторизация администратора успешна через прямой API запрос`, 'social-publishing');
-            return adminSession.token;
-          }
-        } catch (e) {
-          log(`Ошибка авторизации администратора: ${e}`, 'social-publishing');
-        }
-      }
       
       // 2. Вариант - использовать хранящуюся сессию администратора
       try {

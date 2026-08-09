@@ -197,11 +197,12 @@ router.post('/video-info', authMiddleware, upload.single('video'), async (req, r
 
 // Обработка видео по URL с наложением текста
 router.post('/process-video-from-url', authMiddleware, async (req, res) => {
+  let progressId = '';
   console.log('[VIDEO] Starting process-video-from-url endpoint');
   console.log('[VIDEO] Request body:', req.body);
   try {
     const { videoUrl, textOverlays, campaignId, contentId } = req.body;
-    const progressId = req.body.progressId || randomUUID();
+    progressId = req.body.progressId || randomUUID();
     const storyId = contentId || campaignId; // contentId или campaignId - это ID stories в Directus
 
     console.log('[VIDEO] progressId:', progressId);

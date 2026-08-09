@@ -115,14 +115,15 @@ export function placeholderValue(platforms: string[]): string {
     : 'социальных сетей кампании';
 }
 
-/** Слово-триггер аудиторной фразы старого авто-генератора, после которого
- *  перечисляются сети («группа пользователей Facebook»). Без него произвольный
- *  пользовательский текст (сравнения, инструкции, списки «пиши для X») НЕ
- *  является legacy-кандидатом и не трогается. */
+/** Слово-триггер аудиторной фразы старого авто-генератора. Один `пользовател...`
+ *  сам по себе слишком широк (ловит и «Сравни поведение пользователей Facebook»),
+ *  поэтому требуется аудиторный маркер «аудитори...» рядом — это сигнатура именно
+ *  старого шаблона «Твоя целевая аудитория — ...пользователи Facebook». */
 const AUDIENCE_NOUN_STEM_RE = /пользовател(?:ь|и|ей|ям|ями|ями?)/giu;
+const AUDIENCE_MARKER_RE = /аудитори(?:я|и|ей|ю|й|ям|ями)/giu;
 
-/** Окно символов после триггера «пользовател...», в котором сеть считается частью
- *  перечисления старого генератора. Заканчивается на границе предложения. */
+/** Окно символов ДО аудиторного маркера (слева по строке), в котором он должен
+ *  встретиться, чтобы «пользовател...» считался аудиторной фразой генератора. */
 const LEGACY_WINDOW = 80;
 
 /**
@@ -140,18 +141,29 @@ const LEGACY_WINDOW = 80;
 export function migrateLegacyGlobalPrompt(text: string): string {
   if (!text) return text;
 
-  // Один проход: ищем аудиторные триггеры «пользовател...», в окне после каждого
-  // заменяем сети на плейсхолдер, и продолжаем с конца окна (не пересекая уже
-  // обработанное). Множественные окна не пересекаются, поэтому индексовый сплайс
-  // безопасен.
+  // Один проход: ищем аудиторный маркер «аудитори...» и сразу за ним (в окне)
+  // триггер «пользовател...». Только такая связка — сигнатура старого шаблона
+  // «Твоя целевая аудитория — ...пользователи Facebook». Произвольный текст с
+  // «пользователи» без «аудитории» (сравнения, инструкции) кандидатом не стаёт.
   let out = text;
   let cursor = 0;
   while (cursor < out.length) {
-    AUDIENCE_NOUN_STEM_RE.lastIndex = cursor;
-    const trigger = AUDIENCE_NOUN_STEM_RE.exec(out);
-    if (!trigger) break;
-    const start = trigger.index;
-    // Окно: от триггера до границы предложения, но не длиннее LEGACY_WINDOW.
+    AUDIENCE_MARKER_RE.lastIndex = cursor;
+    const marker = AUDIENCE_MARKER_RE.exec(out);
+    if (!marker) break;
+    const markerEnd = marker.index + marker[0].length;
+    // В окне после «аудитори...» ищем «пользовател...».
+    const afterMarker = out.slice(markerEnd, Math.min(out.length, markerEnd + 60));
+    AUDIENCE_NOUN_STEM_RE.lastIndex = 0;
+    const trigger = AUDIENCE_NOUN_STEM_RE.exec(afterMarker);
+    if (!trigger) {
+      // Нет связки — двигаемся дальше (за конец маркера), не зацикливаясь.
+      cursor = markerEnd;
+      continue;
+    }
+    const startAbs = markerEnd + trigger.index;
+    const start = startAbs;
+    // Окно: от «пользовател...» до границы предложения, но не длиннее LEGACY_WINDOW.
     let end = -1;
     for (const sep of [';', '!', '?', '…', '.']) {
       const p = out.indexOf(sep, start + 1);

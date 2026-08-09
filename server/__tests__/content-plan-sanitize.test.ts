@@ -201,6 +201,31 @@ describe('migrateLegacyGlobalPrompt (NARROW миграция, rev @Codex_HM)', (
     const result = migrateLegacyGlobalPrompt(text);
     expect(result).toBe(text);
   });
+
+  // rev @Codex_HM (round 3): «пользователи» без аудиторного маркера «аудитори...»
+  // НЕ является сигнатурой старого генератора — сравнение/ручной текст не трогаем.
+  it('НЕ трогает сравнение с «пользователи», но без аудиторного маркера', () => {
+    const text = 'Сравни поведение пользователей Facebook и Telegram, но сохрани названия платформ';
+    const result = migrateLegacyGlobalPrompt(text);
+    expect(result).toBe(text);
+    expect(result).toContain('Facebook');
+    expect(result).toContain('Telegram');
+  });
+
+  it('НЕ трогает «пользователи» в руководстве к посту (нет «аудитории»)', () => {
+    const text = 'Пиши для пользователей Facebook и Telegram одинаково, без инверсий';
+    const result = migrateLegacyGlobalPrompt(text);
+    expect(result).toBe(text);
+  });
+
+  it('сводит «аудитория — ...пользователи Facebook» даже при сравнении дальше по тексту', () => {
+    const text = 'Твоя целевая аудитория — группа пользователей Facebook. Не сравнивай с Telegram.';
+    const result = migrateLegacyGlobalPrompt(text);
+    expect(result).toContain('[socialNetworks]');
+    expect(result).not.toContain('Facebook');
+    // Отрицание про Telegram в другом предложении не трогаем.
+    expect(result).toContain('Telegram');
+  });
 });
 
 describe('sanitizeContentPlanItems', () => {

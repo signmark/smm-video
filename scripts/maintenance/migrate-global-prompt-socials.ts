@@ -15,18 +15,23 @@
  *
  * ДВУХФАЗНЫЙ reviewable ПОТОК (rev @Codex_HM):
  *   1) dry-run (по умолчанию) ничего не пишет, а формирует артефакт-план с
- *      before/after по каждой кампании (campaign id + старый → новый промт).
- *      Флаг `--out=<path>` сохраняет этот артефакт в файл для ревью владельца.
- *   2) --apply пишет ТОЛЬКО явно одобренные ID: обязателен `--ids=<csv>`.
- *      Без явного allowlist ничего не записывается. Перед --apply — бэкап
- *      user_campaigns и ревью артефакта из шага 1.
+ *      before/after по каждой кампании (campaign id + старый → новый промт)
+ *      и сохраняет его через `--out=<path>` для ревью владельца.
+ *   2) --apply читает ИМЕННО сохранённый план из `--plan=<path>` (reviewed
+ *      before/after) и пишет ТОЛЬКО явно одобренные ID из `--ids=<csv>`.
+ *      Для каждого id перечитывает БД и применяет rewrite ТОЛЬКО если текущее
+ *      значение БАЙТ В БАЙТ совпадает с пробросмотренным `before` из плана.
+ *      Любое изменение между dry-run и apply → ПРОПУСК (0 PATCH). Не
+ *      пересчитывает одобренное изменение заново (TOCTOU-safe).
+ *      Перед --apply — бэкап user_campaigns.
  *
  * Использование:
  *   # 1) посмотреть кандидатов (ничего не меняет; сохранить план в файл):
  *   DIRECTUS_URL=... DIRECTUS_TOKEN=... npx tsx scripts/maintenance/migrate-global-prompt-socials.ts --out=./migrate-plan.json
  *
- *   # 2) применить ТОЛЬКО для одобренных id (пример):
- *   DIRECTUS_URL=... DIRECTUS_TOKEN=... npx tsx scripts/maintenance/migrate-global-prompt-socials.ts --apply --ids=camp-1,camp-2
+ *   # 2) применить ТОЛЬКО для одобренных id, опираясь на просмотренный план:
+ *   DIRECTUS_URL=... DIRECTUS_TOKEN=... npx tsx scripts/maintenance/migrate-global-prompt-socials.ts \
+ *       --apply --plan=./migrate-plan.json --ids=camp-1,camp-2
  */
 
 import axios from 'axios';
@@ -47,6 +52,7 @@ function flagValue(flag: string): string | undefined {
 }
 
 const OUT_FILE = flagValue('--out');
+const PLAN_FILE = flagValue('--plan');
 const IDS_PARAM = flagValue('--ids');
 const ALLOWED_IDS: Set<string> | null = APPLY
   ? new Set((IDS_PARAM || '').split(',').map((s) => s.trim()).filter(Boolean))
@@ -60,6 +66,30 @@ if (APPLY && (!ALLOWED_IDS || ALLOWED_IDS.size === 0)) {
   console.error('[migrate-global-prompt-socials] --apply требует явный allowlist: --ids=camp-1,camp-2');
   process.exit(1);
 }
+if (APPLY && !PLAN_FILE) {
+  console.error('[migrate-global-prompt-socials] --apply требует просмотренный план: --plan=./migrate-plan.json (артефакт из dry-run --out)');
+  process.exit(1);
+}
+if (!APPLY && PLAN_FILE) {
+  console.error('[migrate-global-prompt-socials] --plan имеет смысл только вместе с --apply');
+  process.exit(1);
+}
+
+/** Загружает просмотренный план (артефакт dry-run), если передан --plan. */
+let reviewedPlan: { candidates: Array<{ id: string; before: string; after: string; fieldKey: string }> } | null = null;
+if (APPLY && PLAN_FILE) {
+  const fs = require('node:fs') as typeof import('node:fs');
+  if (!fs.existsSync(PLAN_FILE)) {
+    console.error(`[migrate-global-prompt-socials] план не найден: ${PLAN_FILE}`);
+    process.exit(1);
+  }
+  try {
+    reviewedPlan = JSON.parse(fs.readFileSync(PLAN_FILE, 'utf-8'));
+  } catch (e: any) {
+    console.error(`[migrate-global-prompt-socials] не удалось прочитать план: ${e?.message || e}`);
+    process.exit(1);
+  }
+}
 
 function parseAutonomousSettings(raw: unknown): Record<string, any> | null {
   if (!raw) return null;
@@ -72,6 +102,19 @@ function parseAutonomousSettings(raw: unknown): Record<string, any> | null {
     }
   }
   return typeof raw === 'object' ? (raw as Record<string, any>) : null;
+}
+
+/**
+ * TOCTOU-safe решение «применять ли rewrite» (exported для теста).
+ * Возвращает { apply } — true только если текущее значение байт-в-байт совпадает
+ * с просмотренным `before` из dry-run-плана. Любое изменение между dry-run и
+ * apply → ПРОПУСК (не применяем НЕпросмотренный rewrite).
+ */
+export function shouldApplyLegacyMigration(
+  currentPrompt: string,
+  reviewedBefore: string,
+): boolean {
+  return currentPrompt === reviewedBefore;
 }
 
 async function main() {
@@ -122,33 +165,43 @@ async function main() {
   }
 
   if (APPLY) {
-    for (const c of candidates) {
-      if (!ALLOWED_IDS!.has(c.id)) continue;
-      // Для применимого id перечитываем автономные настройки, чтобы не потерять другие поля.
-      const rowRes = await axios.get(`${DIRECTUS_URL}/items/user_campaigns/${c.id}`, {
+    // В apply-режиме НЕ пересчитываем одобренное изменение: опираемся строго
+    // на просмотренный план (before/after из dry-run). Так, если промт изменили
+    // после dry-run, проверка свежего значения против просмотренного `before`
+    // даст расхождение → ПРОПУСК (TOCTOU-safe).
+    const planById = new Map(
+      (reviewedPlan?.candidates || []).map((c) => [c.id, c]),
+    );
+    for (const id of Array.from(ALLOWED_IDS!)) {
+      const reviewed = planById.get(id);
+      if (!reviewed) {
+        console.log(`[migrate-global-prompt-socials] ПРОПУСК ${id}: нет в просмотренном плане`);
+        continue;
+      }
+      // Перечитываем свежее значение, чтобы не потерять другие поля settings.
+      const rowRes = await axios.get(`${DIRECTUS_URL}/items/user_campaigns/${id}`, {
         headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
         params: { fields: ['id', 'autonomous_settings', 'social_media_settings'] },
       });
       const row = rowRes.data?.data;
       const cur = parseAutonomousSettings(row?.autonomous_settings) || {};
-      const curPrompt = typeof cur[c.fieldKey] === 'string' ? cur[c.fieldKey] : c.before;
-      // Применяем только если текущее значение совпадает с тем, что ревьюилось
-      // (не затираем ручную правку, сделанную между dry-run и apply).
-      if (curPrompt === c.before) {
-        cur[c.fieldKey] = c.after;
+      const curPrompt = typeof cur[reviewed.fieldKey] === 'string' ? cur[reviewed.fieldKey] : reviewed.before;
+      // Применяем ТОЛЬКО если текущее значение байт-в-байт совпадает с reviewed.before.
+      if (shouldApplyLegacyMigration(curPrompt, reviewed.before)) {
+        cur[reviewed.fieldKey] = reviewed.after;
         await axios.patch(
-          `${DIRECTUS_URL}/items/user_campaigns/${c.id}`,
+          `${DIRECTUS_URL}/items/user_campaigns/${id}`,
           { autonomous_settings: JSON.stringify(cur) },
           { headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` } },
         );
-        written.push(c.id);
-        console.log(`[migrate-global-prompt-socials] APPLY обновил кампанию ${c.id}`);
+        written.push(id);
+        console.log(`[migrate-global-prompt-socials] APPLY обновил кампанию ${id}`);
       } else {
-        console.log(`[migrate-global-prompt-socials] ПРОПУСК ${c.id}: значение изменилось с момента dry-run, пересмотри`);
+        console.log(`[migrate-global-prompt-socials] ПРОПУСК ${id}: значение изменилось с момента dry-run (не совпадает с reviewed.before)`);
       }
     }
     console.log(
-      `[migrate-global-prompt-socials] сканировано: ${scanned}; кандидатов: ${candidates.length}; записано: ${written.length} (allowlist ${written.length === 0 ? 'пуст или не пересекается' : written.join(',')})`,
+      `[migrate-global-prompt-socials] просмотренный план: ${reviewedPlan?.candidates.length || 0} кандидатов; записано: ${written.length} (${written.length === 0 ? 'нет пересечения или все пропущены' : written.join(',')})`,
     );
     return;
   }

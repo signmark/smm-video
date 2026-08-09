@@ -13,6 +13,7 @@ import { getPlanLimits, getEffectivePlan } from '../services/plan-limits';
 import { directusCrud } from '../services/directus-crud';
 import { authorizeCampaignAccess, CampaignAccessError } from '../services/campaign-access';
 import { mergeOAuthSettings, sanitizeOAuthSecrets } from '../services/oauth-response-sanitizer';
+import { normalizePlatformMentionsToPlaceholder } from '../services/social-prompt';
 
 /**
  * Удаляет все связанные элементы указанной коллекции для кампании
@@ -892,12 +893,38 @@ export function registerCampaignRoutes(app: Express) {
       // Берём ЦА и описание бизнеса из уже заполненной анкеты кампании
       let campaignAudience = 'широкая аудитория';
       let campaignBusinessContext = '';
+      let connectedPlatforms: string[] = [];
       try {
         const { directusCrud } = await import('../services/directus-crud');
         const camp = await directusCrud.getById('user_campaigns', campaignId, { authToken: token });
         if (camp?.target_audience) campaignAudience = camp.target_audience;
         if (camp?.business_description) campaignBusinessContext = camp.business_description;
+
+        // SM-18 follow-up: определяем фактически подключённые соцсети, чтобы
+        // сгенерированный промт упоминал ТОЛЬКО их, а не дефолтный Facebook.
+        const s = camp?.social_media_settings;
+        if (s && typeof s === 'object') {
+          const KNOWN = ['telegram', 'vk', 'instagram', 'facebook', 'youtube', 'tiktok', 'threads'];
+          connectedPlatforms = KNOWN.filter((p) => {
+            const cfg = s[p];
+            if (!cfg || typeof cfg !== 'object') return false;
+            const enabled = cfg.enabled === true;
+            const hasToken = !!(cfg.token || cfg.accessToken || cfg.access_token || cfg.botToken);
+            return enabled || hasToken;
+          });
+        }
+        if (connectedPlatforms.length > 0) {
+          console.log(`[generate-assistant-prompt] 🔌 Подключённые платформы: ${connectedPlatforms.join(', ')}`);
+        }
       } catch { /* не критично — используем дефолты */ }
+
+      const PLATFORM_NAMES_RU: Record<string, string> = {
+        telegram: 'Telegram', vk: 'ВКонтакте', instagram: 'Instagram',
+        facebook: 'Facebook', youtube: 'YouTube', tiktok: 'TikTok', threads: 'Threads',
+      };
+      const platformCtx = connectedPlatforms.length > 0
+        ? `Подключённые соцсети: ${connectedPlatforms.map(p => PLATFORM_NAMES_RU[p] || p).join(', ')}`
+        : 'Подключённые соцсети: не указаны';
 
       const knowledgeStr = knowledge.length ? knowledge.join(', ') : 'не указано';
       const skillsStr = skills.length ? skills.join(', ') : 'не указано';
@@ -918,6 +945,7 @@ export function registerCampaignRoutes(app: Express) {
 - Целевая аудитория: ${campaignAudience}
 - Длина постов: ${postLength || 'смешанная'}
 - Микс контента: ${mixStr}
+- ${platformCtx}
 
 ${campaignBusinessContext ? `КОНТЕКСТ БИЗНЕСА:\n${campaignBusinessContext}\n` : ''}
 
@@ -928,6 +956,7 @@ ${campaignBusinessContext ? `КОНТЕКСТ БИЗНЕСА:\n${campaignBusines
 4. Опиши структуру идеального поста (зацепка → развитие → CTA)
 5. Дай 5–7 тем для ротации с учётом миксa контента
 6. Блок ЗАПРЕЩЕНО: клише, шаблонные фразы, стилистические ошибки
+7. **ПЛАТФОРМЫ**: в местах, где нужно упомянуть конкретные соцсети для адаптации контента, используй плейсхолдер \`[socialNetworks]\` (это переменная, которая подставит реальные соцсети кампании автоматически). НЕ пиши Facebook, Instagram, VK и другие конкретные сети в тексте промта — всегда используй \`[socialNetworks]\`. Если нужен список для читаемости — напиши "и т. д. в [socialNetworks]" или расшифруй в скобках через [socialNetworks]. Например, "Подстраивай тексты под формат каждой площадки из [socialNetworks]", а не "под Facebook, Instagram, VK".
 
 Верни ТОЛЬКО текст промта — без заголовков, без объяснений, без markdown.`;
 
@@ -944,7 +973,13 @@ ${campaignBusinessContext ? `КОНТЕКСТ БИЗНЕСА:\n${campaignBusines
         return res.status(500).json({ error: 'Не удалось сгенерировать промт, попробуйте ещё раз' });
       }
 
-      res.json({ success: true, prompt: generatedPrompt });
+      // SM-18 (review @Codex_HM): детерминированно гарантируем, что в поле/базе
+      // лежит переменная [socialNetworks], а не literal название сети. Модель
+      // могла проигнорировать инструкцию и написать «Facebook» — сводим такие
+      // упоминания к плейсхолдеру (вне отрицающих контекстов).
+      const normalizedPrompt = normalizePlatformMentionsToPlaceholder(generatedPrompt);
+
+      res.json({ success: true, prompt: normalizedPrompt });
     } catch (error: any) {
       console.error('[generate-assistant-prompt] error:', error.message);
       res.status(500).json({ error: error.message || 'Ошибка генерации промта' });

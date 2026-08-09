@@ -5,6 +5,10 @@ import { aiService } from './ai-service';
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { toSafeErrorDetails } from '../utils/safe-error';
+import { log } from '../utils/logger';
+// SM-18: единый помощник подстановки [socialNetworks] — один источник правды.
+import { substituteSocialNetworks } from './social-prompt';
+export { substituteSocialNetworks };
 
 const AUTONOMOUS_PERSIST_FILE = join(process.cwd(), 'data', 'autonomous-states.json');
 
@@ -1344,6 +1348,10 @@ ${content}
 // ПАЙПЛАЙН: генерация и доработка контент-плана
 // ─────────────────────────────────────────────────────────────────
 
+// SM-18: `substituteSocialNetworks` живёт в `./social-prompt` (единый канонический
+// helper, импортируется всеми модельными ingress). Здесь только ре-экспорт для
+// обратной совместимости с тестами.
+
 /**
  * SM-18: Обеспечивает, что каждый элемент контент-плана имеет platform из
  * фактически подключённых к кампании. AI может вернуть "facebook"/"instagram"
@@ -1356,7 +1364,7 @@ export function sanitizeContentPlanItems(
   platforms: string[]
 ): ContentPlanItem[] {
   if (parsed.length > count) {
-    console.warn(`[CONTENT-PLAN] ⚠️ AI вернул ${parsed.length} идеи при запросе ${count} — обрезаем`);
+    log(`[CONTENT-PLAN] ⚠️ AI вернул ${parsed.length} идеи при запросе ${count} — обрезаем`, 'content-plan');
   }
   // SM-19: жёсткая граница сверху.
   const capped = parsed.slice(0, count);
@@ -1371,7 +1379,7 @@ export function sanitizeContentPlanItems(
       ? platforms.find(p => p.toLowerCase() === normalized) || (platforms[0] || 'telegram')
       : (platforms[0] || 'telegram');
     if (rawPlatform && rawPlatform !== safePlatform) {
-      console.warn(`[CONTENT-PLAN] ⚠️ AI предложил платформу "${rawPlatform}", заменяем на "${safePlatform}"`);
+      log(`[CONTENT-PLAN] ⚠️ AI предложил платформу "${rawPlatform}", заменяем на "${safePlatform}"`, 'content-plan');
     }
     return {
       id: item.id || String(i + 1),
@@ -1395,7 +1403,7 @@ export function sanitizeRefinedContentPlan(
 ): ContentPlanItem[] {
   const validPlatformsLower = new Set(platforms.map(p => p.toLowerCase()));
   if (refined.length > plan.length) {
-    console.warn(`[CONTENT-PLAN] ⚠️ Доработка вернула ${refined.length} идей (было ${plan.length}) — обрезаем`);
+    log(`[CONTENT-PLAN] ⚠️ Доработка вернула ${refined.length} идей (было ${plan.length}) — обрезаем`, 'content-plan');
   }
   const capped = refined.slice(0, plan.length);
   return capped.map((item, i) => {
@@ -1408,7 +1416,7 @@ export function sanitizeRefinedContentPlan(
       ? platforms.find(p => p.toLowerCase() === normalized) || (originalPlatform || platforms[0] || 'telegram')
       : (originalPlatform || platforms[0] || 'telegram');
     if (rawPlatform && rawPlatform !== safePlatform) {
-      console.warn(`[CONTENT-PLAN] ⚠️ Доработка вернула платформу "${rawPlatform}", сохраняем "${safePlatform}"`);
+      log(`[CONTENT-PLAN] ⚠️ Доработка вернула платформу "${rawPlatform}", сохраняем "${safePlatform}"`, 'content-plan');
     }
     return {
       ...plan[i],
@@ -1419,7 +1427,7 @@ export function sanitizeRefinedContentPlan(
   });
 }
 
-async function generateContentPlan(params: {
+export async function generateContentPlan(params: {
   count: number;
   keywords: string[];
   trends: any[];
@@ -1440,11 +1448,13 @@ async function generateContentPlan(params: {
 
   const kwList = keywords.slice(0, 15).join(', ');
   const platformList = platforms.join(', ');
+  // SM-18 follow-up: подставляем реальные платформы в [socialNetworks] плейсхолдер промта.
+  const globalPromptResolved = globalPrompt ? substituteSocialNetworks(globalPrompt, platforms) : '';
 
   const prompt = `Ты — опытный SMM-стратег. Составь контент-план из ${count} постов для публикации в соцсетях.
 
 КОНТЕКСТ КАМПАНИИ:
-${launchCommand ? `[ГЛАВНАЯ ИНСТРУКЦИЯ]\n${launchCommand}\n\n` : ''}${globalPrompt ? `Стиль и аудитория: ${globalPrompt}\n` : ''}${alwaysInclude ? `Обязательно включать в посты: ${alwaysInclude}\n` : ''}Платформы: ${platformList}
+${launchCommand ? `[ГЛАВНАЯ ИНСТРУКЦИЯ]\n${launchCommand}\n\n` : ''}${globalPromptResolved ? `Стиль и аудитория: ${globalPromptResolved}\n` : ''}${alwaysInclude ? `Обязательно включать в посты: ${alwaysInclude}\n` : ''}Платформы: ${platformList}
 Ключевые слова: ${kwList || 'не заданы'}
 ${topTrends ? `Актуальные тренды:\n- ${topTrends}` : ''}
 ${analyticsInsights ? `Данные аналитики: ${analyticsInsights}` : ''}
@@ -1514,6 +1524,7 @@ async function refineContentPlan(params: {
 
   const recentTitles = publishedTitles.slice(0, 20).join('\n- ');
 
+  const globalPromptResolved = globalPrompt ? substituteSocialNetworks(globalPrompt, platforms) : '';
   const prompt = `Ты — SMM-стратег. Проверь контент-план и улучши его.
 
 ${launchCommand ? `[ГЛАВНАЯ ИНСТРУКЦИЯ]\n${launchCommand}\n\n` : ''}УЖЕ ОПУБЛИКОВАННЫЕ ТЕМЫ (не повторять):
@@ -1522,7 +1533,7 @@ ${launchCommand ? `[ГЛАВНАЯ ИНСТРУКЦИЯ]\n${launchCommand}\n\n` 
 ТЕКУЩИЙ ПЛАН (JSON):
 ${JSON.stringify(plan, null, 2)}
 
-${globalPrompt ? `СТИЛЬ КАМПАНИИ: ${globalPrompt}\n` : ''}${alwaysInclude ? `ОБЯЗАТЕЛЬНО ВКЛЮЧАТЬ В ПОСТЫ: ${alwaysInclude}\n` : ''}
+${globalPromptResolved ? `СТИЛЬ КАМПАНИИ: ${globalPromptResolved}\n` : ''}${alwaysInclude ? `ОБЯЗАТЕЛЬНО ВКЛЮЧАТЬ В ПОСТЫ: ${alwaysInclude}\n` : ''}
 ЗАДАЧА:
 1. Удали или замени идеи, которые похожи на уже опубликованные
 2. Убедись в разнообразии форматов и соответствии главной инструкции
@@ -3759,7 +3770,7 @@ async function runAutonomousCycle(state: AutonomousState) {
         ? `\n\nКЛЮЧЕВЫЕ СЛОВА КАМПАНИИ (используй органично, не перечислением): ${topKeywords.join(', ')}`
         : '';
       const globalBlock = autoSettings.globalPrompt
-        ? `\n\n[USER_INSTRUCTION_START]\nГЛОБАЛЬНЫЕ ПРАВИЛА КАМПАНИИ:\n${autoSettings.globalPrompt}\n[USER_INSTRUCTION_END]`
+        ? `\n\n[USER_INSTRUCTION_START]\nГЛОБАЛЬНЫЕ ПРАВИЛА КАМПАНИИ:\n${substituteSocialNetworks(autoSettings.globalPrompt, state.platforms)}\n[USER_INSTRUCTION_END]`
         : '';
       const alwaysBlock = autoSettings.alwaysInclude
         ? `\n\nОБЯЗАТЕЛЬНО ВПЛЕТИ В ПОСТ (органично): ${autoSettings.alwaysInclude}`
@@ -3812,15 +3823,20 @@ async function runAutonomousCycle(state: AutonomousState) {
           `ЦЕЛЕВАЯ ПЛАТФОРМА: ${planItem.platform}` +
           trendContext +
           userBlocks;
+        // SM-18 follow-up: подстраховка — если плейсхолдер остался в userBlocks/теме,
+        // заменяем его фактическими площадками.
+        const finalTheme = substituteSocialNetworks(theme, state.platforms);
 
         console.log(`[PIPELINE] ✍️ Пост ${i + 1}/${contentPlan.length}: "${topic}" (${contentType})`);
 
         const contentResult = await TOOL_IMPLEMENTATIONS.createContent({
           campaignId: state.campaignId,
           topic,
-          theme,
+          theme: finalTheme,
           count: 1,
-          editorGuide: autoSettings.globalPrompt || '',
+          editorGuide: autoSettings.globalPrompt
+            ? substituteSocialNetworks(autoSettings.globalPrompt, state.platforms)
+            : '',
           useEditorPass: autoSettings.useEditorPass ?? false,
           humanize: autoSettings.humanize ?? false
         }, request);

@@ -8,10 +8,11 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { getConnectedPlatformsMap } from "@/lib/platform-connection";
 import {
   Loader2, Save, Bot, Pencil, Users, Share2, Target, Shuffle,
   Sparkles, ChevronDown, ChevronUp, Check, Wand2, RotateCcw,
-  BookOpen, Lightbulb, Settings2, BarChart3
+  BookOpen, Lightbulb, Eye, Settings2, BarChart3
 } from "lucide-react";
 
 /* ─────────────────────────────────────────────
@@ -258,8 +259,39 @@ export default function AutonomousSettings({ campaignId, initialSettings, onSett
   const [showBuilder, setShowBuilder] = useState(false);
   const [appliedTemplate, setAppliedTemplate] = useState<string | null>(null);
   const [builder, setBuilder] = useState<AssistantBuilderConfig>(DEFAULT_BUILDER);
+  // SM-18 follow-up: подключённые соцсети для подсказки про [socialNetworks]
+  const [connectedPlatforms, setConnectedPlatforms] = useState<string[]>([]);
 
   useEffect(() => { setValues(parseSettings(initialSettings)); }, [initialSettings]);
+
+  // SM-18 follow-up: читаем подключённые соцсети кампании для подсказки в промте.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiRequest(`/api/campaigns/${campaignId}`);
+        // endpoint возвращает envelope { success, data: campaign } — берём data
+        const campaign = (res as any)?.data || (res as any) || null;
+        if (cancelled || !campaign) return;
+
+        const names: Record<string, string> = {
+          telegram: 'Telegram', vk: 'ВКонтакте', instagram: 'Instagram',
+          facebook: 'Facebook', youtube: 'YouTube', tiktok: 'TikTok', threads: 'Threads',
+        };
+        // Каноничный helper: не зависит от секретных токенов (их вырезает sanitizeOAuthSecrets).
+        const map = getConnectedPlatformsMap(campaign.social_media_settings);
+        if (!map) {
+          if (!cancelled) setConnectedPlatforms([]);
+          return;
+        }
+        const connected = (['telegram', 'vk', 'instagram', 'facebook', 'youtube', 'tiktok', 'threads'] as const)
+          .filter(p => (map as any)[p] === true)
+          .map(p => names[p] || p);
+        if (!cancelled) setConnectedPlatforms(connected);
+      } catch { /* не критично */ }
+    })();
+    return () => { cancelled = true; };
+  }, [campaignId]);
 
   const updateValue = (key: keyof AutonomousSettingsValue) => (e: React.ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
     setValues((prev) => ({ ...prev, [key]: e.target.value }));
@@ -636,6 +668,33 @@ export default function AutonomousSettings({ campaignId, initialSettings, onSett
           value={values.globalPrompt || ""}
           onChange={updateValue("globalPrompt")}
         />
+        {/* SM-18 follow-up: живой предпросмотр подстановки [socialNetworks] */}
+        {values.globalPrompt && values.globalPrompt.includes("[socialNetworks]") ? (
+          <div className="rounded border border-border bg-muted/40 px-3 py-2 text-xs">
+            <p className="text-[10px] uppercase tracking-wide text-muted-foreground mb-1 flex items-center gap-1.5">
+              <Eye className="h-3 w-3" /> Как это увидит модель
+            </p>
+            <p className="text-foreground/90 whitespace-pre-wrap">
+              {values.globalPrompt.split("[socialNetworks]").join(
+                connectedPlatforms.length > 0
+                  ? connectedPlatforms.join(", ")
+                  : "социальных сетей кампании"
+              )}
+            </p>
+          </div>
+        ) : (
+          <div className="flex items-start gap-1.5 text-xs text-muted-foreground bg-muted/40 rounded px-3 py-2" title={connectedPlatforms.length > 0 ? `Подключённые соцсети: ${connectedPlatforms.join(', ')}` : 'Соцсети не подключены'}>            <Lightbulb className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+            <p>
+              Доступная переменная: <code className="bg-background px-1 rounded border border-border font-mono">[socialNetworks]</code> —{' '}
+              заменится на подключённые соцсети автоматически.{' '}
+              {connectedPlatforms.length > 0 ? (
+                <span className="font-medium">Текущие: {connectedPlatforms.join(', ')}</span>
+              ) : (
+                <span className="italic">Соцсети не подключены — подставится «социальных сетей кампании»</span>
+              )}
+            </p>
+          </div>
+        )}
       </div>
 
       <div className="space-y-2">

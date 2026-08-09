@@ -9,6 +9,7 @@ import { storage } from '../storage';
 import { log } from '../utils/logger';
 import { aiService } from '../services/ai-service';
 import { toSafeErrorDetails } from '../utils/safe-error';
+import { substituteSocialNetworks } from '../services/social-prompt';
 import axios from 'axios';
 
 import { buildCacheKey, getFromCache, setToCache, invalidateContentCache } from '../utils/content-cache';
@@ -794,21 +795,36 @@ export function registerContentRoutes(app: Express) {
 
       // Загружаем autonomous_settings кампании для персонализированной редактуры
       let autoSettings: { globalPrompt?: string; alwaysInclude?: string; signature?: string; humanize?: boolean; adaptForPlatforms?: boolean } = {};
+      let connectedPlatforms: string[] = [];
       try {
         const campaignId = contentItem.campaign_id;
         if (campaignId) {
-          // Коллекция — user_campaigns; 'campaigns' не существует и отдавала 403,
-          // из-за чего редакторский проход шёл без настроек стиля кампании.
           const campaign = await directusCrud.getById('user_campaigns', campaignId, { authToken: token });
           if (campaign?.autonomous_settings) {
             const raw = campaign.autonomous_settings;
             autoSettings = typeof raw === 'string' ? JSON.parse(raw) : raw;
           }
+          // SM-18 follow-up: подтягиваем подключённые соцсети для [socialNetworks].
+          const s = campaign?.social_media_settings;
+          if (s && typeof s === 'object') {
+            const KNOWN = ['telegram', 'vk', 'instagram', 'facebook', 'youtube', 'tiktok', 'threads'];
+            connectedPlatforms = KNOWN.filter((p) => {
+              const cfg = s[p];
+              if (!cfg || typeof cfg !== 'object') return false;
+              const enabled = cfg.enabled === true;
+              const hasToken = !!(cfg.token || cfg.accessToken || cfg.access_token || cfg.botToken);
+              return enabled || hasToken;
+            });
+          }
         }
       } catch (_) {}
 
-      const styleBlock = autoSettings.globalPrompt
-        ? `\nСТИЛЬ И ТОН (обязательно):\n${autoSettings.globalPrompt}\n` : `
+      const resolvedGlobalPrompt = autoSettings.globalPrompt
+        ? substituteSocialNetworks(autoSettings.globalPrompt, connectedPlatforms)
+        : '';
+
+      const styleBlock = resolvedGlobalPrompt
+        ? `\nСТИЛЬ И ТОН (обязательно):\n${resolvedGlobalPrompt}\n` : `
 СТИЛЬ И ТОН:
 - Живой разговорный язык, как говорит эксперт с другом — не официально, без воды
 - Конкретика вместо абстракций: цифры, факты, примеры вместо общих слов

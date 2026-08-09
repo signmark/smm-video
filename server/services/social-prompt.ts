@@ -126,13 +126,14 @@ const AUDIENCE_MARKER_RE = /аудитори(?:я|и|ей|ю|й|ям|ями)/giu
  *  (сигнатура старого шаблона). Заканчивается на границе предложения. */
 const LEGACY_WINDOW = 80;
 
-/** Индекс первой границы предложения (. ; ! ? …) от `from`. -1 если нет. */
+/** Индекс самой ранней границы предложения (. ; ! ? …) от `from`. -1 если нет. */
 function findNextSentenceBoundary(text: string, from: number): number {
+  let earliest = -1;
   for (const sep of ['.', ';', '!', '?', '…']) {
     const idx = text.indexOf(sep, from);
-    if (idx !== -1) return idx;
+    if (idx !== -1 && (earliest === -1 || idx < earliest)) earliest = idx;
   }
-  return -1;
+  return earliest;
 }
 
 /**
@@ -172,8 +173,9 @@ export function migrateLegacyGlobalPrompt(text: string): string {
     AUDIENCE_NOUN_STEM_RE.lastIndex = 0;
     const trigger = AUDIENCE_NOUN_STEM_RE.exec(afterMarker);
     if (!trigger) {
-      // Нет связки в том же предложении — двигаемся дальше (за конец маркера).
-      cursor = markerEnd + marker[0].length;
+      // Нет связки в том же предложении — двигаемся за конец маркера
+      // (markerEnd уже включает сам маркер).
+      cursor = markerEnd;
       continue;
     }
     const start = markerEnd + trigger.index;

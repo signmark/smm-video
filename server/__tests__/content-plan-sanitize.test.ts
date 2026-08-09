@@ -236,6 +236,33 @@ describe('migrateLegacyGlobalPrompt (NARROW миграция, rev @Codex_HM)', (
     expect(result).toContain('Telegram');
   });
 
+  // rev @Codex_HM (round 6): граница предложения распознаётся по самому раннему
+  // из всех разделителей (. ; ! ? …), а не по «первому найденному по типу».
+  it.each([';', '!', '?', '…'])('НЕ трогает comparison через границу «%s»', (sep) => {
+    const text = `Аудитория не определена${sep} Сравни поведение пользователей Facebook и Telegram, но сохрани названия платформ.`;
+    const result = migrateLegacyGlobalPrompt(text);
+    expect(result).toBe(text);
+    expect(result).toContain('Facebook');
+    expect(result).toContain('Telegram');
+  });
+
+  it('сводит «аудитория — пользователи X», если маркер и триггер в одном предложении разделены точкой', () => {
+    const text = 'Аудитория. Пользователи Facebook.';
+    // Маркер «Аудитория» и «Пользователи» — РАЗНЫЕ предложения → не кандидат.
+    const result = migrateLegacyGlobalPrompt(text);
+    expect(result).toBe(text);
+    expect(result).toContain('Facebook');
+  });
+
+  // rev @Codex_HM (round 6): cursor после маркера без триггера не должен
+  // пропускать следующий близкий валидный маркер.
+  it('после неудачного маркера находит следующий валидный в том же тексте', () => {
+    const text = 'Аудитория не определена. Аудитория — пользователи Facebook.';
+    const result = migrateLegacyGlobalPrompt(text);
+    expect(result).toContain('[socialNetworks]');
+    expect(result).not.toContain('Facebook');
+  });
+
 });
 
 describe('sanitizeContentPlanItems', () => {

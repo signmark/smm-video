@@ -218,14 +218,24 @@ describe('migrateLegacyGlobalPrompt (NARROW миграция, rev @Codex_HM)', (
     expect(result).toBe(text);
   });
 
-  it('сводит «аудитория — ...пользователи Facebook» даже при сравнении дальше по тексту', () => {
+  // rev @Codex_HM (round 4): «аудитория» в ПРЕДЫДУЩЕМ предложении не связывает
+  // «пользователи» в следующем — связка ограничена одним предложением.
+  it('НЕ трогает сравнение, если «аудитория» только в предыдущем предложении', () => {
+    const text = 'Аудитория не определена. Сравни поведение пользователей Facebook и Telegram, но сохрани названия платформ.';
+    const result = migrateLegacyGlobalPrompt(text);
+    expect(result).toBe(text);
+    expect(result).toContain('Facebook');
+    expect(result).toContain('Telegram');
+  });
+
+  it('сводит «аудитория — ...пользователи Facebook» в одном предложении даже если позже есть отрицание', () => {
     const text = 'Твоя целевая аудитория — группа пользователей Facebook. Не сравнивай с Telegram.';
     const result = migrateLegacyGlobalPrompt(text);
     expect(result).toContain('[socialNetworks]');
     expect(result).not.toContain('Facebook');
-    // Отрицание про Telegram в другом предложении не трогаем.
     expect(result).toContain('Telegram');
   });
+
 });
 
 describe('sanitizeContentPlanItems', () => {

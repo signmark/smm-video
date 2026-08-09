@@ -106,15 +106,45 @@ function parseAutonomousSettings(raw: unknown): Record<string, any> | null {
 
 /**
  * TOCTOU-safe решение «применять ли rewrite» (exported для теста).
- * Возвращает { apply } — true только если текущее значение байт-в-байт совпадает
- * с просмотренным `before` из dry-run-плана. Любое изменение между dry-run и
- * apply → ПРОПУСК (не применяем НЕпросмотренный rewrite).
+ * Возвращает true ТОЛЬКО если текущее значение — непустая строка И байт-в-байт
+ * совпадает с просмотренным `before` из dry-run-плана. Отсутствие/нестроковое/
+ * изменение поля между dry-run и apply → false (не затираем; «любое изменение → 0 PATCH»).
  */
 export function shouldApplyLegacyMigration(
-  currentPrompt: string,
+  currentPrompt: unknown,
   reviewedBefore: string,
 ): boolean {
-  return currentPrompt === reviewedBefore;
+  return typeof currentPrompt === 'string' && currentPrompt === reviewedBefore;
+}
+
+/**
+ * Применяет один одобренный кандидат из просмотренного плана (exported для теста).
+ * Перечитывает свежее поле; если оно НЕ строка или не совпадает байт-в-байт с
+ * `reviewed.before` — возвращает 'skip'; иначе патчит `reviewed.after` и 'applied'.
+ * Не патчит ничего, если поле изменилось/удалено после dry-run (0 PATCH).
+ */
+export async function applyReviewedCandidate(
+  reviewed: { id: string; before: string; after: string; fieldKey: string },
+): Promise<'applied' | 'skip'> {
+  const rowRes = await axios.get(`${DIRECTUS_URL}/items/user_campaigns/${reviewed.id}`, {
+    headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
+    params: { fields: ['id', 'autonomous_settings', 'social_media_settings'] },
+  });
+  const row = rowRes.data?.data;
+  const cur = parseAutonomousSettings(row?.autonomous_settings) || {};
+  const curPrompt = cur[reviewed.fieldKey];
+  if (!shouldApplyLegacyMigration(curPrompt, reviewed.before)) {
+    console.log(`[migrate-global-prompt-socials] ПРОПУСК ${reviewed.id}: значение изменилось/не строка после dry-run (не совпадает с reviewed.before)`);
+    return 'skip';
+  }
+  cur[reviewed.fieldKey] = reviewed.after;
+  await axios.patch(
+    `${DIRECTUS_URL}/items/user_campaigns/${reviewed.id}`,
+    { autonomous_settings: JSON.stringify(cur) },
+    { headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` } },
+  );
+  console.log(`[migrate-global-prompt-socials] APPLY обновил кампанию ${reviewed.id}`);
+  return 'applied';
 }
 
 async function main() {
@@ -178,27 +208,8 @@ async function main() {
         console.log(`[migrate-global-prompt-socials] ПРОПУСК ${id}: нет в просмотренном плане`);
         continue;
       }
-      // Перечитываем свежее значение, чтобы не потерять другие поля settings.
-      const rowRes = await axios.get(`${DIRECTUS_URL}/items/user_campaigns/${id}`, {
-        headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` },
-        params: { fields: ['id', 'autonomous_settings', 'social_media_settings'] },
-      });
-      const row = rowRes.data?.data;
-      const cur = parseAutonomousSettings(row?.autonomous_settings) || {};
-      const curPrompt = typeof cur[reviewed.fieldKey] === 'string' ? cur[reviewed.fieldKey] : reviewed.before;
-      // Применяем ТОЛЬКО если текущее значение байт-в-байт совпадает с reviewed.before.
-      if (shouldApplyLegacyMigration(curPrompt, reviewed.before)) {
-        cur[reviewed.fieldKey] = reviewed.after;
-        await axios.patch(
-          `${DIRECTUS_URL}/items/user_campaigns/${id}`,
-          { autonomous_settings: JSON.stringify(cur) },
-          { headers: { Authorization: `Bearer ${DIRECTUS_TOKEN}` } },
-        );
-        written.push(id);
-        console.log(`[migrate-global-prompt-socials] APPLY обновил кампанию ${id}`);
-      } else {
-        console.log(`[migrate-global-prompt-socials] ПРОПУСК ${id}: значение изменилось с момента dry-run (не совпадает с reviewed.before)`);
-      }
+      const outcome = await applyReviewedCandidate(reviewed);
+      if (outcome === 'applied') written.push(id);
     }
     console.log(
       `[migrate-global-prompt-socials] просмотренный план: ${reviewedPlan?.candidates.length || 0} кандидатов; записано: ${written.length} (${written.length === 0 ? 'нет пересечения или все пропущены' : written.join(',')})`,

@@ -122,9 +122,18 @@ export function placeholderValue(platforms: string[]): string {
 const AUDIENCE_NOUN_STEM_RE = /пользовател(?:ь|и|ей|ям|ями|ями?)/giu;
 const AUDIENCE_MARKER_RE = /аудитори(?:я|и|ей|ю|й|ям|ями)/giu;
 
-/** Окно символов ДО аудиторного маркера (слева по строке), в котором он должен
- *  встретиться, чтобы «пользовател...» считался аудиторной фразой генератора. */
+/** Окно символов, в котором считается связка аудитори-маркера и «пользовател...»
+ *  (сигнатура старого шаблона). Заканчивается на границе предложения. */
 const LEGACY_WINDOW = 80;
+
+/** Индекс первой границы предложения (. ; ! ? …) от `from`. -1 если нет. */
+function findNextSentenceBoundary(text: string, from: number): number {
+  for (const sep of ['.', ';', '!', '?', '…']) {
+    const idx = text.indexOf(sep, from);
+    if (idx !== -1) return idx;
+  }
+  return -1;
+}
 
 /**
  * NARROW legacy-миграция (для скрипта migrate-global-prompt-socials): приводит к
@@ -152,17 +161,22 @@ export function migrateLegacyGlobalPrompt(text: string): string {
     const marker = AUDIENCE_MARKER_RE.exec(out);
     if (!marker) break;
     const markerEnd = marker.index + marker[0].length;
-    // В окне после «аудитори...» ищем «пользовател...».
-    const afterMarker = out.slice(markerEnd, Math.min(out.length, markerEnd + 60));
+    // Связка «аудитори... → пользовател...» должна быть В ОДНОМ ПРЕДЛОЖЕНИИ:
+    // старая структура «Твоя целевая аудитория — ...пользователи Facebook» —
+    // единый предлог. Если между маркером и триггером есть граница предложения
+    // (. ; ! ? …,), связка рвётся и «пользователи» в СЛЕДУЮЩЕМ предложении
+    // НЕ считается legacy-кандидатом (сравнения остаются нетронутыми).
+    const sentenceEnd = findNextSentenceBoundary(out, markerEnd);
+    const limit = sentenceEnd === -1 ? Math.min(out.length, markerEnd + 60) : Math.min(sentenceEnd + 1, markerEnd + 60);
+    const afterMarker = out.slice(markerEnd, limit);
     AUDIENCE_NOUN_STEM_RE.lastIndex = 0;
     const trigger = AUDIENCE_NOUN_STEM_RE.exec(afterMarker);
     if (!trigger) {
-      // Нет связки — двигаемся дальше (за конец маркера), не зацикливаясь.
-      cursor = markerEnd;
+      // Нет связки в том же предложении — двигаемся дальше (за конец маркера).
+      cursor = markerEnd + marker[0].length;
       continue;
     }
-    const startAbs = markerEnd + trigger.index;
-    const start = startAbs;
+    const start = markerEnd + trigger.index;
     // Окно: от «пользовател...» до границы предложения, но не длиннее LEGACY_WINDOW.
     let end = -1;
     for (const sep of [';', '!', '?', '…', '.']) {

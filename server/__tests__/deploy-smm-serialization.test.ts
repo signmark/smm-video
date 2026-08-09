@@ -235,6 +235,9 @@ function runDeploy(work: string, opts: RunOpts = {}): Promise<{ code: number; st
     // результат, ни на то, сработает ли порог. Отдельные тесты
     // переопределяют это значение осознанно.
     SMM_DOCKER_ROOT: root,
+    // Порог свободного места по умолчанию (8000 МБ) выше, чем на CI-машинах.
+    // Тесты дискового пространства переопределяют это явно.
+    SMM_MIN_FREE_MB: '0',
     SMM_HEALTH_RETRIES: '3',
     SMM_HEALTH_DELAY: '0',
     SMM_LOCK_WAIT: '60',

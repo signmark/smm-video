@@ -12,6 +12,58 @@ import { directusAuthManager } from '../services/directus-auth-manager';
 import { statusValidator } from './status-validator';
 import { directusCrud } from './directus-crud';
 
+/**
+ * SM-15 / AI-85 (по ревью @Clause_Dev_Hermi): экспортированный хелпер для списков платформ.
+ * Раньше была inline-логика внутри checkPublicationStatuses, и тесты были только
+ * структурные (source-scan). Clause показал, что source-scan даёт уверенность без
+ * покрытия: фильтр написать мог, а работать — нет. Этот хелпер — тестируемая граница.
+ *
+ * Контракт:
+ *   - `selectedPlatforms` — все платформы с `selected: true`.
+ *   - `publishedPlatforms` — selected И (status=published ИЛИ publish_succeeded_record_failed).
+ *     Пост висит на платформе — для parent-статуса это published.
+ *   - `failedPlatforms` — selected И (status=failed ИЛИ error truthy).
+ *   - `pendingPlatforms` — selected И НЕ (published/publish_succeeded_record_failed/failed/error).
+ */
+export interface PlatformLists {
+  selectedPlatforms: string[];
+  publishedPlatforms: string[];
+  failedPlatforms: string[];
+  pendingPlatforms: string[];
+}
+
+export function buildPlatformLists(platformsData: Record<string, any>): PlatformLists {
+  const selectedPlatforms = Object.entries(platformsData)
+    .filter(([_, platformData]: [string, any]) => platformData?.selected)
+    .map(([platform]) => platform);
+
+  const publishedPlatforms = Object.entries(platformsData)
+    .filter(([_, platformData]: [string, any]) =>
+      platformData?.selected &&
+      (platformData?.status === 'published' || platformData?.status === 'publish_succeeded_record_failed')
+    )
+    .map(([platform]) => platform);
+
+  const failedPlatforms = Object.entries(platformsData)
+    .filter(([_, platformData]: [string, any]) =>
+      platformData?.selected &&
+      (platformData?.status === 'failed' || platformData?.error)
+    )
+    .map(([platform]) => platform);
+
+  const pendingPlatforms = Object.entries(platformsData)
+    .filter(([_, platformData]: [string, any]) => {
+      return platformData?.selected &&
+             platformData?.status !== 'published' &&
+             platformData?.status !== 'publish_succeeded_record_failed' &&
+             platformData?.status !== 'failed' &&
+             !platformData?.error;
+    })
+    .map(([platform]) => platform);
+
+  return { selectedPlatforms, publishedPlatforms, failedPlatforms, pendingPlatforms };
+}
+
 class PublicationStatusChecker {
   private intervalId: NodeJS.Timeout | null = null;
   private tokenValidationIntervalId: NodeJS.Timeout | null = null;
@@ -337,27 +389,13 @@ class PublicationStatusChecker {
           continue;
         }
         
-        // Получаем списки платформ по статусам
-        const selectedPlatforms = Object.entries(platformsData)
-          .filter(([_, platformData]: [string, any]) => platformData?.selected)
-          .map(([platform]) => platform);
-          
-        const publishedPlatforms = Object.entries(platformsData)
-          .filter(([_, platformData]: [string, any]) => platformData?.selected && platformData?.status === 'published')
-          .map(([platform]) => platform);
-          
-        const failedPlatforms = Object.entries(platformsData)
-          .filter(([_, platformData]: [string, any]) => platformData?.selected && (platformData?.status === 'failed' || platformData?.error))
-          .map(([platform]) => platform);
-          
-        const pendingPlatforms = Object.entries(platformsData)
-          .filter(([_, platformData]: [string, any]) => {
-            return platformData?.selected && 
-                   platformData?.status !== 'published' && 
-                   platformData?.status !== 'failed' && 
-                   !platformData?.error;
-          })
-          .map(([platform]) => platform);
+        // Получаем списки платформ по статусам через экспортированный хелпер
+        // (тестируется отдельно — source-scan даёт уверенность без покрытия).
+        const lists = buildPlatformLists(platformsData);
+        const selectedPlatforms = lists.selectedPlatforms;
+        const publishedPlatforms = lists.publishedPlatforms;
+        const failedPlatforms = lists.failedPlatforms;
+        const pendingPlatforms = lists.pendingPlatforms;
         
         // Всегда логируем состояние платформ, особенно для проблемных контентов
         log(`Контент ${item.id}: "${item.title}" - статусы платформ:`, 'status-checker');

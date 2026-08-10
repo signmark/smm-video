@@ -415,6 +415,16 @@ export class PublishScheduler {
               }
               continue;
             }
+
+            // SM-15 / AI-85: пропускаем платформы с publish_succeeded_record_failed.
+            // Пост реально опубликован (пост висит на платформе), но в БД не зафиксирован.
+            // Планировщик НЕ должен ретрить — иначе получим дубль на платформе.
+            // Защита работает только если маркер сохранился; если нет — защиту даёт
+            // Task B (сверка с платформой перед повтором).
+            if (data.status === 'publish_succeeded_record_failed') {
+              log(`  ⏭️ ${content.id}:${platformName} SKIP - status=publish_succeeded_record_failed (post already on platform, do not re-send)`, 'scheduler', 'info');
+              continue;
+            }
             
             // Пропускаем критические конфигурационные ошибки
             if (data.error && (

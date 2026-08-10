@@ -17,6 +17,12 @@ export interface YouTubeVideoPublishResult {
   videoId?: string;
   videoUrl?: string;
   error?: string;
+  // SM-15 / AI-85: post-publish запись провалилась — пост ушёл на YouTube,
+  // но в БД не зафиксирован. Возвращаем успех с предупреждением.
+  published?: boolean;
+  recordSaved?: boolean;
+  guidance?: string;
+  recordError?: string;
 }
 
 interface YouTubeSettings {
@@ -96,9 +102,24 @@ export class YouTubeVideoService {
       const videoUrl = `https://www.youtube.com/watch?v=${videoId}`;
       log(`YouTube Video опубликовано! ID: ${videoId}, URL: ${videoUrl}`, LOG_PREFIX);
 
-      await this.updateContentStatus(contentId, videoId, videoUrl, authToken);
-
-      return { success: true, videoId, videoUrl };
+      // SM-15 / AI-85: обрабатываем ошибку записи в Directus. Если запись
+      // провалилась — НЕ возвращаем success: true без recordSaved-информации.
+      const recordResult = await this.updateContentStatus(contentId, videoId, videoUrl, authToken);
+      if (recordResult.ok) {
+        return { success: true, videoId, videoUrl };
+      }
+      // Пост реально ушёл на YouTube, но в БД не зафиксировано.
+      // Возвращаем success: true с recordSaved: false — иначе пользователь
+      // увидит «не опубликовано» и опубликует руками → дубль.
+      return {
+        success: true,
+        published: true,
+        recordSaved: false,
+        guidance: 'do_not_republish',
+        videoId,
+        videoUrl,
+        recordError: recordResult.error,
+      };
 
     } catch (error: any) {
       const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
@@ -259,18 +280,24 @@ export class YouTubeVideoService {
     videoId: string,
     videoUrl: string,
     authToken?: string
-  ): Promise<void> {
+  ): Promise<{ ok: true } | { ok: false; error: string }> {
+    const token = authToken || process.env.DIRECTUS_STATIC_TOKEN;
     try {
-      const token = authToken || process.env.DIRECTUS_STATIC_TOKEN;
       const contentResponse = await directusApi.get(`/items/campaign_content/${contentId}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const currentSocialPlatforms = contentResponse.data.data?.social_platforms || {};
 
+      // SM-15 / AI-85 (по ревью @Clause_Dev_Hermi): MERGE с существующим
+      // объектом платформы, а не замена. Иначе теряется `selected: true`,
+      // и status-checker не видит платформу как «выбранную» после первой
+      // успешной публикации — parent-статус не продвигается в published.
+      const existingYoutube = (currentSocialPlatforms.youtube as Record<string, unknown>) || {};
       await directusApi.patch(`/items/campaign_content/${contentId}`, {
         social_platforms: {
           ...currentSocialPlatforms,
           youtube: {
+            ...existingYoutube,
             postId: videoId,
             status: 'published',
             postUrl: videoUrl,
@@ -284,8 +311,15 @@ export class YouTubeVideoService {
       });
 
       log(`Статус YouTube Video обновлён в Directus`, LOG_PREFIX);
-    } catch (error) {
-      log(`Ошибка обновления статуса YouTube: ${error}`, LOG_PREFIX);
+      return { ok: true };
+    } catch (error: unknown) {
+      // SM-15 / AI-85: ошибка записи НЕ проглатывается. Раньше эта ветка
+      // логировала и возвращала void, что приводило к тому, что `publishVideo`
+      // отдавал success=true даже при провале записи в Directus — пользователь
+      // видел пост на YouTube, но в базе оставалось `draft` / пустой social_platforms.
+      const message = error instanceof Error ? error.message : 'unknown error';
+      log(`Ошибка обновления статуса YouTube: ${message}`, LOG_PREFIX);
+      return { ok: false, error: message };
     }
   }
 

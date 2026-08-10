@@ -955,19 +955,43 @@ router.post('/publish/now', authMiddleware, async (req, res) => {
               const publishResult = await threadsService.publishPost(threadsSettings, { text, imageUrl, videoUrl });
 
               if (publishResult.success) {
-                await axios.patch(`${directusUrl}/items/campaign_content/${contentId}`, {
-                  social_platforms: {
-                    ...(contentItem.social_platforms || {}),
-                    threads: {
-                      status: 'published',
-                      postId: publishResult.postId,
-                      postUrl: publishResult.postUrl,
-                      publishedAt: new Date().toISOString()
-                    }
-                  }
-                }, { headers: { Authorization: `Bearer ${adminToken}` } });
+                // SM-15 / AI-91: post-publish запись через helper. Раньше axios.patch
+                // шёл без своего try/catch — при сбое Directus пост уходил, запись
+                // пропадала. Helper делает две попытки: 'published', затем
+                // 'publish_succeeded_record_failed' с доказательствами публикации.
+                const { confirmPublishRecord, recordFailedResponse } = await import('../services/publish-record-confirm');
+                const publishedAt = new Date().toISOString();
+                const postId = publishResult.postId ?? '';
+                const postUrl = publishResult.postUrl ?? '';
+                const outcome = await confirmPublishRecord({
+                  contentId,
+                  platform: 'threads',
+                  currentSocialPlatforms: contentItem.social_platforms,
+                  published: {
+                    status: 'published',
+                    postId,
+                    postUrl,
+                    publishedAt,
+                  },
+                });
 
-                publishResults.push({ platform, success: true, result: publishResult });
+                if (outcome.kind === 'success') {
+                  publishResults.push({ platform, success: true, result: publishResult });
+                } else {
+                  // record-failed: пост в Threads висит, в БД не зафиксировано.
+                  // Ответ НЕ должен выглядеть как отказ — иначе пользователь
+                  // опубликует руками и получит дубль.
+                  publishResults.push(recordFailedResponse({
+                    platform: 'threads',
+                    published: {
+                      status: 'published',
+                      postId,
+                      postUrl,
+                      publishedAt,
+                    },
+                    outcome,
+                  }));
+                }
               } else {
                 throw new Error(publishResult.error || 'Ошибка публикации в Threads');
               }
@@ -1034,19 +1058,27 @@ router.post('/publish/now', authMiddleware, async (req, res) => {
               const publishResult = await facebookService.publishPost(fbSettings, { text, imageUrl, videoUrl });
 
               if (publishResult.success) {
-                await axios.patch(`${directusUrl}/items/campaign_content/${contentId}`, {
-                  social_platforms: {
-                    ...(contentItem.social_platforms || {}),
-                    facebook: {
-                      status: 'published',
-                      postId: publishResult.postId,
-                      postUrl: publishResult.postUrl,
-                      publishedAt: new Date().toISOString()
-                    }
-                  }
-                }, { headers: { Authorization: `Bearer ${adminToken}` } });
+                // SM-15 / AI-85: post-publish запись через helper. См. server/services/publish-record-confirm.ts.
+                const { confirmPublishRecord, recordFailedResponse } = await import('../services/publish-record-confirm');
+                const publishedAt = new Date().toISOString();
+                const postId = publishResult.postId ?? '';
+                const postUrl = publishResult.postUrl ?? '';
+                const outcome = await confirmPublishRecord({
+                  contentId,
+                  platform: 'facebook',
+                  currentSocialPlatforms: contentItem.social_platforms,
+                  published: { status: 'published', postId, postUrl, publishedAt },
+                });
 
-                publishResults.push({ platform, success: true, result: publishResult });
+                if (outcome.kind === 'success') {
+                  publishResults.push({ platform, success: true, result: publishResult });
+                } else {
+                  publishResults.push(recordFailedResponse({
+                    platform: 'facebook',
+                    published: { status: 'published', postId, postUrl, publishedAt },
+                    outcome,
+                  }));
+                }
               } else {
                 throw new Error(publishResult.error || 'Ошибка публикации в Facebook');
               }
@@ -1104,10 +1136,27 @@ router.post('/publish/now', authMiddleware, async (req, res) => {
                 videoUrl: contentItem.video_url,
               });
               if (publishResult.success) {
-                await axios.patch(`${directusUrl}/items/campaign_content/${contentId}`, {
-                  social_platforms: { ...(contentItem.social_platforms || {}), telegram: { status: 'published', postId: String(publishResult.messageId || ''), postUrl: publishResult.postUrl, publishedAt: new Date().toISOString() } }
-                }, { headers: { Authorization: `Bearer ${adminToken}` } });
-                publishResults.push({ platform, success: true, result: publishResult });
+                // SM-15 / AI-85: post-publish запись через helper.
+                const { confirmPublishRecord, recordFailedResponse } = await import('../services/publish-record-confirm');
+                const publishedAt = new Date().toISOString();
+                const postId = String(publishResult.messageId || '');
+                const postUrl = publishResult.postUrl ?? '';
+                const outcome = await confirmPublishRecord({
+                  contentId,
+                  platform: 'telegram',
+                  currentSocialPlatforms: contentItem.social_platforms,
+                  published: { status: 'published', postId, postUrl, publishedAt },
+                });
+
+                if (outcome.kind === 'success') {
+                  publishResults.push({ platform, success: true, result: publishResult });
+                } else {
+                  publishResults.push(recordFailedResponse({
+                    platform: 'telegram',
+                    published: { status: 'published', postId, postUrl, publishedAt },
+                    outcome,
+                  }));
+                }
               } else { throw new Error(publishResult.error || 'Ошибка Telegram API'); }
             } catch (tgErr: any) {
               log(`[Social Publishing] Ошибка Telegram: ${tgErr.message}`);
@@ -1155,10 +1204,27 @@ router.post('/publish/now', authMiddleware, async (req, res) => {
                 videoUrl: contentItem.video_url || contentItem.videoUrl || undefined
               });
               if (publishResult.success) {
-                await axios.patch(`${directusUrl}/items/campaign_content/${contentId}`, {
-                  social_platforms: { ...(contentItem.social_platforms || {}), vk: { status: 'published', postId: String(publishResult.postId || ''), postUrl: publishResult.postUrl, publishedAt: new Date().toISOString() } }
-                }, { headers: { Authorization: `Bearer ${adminToken}` } });
-                publishResults.push({ platform, success: true, result: publishResult });
+                // SM-15 / AI-85: post-publish запись через helper.
+                const { confirmPublishRecord, recordFailedResponse } = await import('../services/publish-record-confirm');
+                const publishedAt = new Date().toISOString();
+                const postId = String(publishResult.postId || '');
+                const postUrl = publishResult.postUrl ?? '';
+                const outcome = await confirmPublishRecord({
+                  contentId,
+                  platform: 'vk',
+                  currentSocialPlatforms: contentItem.social_platforms,
+                  published: { status: 'published', postId, postUrl, publishedAt },
+                });
+
+                if (outcome.kind === 'success') {
+                  publishResults.push({ platform, success: true, result: publishResult });
+                } else {
+                  publishResults.push(recordFailedResponse({
+                    platform: 'vk',
+                    published: { status: 'published', postId, postUrl, publishedAt },
+                    outcome,
+                  }));
+                }
               } else if ((publishResult as any).tokenExpired) {
                 // Токен истёк — сохраняем специальный статус и подсказку пользователю
                 const campaignId = contentItem.campaign_id;
@@ -1202,10 +1268,27 @@ router.post('/publish/now', authMiddleware, async (req, res) => {
               const text = typeof rawText === 'string' ? rawText : JSON.stringify(rawText);
               const publishResult = await instagramService.publishPost(igSettings, { text, imageUrl: contentItem.image_url, videoUrl: contentItem.video_url }, contentId, adminToken);
               if (publishResult.success) {
-                await axios.patch(`${directusUrl}/items/campaign_content/${contentId}`, {
-                  social_platforms: { ...(contentItem.social_platforms || {}), instagram: { status: 'published', postId: publishResult.postId, postUrl: publishResult.postUrl, publishedAt: new Date().toISOString() } }
-                }, { headers: { Authorization: `Bearer ${adminToken}` } });
-                publishResults.push({ platform, success: true, result: publishResult });
+                // SM-15 / AI-85: post-publish запись через helper.
+                const { confirmPublishRecord, recordFailedResponse } = await import('../services/publish-record-confirm');
+                const publishedAt = new Date().toISOString();
+                const postId = publishResult.postId ?? '';
+                const postUrl = publishResult.postUrl ?? '';
+                const outcome = await confirmPublishRecord({
+                  contentId,
+                  platform: 'instagram',
+                  currentSocialPlatforms: contentItem.social_platforms,
+                  published: { status: 'published', postId, postUrl, publishedAt },
+                });
+
+                if (outcome.kind === 'success') {
+                  publishResults.push({ platform, success: true, result: publishResult });
+                } else {
+                  publishResults.push(recordFailedResponse({
+                    platform: 'instagram',
+                    published: { status: 'published', postId, postUrl, publishedAt },
+                    outcome,
+                  }));
+                }
               } else { throw new Error(publishResult.error || 'Ошибка Instagram API'); }
             } catch (igErr: any) {
               log(`[Social Publishing] Ошибка Instagram: ${igErr.message}`);

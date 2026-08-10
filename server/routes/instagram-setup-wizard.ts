@@ -2,6 +2,7 @@ import express from 'express';
 import axios from 'axios';
 import { log } from '../utils/logger';
 import { GlobalApiKeysService } from '../services/global-api-keys';
+import { directusCrud } from '../services/directus-crud';
 
 /**
  * Сужение `unknown` в catch (AI-38).
@@ -38,6 +39,26 @@ type FacebookPageWithInstagram = FacebookPage & {
 
 const hasInstagram = (page: FacebookPage): page is FacebookPageWithInstagram =>
   Boolean(page.instagram_business_account);
+
+/**
+ * Граница арендатора (AI-88). `:userId` приходит из URL, поэтому сам по себе он
+ * ничего не доказывает: глобальный гейт на `/api` только аутентифицирует. Без этой
+ * сверки любой залогиненный мог бы отключить чужой Instagram или обновить чужой
+ * токен. Раньше это не стреляло лишь потому, что вызовы падали с TypeError.
+ */
+function denyForeignUser(req: any, res: any, targetUserId: string): boolean {
+  const actingUserId = req.user?.id;
+  if (!actingUserId) {
+    res.status(401).json({ error: 'Не аутентифицирован' });
+    return true;
+  }
+  if (String(actingUserId) !== String(targetUserId)) {
+    log(`Отказано: ${actingUserId} пытался работать с данными ${targetUserId}`, 'instagram-setup');
+    res.status(403).json({ error: 'Нет доступа к данным другого пользователя' });
+    return true;
+  }
+  return false;
+}
 import { directusApiManager } from '../directus';
 
 const router = express.Router();
@@ -133,11 +154,21 @@ router.post('/save-config', async (req, res) => {
 });
 
 /**
- * Проверка статуса Instagram подключения 
+ * Проверка статуса Instagram подключения.
+ *
+ * Ниже по файлу лежал второй `GET /status/:userId`, читавший `instagram_credentials`
+ * из Directus. Express отдаёт первый совпавший обработчик, поэтому тот код был
+ * недостижим ни при каком запросе — удалён как мёртвый (AI-88).
+ *
+ * Живой остаётся эта версия, читающая `oauthSessions` из памяти процесса. Это
+ * НЕ персистентно: после рестарта статус обнуляется. Перевести чтение на БД
+ * отдельной задачей нельзя молча — форма ответа у обработчиков разная, а
+ * потребитель эндпоинта внешний (N8N).
  */
 router.get('/status/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
+    if (denyForeignUser(req, res, userId)) return;
     log(`Checking Instagram status for user: ${userId}`, 'instagram-setup');
     
     // Проверяем сохраненные конфигурации в памяти
@@ -338,7 +369,7 @@ router.get('/callback', async (req, res) => {
 
     // Сохраняем в Directus
     try {
-      await directusApiManager.createItem('instagram_credentials', instagramData);
+      await directusCrud.create('instagram_credentials', instagramData, { useAdminToken: true });
       log(`Instagram credentials saved for user ${session.userId}`, 'instagram-setup');
     } catch (dbError: unknown) {
       log(`Error saving Instagram credentials: ${errMessage(dbError)}`, 'instagram-setup');
@@ -489,7 +520,7 @@ router.post('/callback', async (req, res) => {
 
     // Сохраняем в Directus
     try {
-      await directusApiManager.createItem('instagram_credentials', instagramData);
+      await directusCrud.create('instagram_credentials', instagramData, { useAdminToken: true });
       log(`Instagram credentials saved for user ${session.userId}`, 'instagram-setup');
     } catch (dbError: unknown) {
       log(`Error saving Instagram credentials: ${errMessage(dbError)}`, 'instagram-setup');
@@ -524,51 +555,23 @@ router.post('/callback', async (req, res) => {
 });
 
 /**
- * Получение статуса подключения Instagram для пользователя
- */
-router.get('/status/:userId', async (req, res) => {
-  try {
-    const { userId } = req.params;
-
-    const credentials = await directusApiManager.getItems('instagram_credentials', {
-      filter: { user_id: { _eq: userId } },
-      limit: 1
-    });
-
-    if (!credentials.data || credentials.data.length === 0) {
-      return res.json({
-        connected: false,
-        message: 'Instagram не подключен'
-      });
-    }
-
-    const cred = credentials.data[0];
-    const isExpired = new Date() > new Date(cred.token_expires_at);
-
-    res.json({
-      connected: true,
-      expired: isExpired,
-      instagramAccounts: cred.instagram_accounts || [],
-      setupCompletedAt: cred.setup_completed_at,
-      tokenExpiresAt: cred.token_expires_at
-    });
-
-  } catch (error: unknown) {
-    log(`Error getting Instagram status: ${errMessage(error)}`, 'instagram-setup');
-    res.status(500).json({ error: 'Ошибка получения статуса' });
-  }
-});
-
-/**
  * Удаление подключения Instagram
  */
 router.delete('/disconnect/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
+    if (denyForeignUser(req, res, userId)) return;
 
-    await directusApiManager.deleteItems('instagram_credentials', {
-      filter: { user_id: { _eq: userId } }
+    // У DirectusCrud нет удаления по фильтру, только по id — поэтому сначала
+    // находим свои записи, потом удаляем каждую. Фильтр по user_id оставлен
+    // намеренно: он и ограничивает выборку тем, что принадлежит владельцу.
+    const own = await directusCrud.list<any>('instagram_credentials', {
+      filter: { user_id: { _eq: userId } },
+      useAdminToken: true,
     });
+    for (const cred of own || []) {
+      await directusCrud.delete('instagram_credentials', cred.id, { useAdminToken: true });
+    }
 
     log(`Instagram disconnected for user ${userId}`, 'instagram-setup');
     
@@ -589,17 +592,21 @@ router.delete('/disconnect/:userId', async (req, res) => {
 router.post('/refresh-token/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
+    if (denyForeignUser(req, res, userId)) return;
 
-    const credentials = await directusApiManager.getItems('instagram_credentials', {
+    // list возвращает массив, а не { data: [...] } — прежний код читал .data
+    // у результата, которого не существовало.
+    const credentials = await directusCrud.list<any>('instagram_credentials', {
       filter: { user_id: { _eq: userId } },
-      limit: 1
+      limit: 1,
+      useAdminToken: true,
     });
 
-    if (!credentials.data || credentials.data.length === 0) {
+    if (!credentials || credentials.length === 0) {
       return res.status(404).json({ error: 'Instagram credentials not found' });
     }
 
-    const cred = credentials.data[0];
+    const cred = credentials[0];
 
     // Обновляем долгосрочный токен
     const refreshResponse = await axios.get('https://graph.facebook.com/v23.0/oauth/access_token', {
@@ -616,12 +623,12 @@ router.post('/refresh-token/:userId', async (req, res) => {
     const newExpiresIn = refreshResponse.data.expires_in;
 
     // Обновляем в базе
-    await directusApiManager.updateItem('instagram_credentials', cred.id, {
+    await directusCrud.update('instagram_credentials', cred.id, {
       user_access_token: newToken,
       token_expires_in: newExpiresIn,
       token_expires_at: new Date(Date.now() + (newExpiresIn * 1000)),
       token_refreshed_at: new Date()
-    });
+    }, { useAdminToken: true });
 
     log(`Instagram token refreshed for user ${userId}`, 'instagram-setup');
 

@@ -17,6 +17,12 @@ export interface YouTubeShortsPublishResult {
   videoId?: string;
   videoUrl?: string;
   error?: string;
+  // SM-15 / AI-85: post-publish запись провалилась — пост ушёл на YouTube,
+  // но в БД не зафиксирован. Возвращаем успех с предупреждением.
+  published?: boolean;
+  recordSaved?: boolean;
+  guidance?: string;
+  recordError?: string;
 }
 
 interface YouTubeSettings {
@@ -89,9 +95,20 @@ export class YouTubeShortsService {
       const videoUrl = `https://youtube.com/shorts/${videoId}`;
       log(`YouTube Shorts опубликован! ID: ${videoId}, URL: ${videoUrl}`, LOG_PREFIX);
 
-      await this.updateContentStatus(contentId, videoId, videoUrl, authToken);
-
-      return { success: true, videoId, videoUrl };
+      // SM-15 / AI-85: обрабатываем ошибку записи в Directus (см. youtube-video-service).
+      const recordResult = await this.updateContentStatus(contentId, videoId, videoUrl, authToken);
+      if (recordResult.ok) {
+        return { success: true, videoId, videoUrl };
+      }
+      return {
+        success: true,
+        published: true,
+        recordSaved: false,
+        guidance: 'do_not_republish',
+        videoId,
+        videoUrl,
+        recordError: recordResult.error,
+      };
 
     } catch (error: any) {
       const errorMessage = error instanceof Error ? error.message : 'Неизвестная ошибка';
@@ -196,7 +213,7 @@ export class YouTubeShortsService {
     videoId: string,
     videoUrl: string,
     authToken?: string
-  ): Promise<void> {
+  ): Promise<{ ok: true } | { ok: false; error: string }> {
     try {
       const token = authToken || process.env.DIRECTUS_STATIC_TOKEN;
       const contentResponse = await directusApi.get(`/items/campaign_content/${contentId}`, {
@@ -221,8 +238,12 @@ export class YouTubeShortsService {
       });
 
       log(`Статус YouTube Shorts обновлён в Directus`, LOG_PREFIX);
-    } catch (error) {
-      log(`Ошибка обновления статуса YouTube: ${error}`, LOG_PREFIX);
+      return { ok: true };
+    } catch (error: unknown) {
+      // SM-15 / AI-85: ошибка записи НЕ проглатывается. См. youtube-video-service.
+      const message = error instanceof Error ? error.message : 'unknown error';
+      log(`Ошибка обновления статуса YouTube: ${message}`, LOG_PREFIX);
+      return { ok: false, error: message };
     }
   }
 

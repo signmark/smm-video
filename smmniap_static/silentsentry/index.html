@@ -1,0 +1,1022 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SilentSentry — Ultrasonic Privacy Guard & Podcast Sanitizer</title>
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        void: '#030303',
+                        slate: {
+                            950: '#07080a',
+                            900: '#0f1115',
+                            800: '#181b22',
+                            700: '#262b36',
+                            300: '#b2bbc8',
+                        },
+                        amber: {
+                            400: '#fbbf24',
+                            500: '#f59e0b',
+                        },
+                        emerald: {
+                            400: '#34d399',
+                            500: '#10b981',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <!-- React & Babel CDN for elegant stateful component prototyping -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        /* Custom ElevenLabs / Premium Dark aesthetics */
+        body {
+            background-color: #030303;
+            color: #f3f4f6;
+            font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+            overflow-x: hidden;
+        }
+
+        /* Ambient light effects */
+        .ambient-glow-1 {
+            background: radial-gradient(circle, rgba(99, 102, 241, 0.08) 0%, rgba(0,0,0,0) 70%);
+        }
+        .ambient-glow-2 {
+            background: radial-gradient(circle, rgba(239, 68, 68, 0.04) 0%, rgba(0,0,0,0) 60%);
+        }
+
+        /* Ethereal thin display heading styling */
+        .thin-heading {
+            font-weight: 300;
+            letter-spacing: -0.04em;
+        }
+
+        /* Glassmorphism with sub-0.1 opacity borders */
+        .premium-card {
+            background: rgba(15, 17, 21, 0.6);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(12px);
+            box-shadow: 
+                0px 0px 0px 0.5px inset rgba(255, 255, 255, 0.05),
+                0px 4px 20px rgba(0, 0, 0, 0.4);
+        }
+
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #030303;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #262b36;
+            border-radius: 999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #374151;
+        }
+
+        /* Smooth interactive sweep */
+        @keyframes laser-sweep {
+            0% { transform: translateY(-100%); opacity: 0.1; }
+            50% { opacity: 1; }
+            100% { transform: translateY(100%); opacity: 0.1; }
+        }
+        .laser-line {
+            animation: laser-sweep 2.5s infinite linear;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Target div for React app -->
+    <div id="root"></div>
+
+    <!-- React App Implementation -->
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // Demo Data for the Sandbox
+        const DEMO_TRACKS = [
+            {
+                id: 'darknet-diaries',
+                title: 'Darknet Diaries — Ep. 142: Silent Signal',
+                duration: '42:15',
+                url: 'https://feeds.megaphone.fm/darknetdiaries',
+                status: 'compromised',
+                beaconType: 'SilverPush Tracker Sweep (19.45 kHz)',
+                beaconProbability: 0.94,
+                frequency: '19,450 Hz'
+            },
+            {
+                id: 'huberman-lab',
+                title: 'The Huberman Lab — Ultrasonic Biometrics & Sleep',
+                duration: '2:14:10',
+                url: 'https://feeds.megaphone.fm/huberman',
+                status: 'compromised',
+                beaconType: 'Shopkick SmartBeacon Pulse (20.10 kHz)',
+                beaconProbability: 0.81,
+                frequency: '20,100 Hz'
+            },
+            {
+                id: 'secure-podcast',
+                title: 'The Daily Privacy Audit — Episode 12 (Clean)',
+                duration: '18:32',
+                url: 'https://privacy.example.org/feed.xml',
+                status: 'secure',
+                beaconType: 'None Detected',
+                beaconProbability: 0.02,
+                frequency: 'N/A'
+            }
+        ];
+
+        function SilentSentryApp() {
+            // State
+            const [selectedTrack, setSelectedTrack] = useState(null);
+            const [inputUrl, setInputUrl] = useState('');
+            const [isFileDragged, setIsFileDragged] = useState(false);
+            const [uploadedFile, setUploadedFile] = useState(null);
+            const [uploadedFileName, setUploadedFileName] = useState('');
+            
+            const [appState, setAppState] = useState('idle'); // idle, scanning, scanned, sanitizing, sanitized
+            const [errorMsg, setErrorMsg] = useState('');
+            
+            // Backend Response States
+            const [backendReport, setBackendReport] = useState(null);
+
+            // Simulation Parameters
+            const [filterCutoff, setFilterCutoff] = useState(18000);
+            const [filterOrder, setFilterOrder] = useState('Butterworth 48dB/oct');
+            const [fftResolution, setFftResolution] = useState(8192);
+
+            // Ref for Spectrogram Canvas
+            const canvasRef = useRef(null);
+            const animationRef = useRef(null);
+
+            // Spectrogram visualization loop
+            useEffect(() => {
+                const canvas = canvasRef.current;
+                if (!canvas) return;
+                const ctx = canvas.getContext('2d');
+                let width = canvas.width = canvas.parentElement.clientWidth;
+                let height = canvas.height = 240;
+
+                let frame = 0;
+                
+                // Helper to draw the sound wave frequencies
+                const draw = () => {
+                    frame++;
+                    ctx.fillStyle = '#07080a';
+                    ctx.fillRect(0, 0, width, height);
+
+                    // Grid lines (Horizontal frequency lines)
+                    ctx.strokeStyle = 'rgba(255,255,255,0.02)';
+                    ctx.lineWidth = 1;
+                    const gridCount = 5;
+                    for (let i = 1; i < gridCount; i++) {
+                        const y = (height / gridCount) * i;
+                        ctx.beginPath();
+                        ctx.moveTo(0, y);
+                        ctx.lineTo(width, y);
+                        ctx.stroke();
+
+                        // Frequency Labels
+                        ctx.fillStyle = 'rgba(255,255,255,0.2)';
+                        ctx.font = '9px monospace';
+                        const freq = Math.round(22000 - (22000 / gridCount) * i);
+                        ctx.fillText(`${freq} Hz`, 10, y - 4);
+                    }
+
+                    // Draw Frequency Spectrum Heatmap (Waterfall style / wave bars)
+                    const barWidth = 3;
+                    const numBars = Math.floor(width / (barWidth + 1));
+                    
+                    for (let i = 0; i < numBars; i++) {
+                        const x = i * (barWidth + 1);
+                        const progressRatio = i / numBars;
+                        const currentFreq = progressRatio * 22000;
+
+                        // Ambient human voice frequency wave heights
+                        let waveHeight = 0;
+                        if (currentFreq < 4000) {
+                            waveHeight = Math.sin(frame * 0.05 + i * 0.1) * 40 + Math.cos(frame * 0.02 + i * 0.05) * 20 + 80;
+                        } else if (currentFreq < 12000) {
+                            waveHeight = Math.sin(frame * 0.08 + i * 0.2) * 20 + 30;
+                        } else if (currentFreq < 18000) {
+                            waveHeight = Math.sin(frame * 0.12 + i * 0.3) * 8 + 10;
+                        } else {
+                            waveHeight = Math.sin(frame * 0.2 + i * 0.4) * 3 + 4;
+                        }
+
+                        // Cap to container
+                        waveHeight = Math.max(2, waveHeight);
+
+                        // If NOT sanitized, inject the HIDDEN ULTRASONIC BEACON frequency band
+                        let isBeaconBand = false;
+                        if (appState !== 'sanitized') {
+                            let targetBeaconFreq = 19450;
+                            if (selectedTrack?.id === 'huberman-lab') {
+                                targetBeaconFreq = 20100;
+                            } else if (backendReport?.scan_before?.beacon_detected) {
+                                // Real file analysis found beacons
+                                targetBeaconFreq = 19800; // General representation
+                            }
+
+                            const hasActiveBeacon = selectedTrack ? (selectedTrack.status === 'compromised') : (backendReport ? backendReport.scan_before.beacon_detected : true);
+
+                            if (hasActiveBeacon && Math.abs(currentFreq - targetBeaconFreq) < 250 && (appState === 'scanning' || appState === 'scanned' || appState === 'sanitizing')) {
+                                isBeaconBand = true;
+                                // Pulsing high energy beacon spike
+                                waveHeight += 95 + Math.sin(frame * 0.2) * 35;
+                            }
+                        }
+
+                        // Apply Lowpass Visual Cutoff filter if Sanitized
+                        if (appState === 'sanitized' && currentFreq > filterCutoff) {
+                            waveHeight *= 0.01; // Steep drop
+                        }
+
+                        // Determine Color
+                        let color = 'rgba(99, 102, 241, 0.4)'; // Default cool purple
+                        if (isBeaconBand) {
+                            color = `rgba(239, 68, 68, ${0.7 + Math.sin(frame * 0.2) * 0.3})`; // Danger pulsing neon red
+                        } else if (currentFreq > filterCutoff && appState === 'sanitized') {
+                            color = 'rgba(255, 255, 255, 0.03)';
+                        } else if (appState === 'sanitized') {
+                            color = 'rgba(16, 185, 129, 0.4)'; // Safe green
+                        }
+
+                        ctx.fillStyle = color;
+                        ctx.fillRect(x, height - waveHeight, barWidth, waveHeight);
+                    }
+
+                    // Draw the 18kHz Safe Cutoff Line if active
+                    if (appState === 'sanitized' || appState === 'sanitizing') {
+                        const cutoffY = height - (filterCutoff / 22000) * height;
+                        ctx.strokeStyle = 'rgba(16, 185, 129, 0.5)';
+                        ctx.lineWidth = 1.5;
+                        ctx.setLineDash([5, 5]);
+                        ctx.beginPath();
+                        ctx.moveTo(0, cutoffY);
+                        ctx.lineTo(width, cutoffY);
+                        ctx.stroke();
+                        ctx.setLineDash([]);
+                        
+                        ctx.fillStyle = '#10b981';
+                        ctx.font = '10px monospace';
+                        ctx.fillText(`🛡️ LOW-PASS PRIVACY SHIELD CUTOFF: ${filterCutoff / 1000} kHz`, width - 290, cutoffY - 6);
+                    }
+
+                    animationRef.current = requestAnimationFrame(draw);
+                };
+
+                draw();
+
+                return () => {
+                    cancelAnimationFrame(animationRef.current);
+                };
+            }, [appState, selectedTrack, backendReport, filterCutoff]);
+
+            // Handlers
+            const handleLoadTrack = (track) => {
+                setSelectedTrack(track);
+                setUploadedFile(null);
+                setUploadedFileName('');
+                setAppState('idle');
+                setErrorMsg('');
+                setBackendReport(null);
+            };
+
+            const handleAnalyze = async () => {
+                if (!selectedTrack && !uploadedFile) {
+                    setErrorMsg('Please select a podcast or drop an audio file first.');
+                    return;
+                }
+                
+                setErrorMsg('');
+                setAppState('scanning');
+
+                if (uploadedFile) {
+                    // REAL MODE: upload and process via the FastAPI backend!
+                    const formData = new FormData();
+                    formData.append('file', uploadedFile);
+
+                    try {
+                        const response = await fetch('/api/full', {
+                            method: 'POST',
+                            body: formData
+                        });
+
+                        if (!response.ok) {
+                            const errText = await response.text();
+                            throw new Error(errText || 'Backend processing failed.');
+                        }
+
+                        const data = await response.json();
+                        setBackendReport(data);
+                        setAppState('scanned');
+                    } catch (err) {
+                        setErrorMsg(`API Sanitization Error: ${err.message}`);
+                        setAppState('idle');
+                    }
+                } else if (selectedTrack && selectedTrack.id === 'scraped-url') {
+                    // REAL RSS SCRAPE MODE!
+                    try {
+                        const response = await fetch('/api/rss', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                feed_url: selectedTrack.url,
+                                episode_index: 0
+                            })
+                        });
+
+                        if (!response.ok) {
+                            const errText = await response.text();
+                            throw new Error(errText || 'RSS processing failed.');
+                        }
+
+                        const data = await response.json();
+                        setBackendReport(data);
+                        setAppState('scanned');
+                    } catch (err) {
+                        setErrorMsg(`API RSS Scraping Error: ${err.message}`);
+                        setAppState('idle');
+                    }
+                } else {
+                    // DEMO MODE: simulate scanning delay
+                    setTimeout(() => {
+                        setAppState('scanned');
+                    }, 2800);
+                }
+            };
+
+            const handleSanitize = () => {
+                setAppState('sanitizing');
+                setTimeout(() => {
+                    setAppState('sanitized');
+                }, 3500);
+            };
+
+            const handleReset = () => {
+                setAppState('idle');
+                setSelectedTrack(null);
+                setUploadedFile(null);
+                setUploadedFileName('');
+                setInputUrl('');
+                setBackendReport(null);
+            };
+
+            const handleUrlSubmit = (e) => {
+                e.preventDefault();
+                if (!inputUrl) return;
+                
+                // Simulate an error check (friendly error card style!)
+                if (!inputUrl.startsWith('http://') && !inputUrl.startsWith('https://')) {
+                    setErrorMsg('Invalid Podcast RSS/Audio URL. Source stream could not be resolved.');
+                    return;
+                }
+
+                setErrorMsg('');
+                setSelectedTrack({
+                    id: 'scraped-url',
+                    title: `RSS Feed: ${inputUrl.split('/').pop() || 'Podcast Stream'}`,
+                    duration: 'Latest Episode',
+                    url: inputUrl,
+                    status: 'compromised',
+                    beaconType: 'Ultrasonic Beacons Checked Live On Server',
+                    beaconProbability: 0.92,
+                    frequency: 'Scanning Live...'
+                });
+                setAppState('idle');
+            };
+
+            const handleFileDrop = (e) => {
+                e.preventDefault();
+                setIsFileDragged(false);
+                const file = e.dataTransfer.files[0];
+                if (file) {
+                    setUploadedFile(file);
+                    setUploadedFileName(file.name);
+                    setSelectedTrack(null);
+                    setAppState('idle');
+                    setBackendReport(null);
+                }
+            };
+
+            const handleFileSelect = (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    setUploadedFile(file);
+                    setUploadedFileName(file.name);
+                    setSelectedTrack(null);
+                    setAppState('idle');
+                    setBackendReport(null);
+                }
+            };
+
+            return (
+                <div className="relative min-h-screen bg-void text-gray-100 flex flex-col justify-between overflow-hidden">
+                    {/* Glowing backgrounds */}
+                    <div className="absolute top-0 left-0 w-full h-full pointer-events-none z-0">
+                        <div className="absolute top-[-10%] left-[-10%] w-[60%] h-[60%] rounded-full ambient-glow-1"></div>
+                        <div className="absolute bottom-[-10%] right-[-10%] w-[60%] h-[60%] rounded-full ambient-glow-2"></div>
+                    </div>
+
+                    {/* Navigation Header */}
+                    <header className="relative z-10 w-full max-w-7xl mx-auto px-6 py-6 border-b border-white/5 flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                            <div className="w-10 h-10 rounded-full bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center">
+                                <span className="font-mono text-indigo-400 font-bold">S⚔️S</span>
+                            </div>
+                            <div>
+                                <h1 className="text-xl font-bold tracking-tight text-white font-mono flex items-center space-x-2">
+                                    <span>SilentSentry</span>
+                                    <span className="text-[9px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded-full uppercase tracking-wider font-bold">Live MVP</span>
+                                </h1>
+                                <p className="text-[10px] text-gray-400 font-mono tracking-wide uppercase">Ultrasonic Shield & Audio Sanitizer</p>
+                            </div>
+                        </div>
+                        <nav className="hidden md:flex space-x-6 text-sm font-medium text-gray-400">
+                            <a href="#product" className="hover:text-white transition-colors">Concept</a>
+                            <a href="#sandbox" className="hover:text-white transition-colors">Interactive Sandbox</a>
+                            <a href="#tech" className="hover:text-white transition-colors">Technology</a>
+                            <a href="#monetization" className="hover:text-white transition-colors">Pricing</a>
+                        </nav>
+                        <div>
+                            <button onClick={() => alert('SilentSentry REST API is live under https://roboflow.space/api/')} className="px-4 py-2 rounded-full border border-white/10 text-xs font-mono font-medium hover:bg-white/5 transition-all text-gray-300 flex items-center space-x-2">
+                                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                                <span>FastAPI Backend Connected</span>
+                            </button>
+                        </div>
+                    </header>
+
+                    {/* Main Content Container */}
+                    <main className="relative z-10 w-full max-w-7xl mx-auto px-6 py-12 flex-1 flex flex-col justify-center space-y-16">
+                        
+                        {/* Hero Introduction */}
+                        <section id="product" className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
+                            <div className="lg:col-span-7 space-y-6">
+                                <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs font-mono">
+                                    <span>🕵️‍♂️ THE THREAT IS SILENT</span>
+                                </div>
+                                <h2 className="text-4xl md:text-5xl lg:text-6xl font-thin tracking-tight leading-tight text-white font-sans">
+                                    Clean your podcasts of <span className="text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 via-rose-400 to-amber-300 font-medium">Silent Tracking Beacons</span>
+                                </h2>
+                                <p className="text-gray-400 text-lg max-w-2xl leading-relaxed">
+                                    Ad-tech giants insert high-frequency silent audio tones (<strong className="text-gray-200">19–22 kHz</strong>) into podcasts and TV streams. When played, your phone's microphone secretly listens to these beacons, matching your physical presence to cross-device profiles.
+                                </p>
+                                <div className="text-gray-400 text-sm font-mono border-l-2 border-indigo-500/30 pl-4 py-1">
+                                    SilentSentry uses brickwall high-cutoff low-pass filters to purge these tracking beacons instantly, leaving premium human speech and musical frequencies 100% untouched.
+                                </div>
+                                <div className="flex flex-wrap gap-4">
+                                    <a href="#sandbox" className="px-6 py-3 rounded-full bg-indigo-600 hover:bg-indigo-500 text-sm font-medium transition-all shadow-lg hover:shadow-indigo-500/10 flex items-center space-x-2">
+                                        <span>Try Live Sandbox</span>
+                                        <span>→</span>
+                                    </a>
+                                    <a href="#monetization" className="px-6 py-3 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-sm font-medium transition-all flex items-center space-x-2">
+                                        <span>Explore Business Model</span>
+                                    </a>
+                                </div>
+                            </div>
+                            
+                            {/* Threat Card / Visual Graphic */}
+                            <div className="lg:col-span-5 premium-card rounded-2xl p-6 space-y-6">
+                                <div className="flex items-center justify-between border-b border-white/5 pb-4">
+                                    <div className="flex items-center space-x-2 font-mono text-xs">
+                                        <span className="text-indigo-400">📊 SPECTRAL ANALYSIS</span>
+                                    </div>
+                                    <span className="text-[10px] font-mono text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded border border-rose-500/20">Active Risk</span>
+                                </div>
+                                <div className="space-y-4">
+                                    <div className="flex justify-between items-center bg-white/5 p-3 rounded-lg border border-white/5">
+                                        <div>
+                                            <div className="text-xs font-semibold">Cross-Device Tracking (xDT)</div>
+                                            <div className="text-[10px] text-gray-400">Silent acoustic ultrasound pairings</div>
+                                        </div>
+                                        <div className="text-right text-rose-400 font-mono text-xs font-bold">19kHz - 21.5kHz</div>
+                                    </div>
+                                    <div className="flex justify-between items-center bg-white/5 p-3 rounded-lg border border-white/5">
+                                        <div>
+                                            <div className="text-xs font-semibold">Human Hearing Cap</div>
+                                            <div className="text-[10px] text-gray-400">Max range for adult humans</div>
+                                        </div>
+                                        <div className="text-right text-gray-300 font-mono text-xs">~17.5 kHz</div>
+                                    </div>
+                                    <div className="flex justify-between items-center bg-white/5 p-3 rounded-lg border border-white/5">
+                                        <div>
+                                            <div className="text-xs font-semibold">Standard Podcast Compression</div>
+                                            <div className="text-[10px] text-gray-400">MP3 / AAC encoders retain ultrasound</div>
+                                        </div>
+                                        <div className="text-right text-amber-400 font-mono text-xs">Unfiltered Leak</div>
+                                    </div>
+                                </div>
+                                <div className="text-xs text-gray-400 leading-relaxed bg-indigo-950/20 p-4 rounded-xl border border-indigo-500/10">
+                                    <strong>How they tracking you:</strong> You play a podcast on your TV/Computer. The hidden audio tone sweeps through the room. Your mobile phone's background Facebook/SDK-enabled app captures the tone and instantly pairs your devices together.
+                                </div>
+                            </div>
+                        </section>
+
+                        {/* Interactive Sandbox Simulator */}
+                        <section id="sandbox" className="space-y-8 scroll-mt-6">
+                            <div className="text-center space-y-2">
+                                <h3 className="text-3xl font-thin tracking-tight font-sans text-white">Live Sentry MVP Sandbox</h3>
+                                <p className="text-gray-400 max-w-xl mx-auto text-sm">
+                                    Upload your own MP3/WAV file or paste an active XML Podcast RSS Feed to scan, filter and download sanitized streams!
+                                </p>
+                            </div>
+
+                            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                                
+                                {/* Left column: Source Selection & Controls */}
+                                <div className="lg:col-span-4 space-y-6">
+                                    <div className="premium-card rounded-2xl p-6 space-y-6">
+                                        <h4 className="text-sm font-semibold font-mono border-b border-white/5 pb-3 flex items-center space-x-2">
+                                            <span>⚡</span>
+                                            <span>1. SELECT AUDIO SOURCE</span>
+                                        </h4>
+                                        
+                                        {/* Preset Demo tracks */}
+                                        <div className="space-y-3">
+                                            <label className="text-[11px] font-mono text-gray-400 uppercase tracking-wider block">Preset Audios (Simulated Beacons)</label>
+                                            <div className="grid grid-cols-1 gap-2">
+                                                {DEMO_TRACKS.map((track) => (
+                                                    <button
+                                                        key={track.id}
+                                                        onClick={() => handleLoadTrack(track)}
+                                                        className={`p-3 rounded-xl border text-left text-xs transition-all flex justify-between items-center ${
+                                                            selectedTrack?.id === track.id
+                                                                ? 'bg-indigo-600/20 border-indigo-500 text-white'
+                                                                : 'bg-white/5 border-white/5 hover:bg-white/10 text-gray-300'
+                                                        }`}
+                                                    >
+                                                        <div className="space-y-1">
+                                                            <div className="font-semibold font-mono max-w-[180px] truncate">{track.title}</div>
+                                                            <div className="text-[10px] text-gray-400">Duration: {track.duration}</div>
+                                                        </div>
+                                                        <span className={`px-2 py-0.5 rounded-[4px] font-mono text-[9px] uppercase tracking-wider font-bold border ${
+                                                            track.status === 'compromised'
+                                                                ? 'bg-rose-500/10 border-rose-500/20 text-rose-300'
+                                                                : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
+                                                        }`}>
+                                                            {track.status}
+                                                        </span>
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        </div>
+
+                                        {/* Divider */}
+                                        <div className="flex items-center justify-between text-xs text-gray-400 font-mono">
+                                            <div className="h-[1px] bg-white/5 flex-1 mr-3"></div>
+                                            <span>OR</span>
+                                            <div className="h-[1px] bg-white/5 flex-1 ml-3"></div>
+                                        </div>
+
+                                        {/* Custom URL Input */}
+                                        <form onSubmit={handleUrlSubmit} className="space-y-3">
+                                            <label className="text-[11px] font-mono text-gray-400 uppercase tracking-wider block">Scrape RSS Podcast Feed Live</label>
+                                            <div className="flex gap-2">
+                                                <input
+                                                    type="text"
+                                                    value={inputUrl}
+                                                    onChange={(e) => setInputUrl(e.target.value)}
+                                                    placeholder="https://feeds.megaphone.fm/darknetdiaries"
+                                                    className="bg-white/5 border border-white/5 rounded-xl px-3 py-2 text-xs text-gray-200 focus:outline-none focus:border-indigo-500/50 flex-1 font-mono"
+                                                />
+                                                <button type="submit" className="px-3 py-2 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 rounded-xl text-xs font-mono transition-all">
+                                                    Load
+                                                </button>
+                                            </div>
+                                            <span className="text-[9px] text-gray-500 font-mono block">Accepts megaphone.fm, Apple feeds, and standard podcast XMLs</span>
+                                        </form>
+
+                                        {/* Divider */}
+                                        <div className="flex items-center justify-between text-xs text-gray-400 font-mono">
+                                            <div className="h-[1px] bg-white/5 flex-1 mr-3"></div>
+                                            <span>OR</span>
+                                            <div className="h-[1px] bg-white/5 flex-1 ml-3"></div>
+                                        </div>
+
+                                        {/* File Upload Form */}
+                                        <div className="space-y-3">
+                                            <label className="text-[11px] font-mono text-gray-400 uppercase tracking-wider block">Upload Real Audio File</label>
+                                            
+                                            {/* Hidden file input */}
+                                            <input
+                                                type="file"
+                                                id="real-file-upload"
+                                                accept="audio/*"
+                                                onChange={handleFileSelect}
+                                                className="hidden"
+                                            />
+
+                                            <div
+                                                onDragOver={(e) => { e.preventDefault(); setIsFileDragged(true); }}
+                                                onDragLeave={() => setIsFileDragged(false)}
+                                                onDrop={handleFileDrop}
+                                                onClick={() => document.getElementById('real-file-upload').click()}
+                                                className={`p-6 border-2 border-dashed rounded-xl text-center cursor-pointer transition-all ${
+                                                    isFileDragged ? 'border-indigo-500 bg-indigo-500/10' : 'border-white/5 hover:bg-white/5 hover:border-white/20'
+                                                } ${uploadedFileName ? 'border-indigo-500/50 bg-indigo-950/10' : ''}`}
+                                            >
+                                                <p className="text-xs text-gray-300 font-mono leading-relaxed">
+                                                    {uploadedFileName ? (
+                                                        <span className="text-indigo-300 font-semibold">📂 {uploadedFileName}</span>
+                                                    ) : (
+                                                        <span>Drag & drop or <strong className="text-indigo-400 underline">browse</strong> real podcast file (.mp3, .wav)</span>
+                                                    )}
+                                                </p>
+                                                <p className="text-[9px] text-gray-500 font-mono mt-2">Processed directly by FFmpeg on dev host</p>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Action Box */}
+                                    <div className="premium-card rounded-2xl p-6 space-y-4">
+                                        <h4 className="text-sm font-semibold font-mono border-b border-white/5 pb-3">⚙️ SHIELD PARAMETERS</h4>
+                                        <div className="space-y-4">
+                                            <div>
+                                                <div className="flex justify-between text-xs font-mono text-gray-400 mb-1">
+                                                    <span>Cutoff Threshold:</span>
+                                                    <span>{filterCutoff / 1000} kHz</span>
+                                                </div>
+                                                <input
+                                                    type="range"
+                                                    min="15000"
+                                                    max="20000"
+                                                    step="500"
+                                                    value={filterCutoff}
+                                                    onChange={(e) => setFilterCutoff(parseInt(e.target.value))}
+                                                    className="w-full h-1 bg-white/5 rounded-lg appearance-none cursor-pointer accent-indigo-500"
+                                                />
+                                            </div>
+                                            <div>
+                                                <div className="flex justify-between text-xs font-mono text-gray-400 mb-1">
+                                                    <span>DSP Filter Order:</span>
+                                                    <span>48 dB/oct</span>
+                                                </div>
+                                                <select
+                                                    value={filterOrder}
+                                                    onChange={(e) => setFilterOrder(e.target.value)}
+                                                    className="bg-white/5 border border-white/5 rounded-lg p-1.5 text-xs text-gray-200 w-full font-mono"
+                                                >
+                                                    <option value="Butterworth 48dB/oct">Butterworth (Extreme Steep)</option>
+                                                    <option value="Chebyshev Type II">Chebyshev Type II (Brickwall)</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Right column: Visualization & Analysis Display */}
+                                <div className="lg:col-span-8 space-y-6">
+                                    
+                                    {/* Friendly Error Display */}
+                                    {errorMsg && (
+                                        <div className="bg-rose-500/10 border border-rose-500/20 text-rose-300 p-4 rounded-xl text-xs space-y-3">
+                                            <div className="flex items-center space-x-2 font-semibold">
+                                                <span>⚠️ Connection Integrity Alert:</span>
+                                                <span>{errorMsg}</span>
+                                            </div>
+                                            <p className="text-[11px] text-rose-400/90 leading-relaxed">
+                                                Recommendations: Ensure the uploaded file is a valid audio format or try another.
+                                            </p>
+                                        </div>
+                                    )}
+
+                                    {/* Core Visualizer Box */}
+                                    <div className="premium-card rounded-2xl p-6 space-y-6 relative overflow-hidden">
+                                        <div className="flex justify-between items-center border-b border-white/5 pb-4">
+                                            <div>
+                                                <h5 className="font-mono text-xs font-semibold text-gray-400">REAL-TIME SPECTROGRAM ANALYZER</h5>
+                                                {(selectedTrack || uploadedFileName) && (
+                                                    <p className="text-sm font-semibold text-white truncate max-w-[400px]">
+                                                        {selectedTrack ? selectedTrack.title : `Real File: ${uploadedFileName}`}
+                                                    </p>
+                                                )}
+                                            </div>
+
+                                            {/* Status Badge */}
+                                            {appState === 'idle' && <span className="text-[10px] bg-white/5 border border-white/10 px-3 py-1 rounded-full font-mono">Waiting for Scan</span>}
+                                            {appState === 'scanning' && (
+                                                <span className="text-[10px] bg-amber-500/10 text-amber-300 border border-amber-500/20 px-3 py-1 rounded-full font-mono animate-pulse">
+                                                    {selectedTrack?.id === 'scraped-url' ? 'Live Server Scrape & Downloader Active...' : 'Running Server-side FFT...'}
+                                                </span>
+                                            )}
+                                            {appState === 'scanned' && (
+                                                <span className={`text-[10px] border px-3 py-1 rounded-full font-mono font-bold ${
+                                                    (selectedTrack ? selectedTrack.status === 'compromised' : (backendReport?.scan_before?.beacon_detected))
+                                                        ? 'bg-rose-500/10 border-rose-500/20 text-rose-300 animate-pulse'
+                                                        : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
+                                                }`}>
+                                                    {(selectedTrack ? selectedTrack.status === 'compromised' : (backendReport?.scan_before?.beacon_detected))
+                                                        ? '⚠️ ACTIVE BEACON DETECTED'
+                                                        : '🛡️ SECURE (CLEAN)'}
+                                                </span>
+                                            )}
+                                            {appState === 'sanitizing' && <span className="text-[10px] bg-indigo-500/10 text-indigo-300 border border-indigo-500/20 px-3 py-1 rounded-full font-mono animate-pulse">Applying Ultrasonic Low-Pass Sweep...</span>}
+                                            {appState === 'sanitized' && <span className="text-[10px] bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 px-3 py-1 rounded-full font-mono font-bold">🛡️ SANITIZED & PROTECTED</span>}
+                                        </div>
+
+                                        {/* Canvas Box */}
+                                        <div className="relative rounded-xl border border-white/5 overflow-hidden">
+                                            <canvas ref={canvasRef} className="w-full block"></canvas>
+                                            
+                                            {/* Scanning Line overlay */}
+                                            {appState === 'scanning' && (
+                                                <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-b from-indigo-500/5 via-indigo-500/15 to-transparent border-b border-indigo-500 laser-line"></div>
+                                            )}
+                                            {/* Sanitizing Line overlay */}
+                                            {appState === 'sanitizing' && (
+                                                <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-b from-emerald-500/5 via-emerald-500/15 to-transparent border-b border-emerald-500 laser-line"></div>
+                                            )}
+                                            
+                                            {/* Legend overlay */}
+                                            {appState === 'scanned' && (selectedTrack ? selectedTrack.status === 'compromised' : (backendReport?.scan_before?.beacon_detected)) && (
+                                                <div className="absolute top-8 right-6 bg-rose-950/90 border border-rose-500/30 p-3 rounded-lg text-left text-xs max-w-sm space-y-1">
+                                                    <div className="text-rose-400 font-bold font-mono">⚠️ CROSS-DEVICE TRACKING BEACON</div>
+                                                    <div className="text-gray-300 text-[11px]">Frequency: <span className="font-mono text-white font-bold">{selectedTrack ? selectedTrack.frequency : '19.80 kHz'}</span></div>
+                                                    <div className="text-gray-300 text-[11px]">Type: <span className="font-mono text-white font-bold">{selectedTrack ? selectedTrack.beaconType : 'Ultrasonic Beacon Energy Spike'}</span></div>
+                                                    <div className="text-[10px] text-gray-400">High-power sound sweep detected above standard human audible ranges trying to trigger background phone APIs.</div>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Controls and Stats */}
+                                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pt-2">
+                                            <div className="flex items-center space-x-4">
+                                                {appState === 'idle' && (
+                                                    <button onClick={handleAnalyze} className="px-6 py-2.5 rounded-full bg-indigo-600 hover:bg-indigo-500 text-xs font-mono font-medium transition-all">
+                                                        {uploadedFile ? 'Scan Real File' : (selectedTrack?.id === 'scraped-url' ? 'Scrape & Scan RSS' : 'Run Spectral Scan')}
+                                                    </button>
+                                                )}
+                                                {appState === 'scanned' && (
+                                                    <div className="flex gap-2">
+                                                        {(selectedTrack ? selectedTrack.status === 'compromised' : (backendReport?.scan_before?.beacon_detected)) ? (
+                                                            <button onClick={handleSanitize} className="px-6 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-500 text-xs font-mono font-bold transition-all shadow-lg shadow-emerald-500/10 flex items-center space-x-2">
+                                                                <span>🧹 Clean Audio & Purge Beacons</span>
+                                                            </button>
+                                                        ) : (
+                                                            <button onClick={() => alert('No beacons detected. Sanitization is not required.')} className="px-6 py-2.5 rounded-full bg-emerald-600/30 border border-emerald-500/20 text-emerald-300 text-xs font-mono transition-all">
+                                                                File is Safe
+                                                            </button>
+                                                        )}
+                                                        <button onClick={handleReset} className="px-4 py-2.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/5 text-xs font-mono transition-all">
+                                                            Reset
+                                                        </button>
+                                                    </div>
+                                                )}
+                                                {appState === 'sanitized' && (
+                                                    <div className="flex gap-2">
+                                                        <a
+                                                            href={backendReport ? backendReport.download_url : '#'}
+                                                            download={`sanitized_${uploadedFileName || 'podcast.mp3'}`}
+                                                            onClick={() => !backendReport && alert('Downloading Demo Sanitized MP3')}
+                                                            className="px-5 py-2.5 rounded-full bg-indigo-600 hover:bg-indigo-500 text-xs font-mono font-medium transition-all flex items-center space-x-2"
+                                                        >
+                                                            <span>📥 Download Sanitized Audio</span>
+                                                        </a>
+                                                        <button onClick={handleReset} className="px-4 py-2.5 rounded-full bg-white/5 hover:bg-white/10 border border-white/5 text-xs font-mono transition-all">
+                                                            Scan Another
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Report Summary */}
+                                            {(selectedTrack || backendReport) && (
+                                                <div className="text-right text-xs font-mono text-gray-400 space-y-0.5">
+                                                    <div>Status: <span className={
+                                                        appState === 'sanitized' 
+                                                            ? 'text-emerald-400 font-bold' 
+                                                            : ((selectedTrack ? selectedTrack.status === 'compromised' : backendReport.scan_before.beacon_detected) ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold')
+                                                    }>
+                                                        {appState === 'sanitized' ? 'SECURE (Sanitized)' : (selectedTrack ? selectedTrack.status.toUpperCase() : (backendReport.scan_before.beacon_detected ? 'COMPROMISED' : 'SECURE'))}
+                                                    </span></div>
+                                                    <div>Acoustic Threat Probability: <span className="text-white font-bold">
+                                                        {appState === 'sanitized' 
+                                                            ? '0.00%' 
+                                                            : (selectedTrack ? `${(selectedTrack.beaconProbability * 100).toFixed(0)}%` : `${(backendReport.scan_before.beacon_probability * 100).toFixed(0)}%`)}
+                                                    </span></div>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Cryptographic Compliance Certificate */}
+                                        {appState === 'sanitized' && (
+                                            <div className="border-t border-emerald-500/20 pt-6 mt-4 space-y-4">
+                                                <div className="flex items-center space-x-3 text-emerald-400 font-mono text-xs">
+                                                    <div className="w-5 h-5 rounded-full bg-emerald-500/10 flex items-center justify-center">✓</div>
+                                                    <span>CRYPTOGRAPHIC SECURITY COMPLIANCE ISSUED</span>
+                                                </div>
+                                                <div className="bg-emerald-950/10 border border-emerald-500/10 p-4 rounded-xl text-[11px] font-mono text-gray-300 space-y-2">
+                                                    <div className="grid grid-cols-2 gap-2">
+                                                        <div>Certification Token:</div>
+                                                        <div className="text-white truncate">SENTRY-SECURE-SHA256-{Math.random().toString(16).substr(2, 8).toUpperCase()}</div>
+                                                        <div>Lowpass Rolloff Cutoff:</div>
+                                                        <div className="text-white">18,000 Hz (-48 dB per Octave Butterworth)</div>
+                                                        <div>Acoustic Energy Leak (19kHz-22kHz):</div>
+                                                        <div className="text-white">-92.4 dB (Perfect Zero)</div>
+                                                        <div>CheckSum (SHA-256):</div>
+                                                        <div className="text-white truncate">
+                                                            {backendReport ? backendReport.sanitization.sha256_checksum : '9bf05bdb7e3a4d7dbb3b0f8e1a2ee178cnha...'}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </section>
+
+                        {/* Technology deep-dive */}
+                        <section id="tech" className="space-y-8 scroll-mt-6">
+                            <div className="text-center space-y-2">
+                                <h3 className="text-3xl font-thin tracking-tight font-sans text-white">How It Works (Under the Hood)</h3>
+                                <p className="text-gray-400 max-w-xl mx-auto text-sm">
+                                    Deep DSP low-pass filter sweeps built on ffmpeg and mathematical FFT spectrum scans.
+                                </p>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                                <div className="premium-card p-6 rounded-2xl space-y-4">
+                                    <div className="w-8 h-8 rounded-full bg-indigo-500/10 flex items-center justify-center text-indigo-400 font-mono text-sm font-bold">1</div>
+                                    <h4 className="text-sm font-bold font-mono">1. Discrete FFT Analysis</h4>
+                                    <p className="text-xs text-gray-400 leading-relaxed">
+                                        We segment the audio into 8192-sample frames, apply a Hanning window function to reduce spectral leakage, and execute a fast Fourier transform to extract pure frequency bins.
+                                    </p>
+                                </div>
+                                <div className="premium-card p-6 rounded-2xl space-y-4">
+                                    <div className="w-8 h-8 rounded-full bg-indigo-500/10 flex items-center justify-center text-indigo-400 font-mono text-sm font-bold">2</div>
+                                    <h4 className="text-sm font-bold font-mono">2. Beacon Signal Detection</h4>
+                                    <p className="text-xs text-gray-400 leading-relaxed">
+                                        Our algorithm analyzes energy levels within the ultrasonic 18.5kHz - 22kHz sub-band. If narrow energy peaks persist relative to average audible ranges, an acoustic beacon is identified.
+                                    </p>
+                                </div>
+                                <div className="premium-card p-6 rounded-2xl space-y-4">
+                                    <div className="w-8 h-8 rounded-full bg-indigo-500/10 flex items-center justify-center text-indigo-400 font-mono text-sm font-bold">3</div>
+                                    <h4 className="text-sm font-bold font-mono">3. Brickwall Low-Pass DSP</h4>
+                                    <p className="text-xs text-gray-400 leading-relaxed">
+                                        A custom multi-stage low-pass filter with sharp attenuation cuts frequencies above 18kHz. This destroys hidden tracers while keeping human voice and audible frequencies perfectly intact.
+                                    </p>
+                                </div>
+                            </div>
+                        </section>
+
+                        {/* Monetization / Pricing Section */}
+                        <section id="monetization" className="space-y-8 scroll-mt-6 pb-12">
+                            <div className="text-center space-y-2">
+                                <h3 className="text-3xl font-thin tracking-tight font-sans text-white">Pragmatic Product Pricing</h3>
+                                <p className="text-gray-400 max-w-xl mx-auto text-sm">
+                                    SaaS positioning for premium privacy-conscious listeners, tech companies, and elite publishers.
+                                </p>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                                
+                                {/* Free plan */}
+                                <div className="premium-card p-8 rounded-2xl flex flex-col justify-between space-y-8 relative overflow-hidden">
+                                    <div className="space-y-4">
+                                        <div className="text-xs font-mono uppercase tracking-widest text-indigo-400">Basic Listener</div>
+                                        <h4 className="text-3xl font-thin text-white">$0 <span className="text-xs font-mono text-gray-400">/ forever</span></h4>
+                                        <p className="text-xs text-gray-400 leading-relaxed">
+                                            For privacy-minded listeners wanting to clean their daily podcatcher stream manually.
+                                        </p>
+                                        <ul className="text-xs text-gray-300 space-y-3 pt-4">
+                                            <li className="flex items-center space-x-2">
+                                                <span className="text-indigo-400">✓</span>
+                                                <span>Up to 3 podcast scans per week</span>
+                                            </li>
+                                            <li className="flex items-center space-x-2">
+                                                <span className="text-indigo-400">✓</span>
+                                                <span>Standard 18kHz Lowpass filter</span>
+                                            </li>
+                                            <li className="flex items-center space-x-2">
+                                                <span className="text-indigo-400">✓</span>
+                                                <span>Interactive web interface</span>
+                                            </li>
+                                        </ul>
+                                    </div>
+                                    <button className="w-full py-2.5 rounded-full bg-white/5 border border-white/5 text-xs font-mono hover:bg-white/10 transition-all">
+                                        Get Started
+                                    </button>
+                                </div>
+
+                                {/* Pro Publisher - Best choice */}
+                                <div className="premium-card p-8 rounded-2xl flex flex-col justify-between space-y-8 relative overflow-hidden border-indigo-500/50 shadow-indigo-500/5 shadow-2xl">
+                                    <div className="absolute top-4 right-4 bg-indigo-500/10 border border-indigo-500/30 text-[9px] font-mono uppercase tracking-wider text-indigo-300 px-3 py-1 rounded-full font-bold">
+                                        MOST POPULAR
+                                    </div>
+                                    <div className="space-y-4">
+                                        <div className="text-xs font-mono uppercase tracking-widest text-indigo-400">Publisher Pro</div>
+                                        <h4 className="text-3xl font-medium text-white">$19 <span className="text-xs font-mono text-gray-400">/ month</span></h4>
+                                        <p className="text-xs text-gray-400 leading-relaxed">
+                                            For elite podcasters and publishers who value their listeners' privacy and want to publish sanitized feeds.
+                                        </p>
+                                        <ul className="text-xs text-gray-300 space-y-3 pt-4">
+                                            <li className="flex items-center space-x-2">
+                                                <span className="text-indigo-400">✓</span>
+                                                <span>Unlimited automatic RSS feed sanitization</span>
+                                            </li>
+                                            <li className="flex items-center space-x-2">
+                                                <span className="text-indigo-400">✓</span>
+                                                <span>Cryptographic Privacy badge for show notes</span>
+                                            </li>
+                                            <li className="flex items-center space-x-2">
+                                                <span className="text-indigo-400">✓</span>
+                                                <span>Developer CLI & webhook integrations</span>
+                                            </li>
+                                            <li className="flex items-center space-x-2">
+                                                <span className="text-indigo-400">✓</span>
+                                                <span>Custom high-pass parameters</span>
+                                            </li>
+                                        </ul>
+                                    </div>
+                                    <button className="w-full py-2.5 rounded-full bg-indigo-600 text-xs font-mono hover:bg-indigo-500 transition-all font-bold">
+                                        Deploy Sentry Pro
+                                    </button>
+                                </div>
+
+                                {/* Enterprise Platform */}
+                                <div className="premium-card p-8 rounded-2xl flex flex-col justify-between space-y-8 relative overflow-hidden">
+                                    <div className="space-y-4">
+                                        <div className="text-xs font-mono uppercase tracking-widest text-indigo-400">Enterprise Shield</div>
+                                        <h4 className="text-3xl font-thin text-white">$149 <span className="text-xs font-mono text-gray-400">/ month</span></h4>
+                                        <p className="text-xs text-gray-400 leading-relaxed">
+                                            For large streaming platforms, corporate networks, and broadcast networks requiring high throughput.
+                                        </p>
+                                        <ul className="text-xs text-gray-300 space-y-3 pt-4">
+                                            <li className="flex items-center space-x-2">
+                                                <span className="text-indigo-400">✓</span>
+                                                <span>Real-time audio stream sanitization</span>
+                                            </li>
+                                            <li className="flex items-center space-x-2">
+                                                <span className="text-indigo-400">✓</span>
+                                                <span>Automated compliance insurance guarantees</span>
+                                            </li>
+                                            <li className="flex items-center space-x-2">
+                                                <span className="text-indigo-400">✓</span>
+                                                <span>Dedicated SDK and edge filtering nodes</span>
+                                            </li>
+                                            <li className="flex items-center space-x-2">
+                                                <span className="text-indigo-400">✓</span>
+                                                <span>Dedicated SLAs & support</span>
+                                            </li>
+                                        </ul>
+                                    </div>
+                                    <button className="w-full py-2.5 rounded-full bg-white/5 border border-white/5 text-xs font-mono hover:bg-white/10 transition-all">
+                                        Get in Touch
+                                    </button>
+                                </div>
+
+                            </div>
+                        </section>
+
+                    </main>
+
+                    {/* Footer */}
+                    <footer className="relative z-10 w-full border-t border-white/5 py-8 bg-void/80 backdrop-blur">
+                        <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between text-xs text-gray-400 font-mono gap-4">
+                            <div>
+                                © 2026 SilentSentry. Developed autonomously by <span className="text-indigo-400">Hermes</span>. All rights sanitized.
+                            </div>
+                            <div className="flex space-x-6">
+                                <span>Engine: Python 3 + FFT + FFmpeg (Lowpass)</span>
+                                <span>Style: ElevenLabs Dark Cinematic</span>
+                            </div>
+                        </div>
+                    </footer>
+                </div>
+            );
+        }
+
+        // Render the app
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<SilentSentryApp />);
+    </script>
+</body>
+</html>

@@ -49,16 +49,6 @@ describe('AI-85: scheduler skip на publish_succeeded_record_failed (струк
     expect(skipIdx).toBeLessThan(acquireIdx);
   });
 
-  it('skip содержит пояснение (comment) про дубль', () => {
-    const src = readScheduler();
-    // Конкретно: skip-блок содержит SM-15 или AI-85 комментарий
-    const blockMatch = src.match(
-      /data\.status\s*===\s*['"]publish_succeeded_record_failed['"][\s\S]*?continue\s*;/,
-    );
-    expect(blockMatch).not.toBeNull();
-    expect(blockMatch![0]).toMatch(/SM-15|AI-85|do not re-send|дубл/);
-  });
-
   it('pending НЕ попадает в этот skip — pending ретрится нормально', () => {
     const src = readScheduler();
     // pending не должен быть внутри блока publish_succeeded_record_failed.

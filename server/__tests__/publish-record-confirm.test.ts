@@ -164,6 +164,64 @@ describe('confirmPublishRecord — сбой первой попытки, усп�
     // facebook — сохранён
     expect(sp.facebook).toEqual({ status: 'pending' });
   });
+
+  it('merge с selected: true — selected не теряется после publish (AI-85, ревью Clause)', async () => {
+    H.axiosPatch.mockResolvedValueOnce({ data: { data: { id: 'c1' } } });
+
+    const published: PlatformPublishedFields = {
+      status: 'published',
+      postId: 'tg-1',
+      postUrl: 'https://t.me/c/1',
+      publishedAt: '2026-08-10T18:00:00.000Z',
+    };
+
+    await confirmPublishRecord({
+      contentId: 'content-5',
+      platform: 'telegram',
+      currentSocialPlatforms: {
+        telegram: { selected: true, status: 'pending', retryCount: 0, scheduledAt: '2026-08-10T18:00:00.000Z' },
+      },
+      published,
+    });
+
+    const call = H.axiosPatch.mock.calls[0] as [string, Record<string, unknown>];
+    const tg = (call[1].social_platforms as Record<string, Record<string, unknown>>).telegram;
+    // selected: true должно сохраниться — иначе status-checker не видит платформу
+    expect(tg.selected).toBe(true);
+    // retryCount/scheduledAt тоже сохраняются (для scheduler)
+    expect(tg.retryCount).toBe(0);
+    expect(tg.scheduledAt).toBe('2026-08-10T18:00:00.000Z');
+    // status обновился на 'published'
+    expect(tg.status).toBe('published');
+  });
+
+  it('merge с selected: true — selected не теряется и в record-failed ветке', async () => {
+    H.axiosPatch
+      .mockRejectedValueOnce(new Error('Directus 503'))
+      .mockResolvedValueOnce({ data: { data: {} } });
+
+    const published: PlatformPublishedFields = {
+      status: 'published',
+      postId: 'vk-1',
+      postUrl: 'https://vk.com/wall-1_1',
+      publishedAt: '2026-08-10T18:00:00.000Z',
+    };
+
+    await confirmPublishRecord({
+      contentId: 'content-6',
+      platform: 'vk',
+      currentSocialPlatforms: {
+        vk: { selected: true, status: 'pending', retryCount: 2 },
+      },
+      published,
+    });
+
+    const call = H.axiosPatch.mock.calls[1] as [string, Record<string, unknown>];
+    const vk = (call[1].social_platforms as Record<string, Record<string, unknown>>).vk;
+    expect(vk.selected).toBe(true);
+    expect(vk.retryCount).toBe(2);
+    expect(vk.status).toBe('publish_succeeded_record_failed');
+  });
 });
 
 describe('confirmPublishRecord — обе попытки упали', () => {

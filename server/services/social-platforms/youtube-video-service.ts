@@ -288,10 +288,16 @@ export class YouTubeVideoService {
       });
       const currentSocialPlatforms = contentResponse.data.data?.social_platforms || {};
 
+      // SM-15 / AI-85 (по ревью @Clause_Dev_Hermi): MERGE с существующим
+      // объектом платформы, а не замена. Иначе теряется `selected: true`,
+      // и status-checker не видит платформу как «выбранную» после первой
+      // успешной публикации — parent-статус не продвигается в published.
+      const existingYoutube = (currentSocialPlatforms.youtube as Record<string, unknown>) || {};
       await directusApi.patch(`/items/campaign_content/${contentId}`, {
         social_platforms: {
           ...currentSocialPlatforms,
           youtube: {
+            ...existingYoutube,
             postId: videoId,
             status: 'published',
             postUrl: videoUrl,

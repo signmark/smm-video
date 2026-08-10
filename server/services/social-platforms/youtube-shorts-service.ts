@@ -221,10 +221,13 @@ export class YouTubeShortsService {
       });
       const currentSocialPlatforms = contentResponse.data.data?.social_platforms || {};
 
+      // SM-15 / AI-85 (по ревью @Clause_Dev_Hermi): MERGE, а не замена — см. youtube-video-service.
+      const existingYoutube = (currentSocialPlatforms.youtube as Record<string, unknown>) || {};
       await directusApi.patch(`/items/campaign_content/${contentId}`, {
         social_platforms: {
           ...currentSocialPlatforms,
           youtube: {
+            ...existingYoutube,
             postId: videoId,
             status: 'published',
             postUrl: videoUrl,

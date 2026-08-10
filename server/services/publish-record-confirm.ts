@@ -129,10 +129,20 @@ export async function confirmPublishRecord(params: {
 }): Promise<ConfirmOutcome> {
   const { contentId, platform, currentSocialPlatforms, published } = params;
 
-  const publishedPatch: Record<string, unknown> = {
+  // SM-15 / AI-85 (по ревью @Clause_Dev_Hermi): MERGE с существующим объектом платформы,
+// а не замена. Иначе теряется `selected: true` (и любые другие поля вроде
+// `scheduledAt`, `retryCount`, которые ставит scheduler), и status-checker
+// перестаёт видеть платформу как «выбранную» после первой успешной публикации.
+// Раньше inline-код тоже делал replace — мы это честно сохранили, но
+// починка status-checker'а без этого merge всё равно не работает.
+// `as object` безопасно: caller передаёт `currentSocialPlatforms`
+// из `campaign_content` коллекции (это JSON-объект, не пользовательский ввод).
+const platformData = (currentSocialPlatforms?.[platform] as Record<string, unknown>) || {};
+
+const publishedPatch: Record<string, unknown> = {
     social_platforms: {
       ...(currentSocialPlatforms || {}),
-      [platform]: published,
+      [platform]: { ...platformData, ...published },
     },
   };
 
@@ -154,6 +164,7 @@ export async function confirmPublishRecord(params: {
     social_platforms: {
       ...(currentSocialPlatforms || {}),
       [platform]: {
+        ...platformData,
         status: 'publish_succeeded_record_failed',
         postId: published.postId,
         postUrl: published.postUrl,

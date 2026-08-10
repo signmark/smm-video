@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Loader2, Search, RefreshCw } from "lucide-react";
 import { api } from "@/lib/api-client";
+import { campaignsListQueryOptions } from "@/lib/campaigns-query";
 import { useCampaignStore } from "@/lib/campaignStore"; // Используем общее хранилище
 import { useAuthStore } from "@/lib/store"; // Импортируем хранилище авторизации
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -28,16 +29,16 @@ export default function Keywords() {
   const queryClient = useQueryClient();
   // Используем глобальное состояние кампании из общего хранилища
   const { selectedCampaignId, selectedCampaignName } = useCampaignStore();
+  // userId нужен раньше: см. shared queryKey ниже.
+  const userId = useAuthStore(state => state.userId);
   const { data: campaignsResponse, isLoading: isLoadingCampaigns } = useQuery({
-    queryKey: ["/api/campaigns"],
-    queryFn: () => api.campaigns.list()
+    ...campaignsListQueryOptions({ userId, queryFn: () => api.campaigns.list() })
   });
-  
+
   const campaigns = campaignsResponse?.data || [];
 
   // Получаем ID выбранной кампании из глобального хранилища
   const campaignId = selectedCampaignId || "";
-  const userId = useAuthStore(state => state.userId);
   const clearSelectedCampaign = useCampaignStore(state => state.clearSelectedCampaign);
 
   // Проверяем принадлежность кампании текущему пользователю

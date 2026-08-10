@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useAuthStore } from "@/lib/store";
+import { campaignsListQueryOptions } from "@/lib/campaigns-query";
 import { useCampaignStore } from "@/lib/campaignStore";
 import { BarChart3, Calendar, Hash, TrendingUp, Users, FileText, MessageCircle, Activity, ArrowRight, Plus, Zap, Settings, PenTool, ExternalLink, BookOpen, AlertTriangle, X, AlertCircle } from "lucide-react";
 import { format, subDays, eachDayOfInterval, startOfDay } from "date-fns";
@@ -100,10 +101,22 @@ export default function Dashboard() {
     }
   };
   
-  // Получаем все кампании с обработкой ошибок
+  // Получаем все кампании с обработкой ошибок. Общий exact key и staleTime
+  // — см. client/src/lib/campaigns-query.ts; иначе campaigns/index и
+  // keywords/index делают параллельные fetch'и вместо общего кэша.
   const { data: campaignsResponse, isLoading: campaignsLoading, isError: campaignsError, error: campaignsErrorMessage } = useQuery<CampaignsResponse>({
-    queryKey: ["/api/campaigns", userId],
-    enabled: !!userId,
+    ...campaignsListQueryOptions<CampaignsResponse>({
+      userId,
+      queryFn: async () => {
+        const response = await fetch('/api/campaigns', {
+          headers: authHeaders(),
+        });
+        if (!response.ok) {
+          throw new Error(`Не удалось загрузить кампании: ${response.status}`);
+        }
+        return response.json() as Promise<CampaignsResponse>;
+      },
+    }),
   });
 
   // Агрегаты по контенту для плиток и графика.

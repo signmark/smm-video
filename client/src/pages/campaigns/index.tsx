@@ -5,6 +5,7 @@ import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { CampaignForm } from "@/components/CampaignForm";
 import { CampaignsGrid } from "@/components/CampaignsTable";
 import { useAuthStore } from "@/lib/store";
+import { campaignsListQueryOptions } from "@/lib/campaigns-query";
 import { useCampaignStore } from "@/lib/campaignStore";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
@@ -39,38 +40,41 @@ export default function Campaigns() {
   // Получаем функции для управления кампаниями  
   const { setSelectedCampaign } = useCampaignStore();
   
-  // Запрос на получение списка кампаний (с polling для обновления статуса ассистента)
+  // Запрос на получение списка кампаний. Общий exact key и опции —
+  // см. client/src/lib/campaigns-query.ts и регрессионный тест.
+  // Полить убран: данные обновляются явной инвалидацией из мутаций
+  // (DeleteCampaignConfirmDialog, CampaignForm, EditCampaignDialog).
   const { data: campaignsResponse, isLoading, error } = useQuery<{data: UserCampaign[]}>({
-    queryKey: ["/api/campaigns", userId],
-    refetchInterval: 15000,
-    queryFn: async () => {
-      const token = localStorage.getItem('auth_token');
-      const storedUserId = localStorage.getItem('user_id');
-      
-      if (!token) {
-        throw new Error("Отсутствует токен авторизации");
-      }
-      
-      if (!storedUserId && !userId) {
-        throw new Error("Отсутствует ID пользователя");
-      }
-      
-      const response = await fetch('/api/campaigns', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'x-user-id': storedUserId || userId || ''
+    ...campaignsListQueryOptions<{ data: UserCampaign[] }>({
+      userId,
+      queryFn: async () => {
+        const token = localStorage.getItem('auth_token');
+        const storedUserId = localStorage.getItem('user_id');
+
+        if (!token) {
+          throw new Error("Отсутствует токен авторизации");
         }
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: response.statusText }));
-        throw new Error(errorData.error || "Не удалось загрузить кампании");
+
+        if (!storedUserId && !userId) {
+          throw new Error("Отсутствует ID пользователя");
+        }
+
+        const response = await fetch('/api/campaigns', {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'x-user-id': storedUserId || userId || ''
+          }
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({ error: response.statusText }));
+          throw new Error(errorData.error || "Не удалось загрузить кампании");
+        }
+
+        const result = await response.json();
+        return result;
       }
-      
-      const result = await response.json();
-      return result;
-    },
-    enabled: !!(userId || localStorage.getItem('user_id')), // Запрос выполняется только при наличии userId
+    }),
   });
   
   // Сортировка кампаний по дате создания (сначала новые)

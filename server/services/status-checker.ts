@@ -343,18 +343,28 @@ class PublicationStatusChecker {
           .map(([platform]) => platform);
           
         const publishedPlatforms = Object.entries(platformsData)
-          .filter(([_, platformData]: [string, any]) => platformData?.selected && platformData?.status === 'published')
+          .filter(([_, platformData]: [string, any]) =>
+            platformData?.selected &&
+            // SM-15 / AI-85: publish_succeeded_record_failed тоже означает
+            // «опубликовано, требует ручной проверки». Для parent-статуса это
+            // эквивалентно published (пост висит на платформе).
+            (platformData?.status === 'published' || platformData?.status === 'publish_succeeded_record_failed')
+          )
           .map(([platform]) => platform);
-          
+
         const failedPlatforms = Object.entries(platformsData)
-          .filter(([_, platformData]: [string, any]) => platformData?.selected && (platformData?.status === 'failed' || platformData?.error))
+          .filter(([_, platformData]: [string, any]) =>
+            platformData?.selected &&
+            (platformData?.status === 'failed' || platformData?.error)
+          )
           .map(([platform]) => platform);
-          
+
         const pendingPlatforms = Object.entries(platformsData)
           .filter(([_, platformData]: [string, any]) => {
-            return platformData?.selected && 
-                   platformData?.status !== 'published' && 
-                   platformData?.status !== 'failed' && 
+            return platformData?.selected &&
+                   platformData?.status !== 'published' &&
+                   platformData?.status !== 'publish_succeeded_record_failed' &&
+                   platformData?.status !== 'failed' &&
                    !platformData?.error;
           })
           .map(([platform]) => platform);

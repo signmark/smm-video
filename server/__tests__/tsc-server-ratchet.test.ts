@@ -32,7 +32,7 @@ import { join } from 'node:path';
  * (сообщение переносится). Планка, снятая грепом, оказалась бы завышенной, и
  * храповик молча пропускал бы регрессии.
  */
-const BASELINE = 407;
+const BASELINE = 406;
 
 const ROOT = join(__dirname, '..', '..');
 

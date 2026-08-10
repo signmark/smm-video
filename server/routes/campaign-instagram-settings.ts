@@ -22,54 +22,20 @@ router.param('campaignId', async (req, res, next, campaignId) => {
 });
 
 /**
- * Получение Instagram настроек из JSON кампании
+ * GET /campaigns/:campaignId/instagram-settings здесь НЕ регистрируется намеренно.
+ *
+ * Живой обработчик — app.get(/api/campaigns/:campaignId/instagram-settings)
+ * в server/routes/analytics.ts. Он регистрируется на верхнем уровне модуля, а
+ * этот роутер монтируется позже, внутри асинхронного старта. Express отдаёт
+ * первый совпавший обработчик, поэтому здешняя копия не вызывалась никогда.
+ *
+ * Комментарий у места монтирования в server/index.ts утверждал обратное:
+ * «регистрируем позже, чтобы имели приоритет». Это неверно — более поздняя
+ * регистрация даёт не приоритет, а недостижимость.
+ *
+ * Удалённая копия к тому же не проверяла принадлежность кампании пользователю
+ * и ходила в Directus под статическим токеном. Живая версия проверяет.
  */
-router.get('/campaigns/:campaignId/instagram-settings', authenticateUser, async (req, res) => {
-  const { campaignId } = req.params;
-  const userToken = req.headers.authorization?.replace('Bearer ', '');
-
-  try {
-
-    // Используем системный токен как fallback для доступа к базе данных
-    const tokenToUse = userToken || process.env.DIRECTUS_STATIC_TOKEN;
-    
-    if (!tokenToUse) {
-      return res.status(401).json({
-        success: false,
-        error: 'Токен авторизации не доступен'
-      });
-    }
-
-
-    // Получаем настройки кампании
-    const getCampaignResponse = await axios.get(
-      `${process.env.DIRECTUS_URL}/items/user_campaigns/${campaignId}`,
-      {
-        headers: {
-          Authorization: `Bearer ${tokenToUse}`,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-
-    const campaign = getCampaignResponse.data.data;
-    const socialMediaSettings = campaign.social_media_settings || {};
-    const instagramSettings = socialMediaSettings.instagram || null;
-
-    res.json({
-      success: true,
-      settings: sanitizeOAuthSecrets(instagramSettings)
-    });
-
-  } catch (error: any) {
-    console.error('❌ Error retrieving Instagram settings:', error.message);
-    res.status(500).json({
-      success: false,
-      error: 'Ошибка при получении Instagram настроек',
-      details: error.message
-    });
-  }
-});
 
 /**
  * Сохранение Instagram настроек в JSON кампании
@@ -582,174 +548,6 @@ router.post('/campaigns/:campaignId/check-facebook-page', authenticateUser, asyn
     res.status(500).json({
       success: false,
       error: 'Ошибка при проверке страницы',
-      details: error.response?.data || error.message
-    });
-  }
-});
-
-/**
- * Поиск всех доступных Instagram аккаунтов пользователя
- */
-router.post('/campaigns/:campaignId/discover-instagram-accounts', authenticateUser, async (req, res) => {
-  const { campaignId } = req.params;
-  const { accessToken } = req.body;
-  const userToken = req.headers.authorization?.replace('Bearer ', '');
-
-  try {
-    console.log('🔍 Discovering Instagram accounts for campaign:', campaignId);
-    
-    if (!accessToken) {
-      return res.status(400).json({
-        success: false,
-        error: 'Access Token обязателен'
-      });
-    }
-
-    if (!userToken) {
-      return res.status(401).json({
-        success: false,
-        error: 'Токен авторизации не предоставлен'
-      });
-    }
-
-    const discoveredAccounts: Array<{
-      pageId: string;
-      pageName: string;
-      instagramId: string;
-      accountType: string;
-    }> = [];
-
-    // Диагностика токена
-    console.log('🔍 [DISCOVER] Checking token permissions...');
-    try {
-      const tokenDebugResponse = await axios.get(
-        `https://graph.facebook.com/debug_token?input_token=${accessToken}&access_token=${accessToken}`
-      );
-      console.log('🔍 [DISCOVER] Token debug info:', {
-        app_id: tokenDebugResponse.data?.data?.app_id,
-        scopes: tokenDebugResponse.data?.data?.scopes,
-        user_id: tokenDebugResponse.data?.data?.user_id,
-        is_valid: tokenDebugResponse.data?.data?.is_valid
-      });
-    } catch (debugError) {
-      console.log('⚠️ [DISCOVER] Token debug failed:', debugError.message);
-    }
-
-    // Шаг 1: Получаем все Facebook страницы пользователя
-    console.log('🔍 [DISCOVER] Fetching Facebook pages...');
-    const pagesResponse = await axios.get(
-      `https://graph.facebook.com/v23.0/me/accounts?access_token=${accessToken}&fields=id,name,access_token`
-    );
-    
-    console.log('🔍 [DISCOVER] Found pages:', pagesResponse.data.data?.length || 0);
-    pagesResponse.data.data?.forEach((page: any, index: number) => {
-      console.log(`🔍 [DISCOVER] Page ${index + 1}: ${page.name} (ID: ${page.id})`);
-    });
-
-
-    // Шаг 2: Для каждой страницы проверяем Instagram аккаунты
-    for (const page of pagesResponse.data.data) {
-      try {
-        console.log(`🔍 [DISCOVER] Checking page: ${page.name} (ID: ${page.id})`);
-        
-        // Используем page access token если доступен
-        const pageAccessToken = page.access_token || accessToken;
-        
-        const pageInstagramResponse = await axios.get(
-          `https://graph.facebook.com/v23.0/${page.id}?access_token=${pageAccessToken}&fields=id,name,instagram_business_account,connected_instagram_account`
-        );
-
-        const pageData = pageInstagramResponse.data;
-        const hasBusinessAccount = !!(pageData.instagram_business_account && pageData.instagram_business_account.id);
-        const hasConnectedAccount = !!(pageData.connected_instagram_account && pageData.connected_instagram_account.id);
-
-        console.log(`🔍 [DISCOVER] Page ${page.name} analysis:`, {
-          hasBusinessAccount,
-          hasConnectedAccount,
-          businessAccountId: pageData.instagram_business_account?.id,
-          connectedAccountId: pageData.connected_instagram_account?.id
-        });
-
-        if (hasBusinessAccount) {
-          discoveredAccounts.push({
-            pageId: pageData.id,
-            pageName: pageData.name,
-            instagramId: pageData.instagram_business_account.id,
-            accountType: 'business_account'
-          });
-          console.log(`✅ [DISCOVER] Found Business Account: ${pageData.name} -> ${pageData.instagram_business_account.id}`);
-        } else if (hasConnectedAccount) {
-          discoveredAccounts.push({
-            pageId: pageData.id,
-            pageName: pageData.name,
-            instagramId: pageData.connected_instagram_account.id,
-            accountType: 'connected_account'
-          });
-          console.log(`✅ [DISCOVER] Found Connected Account: ${pageData.name} -> ${pageData.connected_instagram_account.id}`);
-        } else {
-          console.log(`❌ [DISCOVER] No Instagram account for page: ${pageData.name}`);
-        }
-
-      } catch (pageError: any) {
-        console.error(`❌ [DISCOVER] Error checking page ${page.name}:`, pageError.response?.data || pageError.message);
-        // Продолжаем проверку других страниц даже если одна не работает
-      }
-    }
-
-    // Шаг 3: Дополнительная проверка завершена - используем только API данные
-
-    console.log(`🎉 Discovery complete! Found ${discoveredAccounts.length} Instagram accounts`);
-    
-    // Получаем username'ы для каждого Instagram аккаунта
-    const formattedAccounts = [];
-    
-    for (const account of discoveredAccounts) {
-      try {
-        // Получаем информацию об Instagram аккаунте через Graph API
-        const instagramInfoResponse = await axios.get(
-          `https://graph.facebook.com/v23.0/${account.instagramId}?access_token=${accessToken}&fields=id,username,name`
-        );
-        
-        const instagramData = instagramInfoResponse.data;
-        const displayName = instagramData.username ? `@${instagramData.username}` : account.pageName;
-        
-        formattedAccounts.push({
-          id: account.instagramId,
-          name: displayName,
-          username: instagramData.username,
-          pageId: account.pageId,
-          accountType: account.accountType
-        });
-        
-        console.log(`✅ Instagram account details: ${account.instagramId} -> ${displayName}`);
-        
-      } catch (instagramError: any) {
-        console.error(`❌ Error fetching Instagram details for ${account.instagramId}:`, instagramError.response?.data || instagramError.message);
-        
-        // Используем fallback с именем страницы
-        formattedAccounts.push({
-          id: account.instagramId,
-          name: account.pageName,
-          username: null,
-          pageId: account.pageId,
-          accountType: account.accountType
-        });
-        
-        console.log(`✅ Using fallback page name for ${account.instagramId}: ${account.pageName}`);
-      }
-    }
-
-    res.json({
-      success: true,
-      accounts: formattedAccounts,
-      totalFound: formattedAccounts.length
-    });
-
-  } catch (error: any) {
-    console.error('❌ Error in Instagram discovery:', error.response?.data || error.message);
-    res.status(500).json({
-      success: false,
-      error: 'Ошибка при поиске Instagram аккаунтов',
       details: error.response?.data || error.message
     });
   }

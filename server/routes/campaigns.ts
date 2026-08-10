@@ -865,17 +865,8 @@ export function registerCampaignRoutes(app: Express) {
     }
   });
 
-  // Админский роут для удаления дубликатов
-  app.delete("/api/admin/sources/remove-duplicates", authenticateUser, async (req: any, res) => {
-    try {
-      const isAdmin = await isUserAdmin(req);
-      if (!isAdmin) return res.status(403).json({ error: "Доступ запрещен" });
-      
-      res.json({ success: true, message: "Duplicates removed" });
-    } catch (error) {
-      res.status(500).json({ error: "Failed to remove duplicates" });
-    }
-  });
+  // DELETE /api/admin/sources/remove-duplicates живёт в routes/analytics.ts:
+  // тот модуль регистрируется раньше, поэтому здешняя копия была недостижима (AI-92).
 
   // Генерация промта ассистента на основе конфигуратора
   app.post('/api/campaigns/:campaignId/generate-assistant-prompt', authenticateUser, async (req, res) => {

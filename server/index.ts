@@ -452,7 +452,6 @@ log('Social publishing routes registered (including /api/publish/now)');
 // Импортируем и регистрируем маршруты для глобальных API ключей
 import { registerGlobalApiKeysRoutes } from './routes-global-api-keys';
 // Импортируем Instagram Setup Wizard
-import instagramSetupRoutes from './routes/instagram-setup-wizard';
 // Импортируем Facebook Pages router
 import facebookPagesRouter from './routes/facebook-pages';
 // Импортируем Facebook Debug router
@@ -469,7 +468,6 @@ registerUserApiKeysRoutes(app);
 log('User API keys routes registered early to avoid Vite middleware interception');
 
 // Регистрируем Instagram Setup Wizard маршруты
-app.use('/api/instagram-setup', instagramSetupRoutes);
 log('Instagram Setup Wizard routes registered');
 
 // Регистрируем Facebook Pages маршруты
@@ -809,8 +807,10 @@ app.use('/video-app', (req, res, next) => {
 
     log('Swagger API Documentation доступна по адресу /api-docs', 'swagger');
 
-    // Регистрируем Instagram Campaign Settings маршруты ПОСЛЕ registerRoutes
-    // чтобы они имели приоритет над конфликтующими маршрутами в routes.ts
+    // Instagram Campaign Settings монтируются здесь, после registerRoutes.
+    // ВНИМАНИЕ: это НЕ даёт им приоритет. Express отдаёт первый совпавший
+    // обработчик, поэтому при совпадении путей выигрывает тот, что
+    // зарегистрирован раньше, а здешний оказывается недостижим.
     log("Registering Instagram Campaign Settings routes...");
     try {
       const campaignInstagramRoutes = (await import('./routes/campaign-instagram-settings')).default;

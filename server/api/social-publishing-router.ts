@@ -955,19 +955,43 @@ router.post('/publish/now', authMiddleware, async (req, res) => {
               const publishResult = await threadsService.publishPost(threadsSettings, { text, imageUrl, videoUrl });
 
               if (publishResult.success) {
-                await axios.patch(`${directusUrl}/items/campaign_content/${contentId}`, {
-                  social_platforms: {
-                    ...(contentItem.social_platforms || {}),
-                    threads: {
-                      status: 'published',
-                      postId: publishResult.postId,
-                      postUrl: publishResult.postUrl,
-                      publishedAt: new Date().toISOString()
-                    }
-                  }
-                }, { headers: { Authorization: `Bearer ${adminToken}` } });
+                // SM-15 / AI-91: post-publish запись через helper. Раньше axios.patch
+                // шёл без своего try/catch — при сбое Directus пост уходил, запись
+                // пропадала. Helper делает две попытки: 'published', затем
+                // 'publish_succeeded_record_failed' с доказательствами публикации.
+                const { confirmPublishRecord, recordFailedResponse } = await import('../services/publish-record-confirm');
+                const publishedAt = new Date().toISOString();
+                const postId = publishResult.postId ?? '';
+                const postUrl = publishResult.postUrl ?? '';
+                const outcome = await confirmPublishRecord({
+                  contentId,
+                  platform: 'threads',
+                  currentSocialPlatforms: contentItem.social_platforms,
+                  published: {
+                    status: 'published',
+                    postId,
+                    postUrl,
+                    publishedAt,
+                  },
+                });
 
-                publishResults.push({ platform, success: true, result: publishResult });
+                if (outcome.kind === 'success') {
+                  publishResults.push({ platform, success: true, result: publishResult });
+                } else {
+                  // record-failed: пост в Threads висит, в БД не зафиксировано.
+                  // Ответ НЕ должен выглядеть как отказ — иначе пользователь
+                  // опубликует руками и получит дубль.
+                  publishResults.push(recordFailedResponse({
+                    platform: 'threads',
+                    published: {
+                      status: 'published',
+                      postId,
+                      postUrl,
+                      publishedAt,
+                    },
+                    outcome,
+                  }));
+                }
               } else {
                 throw new Error(publishResult.error || 'Ошибка публикации в Threads');
               }

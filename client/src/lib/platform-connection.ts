@@ -60,7 +60,10 @@ export function isPlatformConnected(
 
   switch (platform) {
     case 'telegram':
-      return nonEmpty(p.chatId) || nonEmpty(p.chat_id);
+      // SM-24: chatId alone is not enough — must also have a token.
+      // Otherwise browser autofill can populate chatId with email, and
+      // the platform shows as "Connected" while publishing will fail.
+      return (nonEmpty(p.chatId) || nonEmpty(p.chat_id)) && nonEmpty(p.token);
     case 'vk':
       return nonEmpty(p.groupId) || nonEmpty(p.group_id);
     case 'facebook':

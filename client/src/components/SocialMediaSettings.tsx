@@ -1923,6 +1923,7 @@ export function SocialMediaSettings({
                     <FormControl>
                       <Input 
                         placeholder="Например: -1001234567890 или @channel_name" 
+                        autoComplete="off"
                         {...field} 
                         value={field.value || ''}
                         className={field.value?.startsWith('@') ? "border-green-500" : ""}

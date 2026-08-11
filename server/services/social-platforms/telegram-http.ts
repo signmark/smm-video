@@ -47,44 +47,8 @@ export async function telegramAxios(token: string): Promise<AxiosInstance> {
   const ips = await getTelegramIps();
   const ipFingerprint = ips.join(',');
 
-  // Reuse agent unless IP list changed
   if (!_agent || _agentBuiltFor !== ipFingerprint) {
-    _agent = new https.Agent({ keepAlive: true });
-    // Assign after construction — passing createConnection as an option
-    // does NOT work (Node uses the built-in, not the option).
-    (_agent as any).createConnection = (options: any, cb: any) => {
-        let idx = 0;
-        const targets = ips.length > 0 ? ips : [TELEGRAM_HOST];
-        tryConnect();
-
-        function tryConnect(): void {
-          if (idx >= targets.length) {
-            cb(new Error(`Telegram: all ${targets.length} IPs unreachable`));
-            return;
-          }
-          let settled = false;
-          const tlsOpts = {
-            ...options,
-            host: targets[idx],
-            servername: TELEGRAM_HOST,
-          };
-          const sock = tls.connect(tlsOpts, () => {
-            // TLS handshake OK. After this, NO more IP rotation — any HTTP
-            // response means the post may already be live on Telegram's side.
-            // Remove error listener so a late ECONNRESET does NOT trigger IP2.
-            settled = true;
-            sock.removeListener('error', onError);
-            cb(null, sock);
-          });
-          function onError() {
-            if (settled) return;
-            idx++;
-            sock.destroy();
-            tryConnect();
-          }
-          sock.once('error', onError);
-        }
-      };
+    _agent = buildTelegramAgent(ips);
     _agentBuiltFor = ipFingerprint;
   }
 
@@ -93,6 +57,48 @@ export async function telegramAxios(token: string): Promise<AxiosInstance> {
     httpsAgent: _agent,
     timeout: 30_000,
   });
+}
+
+/** Export for tests — the same factory used by telegramAxios in production. */
+export function buildTelegramAgent(ips: string[]): https.Agent {
+  const agent = new https.Agent({ keepAlive: true });
+  // Assign after construction — passing createConnection as an option
+  // does NOT work (Node uses the built-in, not the option).
+  (agent as any).createConnection = createConnectionFactory(ips);
+  return agent;
+}
+
+export function createConnectionFactory(ips: string[]) {
+  const targets = ips.length > 0 ? ips : [TELEGRAM_HOST];
+  return (options: any, cb: any) => {
+    let idx = 0;
+    tryConnect();
+
+    function tryConnect(): void {
+      if (idx >= targets.length) {
+        cb(new Error(`Telegram: all ${targets.length} IPs unreachable`));
+        return;
+      }
+      let settled = false;
+      const tlsOpts = {
+        ...options,
+        host: targets[idx],
+        servername: TELEGRAM_HOST,
+      };
+      const sock = tls.connect(tlsOpts, () => {
+        settled = true;
+        sock.removeListener('error', onError);
+        cb(null, sock);
+      });
+      function onError() {
+        if (settled) return;
+        idx++;
+        sock.destroy();
+        tryConnect();
+      }
+      sock.once('error', onError);
+    }
+  };
 }
 
 /** Clear the DNS cache (for testing / manual recovery). */

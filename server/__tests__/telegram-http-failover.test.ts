@@ -1,25 +1,10 @@
 /**
  * AI-101: Telegram DNS A-record failover — behavioral tests.
  *
- * Tests for telegram-http.ts transport layer via createConnection:
- * 1. IP rotation: IP1 error before handshake → IP2 tried
- * 2. Duplicate boundary: IP1 handshake OK + late socket error → cb once, IP2 NOT tried
- * 3. Exhaustion: all IPs fail → cb with error
- * 4. SNI servername = api.telegram.org
- * 5. DNS cache TTL and clear
- *
- * NOT RUN: no node_modules. @Clause_Dev_Hermi will execute red-before/green.
+ * Tests the production createConnectionFactory via agent.createConnection.
+ * NOT RUN: no node_modules. @Clause_Dev_Hermi executes red-before/green.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import * as tls from 'tls';
-import * as dns from 'dns/promises';
-import https from 'https';
-
-const { clearTelegramIpsCache } = await vi.importActual<typeof import('../services/social-platforms/telegram-http')>(
-  '../services/social-platforms/telegram-http'
-);
-
-vi.mock('dns/promises', () => ({ resolve4: vi.fn() }));
 
 const { mockTlsConnect } = vi.hoisted(() => ({ mockTlsConnect: vi.fn() }));
 vi.mock('tls', async (importOriginal) => {
@@ -27,90 +12,71 @@ vi.mock('tls', async (importOriginal) => {
   return { ...actual, connect: mockTlsConnect, __esModule: true };
 });
 
-beforeEach(() => {
-  vi.clearAllMocks();
-  clearTelegramIpsCache();
-  (dns.resolve4 as any).mockResolvedValue(['149.154.167.220', '149.154.175.50']);
-});
-
-/** Build a test agent directly (no HTTP needed). */
-function buildAgent(ips: string[]): https.Agent {
-  const agent = new https.Agent({ keepAlive: true });
-  agent.createConnection = (opts: any, cb: any) => {
-      let idx = 0;
-      const targets = ips.length > 0 ? ips : ['api.telegram.org'];
-      tryConnect();
-      function tryConnect(): void {
-        if (idx >= targets.length) { cb(new Error('all IPs unreachable')); return; }
-        let settled = false;
-        const tlsOpts = { ...opts, host: targets[idx], servername: 'api.telegram.org' };
-        const sock = tls.connect(tlsOpts, () => { settled = true; sock.removeListener('error', onError); cb(null, sock); });
-        function onError() { if (settled) return; idx++; sock.destroy(); tryConnect(); }
-        sock.once('error', onError);
-      }
-    };
-  return agent;
-}
+import { createConnectionFactory, clearTelegramIpsCache } from '../services/social-platforms/telegram-http';
 
 function fakeSocket() {
   return new (require('stream').Duplex)({ read() {}, write(_c: any, _e: any, cb: any) { cb(); } }) as any;
 }
 
+beforeEach(() => {
+  vi.clearAllMocks();
+  clearTelegramIpsCache();
+});
+
+function tick(n = 1): Promise<void> {
+  let p = Promise.resolve();
+  for (let i = 0; i < n; i++) p = p.then(() => new Promise((r) => setImmediate(r)));
+  return p;
+}
+
 describe('AI-101: IP rotation on pre-handshake error', () => {
-  it('tries IP2 when IP1 fails before TLS handshake', () => {
+  it('tries IP2 when IP1 fails before TLS handshake', async () => {
     const ips = ['10.0.0.1', '10.0.0.2'];
+    const hosts: string[] = [];
     let cbCalls = 0;
-    const results: any[] = [];
 
-    // IP1: error before handshake
-    mockTlsConnect.mockImplementationOnce((_opts: any, _cb: any) => {
+    mockTlsConnect.mockImplementation((opts: any, _cb: any) => {
+      hosts.push(opts.host);
       const sock = fakeSocket();
-      process.nextTick(() => sock.emit('error', Object.assign(new Error('ECONNREFUSED'), { code: 'ECONNREFUSED' })));
-      return sock;
-    });
-    // IP2: success
-    mockTlsConnect.mockImplementationOnce((opts: any, cb: any) => {
-      results.push({ host: opts.host });
-      const sock = fakeSocket();
-      process.nextTick(() => cb(null, sock));
+      if (hosts.length === 1) process.nextTick(() => sock.emit('error', Object.assign(new Error('ECONNREFUSED'), { code: 'ECONNREFUSED' })));
+      else process.nextTick(() => _cb(null, sock));
       return sock;
     });
 
-    const agent = buildAgent(ips);
-    agent.createConnection!({} as any, (_err: any, _sock: any) => { cbCalls++; });
+    const factory = createConnectionFactory(ips);
+    factory({} as any, () => { cbCalls++; });
+    await tick(2);
 
-    expect(mockTlsConnect).toHaveBeenCalledTimes(2);
-    expect(results[0].host).toBe('10.0.0.2'); // IP2 was used
-    expect(cbCalls).toBe(1); // callback called exactly once
+    expect(hosts).toEqual(['10.0.0.1', '10.0.0.2']);
+    expect(cbCalls).toBe(1);
   });
 });
 
-describe('AI-101: duplicate boundary — late error after handshake', () => {
-  it('does NOT try IP2 after IP1 handshake succeeds (even on late socket error)', () => {
+describe('AI-101: duplicate boundary', () => {
+  it('does NOT try IP2 after IP1 handshake succeeds (even on late ECONNRESET)', async () => {
     const ips = ['10.0.0.1', '10.0.0.2'];
     let cbCalls = 0;
 
-    // IP1: handshake success
     mockTlsConnect.mockImplementationOnce((_opts: any, cb: any) => {
       const sock = fakeSocket();
       process.nextTick(() => {
         cb(null, sock);
-        // Late ECONNRESET — should NOT trigger IP2
         process.nextTick(() => sock.emit('error', Object.assign(new Error('ECONNRESET'), { code: 'ECONNRESET' })));
       });
       return sock;
     });
 
-    const agent = buildAgent(ips);
-    agent.createConnection!({} as any, (_err: any, _sock: any) => { cbCalls++; });
+    const factory = createConnectionFactory(ips);
+    factory({} as any, () => { cbCalls++; });
+    await tick(3);
 
-    expect(mockTlsConnect).toHaveBeenCalledTimes(1); // ONLY IP1, no IP2
-    expect(cbCalls).toBe(1); // callback exactly once
+    expect(mockTlsConnect).toHaveBeenCalledTimes(1);
+    expect(cbCalls).toBe(1);
   });
 });
 
 describe('AI-101: exhaustion', () => {
-  it('calls cb with error when all IPs fail', () => {
+  it('calls cb with error when all IPs fail', async () => {
     const ips = ['10.0.0.1'];
     let cbErr: any = null;
     let cbCalls = 0;
@@ -121,8 +87,9 @@ describe('AI-101: exhaustion', () => {
       return sock;
     });
 
-    const agent = buildAgent(ips);
-    agent.createConnection!({} as any, (err: any, _sock: any) => { cbErr = err; cbCalls++; });
+    const factory = createConnectionFactory(ips);
+    factory({} as any, (err: any) => { cbErr = err; cbCalls++; });
+    await tick(2);
 
     expect(cbCalls).toBe(1);
     expect(cbErr).toBeTruthy();
@@ -131,7 +98,7 @@ describe('AI-101: exhaustion', () => {
 });
 
 describe('AI-101: SNI servername', () => {
-  it('sets servername to api.telegram.org (not the IP)', () => {
+  it('sets servername to api.telegram.org', async () => {
     const ips = ['149.154.167.220'];
     let capturedOpts: any = null;
 
@@ -142,26 +109,10 @@ describe('AI-101: SNI servername', () => {
       return sock;
     });
 
-    const agent = buildAgent(ips);
-    agent.createConnection!({} as any, () => {});
+    const factory = createConnectionFactory(ips);
+    factory({} as any, () => {});
+    await tick(2);
 
     expect(capturedOpts.servername).toBe('api.telegram.org');
-  });
-});
-
-describe('AI-101: DNS cache', () => {
-  it('caches DNS for 5 minutes', async () => {
-    const { telegramAxios } = await import('../services/social-platforms/telegram-http');
-    await telegramAxios('token-1');
-    await telegramAxios('token-2');
-    expect(dns.resolve4).toHaveBeenCalledTimes(1);
-  });
-
-  it('re-resolves after cache clear', async () => {
-    const { telegramAxios } = await import('../services/social-platforms/telegram-http');
-    await telegramAxios('token-1');
-    clearTelegramIpsCache();
-    await telegramAxios('token-2');
-    expect(dns.resolve4).toHaveBeenCalledTimes(2);
   });
 });

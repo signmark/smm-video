@@ -14,6 +14,7 @@ import { directusCrud } from '../services/directus-crud';
 import { authorizeCampaignAccess, CampaignAccessError } from '../services/campaign-access';
 import { mergeOAuthSettings, sanitizeOAuthSecrets } from '../services/oauth-response-sanitizer';
 import { normalizePlatformMentionsToPlaceholder } from '../services/social-prompt';
+import { normalizeTelegramChatId } from '../utils/telegram-chatid';
 
 /**
  * Удаляет все связанные элементы указанной коллекции для кампании
@@ -269,20 +270,16 @@ export function registerCampaignRoutes(app: Express) {
         const existingSettings = existingResp.data.data?.social_media_settings || {};
         updateData.social_media_settings = mergeOAuthSettings(existingSettings, updateData.social_media_settings);
 
-        // SM-24: Validate Telegram chatId format before saving
+        // SM-24: Normalize Telegram chatId before saving
         const tgChatId = updateData.social_media_settings?.telegram?.chatId;
         if (tgChatId !== undefined && tgChatId !== null && tgChatId !== '') {
-          const trimmed = String(tgChatId).trim();
-          if (trimmed.length > 0) {
-            const isValid = /^(-100\d{7,13}|@[a-zA-Z]\w{3,31}|\d{6,15})$/.test(trimmed);
-            if (!isValid) {
-              return res.status(400).json({
-                error: 'Invalid Telegram chat ID format. Expected: -100XXXXXXXXX (supergroup), @channelname, or numeric ID'
-              });
-            }
-            // Normalize: always store trimmed value
-            updateData.social_media_settings.telegram.chatId = trimmed;
+          const normalized = normalizeTelegramChatId(String(tgChatId));
+          if (!normalized) {
+            return res.status(400).json({
+              error: 'Invalid Telegram chat ID. Expected: @username, -100XXXXXXXXX, numeric ID, or t.me link'
+            });
           }
+          updateData.social_media_settings.telegram.chatId = normalized;
         }
       }
 

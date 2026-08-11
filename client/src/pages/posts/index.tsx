@@ -39,6 +39,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { getPublishedPlatformTimeSummary } from '@shared/schedule-time';
 import { QueryErrorState } from '@/components/QueryErrorState';
+import { CalendarDayDots, type CalendarDayDot } from '@/components/calendar-day-dots';
 
 function markdownToHtml(text: string): string {
   if (!text) return '';
@@ -409,24 +410,23 @@ export default function Posts() {
       }
     };
 
-    // Отображаем маркер для каждой подтверждённой публикации в соцсеть.
-    return (
-      <div className="flex justify-center flex-wrap gap-0.5 mt-1">
-        {publicationsForDay.map((publication) => (
-          <div 
-            key={publication.key}
-            className={`h-1.5 w-1.5 rounded-full ${getColorForType(publication.contentType || 'text')}`}
-          ></div>
-        ))}
-        {failedAttemptsForDay.map((content) => (
-          <div
-            key={`${content.id}:failed`}
-            className="h-1.5 w-1.5 rounded-full bg-red-500"
-            title={t('publishing.published.publicationError')}
-          />
-        ))}
-      </div>
-    );
+    // SM-22: маркеры рисует общий компонент. Раньше этот календарь рисовал их
+    // сам, без предела на количество, и день с семнадцатью публикациями
+    // выкидывал точки за границы ячейки — при том что во втором календаре
+    // ограничение уже стояло.
+    const dots: CalendarDayDot[] = [
+      ...publicationsForDay.map((publication) => ({
+        key: publication.key,
+        color: getColorForType(publication.contentType || 'text'),
+      })),
+      ...failedAttemptsForDay.map((content) => ({
+        key: `${content.id}:failed`,
+        color: 'bg-red-500',
+        title: t('publishing.published.publicationError'),
+      })),
+    ];
+
+    return <CalendarDayDots dots={dots} />;
   };
 
   const renderPostCard = (content: CampaignContent) => {

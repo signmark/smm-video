@@ -21,6 +21,7 @@ import SocialMediaIcon from './SocialMediaIcon';
 import { DndProvider, useDrop, useDrag } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
 import { useToast } from '@/hooks/use-toast';
+import { CalendarDayDots, type CalendarDayDot } from '@/components/calendar-day-dots';
 
 interface PublicationCalendarProps {
   content: CampaignContent[];
@@ -439,38 +440,26 @@ export default function PublicationCalendar({
       }
     };
 
-    // Отображаем цветные точки для типов контента.
-    // SM-22: максимум 4 видимых маркера + индикатор "+N" для остальных.
-    // При 15+ публикациях в день точки вываливались за границы ячейки.
-    const MAX_VISIBLE_DOTS = 4;
-    const allDots: { status: string; type: string; opacity: string; ring?: string; color: string }[] = [];
+    // SM-22: маркеры рисует общий компонент — тот же, что и на экране постов.
+    // Предел на число видимых точек живёт там, в одном месте на оба календаря.
+    const dots: CalendarDayDot[] = [];
     Object.entries(contentByStatus).forEach(([status, typesCounts]) => {
       const { opacity, ring } = getStatusStyle(status);
       Object.keys(typesCounts).forEach((type) => {
         const count = typesCounts[type];
         for (let i = 0; i < count; i++) {
-          allDots.push({ status, type, opacity, ring, color: getColorForType(type) });
+          dots.push({
+            key: `${status}:${type}:${i}`,
+            color: getColorForType(type),
+            ring,
+            opacity,
+            title: `${status}: ${type}`,
+          });
         }
       });
     });
-    const remaining = allDots.length - MAX_VISIBLE_DOTS;
-    const visibleDots = allDots.slice(0, MAX_VISIBLE_DOTS);
 
-    return (
-      <div className="flex justify-center flex-wrap gap-0.5 mt-0.5 overflow-hidden max-w-full">
-        {visibleDots.map((dot, idx) => (
-          <div
-            key={idx}
-            className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${dot.color} ${dot.ring || ''}`}
-            style={{ opacity: dot.opacity }}
-            title={`${dot.status}: ${dot.type}`}
-          ></div>
-        ))}
-        {remaining > 0 && (
-          <span className="text-[9px] leading-none text-muted-foreground font-medium">+{remaining}</span>
-        )}
-      </div>
-    );
+    return <CalendarDayDots dots={dots} />;
   };
 
   // Обработчик просмотра деталей поста

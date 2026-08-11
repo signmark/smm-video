@@ -81,6 +81,21 @@ describe('SM-22: маркеры дня ограничены четырьмя', (
     expect(screen.getByTestId('calendar-day-dots-overflow').textContent).toBe('+2');
   });
 
+  it('неудачи не уходят под «+N» первыми: на экране постов они идут перед успехами', () => {
+    // Ловушка на порядок, а не на вид: видимых маркеров всего четыре, и если
+    // неудачи складывать в конец массива, при четырёх успешных публикациях
+    // красная точка исчезнет под индикатором, а день будет выглядеть удачным.
+    const src = fs.readFileSync(
+      path.resolve(__dirname, '../../../..', 'client/src/pages/posts/index.tsx'),
+      'utf-8',
+    );
+    const failedAt = src.indexOf('failedAttemptsForDay.map');
+    const publishedAt = src.indexOf('publicationsForDay.map((publication)');
+    expect(failedAt).toBeGreaterThan(-1);
+    expect(publishedAt).toBeGreaterThan(-1);
+    expect(failedAt).toBeLessThan(publishedAt);
+  });
+
   it('splitDayDots считает остаток без рендера', () => {
     expect(splitDayDots(makeDots(17)).remaining).toBe(13);
     expect(splitDayDots(makeDots(4)).remaining).toBe(0);

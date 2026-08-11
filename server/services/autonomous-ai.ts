@@ -547,7 +547,9 @@ export function scheduleAutonomousTimers(state: AutonomousState): void {
 
   state.firstCycleTimer = setTimeout(async () => {
     state.firstCycleTimer = undefined;
-    await runCycleAndScheduleNext(state);
+    // Промис живёт в состоянии, чтобы тест мог дождаться честного завершения
+    // цикла (включая .finally) под fake-таймерами через inFlight.
+    state.inFlight = runCycleAndScheduleNext(state);
   }, delayMs);
 }
 
@@ -560,12 +562,30 @@ export function scheduleAutonomousTimers(state: AutonomousState): void {
  * повторно планировать нечего.
  */
 async function runCycleAndScheduleNext(state: AutonomousState): Promise<void> {
-  await runAutonomousCycle(state);
+  await cycleRunner(state);
   // Проверка на живом состоянии: цикл мог сам снять режим (квота) или его
   // могли остановить/поставить на паузу во время работы цикла.
   if (!state.paused && autonomousStates.get(state.campaignId) === state) {
     scheduleAutonomousTimers(state);
   }
+}
+
+/**
+ * Seam для подмены runner цикла (SM-20, rev @Clause_Dev_Hermi). Прод всегда
+ * использует настоящий `runAutonomousCycle`. Тест подменяет его лёгкой
+ * заглушкой, чтобы доказать «таймер → цикл → единственный реарм» без сети и
+ * MIN_CYCLE_DELAY_MS. Не отдаёт mutable-состояние наружу.
+ */
+let cycleRunner: (state: AutonomousState) => Promise<void> = runAutonomousCycleRef;
+export function __setCycleRunnerForTest(fn: (state: AutonomousState) => Promise<void>): void {
+  cycleRunner = fn;
+}
+export function __resetCycleRunnerForTest(): void {
+  cycleRunner = runAutonomousCycleRef;
+}
+// Прод-реализация runner — содержимое настоящего runAutonomousCycle.
+async function runAutonomousCycleRef(state: AutonomousState): Promise<void> {
+  await runAutonomousCycle(state);
 }
 
 import { computeNextCycleDelayMs } from './autonomous-ai-scheduling';
@@ -602,6 +622,12 @@ interface AutonomousState {
   paused?: boolean;
   /** Когда поставлен на паузу — для отображения и диагностики (SM-20). */
   pausedAt?: Date;
+  /**
+   * Промис запущенного цикла (SM-20). Живёт, пока цикл не завершился (включая
+   * .finally). Нужен тестам, чтобы дождаться честного завершения цикла под
+   * fake-таймерами (`advanceTimersByTimeAsync`), и не отдаёт mutable-состояние.
+   */
+  inFlight?: Promise<void> | null;
   // Пайплайн: ожидание одобрения
   pendingPlan?: ContentPlanItem[];
   pendingApprovalStep?: 'plan' | 'content' | 'images';
@@ -626,6 +652,8 @@ export function getAutonomousStateForTest(campaignId: string): {
   interval: number;
   paused: boolean;
   hasFirstCycleTimer: boolean;
+  /** Промис запущенного цикла (для дожидания .finally под fake-таймерами). */
+  inFlight?: Promise<void> | null;
 } | null {
   const s = autonomousStates.get(campaignId);
   if (!s) return null;
@@ -637,6 +665,7 @@ export function getAutonomousStateForTest(campaignId: string): {
     interval: s.interval,
     paused: s.paused === true,
     hasFirstCycleTimer: !!s.firstCycleTimer,
+    inFlight: s.inFlight,
   };
 }
 
@@ -647,16 +676,6 @@ export function resetAutonomousStatesForTest(): void {
     if (s.firstCycleTimer) clearTimeout(s.firstCycleTimer);
   }
   autonomousStates.clear();
-}
-
-/**
- * Узкий доступ к одному состоянию для schedule-на-уровне теста (SM-20 no-orphan).
- * Возвращает mutable-состояние каплейки, но ТОЛЬКО по явному id и только для
- * возможности теста вызвать scheduleAutonomousTimers и проверить таймеры.
- * Это не карта и не «все состояния» — отдельный живой объект по запросу.
- */
-export function getAutonomousStateByTest(campaignId: string): (AutonomousState & { timer?: NodeJS.Timeout; firstCycleTimer?: NodeJS.Timeout }) | null {
-  return autonomousStates.get(campaignId) || null;
 }
 
 // Ошибки квоты AI — хранятся даже после остановки агента, пока пользователь не запустит снова

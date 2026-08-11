@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-// Mocks for the heavy dependency chain of autonomous-ai.ts (axios, directus,
-// gemini, ai-service). Pattern mirrors content-plan-sanitize.test.ts.
+// Mocks for the heavy dependency chain (needed to import the module; the test
+// itself uses the __setCycleRunnerForTest seam so it never touches network/model).
 const H = vi.hoisted(() => ({ generateContent: vi.fn(), getById: vi.fn() }));
 
 vi.mock('axios', () => {
@@ -35,9 +35,10 @@ vi.mock('../utils/logger', () => {
 });
 
 import {
-  getAutonomousStateByTest,
+  __resetCycleRunnerForTest,
+  __setCycleRunnerForTest,
+  getAutonomousStateForTest,
   resetAutonomousStatesForTest,
-  scheduleAutonomousTimers,
   startAutonomousExternal,
   stopAutonomousExternal,
 } from '../services/autonomous-ai';
@@ -45,59 +46,71 @@ import {
 beforeEach(() => {
   vi.useFakeTimers();
   resetAutonomousStatesForTest();
+  __resetCycleRunnerForTest();
   H.generateContent.mockReset();
   H.getById.mockReset();
 });
 afterEach(() => {
   vi.useRealTimers();
   resetAutonomousStatesForTest();
+  __resetCycleRunnerForTest();
 });
 
 /**
- * SM-20 no-orphan инвариант на уровне планирования: scheduleAutonomousTimers
- * ставит РОВНО ОДИН одноразовый timeout и НИКОГДА setInterval (state.timer
- * остаётся undefined). Повторный вызов не плодит таймеры (старый гасится),
- * остановка снимает и таймер, и состояние.
+ * SM-20 no-orphan: единая цепочка одноразовых timeout. Подменяем runner лёгкой
+ * заглушкой (seam @Clause_Dev_Hermi), чтобы доказать: после фактического
+ * исполнения колбэка исходного timeout и честного завершения цикла (включая
+ * .finally, дождёмся через state.inFlight) заведён РОВНО ОДИН новый одноразовый
+ * таймер и НИ ОДНОГО setInterval (vi.getTimerCount() === 1, state.timer пуст).
  */
 describe('SM-20: одна цепочка одноразовых таймеров (no orphan)', () => {
-  it('schedule ставит ровно один одноразовый таймер и не создаёт интервал', async () => {
+  it('после исполнения timeout-колбэка и завершения цикла — один новый timer, ноль interval', async () => {
+    let cycles = 0;
+    __setCycleRunnerForTest(async () => { cycles++; });
+
     await startAutonomousExternal({
-      campaignId: 'c1', userId: 'u1', interval: 1, postsPerCycle: 1,
-      autoSchedule: false, withImages: false, authToken: 'tok', platforms: ['telegram'],
+      campaignId: 'c1', userId: 'u1', interval: 1,
+      postsPerCycle: 1, autoSchedule: false, withImages: false,
+      authToken: 'tok', platforms: ['telegram'],
     });
-    const st = getAutonomousStateByTest('c1');
-    expect(st).not.toBeNull();
 
-    // Явно вызываем планировщик: ровно один одноразовый таймер, интервала нет.
-    scheduleAutonomousTimers(st!);
-    expect(st!.firstCycleTimer).toBeDefined();
-    expect(st!.timer).toBeUndefined();
+    // start сразу запускает первый цикл (через seam); дождёмся его inFlight.
+    const s0 = getAutonomousStateForTest('c1');
+    expect(s0).not.toBeNull();
+    if (s0?.inFlight) await s0.inFlight;
+    // Цикл завершился и перевзвёл ровно один следующий одноразовый таймер.
+    expect(cycles).toBe(1);
+    expect(vi.getTimerCount()).toBe(1);
 
-    // Повторный вызов не плодит лишний: старый одноразовый гасится, остаётся ровно один.
-    const first = st!.firstCycleTimer;
-    scheduleAutonomousTimers(st!);
-    expect(st!.firstCycleTimer).toBeDefined();
-    expect(st!.firstCycleTimer).not.toBe(first); // перезаведён, а не продублирован
-    expect(st!.timer).toBeUndefined();
+    // Исполняем колбэк текущего timeout. advanceTimersByTimeAsync крутит
+    // микрозадачи между таймерами, поэтому .finally успевает отработать.
+    // Сдвиг на MIN_CYCLE_DELAY_MS + 1 зажигает ровно следующий таймер.
+    await vi.advanceTimersByTimeAsync(5001);
+    const s1 = getAutonomousStateForTest('c1');
+    if (s1?.inFlight) await s1.inFlight;
+
+    // После этого цикла снова ровно один одноразовый таймер — НЕ два и не
+    // интервал: исходная регрессия дала бы два живых handle (duplicate chains).
+    expect(vi.getTimerCount()).toBe(1);
+    // Цикл прошёл минимум второй раз. state.timer (interval) так и не появился.
+    expect(cycles).toBeGreaterThanOrEqual(2);
   });
 
-  it('stop снимает одноразовый таймер и удаляет состояние', async () => {
+  it('stop снимает единственный таймер и удаляет состояние', async () => {
+    let cycles = 0;
+    __setCycleRunnerForTest(async () => { cycles++; });
     await startAutonomousExternal({
-      campaignId: 'c2', userId: 'u2', interval: 1, postsPerCycle: 1,
-      autoSchedule: false, withImages: false, authToken: 'tok', platforms: ['telegram'],
+      campaignId: 'c2', userId: 'u2', interval: 1,
+      postsPerCycle: 1, autoSchedule: false, withImages: false,
+      authToken: 'tok', platforms: ['telegram'],
     });
-    scheduleAutonomousTimers(getAutonomousStateByTest('c2')!);
-    expect(getAutonomousStateByTest('c2')!.firstCycleTimer).toBeDefined();
+    const s = getAutonomousStateForTest('c2');
+    if (s?.inFlight) await s.inFlight;
+    expect(getAutonomousStateForTest('c2')?.hasFirstCycleTimer).toBe(true);
 
     stopAutonomousExternal('c2');
-    expect(getAutonomousStateByTest('c2')).toBeNull();
-    // После остановки и перезапуска цепочка снова одна.
-    await startAutonomousExternal({
-      campaignId: 'c2', userId: 'u2', interval: 1, postsPerCycle: 1,
-      autoSchedule: false, withImages: false, authToken: 'tok', platforms: ['telegram'],
-    });
-    scheduleAutonomousTimers(getAutonomousStateByTest('c2')!);
-    expect(getAutonomousStateByTest('c2')!.firstCycleTimer).toBeDefined();
-    expect(getAutonomousStateByTest('c2')!.timer).toBeUndefined();
+    expect(getAutonomousStateForTest('c2')).toBeNull();
+    // Таймеров больше нет.
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

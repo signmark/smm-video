@@ -2,7 +2,6 @@
  * AI-101: Telegram DNS A-record failover — behavioral tests.
  *
  * Tests the production createConnectionFactory via agent.createConnection.
- * NOT RUN: no node_modules. @Clause_Dev_Hermi executes red-before/green.
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 

@@ -81,6 +81,26 @@ describe('TelegramService', () => {
       expect(call[1]).toMatchObject({ chat_id: '@test_channel', parse_mode: 'HTML' });
     });
 
+    // Замечание ревью: остальные ассерты матчат путь ПОДСТРОКОЙ, а `/sendMessage`
+    // содержится и в полном URL голого axios. То есть откат публикации обратно на
+    // прямой axios — мимо failover-транспорта — остался бы зелёным. Здесь это
+    // закрывается с двух сторон: инстанс создаётся с нужным baseURL, и запрос
+    // уходит ОТНОСИТЕЛЬНЫМ путём, каким по полному URL уйти не может.
+    it('публикация идёт через telegramAxios, а не через голый axios', async () => {
+      vi.mocked(axios.post).mockResolvedValueOnce({
+        data: { ok: true, result: { message_id: 7 } }
+      });
+
+      await telegramService.publishPost(mockSettings, { text: 'Проверка транспорта' });
+
+      expect(axios.create).toHaveBeenCalledWith(
+        expect.objectContaining({ baseURL: expect.stringContaining('/bot') }),
+      );
+      const url = String(vi.mocked(axios.post).mock.calls[0][0]);
+      expect(url.startsWith('/')).toBe(true);
+      expect(url).not.toContain('api.telegram.org');
+    });
+
     it('конвертирует HTML-теги в разрешённый Telegram HTML', async () => {
       vi.mocked(axios.post).mockResolvedValueOnce({
         data: { ok: true, result: { message_id: 10 } }

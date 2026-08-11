@@ -35,9 +35,8 @@ beforeEach(() => {
 
 /** Build a test agent directly (no HTTP needed). */
 function buildAgent(ips: string[]): https.Agent {
-  return new https.Agent({
-    keepAlive: true,
-    createConnection: (opts: any, cb: any) => {
+  const agent = new https.Agent({ keepAlive: true });
+  agent.createConnection = (opts: any, cb: any) => {
       let idx = 0;
       const targets = ips.length > 0 ? ips : ['api.telegram.org'];
       tryConnect();
@@ -49,8 +48,8 @@ function buildAgent(ips: string[]): https.Agent {
         function onError() { if (settled) return; idx++; sock.destroy(); tryConnect(); }
         sock.once('error', onError);
       }
-    },
-  });
+    };
+  return agent;
 }
 
 function fakeSocket() {

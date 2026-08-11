@@ -49,9 +49,10 @@ export async function telegramAxios(token: string): Promise<AxiosInstance> {
 
   // Reuse agent unless IP list changed
   if (!_agent || _agentBuiltFor !== ipFingerprint) {
-    _agent = new https.Agent({
-      keepAlive: true,
-      createConnection: (options: any, cb: any) => {
+    _agent = new https.Agent({ keepAlive: true });
+    // Assign after construction — passing createConnection as an option
+    // does NOT work (Node uses the built-in, not the option).
+    (_agent as any).createConnection = (options: any, cb: any) => {
         let idx = 0;
         const targets = ips.length > 0 ? ips : [TELEGRAM_HOST];
         tryConnect();
@@ -83,8 +84,7 @@ export async function telegramAxios(token: string): Promise<AxiosInstance> {
           }
           sock.once('error', onError);
         }
-      },
-    });
+      };
     _agentBuiltFor = ipFingerprint;
   }
 

@@ -40,6 +40,7 @@ function stateToRecord(state: AutonomousState): Record<string, any> {
     posts_created: state.postsCreated,
     launch_command: state.launchCommand || null,
     last_cycle_at: state.lastCycleAt ? state.lastCycleAt.toISOString() : null,
+    cycle_pending_config: state.cyclePendingConfig || null,
   };
 }
 
@@ -50,6 +51,7 @@ function activateRestoredState(saved: {
   launchCommand?: string; lastCycleAt?: string;
   paused?: boolean; pausedAt?: string;
   cyclesCompleted?: number; postsCreated?: number;
+  cyclePendingConfig?: { interval: number; postsPerCycle: number; autoSchedule: boolean; withImages: boolean };
 }) {
   if (autonomousStates.has(saved.campaignId)) return;
   const state: AutonomousState = {
@@ -73,6 +75,7 @@ function activateRestoredState(saved: {
     lastCycleAt: saved.lastCycleAt ? new Date(saved.lastCycleAt) : undefined,
     paused: saved.paused === true,
     pausedAt: saved.pausedAt ? new Date(saved.pausedAt) : undefined,
+    cyclePendingConfig: saved.cyclePendingConfig,
   } as any;
   autonomousStates.set(saved.campaignId, state);
   // SM-20: раньше здесь стояли свои таймеры — setInterval сразу (сетка от
@@ -116,6 +119,7 @@ function saveAutonomousPersistenceFile() {
         pausedAt: state.pausedAt ? state.pausedAt.toISOString() : undefined,
         cyclesCompleted: state.cyclesCompleted,
         postsCreated: state.postsCreated,
+        cyclePendingConfig: state.cyclePendingConfig,
       };
     });
     writeFileSync(AUTONOMOUS_PERSIST_FILE, JSON.stringify(toSave, null, 2));
@@ -461,6 +465,20 @@ export function updateAutonomousSettingsExternal(
   if (!state.cycleRunning) {
     scheduleAutonomousTimers(state);
   }
+  // SM-20: контракт «текущий цикл дорабатывает со СТАРЫМИ настройками,
+  // новые — со следующего». Цикл читает state.postsPerCycle на фазе 2;
+  // если обновление прилетело раньше, фаза 2 подхватит новые значения и
+  // пользователь увидит, что «сохранил, а тут же применилось» — нарушение
+  // контракта. Запоминаем «снимок» обновлённых значений и просим цикл
+  // его НЕ читать; цикл в phase 2 берёт state.cyclePendingConfig, если
+  // оно сохранено — иначе state.postsPerCycle. cyclePendingConfig обнуляется
+  // после первого цикла, который его использовал.
+  state.cyclePendingConfig = {
+    interval: state.interval,
+    postsPerCycle: state.postsPerCycle,
+    autoSchedule: state.autoSchedule,
+    withImages: state.withImages,
+  };
   saveAutonomousPersistence();
   return {
     success: true,
@@ -642,6 +660,18 @@ interface AutonomousState {
   paused?: boolean;
   /** Когда поставлен на паузу — для отображения и диагностики (SM-20). */
   pausedAt?: Date;
+  /**
+   * SM-20: настройки, обновлённые во время паузы или пока цикл уже шёл.
+   * Следующий цикл, стартующий после обновления, ОБЯЗАН использовать
+   * именно эти значения, не читая напрямую state.interval/postsPerCycle.
+   * Снимок удаляется после первого цикла, который его подхватил.
+   */
+  cyclePendingConfig?: {
+    interval: number;
+    postsPerCycle: number;
+    autoSchedule: boolean;
+    withImages: boolean;
+  };
   // Пайплайн: ожидание одобрения
   pendingPlan?: ContentPlanItem[];
   pendingApprovalStep?: 'plan' | 'content' | 'images';
@@ -3730,8 +3760,19 @@ async function runAutonomousCycle(state: AutonomousState) {
     // ФАЗА 2: Генерация контент-плана
     // ──────────────────────────────────────────────────────────────
     console.log(`[PIPELINE] 📋 Фаза 2: генерация контент-плана на ${state.postsPerCycle} постов...`);
+    // SM-20: если во время обновления настроек был активный цикл и пользователь
+    // поменял interval/postsPerCycle, цикл, который уже начался, должен
+    // доработать СТАРЫМИ значениями. Снимок читаем ровно один раз в фазе 2
+    // и тут же стираем — если цикл потом упадёт, следующий не подхватит
+    // протухший снимок.
+    const snapshot = state.cyclePendingConfig;
+    state.cyclePendingConfig = undefined;
+    const cycleInterval = snapshot?.interval ?? state.interval;
+    const cyclePostsPerCycle = snapshot?.postsPerCycle ?? state.postsPerCycle;
+    const cycleWithImages = snapshot?.withImages ?? state.withImages;
+    const cycleAutoSchedule = snapshot?.autoSchedule ?? state.autoSchedule;
     let contentPlan = await generateContentPlan({
-      count: state.postsPerCycle,
+      count: cyclePostsPerCycle,
       keywords: topKeywords,
       trends: topTrendPool,
       platforms: state.platforms,
@@ -4155,8 +4196,11 @@ ${criteriaLines}
     // Обновляем статус цикла
     state.cyclesCompleted++;
     state.lastCycleAt = new Date();
+    // SM-20: cyclePendingConfig уже подчищен в фазе 2 (после чтения снимка).
+    // Если на этом этапе он вновь появился — значит что-то его поставило
+    // параллельно; оставляем — следующий цикл разберётся.
     state.cycleRunning = false;
-    
+
     console.log(`[AUTONOMOUS-CYCLE] ✅ Цикл ${state.cyclesCompleted} завершён. Создано постов: ${createdPosts.length}`);
     
   } catch (error: any) {
@@ -4172,6 +4216,10 @@ ${criteriaLines}
     } else {
       state.errors.push(`Цикл ${state.cyclesCompleted + 1}: ${error.message}`);
     }
+    // SM-20: на ошибке цикла тоже чистим снимок, иначе при следующем
+    // успешном цикле он подхватит старые значения, которые пользователь
+    // уже поменял.
+    state.cyclePendingConfig = undefined;
     state.cycleRunning = false;
   }
 }

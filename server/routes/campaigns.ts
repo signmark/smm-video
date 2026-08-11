@@ -887,7 +887,10 @@ export function registerCampaignRoutes(app: Express) {
       let connectedPlatforms: string[] = [];
       try {
         const { directusCrud } = await import('../services/directus-crud');
-        const camp = await directusCrud.getById('user_campaigns', campaignId, { authToken: token });
+        // Узкий тип вместо any: читаем ровно два поля, и компилятор проверит,
+        // что имена полей существуют (AI-105 начался ровно с таких опечаток).
+        const camp = await directusCrud.getById<{ description?: string; social_media_settings?: Record<string, any> }>(
+          'user_campaigns', campaignId, { authToken: token });
         // AI-105: раньше здесь читались camp.target_audience и
         // camp.business_description — колонок с такими именами в user_campaigns
         // нет (анкета лежит отдельной коллекцией business_questionnaire).

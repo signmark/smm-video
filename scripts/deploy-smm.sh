@@ -553,6 +553,86 @@ check_installed_tree() {
   fail "preflight прогонялся бы на устаревших модулях. Выполните: (cd ${SMM_REPO_DIR} && npm ci) и повторите выкатку. Осознанный пропуск: SMM_ALLOW_STALE_MODULES=1"
 }
 
+# --- preflight: версия npm соответствует engines.npm (AI-99) -----------------
+# Блокирующая половина AI-99. Лок можно собрать npm 11, а в образе стоит
+# npm 10.9.x — и `npm ci` там падает (правило 60: предупреждение не защищает).
+# `engines.npm` без engine-strict npm только печатает warning (engine-strict
+# сознательно не ставим: положит установку у всех на npm 11). А `packageManager`
+# работает через corepack, которого в образе нет — поле инертно.
+#
+# Поэтому версия npm, которой работает preflight, сравнивается с диапазоном
+# `engines.npm` ИЗ package.json (не дублируется константой) и при несовпадении —
+# отказ. Сообщение называет обе версии (какая есть, какая нужна) и обход.
+#
+# Осознанный пропуск по образцу соседней проверки устаревшего дерева: в
+# аварийной ситуации (инцидент, откат) — SMM_ALLOW_NPM_VERSION_MISMATCH=1.
+check_npm_version() {
+  local dir="$1"
+  local manifest="${dir}/package.json"
+
+  if [ ! -f "$manifest" ]; then
+    log "ВНИМАНИЕ: нет ${manifest}, проверить engines.npm нечего"
+    event preflight_npm_skip no_manifest
+    return 0
+  fi
+
+  local actual
+  actual=$("$SMM_NPM" --version 2>/dev/null || echo "")
+  if [ -z "$actual" ]; then
+    log "ВНИМАНИЕ: не удалось прочитать версию npm (\"$SMM_NPM\" --version), сверку engines.npm пропускаю"
+    event preflight_npm_skip no_version
+    return 0
+  fi
+
+  # semver резолвится ЯВНО от каталога репозитория, а не от cwd: скрипт
+  # вызывают из любого каталога (/root, /tmp, …). require("semver") от cwd
+  # молча ушёл бы в NO_RANGE и отключил бы проверку — ровно то, против чего
+  # мы её и ставим (см. check_installed_tree: только встроенные модули).
+  local semver_path="${SMM_REPO_DIR}/node_modules/semver"
+  local manifest_abs
+  manifest_abs=$(cd "$(dirname "$manifest")" && pwd)"/package.json"
+
+  local verdict
+  verdict=$("$SMM_NODE" -e '
+    const fs = require("fs");
+    const semver = require(process.argv[3]);
+    const pkg = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const range = pkg.engines && pkg.engines.npm;
+    if (!range) { console.log("SKIP_NO_RANGE"); process.exit(0); }
+    const actual = process.argv[2];
+    console.log((semver.satisfies(actual, range) ? "OK " : "BAD ") + range);
+  ' "$manifest_abs" "$actual" "$semver_path" 2>/dev/null \
+    || echo "SKIP_COMMAND_FAIL")
+
+  case "$verdict" in
+    SKIP_NO_RANGE|NO_RANGE)
+      log "ВНИМАНИЕ: в ${manifest} нет engines.npm, сверку npm-версии пропускаю"
+      event preflight_npm_skip no_range
+      return 0
+      ;;
+    SKIP_COMMAND_FAIL)
+      log "ВНИМАНИЕ: сбой сверки npm-версии (не смог вызвать node/semver из ${semver_path}), проверку engines.npm пропускаю"
+      event preflight_npm_skip command_fail
+      return 0
+      ;;
+    OK*)
+      local range="${verdict#OK }"
+      log "preflight: npm $actual в диапазоне engines.npm $range"
+      event preflight_npm_ok "$actual $range"
+      return 0
+      ;;
+  esac
+
+  local range="${verdict#BAD }"
+  event preflight_npm_version_mismatch "$actual $range"
+  if [ -n "${SMM_ALLOW_NPM_VERSION_MISMATCH:-}" ]; then
+    log "продолжаем: SMM_ALLOW_NPM_VERSION_MISMATCH=$SMM_ALLOW_NPM_VERSION_MISMATCH. npm $actual вне диапазона $range, выкатку продолжаем осознанно."
+    return 0
+  fi
+
+  fail "npm не соответствует engines.npm: есть $actual, нужно в диапазоне $range. Лок, собранный этим npm, может не собраться в образе (Dockerfile ставит npm 10.9.8). Перегенерируйте лок нужным npm: npx npm@10.9.8 install и повторите выкатку. Осознанный пропуск: SMM_ALLOW_NPM_VERSION_MISMATCH=1"
+}
+
 # Прогоняет проверки CI на том же дереве, которое поедет в образ (AI-38).
 #
 # Почему здесь, а не «просто помнить руками»: у деплоя нет доступа к статусу CI
@@ -588,6 +668,8 @@ preflight_code() {
   fi
 
   check_installed_tree "$dir"
+
+  check_npm_version "$dir"
 
   ln -sfn "$modules" "${dir}/node_modules"
 

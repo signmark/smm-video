@@ -1,10 +1,26 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('axios', () => ({
-  default: {
-    get: vi.fn(),
-    post: vi.fn()
-  }
+// AI-101 перевёл публикацию на `telegramAxios()` — а тот внутри зовёт
+// `axios.create()`. Мок без `create` давал `axios.create is not a function`, и
+// 11 тестов падали не из-за поведения сервиса, а из-за устаревшего двойника.
+//
+// Инстанс намеренно переиспользует ТЕ ЖЕ get/post, что и корневой axios:
+// в одном сценарии публикации участвуют оба (загрузка в Cloudinary идёт мимо
+// Telegram-инстанса), и тесты опираются на общий порядок вызовов.
+vi.mock('axios', () => {
+  const get = vi.fn();
+  const post = vi.fn();
+  const instance = { get, post };
+  return {
+    default: { get, post, create: vi.fn(() => instance) },
+    __esModule: true,
+  };
+});
+// telegramAxios резолвит A-записи api.telegram.org. В юнит-тесте настоящий DNS
+// не нужен: он делает тест сетевым и медленным на ровном месте.
+vi.mock('dns/promises', () => ({
+  resolve4: vi.fn(async () => ['149.154.167.220']),
+  default: { resolve4: vi.fn(async () => ['149.154.167.220']) },
 }));
 vi.mock('../utils/logger');
 

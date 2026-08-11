@@ -58,19 +58,31 @@ describe('AI-101: duplicate boundary', () => {
     const ips = ['10.0.0.1', '10.0.0.2'];
     let cbCalls = 0;
 
+    let sock: any = null;
     mockTlsConnect.mockImplementationOnce((_opts: any, cb: any) => {
-      const sock = fakeSocket();
-      process.nextTick(() => {
-        cb(null, sock);
-        process.nextTick(() => sock.emit('error', Object.assign(new Error('ECONNRESET'), { code: 'ECONNRESET' })));
-      });
+      sock = fakeSocket();
+      process.nextTick(() => cb(null, sock));
       return sock;
     });
 
     const factory = createConnectionFactory(ips);
     factory({} as any, () => { cbCalls++; });
-    await tick(3);
+    await tick(2);
 
+    // Инвариант: после рукопожатия фабрика снимает свой слушатель 'error'.
+    // Иначе поздний обрыв увёл бы её на следующий IP — а запрос к этому моменту
+    // уже мог уйти, и пост опубликовался бы дважды.
+    expect(sock.listenerCount('error')).toBe(0);
+
+    // Дальше сокетом владеет вызывающий (https.Agent), он и вешает обработчик.
+    // Без этой строки голый EventEmitter выбросил бы 'error' в процесс, и vitest
+    // засчитал бы прогон как упавший при зелёных тестах.
+    const late: any[] = [];
+    sock.on('error', (e: any) => late.push(e));
+    sock.emit('error', Object.assign(new Error('ECONNRESET'), { code: 'ECONNRESET' }));
+    await tick(2);
+
+    expect(late).toHaveLength(1);
     expect(mockTlsConnect).toHaveBeenCalledTimes(1);
     expect(cbCalls).toBe(1);
   });

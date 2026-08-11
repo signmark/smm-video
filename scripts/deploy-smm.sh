@@ -75,6 +75,12 @@ SMM_DOCKER_ROOT="${SMM_DOCKER_ROOT:-/var/lib/docker}"
 # контейнера. SMM_SKIP_PREFLIGHT=1 — осознанный пропуск (инцидент, откат).
 SMM_NPM="${SMM_NPM:-npm}"
 SMM_SKIP_PREFLIGHT="${SMM_SKIP_PREFLIGHT:-}"
+# Чем сверять установленное дерево с локом (AI-98). Нужен разбор JSON, а node
+# на деплой-хосте есть по построению: без него не запустится ни npm, ни сборка.
+SMM_NODE="${SMM_NODE:-node}"
+# Осознанный пропуск сверки дерева: выкатка при недоступном реестре, когда
+# переустановить зависимости негде.
+SMM_ALLOW_STALE_MODULES="${SMM_ALLOW_STALE_MODULES:-}"
 # ВАЖНО: именно test:run, а не test. `npm run test` — это vitest в watch-режиме,
 # он не завершится никогда и подвесит деплой вместе с удерживаемым flock.
 #
@@ -417,6 +423,100 @@ do_deploy() {
   prune_old_images
 }
 
+# Сверяет УСТАНОВЛЕННОЕ дерево с локом выкатываемого коммита (AI-98).
+#
+# Preflight гоняется на симлинке в ${SMM_REPO_DIR}/node_modules, поэтому его
+# результат осмыслен ровно настолько, насколько дерево соответствует коммиту.
+#
+# Прежняя защита сравнивала два ФАЙЛА лока — коммита и репозитория — и в самом
+# частом случае молчала. `git pull` или merge обновляет лок в репозитории,
+# `npm ci` при этом никто не выполняет: файлы совпадают, а дерево осталось от
+# предыдущего лока. 11.08 так вышло дважды подряд после слияния AI-94 — в
+# дереве жили три лишних вложенных uuid, и оба раза это ловилось руками.
+#
+# Опора — node_modules/.package-lock.json. Его пишет сам npm при установке, и
+# описывает он то, что реально лежит на диске, а не то, что должно бы.
+#
+# Сигналом считаются лишние пакеты и расхождения версий. Обратное — «в локе
+# есть, на диске нет» — сигналом НЕ является: на свежеустановленном дереве
+# таких записей 186 (измерено 11.08 сразу после `npm ci`). Это опциональные
+# пакеты под чужие платформы: @esbuild/darwin-*, @rollup/*-android-* и
+# подобные, npm их не ставит намеренно. Падать на них значило бы падать всегда.
+#
+# Расхождение — отказ, а не предупреждение. Предупреждение здесь уже стояло, и
+# именно оно пропустило устаревшее дерево: в логе выкатки строка есть, а
+# выкатка идёт дальше. Пропуск остаётся, но теперь его надо назвать явно.
+check_installed_tree() {
+  local dir="$1"
+  local lock="${dir}/package-lock.json"
+  local installed="${SMM_REPO_DIR}/node_modules/.package-lock.json"
+
+  # Не JS-коммит или лока нет — сверять не с чем.
+  [ -f "$lock" ] || return 0
+
+  # Дерево поставлено древним npm либо распаковано мимо npm: манифеста нет.
+  # Откатываемся на прежнюю сверку локов — она слабее, но лучше молчания.
+  if [ ! -f "$installed" ]; then
+    if [ -f "${SMM_REPO_DIR}/package-lock.json" ] \
+       && ! cmp -s "$lock" "${SMM_REPO_DIR}/package-lock.json"; then
+      log "ВНИМАНИЕ: package-lock.json в выкатываемом коммите отличается от лока репозитория."
+      log "          Сверить с деревом не вышло: нет ${installed}."
+      event preflight_lock_mismatch "$dir"
+    fi
+    return 0
+  fi
+
+  local report status=0
+  report=$("$SMM_NODE" -e '
+    const fs = require("fs");
+    const packages = (p) => JSON.parse(fs.readFileSync(p, "utf8")).packages || {};
+    const installed = packages(process.argv[1]);
+    const lock = packages(process.argv[2]);
+    const extra = [];
+    const drift = [];
+    for (const name of Object.keys(installed)) {
+      if (!name) continue;
+      const want = lock[name];
+      if (!want) { extra.push(name); continue; }
+      const have = installed[name].version;
+      if (have && want.version && have !== want.version) {
+        drift.push(name + ": на диске " + have + ", в локе " + want.version);
+      }
+    }
+    if (!extra.length && !drift.length) process.exit(0);
+    const head = (a, n) => a.length > n ? a.slice(0, n).concat("... и ещё " + (a.length - n)) : a;
+    if (extra.length) console.log("лишних пакетов " + extra.length + ": " + head(extra, 8).join(", "));
+    for (const d of head(drift, 8)) console.log("версия не та: " + d);
+    // Отдельный код, а не 1: с единицей неотличимо от «node упал сам» —
+    // битый JSON или отсутствующий бинарник тоже дают 1, и выкатка вставала бы
+    // с сообщением про устаревшие модули там, где сломана сама проверка.
+    process.exit(3);
+  ' "$installed" "$lock" 2>&1) || status=$?
+
+  if [ "$status" -eq 0 ]; then
+    return 0
+  fi
+
+  # Код не 3 — сломался сам разбор (нет node, битый JSON). Это не повод
+  # блокировать выкатку: проверка вспомогательная.
+  if [ "$status" -ne 3 ]; then
+    log "ВНИМАНИЕ: сверка дерева с локом не выполнена (код $status): $report"
+    event preflight_tree_check_error "$status"
+    return 0
+  fi
+
+  log "установленное дерево не соответствует локу выкатываемого коммита:"
+  printf '%s\n' "$report" | while IFS= read -r line; do log "  $line"; done
+  event preflight_stale_modules "$dir"
+
+  if [ -n "$SMM_ALLOW_STALE_MODULES" ]; then
+    log "продолжаем: SMM_ALLOW_STALE_MODULES=$SMM_ALLOW_STALE_MODULES. Preflight проверит не тот набор зависимостей."
+    return 0
+  fi
+
+  fail "preflight прогонялся бы на устаревших модулях. Выполните: (cd ${SMM_REPO_DIR} && npm ci) и повторите выкатку. Осознанный пропуск: SMM_ALLOW_STALE_MODULES=1"
+}
+
 # Прогоняет проверки CI на том же дереве, которое поедет в образ (AI-38).
 #
 # Почему здесь, а не «просто помнить руками»: у деплоя нет доступа к статусу CI
@@ -427,9 +527,9 @@ do_deploy() {
 #
 # Проверки идут в CREATED_WORKTREE — ровно тот SHA, что собирается. Каталог
 # свежий, node_modules в нём нет, поэтому подкладывается симлинк на дерево
-# основного репозитория. Отсюда ограничение: если в выкатываемом коммите менялся
-# package-lock.json, установленные модули ему не соответствуют — об этом
-# предупреждаем отдельно, потому что тогда прогон проверяет не то дерево.
+# основного репозитория. Отсюда ограничение: если установленные модули не
+# соответствуют локу коммита, прогон проверяет не то дерево — это отдельно
+# ловит check_installed_tree (AI-98).
 preflight_code() {
   local dir="$1"
 
@@ -451,11 +551,7 @@ preflight_code() {
     fail "preflight невозможен: нет $modules. Установите зависимости или запустите с SMM_SKIP_PREFLIGHT=1"
   fi
 
-  if [ -f "${dir}/package-lock.json" ] && [ -f "${SMM_REPO_DIR}/package-lock.json" ]      && ! cmp -s "${dir}/package-lock.json" "${SMM_REPO_DIR}/package-lock.json"; then
-    log "ВНИМАНИЕ: package-lock.json в выкатываемом коммите отличается от установленного дерева."
-    log "          preflight прогонится на текущих node_modules, то есть проверит не тот набор зависимостей."
-    event preflight_lock_mismatch "$dir"
-  fi
+  check_installed_tree "$dir"
 
   ln -sfn "$modules" "${dir}/node_modules"
 

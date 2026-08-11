@@ -242,3 +242,124 @@ describe('AI-38: предвыкаточные проверки', () => {
     expect(npmCalls()).toEqual([]);
   });
 });
+
+/**
+ * Сверка установленного дерева с локом выкатываемого коммита (AI-98).
+ *
+ * Прежняя защита сравнивала два ФАЙЛА лока — коммита и репозитория — и молчала
+ * в самом частом случае: merge обновил лок в репозитории, `npm ci` никто не
+ * выполнил. Файлы совпадают, дерево от предыдущего лока, preflight зелёный и
+ * бессмысленный. 11.08.2026 это поймали руками дважды подряд.
+ *
+ * Поэтому во всех тестах ниже лок репозитория РАВЕН локу коммита — старая
+ * проверка тут не сработала бы вовсе.
+ */
+describe('AI-98: устаревшее дерево node_modules', () => {
+  /** Лок в форме, которую пишет npm: карта `packages` с версиями. */
+  const lockJson = (pkgs: Record<string, string>) =>
+    JSON.stringify({
+      name: 'x',
+      lockfileVersion: 3,
+      packages: {
+        '': { name: 'x', version: '1.0.0' },
+        ...Object.fromEntries(Object.entries(pkgs).map(([n, v]) => [`node_modules/${n}`, { version: v }])),
+      },
+    });
+
+  /** Манифест реально установленного дерева — его пишет сам npm при установке. */
+  const installTree = (work: string, pkgs: Record<string, string>) => {
+    mkdirSync(path.join(work, 'node_modules'), { recursive: true });
+    writeFileSync(path.join(work, 'node_modules', '.package-lock.json'), lockJson(pkgs));
+  };
+
+  it('расхождение версий останавливает деплой до проверок', async () => {
+    const { work } = makeJsRepo(lockJson({ uuid: '11.1.1' }));
+    installTree(work, { uuid: '9.0.0' });
+
+    const res = await runDeploy(work, { SMM_PREFLIGHT_STEPS: 'check' });
+
+    expect(res.code).not.toBe(0);
+    // В сообщении обязана быть команда починки: без неё дежурный не знает, что делать.
+    expect(res.stderr).toContain('npm ci');
+    expect(res.stderr).toContain('uuid');
+    expect(eventLabels()).toContain('preflight_stale_modules');
+    // Главное: проверки не гонялись. Зелёный прогон на чужом дереве хуже отказа.
+    expect(npmCalls()).toEqual([]);
+    expect(existsSync(path.join(root, 'state', 'built'))).toBe(false);
+  });
+
+  it('лишний пакет в дереве — тоже признак устаревшей установки', async () => {
+    // Ровно то, что осталось в /root/smm после слияния AI-94: три вложенных uuid,
+    // которых в новом локе уже нет.
+    const { work } = makeJsRepo(lockJson({ uuid: '11.1.1' }));
+    installTree(work, { uuid: '11.1.1', 'left-pad': '1.3.0' });
+
+    const res = await runDeploy(work, { SMM_PREFLIGHT_STEPS: 'check' });
+
+    expect(res.code).not.toBe(0);
+    expect(res.stderr).toContain('left-pad');
+    expect(npmCalls()).toEqual([]);
+  });
+
+  it('совпадающее дерево не мешает деплою', async () => {
+    const { work } = makeJsRepo(lockJson({ uuid: '11.1.1' }));
+    installTree(work, { uuid: '11.1.1' });
+
+    const res = await runDeploy(work, { SMM_PREFLIGHT_STEPS: 'check' });
+
+    expect(res.code).toBe(0);
+    expect(npmCalls()).toEqual(['check']);
+    expect(eventLabels()).not.toContain('preflight_stale_modules');
+  });
+
+  it('опциональные пакеты чужих платформ не считаются расхождением', async () => {
+    // Обратное направление — «в локе есть, на диске нет» — сигналом не является.
+    // На свежем `npm ci` таких записей 186 (замер 11.08.2026): это @esbuild/darwin-*,
+    // @rollup/*-android-* и подобные. Считать их — падать всегда.
+    const { work } = makeJsRepo(lockJson({ uuid: '11.1.1', '@esbuild/darwin-arm64': '0.28.2' }));
+    installTree(work, { uuid: '11.1.1' });
+
+    const res = await runDeploy(work, { SMM_PREFLIGHT_STEPS: 'check' });
+
+    expect(res.code).toBe(0);
+    expect(npmCalls()).toEqual(['check']);
+    expect(eventLabels()).not.toContain('preflight_stale_modules');
+  });
+
+  it('SMM_ALLOW_STALE_MODULES пропускает сверку осознанно', async () => {
+    const { work } = makeJsRepo(lockJson({ uuid: '11.1.1' }));
+    installTree(work, { uuid: '9.0.0' });
+
+    const res = await runDeploy(work, { SMM_PREFLIGHT_STEPS: 'check', SMM_ALLOW_STALE_MODULES: '1' });
+
+    expect(res.code).toBe(0);
+    expect(npmCalls()).toEqual(['check']);
+    // Пропуск остаётся в журнале: постфактум видно, что прогон был на чужом дереве.
+    expect(eventLabels()).toContain('preflight_stale_modules');
+  });
+
+  it('дерево без манифеста npm не блокирует деплой', async () => {
+    // Установка древним npm или распаковка мимо него: .package-lock.json нет,
+    // сверять не с чем. Это не повод отказывать в выкатке.
+    const { work } = makeJsRepo(lockJson({ uuid: '11.1.1' }));
+
+    const res = await runDeploy(work, { SMM_PREFLIGHT_STEPS: 'check' });
+
+    expect(res.code).toBe(0);
+    expect(npmCalls()).toEqual(['check']);
+  });
+
+  it('сломанный разбор не блокирует деплой', async () => {
+    const { work } = makeJsRepo(lockJson({ uuid: '11.1.1' }));
+    installTree(work, { uuid: '11.1.1' });
+
+    const res = await runDeploy(work, {
+      SMM_PREFLIGHT_STEPS: 'check',
+      SMM_NODE: path.join(root, 'bin', 'nonexistent-node'),
+    });
+
+    expect(res.code).toBe(0);
+    expect(npmCalls()).toEqual(['check']);
+    expect(eventLabels()).toContain('preflight_tree_check_error');
+  });
+});

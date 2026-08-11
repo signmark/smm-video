@@ -570,27 +570,51 @@ check_npm_version() {
   local dir="$1"
   local manifest="${dir}/package.json"
 
-  [ -f "$manifest" ] || return 0
+  if [ ! -f "$manifest" ]; then
+    log "ВНИМАНИЕ: нет ${manifest}, проверить engines.npm нечего"
+    event preflight_npm_skip no_manifest
+    return 0
+  fi
 
   local actual
   actual=$("$SMM_NPM" --version 2>/dev/null || echo "")
-  [ -n "$actual" ] || return 0
+  if [ -z "$actual" ]; then
+    log "ВНИМАНИЕ: не удалось прочитать версию npm (\"$SMM_NPM\" --version), сверку engines.npm пропускаю"
+    event preflight_npm_skip no_version
+    return 0
+  fi
 
-  # Диапазон читается ИЗ manifest, не дублируется константой. Вердикт один вывод.
+  # semver резолвится ЯВНО от каталога репозитория, а не от cwd: скрипт
+  # вызывают из любого каталога (/root, /tmp, …). require("semver") от cwd
+  # молча ушёл бы в NO_RANGE и отключил бы проверку — ровно то, против чего
+  # мы её и ставим (см. check_installed_tree: только встроенные модули).
+  local semver_path="${SMM_REPO_DIR}/node_modules/semver"
+  local manifest_abs
+  manifest_abs=$(cd "$(dirname "$manifest")" && pwd)"/package.json"
+
   local verdict
   verdict=$("$SMM_NODE" -e '
     const fs = require("fs");
-    const semver = require("semver");
+    const semver = require(process.argv[3]);
     const pkg = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
     const range = pkg.engines && pkg.engines.npm;
-    if (!range) { console.log("NO_RANGE"); process.exit(0); }
+    if (!range) { console.log("SKIP_NO_RANGE"); process.exit(0); }
     const actual = process.argv[2];
-    const ok = semver.satisfies(actual, range);
-    console.log((ok ? "OK " : "BAD ") + range);
-  ' "$manifest" "$actual" 2>/dev/null || echo "NO_RANGE")
+    console.log((semver.satisfies(actual, range) ? "OK " : "BAD ") + range);
+  ' "$manifest_abs" "$actual" "$semver_path" 2>/dev/null \
+    || echo "SKIP_COMMAND_FAIL")
 
   case "$verdict" in
-    NO_RANGE) return 0;;
+    SKIP_NO_RANGE|NO_RANGE)
+      log "ВНИМАНИЕ: в ${manifest} нет engines.npm, сверку npm-версии пропускаю"
+      event preflight_npm_skip no_range
+      return 0
+      ;;
+    SKIP_COMMAND_FAIL)
+      log "ВНИМАНИЕ: сбой сверки npm-версии (не смог вызвать node/semver из ${semver_path}), проверку engines.npm пропускаю"
+      event preflight_npm_skip command_fail
+      return 0
+      ;;
     OK*)
       local range="${verdict#OK }"
       log "preflight: npm $actual в диапазоне engines.npm $range"
@@ -601,7 +625,7 @@ check_npm_version() {
 
   local range="${verdict#BAD }"
   event preflight_npm_version_mismatch "$actual $range"
-  if [ -n "$SMM_ALLOW_NPM_VERSION_MISMATCH" ]; then
+  if [ -n "${SMM_ALLOW_NPM_VERSION_MISMATCH:-}" ]; then
     log "продолжаем: SMM_ALLOW_NPM_VERSION_MISMATCH=$SMM_ALLOW_NPM_VERSION_MISMATCH. npm $actual вне диапазона $range, выкатку продолжаем осознанно."
     return 0
   fi

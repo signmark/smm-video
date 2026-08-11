@@ -14,7 +14,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { execFile, execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, mkdirSync, existsSync, symlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -25,6 +25,10 @@ let root: string;
 /** Фейковый npm: журналирует `run <step>` и падает, если шаг указан в FAKE_NPM_FAIL. */
 const FAKE_NPM = `#!/usr/bin/env bash
 set -eu
+if [ "\${1:-}" = "--version" ]; then
+  echo "\${FAKE_NPM_VERSION:-10.9.7}"
+  exit 0
+fi
 if [ "\${1:-}" = "run" ]; then
   echo "\${2:-}" >> "\$FAKE_NPM_LOG"
   if [ -n "\${FAKE_NPM_FAIL:-}" ] && [ "\${2:-}" = "\$FAKE_NPM_FAIL" ]; then
@@ -68,7 +72,7 @@ const git = (cwd: string, args: string[]) =>
   });
 
 /** Репозиторий, который выглядит как JS-проект: с package.json и локом. */
-function makeJsRepo(lock = '{"v":1}') {
+function makeJsRepo(lock = '{"v":1}', manifest = '{"name":"x","version":"1.0.0"}') {
   const origin = path.join(root, 'origin.git');
   const work = path.join(root, 'smm');
   const authoring = path.join(root, 'authoring');
@@ -78,7 +82,7 @@ function makeJsRepo(lock = '{"v":1}') {
   git(authoring, ['config', 'user.email', 't@t']);
   git(authoring, ['config', 'user.name', 'T']);
   writeFileSync(path.join(authoring, 'Dockerfile'), 'FROM scratch\n');
-  writeFileSync(path.join(authoring, 'package.json'), '{"name":"x","version":"1.0.0"}\n');
+  writeFileSync(path.join(authoring, 'package.json'), manifest + '\n');
   writeFileSync(path.join(authoring, 'package-lock.json'), lock);
   git(authoring, ['add', '-A']);
   git(authoring, ['commit', '-m', 'v1']);
@@ -218,6 +222,53 @@ describe('AI-38: предвыкаточные проверки', () => {
 
     expect(res.code).toBe(0);
     expect(npmCalls()).toEqual([]);
+  });
+
+  // AI-99: preflight блокирует npm вне диапазона engines.npm. Проверяется
+  // реальный скрипт (rule 63 — не harness). semver симлинкуется из дерева
+  // репозитория в node_modules тестового worktree, чтобы require по
+  // абсолютному пути резолвился независимо от cwd запуска.
+  const semverPath = path.resolve(__dirname, '../../node_modules/semver');
+  const repoWithNpmRange = () => {
+    const manifest = JSON.stringify({
+      name: 'x', version: '1.0.0',
+      engines: { node: '>=22.0.0', npm: '~10.9.0' },
+      packageManager: 'npm@10.9.8',
+    });
+    const { work } = makeJsRepo('{"v":1}', manifest);
+    // Продакшенный скрипт требуме semver из SMM_REPO_DIR/node_modules.
+    mkdirSync(path.join(work, 'node_modules'), { recursive: true });
+    symlinkSync(semverPath, path.join(work, 'node_modules', 'semver'), 'dir');
+    return work;
+  };
+
+  it('AI-99: npm в диапазоне engines.npm проходит', async () => {
+    const work = repoWithNpmRange();
+    const res = await runDeploy(work, { SMM_PREFLIGHT_STEPS: 'check', FAKE_NPM_VERSION: '10.9.7' });
+    expect(res.code).toBe(0);
+    expect(eventLabels()).toContain('preflight_npm_ok');
+  });
+
+  it('AI-99: npm вне диапазона останавливает деплой и называет обе версии', async () => {
+    const work = repoWithNpmRange();
+    const res = await runDeploy(work, { SMM_PREFLIGHT_STEPS: 'check', FAKE_NPM_VERSION: '11.13.0' });
+    expect(res.code).not.toBe(0);
+    expect(res.stderr).toContain('11.13.0');
+    expect(res.stderr).toContain('~10.9.0');
+    expect(res.stderr).toContain('SMM_ALLOW_NPM_VERSION_MISMATCH');
+    // Сборка не начиналась: прод не тронут.
+    expect(existsSync(path.join(root, 'state', 'built'))).toBe(false);
+  });
+
+  it('AI-99: осознанный пропуск SMM_ALLOW_NPM_VERSION_MISMATCH пропускает несовпадение', async () => {
+    const work = repoWithNpmRange();
+    const res = await runDeploy(work, {
+      SMM_PREFLIGHT_STEPS: 'check',
+      FAKE_NPM_VERSION: '11.13.0',
+      SMM_ALLOW_NPM_VERSION_MISMATCH: '1',
+    });
+    expect(res.code).toBe(0);
+    expect(eventLabels()).toContain('preflight_npm_version_mismatch');
   });
 
   it('расхождение lock-файла с установленным деревом попадает в журнал', async () => {

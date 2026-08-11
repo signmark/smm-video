@@ -553,6 +553,62 @@ check_installed_tree() {
   fail "preflight прогонялся бы на устаревших модулях. Выполните: (cd ${SMM_REPO_DIR} && npm ci) и повторите выкатку. Осознанный пропуск: SMM_ALLOW_STALE_MODULES=1"
 }
 
+# --- preflight: версия npm соответствует engines.npm (AI-99) -----------------
+# Блокирующая половина AI-99. Лок можно собрать npm 11, а в образе стоит
+# npm 10.9.x — и `npm ci` там падает (правило 60: предупреждение не защищает).
+# `engines.npm` без engine-strict npm только печатает warning (engine-strict
+# сознательно не ставим: положит установку у всех на npm 11). А `packageManager`
+# работает через corepack, которого в образе нет — поле инертно.
+#
+# Поэтому версия npm, которой работает preflight, сравнивается с диапазоном
+# `engines.npm` ИЗ package.json (не дублируется константой) и при несовпадении —
+# отказ. Сообщение называет обе версии (какая есть, какая нужна) и обход.
+#
+# Осознанный пропуск по образцу соседней проверки устаревшего дерева: в
+# аварийной ситуации (инцидент, откат) — SMM_ALLOW_NPM_VERSION_MISMATCH=1.
+check_npm_version() {
+  local dir="$1"
+  local manifest="${dir}/package.json"
+
+  [ -f "$manifest" ] || return 0
+
+  local actual
+  actual=$("$SMM_NPM" --version 2>/dev/null || echo "")
+  [ -n "$actual" ] || return 0
+
+  # Диапазон читается ИЗ manifest, не дублируется константой. Вердикт один вывод.
+  local verdict
+  verdict=$("$SMM_NODE" -e '
+    const fs = require("fs");
+    const semver = require("semver");
+    const pkg = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+    const range = pkg.engines && pkg.engines.npm;
+    if (!range) { console.log("NO_RANGE"); process.exit(0); }
+    const actual = process.argv[2];
+    const ok = semver.satisfies(actual, range);
+    console.log((ok ? "OK " : "BAD ") + range);
+  ' "$manifest" "$actual" 2>/dev/null || echo "NO_RANGE")
+
+  case "$verdict" in
+    NO_RANGE) return 0;;
+    OK*)
+      local range="${verdict#OK }"
+      log "preflight: npm $actual в диапазоне engines.npm $range"
+      event preflight_npm_ok "$actual $range"
+      return 0
+      ;;
+  esac
+
+  local range="${verdict#BAD }"
+  event preflight_npm_version_mismatch "$actual $range"
+  if [ -n "$SMM_ALLOW_NPM_VERSION_MISMATCH" ]; then
+    log "продолжаем: SMM_ALLOW_NPM_VERSION_MISMATCH=$SMM_ALLOW_NPM_VERSION_MISMATCH. npm $actual вне диапазона $range, выкатку продолжаем осознанно."
+    return 0
+  fi
+
+  fail "npm не соответствует engines.npm: есть $actual, нужно в диапазоне $range. Лок, собранный этим npm, может не собраться в образе (Dockerfile ставит npm 10.9.8). Перегенерируйте лок нужным npm: npx npm@10.9.8 install и повторите выкатку. Осознанный пропуск: SMM_ALLOW_NPM_VERSION_MISMATCH=1"
+}
+
 # Прогоняет проверки CI на том же дереве, которое поедет в образ (AI-38).
 #
 # Почему здесь, а не «просто помнить руками»: у деплоя нет доступа к статусу CI
@@ -588,6 +644,8 @@ preflight_code() {
   fi
 
   check_installed_tree "$dir"
+
+  check_npm_version "$dir"
 
   ln -sfn "$modules" "${dir}/node_modules"
 

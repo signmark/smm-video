@@ -12,7 +12,8 @@
  * Rule-59 file:line references:
  *   - DNS cache: :25-27 (cachedIps/cachedAt)
  *   - TCP/TLS failover: :55-82 (tryConnect with IP rotation)
- *   - HTTP safety (listener removal after handshake): :69-71
+ *   - HTTP safety (listener removal after handshake): see tls.connect callback
+ *   - Silent-address timeout (incident 11.08): CONNECT_TIMEOUT_MS + onTimeout
  *   - SNI servername: :63
  *   - Shared agent: :30-32, :46, :87
  */
@@ -68,6 +69,19 @@ export function buildTelegramAgent(ips: string[]): https.Agent {
   return agent;
 }
 
+/**
+ * Сколько ждать установки соединения, прежде чем считать адрес мёртвым.
+ *
+ * Замерено с прод-хоста: живой адрес Telegram отдаёт `secureConnect` за 194 мс,
+ * а адрес-чёрная дыра молчит 45 секунд подряд, не выдав НИ ОДНОГО события —
+ * ни `error`, ни `secureConnect`. Именно так вёл себя `149.154.166.110` в
+ * инциденте 11.08: не отказ, а тишина.
+ *
+ * Пять секунд — с запасом к 194 мс и заведомо меньше, чем таймаут axios на
+ * ответ (30 с), иначе перебор не успел бы начаться.
+ */
+const CONNECT_TIMEOUT_MS = 5_000;
+
 export function createConnectionFactory(ips: string[]) {
   const targets = ips.length > 0 ? ips : [TELEGRAM_HOST];
   return (options: any, cb: any) => {
@@ -87,7 +101,12 @@ export function createConnectionFactory(ips: string[]) {
       };
       const sock = tls.connect(tlsOpts, () => {
         settled = true;
+        // Снимаем ОБА наших обработчика: после рукопожатия запрос уже мог уйти,
+        // и любой поздний обрыв обязан достаться вызывающему, а не увести нас
+        // на следующий адрес — это был бы дубль поста.
         sock.removeListener('error', onError);
+        sock.removeListener('timeout', onTimeout);
+        sock.setTimeout(0);
         cb(null, sock);
       });
       function onError() {
@@ -96,7 +115,16 @@ export function createConnectionFactory(ips: string[]) {
         sock.destroy();
         tryConnect();
       }
+      // Молчащий адрес не даёт события `error` порядка двух минут — дольше, чем
+      // живёт сам запрос. Без этого перебор на таком отказе не начинается вовсе.
+      function onTimeout() {
+        if (settled) return;
+        idx++;
+        sock.destroy();
+        tryConnect();
+      }
       sock.once('error', onError);
+      sock.setTimeout(CONNECT_TIMEOUT_MS, onTimeout);
     }
   };
 }

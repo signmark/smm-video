@@ -113,4 +113,34 @@ describe('SM-20: одна цепочка одноразовых таймеров
     // Таймеров больше нет.
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  it('текущий цикл видит старый конфиг, следующий — новый (snapshot-on-running)', async () => {
+    // Runner читает postsPerCycle, который увидел цикл на своём старте, и затем
+    // симулирует правку настроек (меняет postsPerCycle на следующий цикл).
+    const seen: number[] = [];
+    __setCycleRunnerForTest(async (state: any) => {
+      seen.push(state.postsPerCycle); // конфиг на старте ЭТОГО цикла
+      if (state.postsPerCycle === 2) state.postsPerCycle = 3; // правка между циклами
+    });
+
+    await startAutonomousExternal({
+      campaignId: 'c4', userId: 'u4', interval: 1,
+      postsPerCycle: 2, autoSchedule: false, withImages: false,
+      authToken: 'tok', platforms: ['telegram'],
+    });
+    const s0 = getAutonomousStateForTest('c4');
+    if (s0?.inFlight) await s0.inFlight; // первый цикл завершён
+
+    // Первый цикл увидел postsPerCycle=2 (старый конфиг).
+    expect(seen[0]).toBe(2);
+
+    // Исполняем следующий timeout — второй цикл стартует и видит уже 3.
+    await vi.advanceTimersByTimeAsync(5001);
+    const s1 = getAutonomousStateForTest('c4');
+    if (s1?.inFlight) await s1.inFlight;
+
+    expect(seen[1]).toBe(3); // новый конфиг подхвачен следующим циклом
+    // По-прежнему одна цепочка таймеров.
+    expect(vi.getTimerCount()).toBe(1);
+  });
 });

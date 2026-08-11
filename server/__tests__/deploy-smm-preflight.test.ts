@@ -255,21 +255,59 @@ describe('AI-38: предвыкаточные проверки', () => {
  * проверка тут не сработала бы вовсе.
  */
 describe('AI-98: устаревшее дерево node_modules', () => {
-  /** Лок в форме, которую пишет npm: карта `packages` с версиями. */
-  const lockJson = (pkgs: Record<string, string>) =>
+  /**
+   * Лок в форме, которую пишет npm: карта `packages` с версиями.
+   * Значение — либо строка-версия, либо пара [версия, флаги] для optional-записей.
+   */
+  type Entry = string | [string, Record<string, boolean>];
+  const lockJson = (pkgs: Record<string, Entry>) =>
     JSON.stringify({
       name: 'x',
       lockfileVersion: 3,
       packages: {
         '': { name: 'x', version: '1.0.0' },
-        ...Object.fromEntries(Object.entries(pkgs).map(([n, v]) => [`node_modules/${n}`, { version: v }])),
+        ...Object.fromEntries(
+          Object.entries(pkgs).map(([n, e]) => [
+            `node_modules/${n}`,
+            typeof e === 'string' ? { version: e } : { version: e[0], ...e[1] },
+          ]),
+        ),
       },
     });
 
-  /** Манифест реально установленного дерева — его пишет сам npm при установке. */
-  const installTree = (work: string, pkgs: Record<string, string>) => {
-    mkdirSync(path.join(work, 'node_modules'), { recursive: true });
-    writeFileSync(path.join(work, 'node_modules', '.package-lock.json'), lockJson(pkgs));
+  /**
+   * Настоящее установленное дерево: каталоги с package.json ПЛЮС манифест,
+   * который пишет npm.
+   *
+   * Каталоги обязательны: версия читается с диска, а не из манифеста. Манифест
+   * врёт после `npm install --package-lock-only` — он переписывается под идеальное
+   * дерево, ничего не устанавливая (замер 11.08.2026: на диске nanoid 3.3.7,
+   * в манифесте и локе 3.3.11).
+   */
+  const installTree = (work: string, pkgs: Record<string, Entry>) => {
+    const modules = path.join(work, 'node_modules');
+    mkdirSync(modules, { recursive: true });
+    writeFileSync(path.join(modules, '.package-lock.json'), lockJson(pkgs));
+    for (const [name, e] of Object.entries(pkgs)) {
+      const dir = path.join(modules, name);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name, version: typeof e === 'string' ? e : e[0] }));
+    }
+  };
+
+  /**
+   * Дерево, у которого манифест разошёлся с диском: ровно результат
+   * `npm install --package-lock-only`. Манифест обещает одно, каталоги другое.
+   */
+  const installTreeDesynced = (work: string, manifest: Record<string, Entry>, disk: Record<string, string>) => {
+    const modules = path.join(work, 'node_modules');
+    mkdirSync(modules, { recursive: true });
+    writeFileSync(path.join(modules, '.package-lock.json'), lockJson(manifest));
+    for (const [name, v] of Object.entries(disk)) {
+      const dir = path.join(modules, name);
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(path.join(dir, 'package.json'), JSON.stringify({ name, version: v }));
+    }
   };
 
   it('расхождение версий останавливает деплой до проверок', async () => {
@@ -313,10 +351,17 @@ describe('AI-98: устаревшее дерево node_modules', () => {
   });
 
   it('опциональные пакеты чужих платформ не считаются расхождением', async () => {
-    // Обратное направление — «в локе есть, на диске нет» — сигналом не является.
-    // На свежем `npm ci` таких записей 186 (замер 11.08.2026): это @esbuild/darwin-*,
-    // @rollup/*-android-* и подобные. Считать их — падать всегда.
-    const { work } = makeJsRepo(lockJson({ uuid: '11.1.1', '@esbuild/darwin-arm64': '0.28.2' }));
+    // Различающий признак — ФЛАГ в локе, а не сам факт отсутствия. На живом дереве
+    // 11.08.2026 из 1726 записей манифеста 186 не имеют каталога, и все 186
+    // помечены optional/devOptional: это @esbuild/darwin-*, @rollup/*-android-*
+    // и подобные. Без фильтра по флагу проверка была бы вечно красной.
+    const { work } = makeJsRepo(
+      lockJson({
+        uuid: '11.1.1',
+        '@esbuild/darwin-arm64': ['0.28.2', { optional: true, dev: true }],
+        '@rollup/rollup-android-arm64': ['4.0.0', { devOptional: true }],
+      }),
+    );
     installTree(work, { uuid: '11.1.1' });
 
     const res = await runDeploy(work, { SMM_PREFLIGHT_STEPS: 'check' });
@@ -347,6 +392,45 @@ describe('AI-98: устаревшее дерево node_modules', () => {
 
     expect(res.code).toBe(0);
     expect(npmCalls()).toEqual(['check']);
+  });
+
+  // --- missing non-optional (follow-up к AI-98) ---
+  //
+  // Класс из AI-59: в лок добавили обычный пакет (тогда это был jsdom), дерево не
+  // переустановили. Лишних нет, версии совпадают — прежние два сигнала молчат,
+  // а preflight гоняется без пакета, который коду уже нужен.
+  //
+  // Считается по НАБОРУ КЛЮЧЕЙ, а не по наличию каталога на диске: npm вписывает
+  // в манифест и те опциональные пакеты, которые ставить не стал (на живом дереве
+  // 11.08 таких 186 из 1726). Проверка по диску дала бы 186 ложных срабатываний.
+  it('отсутствующий обычный пакет останавливает деплой', async () => {
+    const { work } = makeJsRepo(lockJson({ uuid: '11.1.1', jsdom: '30.0.1' }));
+    installTree(work, { uuid: '11.1.1' });
+
+    const res = await runDeploy(work, { SMM_PREFLIGHT_STEPS: 'check' });
+
+    expect(res.code).not.toBe(0);
+    expect(res.stderr).toContain('jsdom');
+    expect(res.stderr).toContain('npm ci');
+    expect(eventLabels()).toContain('preflight_stale_modules');
+    expect(npmCalls()).toEqual([]);
+  });
+
+  // Главный случай, ради которого версия читается с диска, а не из манифеста.
+  // `npm install --package-lock-only` переписывает node_modules/.package-lock.json
+  // под идеальное дерево, ничего не устанавливая. После такой команды манифест
+  // СОВПАДАЕТ с локом выкатываемого коммита, а дерево осталось прежним — проверка
+  // по манифесту пропустила бы ровно тот случай, ради которого заведена.
+  it('манифест, совпавший с локом при устаревшем диске, не обманывает проверку', async () => {
+    const { work } = makeJsRepo(lockJson({ uuid: '11.1.1' }));
+    installTreeDesynced(work, { uuid: '11.1.1' }, { uuid: '9.0.0' });
+
+    const res = await runDeploy(work, { SMM_PREFLIGHT_STEPS: 'check' });
+
+    expect(res.code).not.toBe(0);
+    expect(res.stderr).toContain('uuid');
+    expect(eventLabels()).toContain('preflight_stale_modules');
+    expect(npmCalls()).toEqual([]);
   });
 
   it('сломанный разбор не блокирует деплой', async () => {

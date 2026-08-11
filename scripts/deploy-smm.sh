@@ -437,11 +437,28 @@ do_deploy() {
 # Опора — node_modules/.package-lock.json. Его пишет сам npm при установке, и
 # описывает он то, что реально лежит на диске, а не то, что должно бы.
 #
-# Сигналом считаются лишние пакеты и расхождения версий. Обратное — «в локе
-# есть, на диске нет» — сигналом НЕ является: на свежеустановленном дереве
-# таких записей 186 (измерено 11.08 сразу после `npm ci`). Это опциональные
-# пакеты под чужие платформы: @esbuild/darwin-*, @rollup/*-android-* и
-# подобные, npm их не ставит намеренно. Падать на них значило бы падать всегда.
+# Сигнала три: лишний пакет, расхождение версии, отсутствие пакета. Версия
+# каждого пакета читается С ДИСКА — из node_modules/<путь>/package.json, а не
+# из манифеста.
+#
+# Манифесту доверять нельзя, и это замерено, а не предположено. `npm install
+# --package-lock-only` переписывает node_modules/.package-lock.json под идеальное
+# дерево, ничего не устанавливая. На чистом каталоге 11.08:
+#
+#   npm install nanoid@3.3.11 --package-lock-only
+#   -> на диске 3.3.7, в манифесте 3.3.11, в локе 3.3.11
+#
+# Опаснее не ложное срабатывание, а обратное: после такой команды манифест
+# СОВПАДЁТ с локом выкатываемого коммита при устаревшем дереве, и проверка
+# пропустит ровно тот случай, ради которого заведена. Диск не врёт.
+#
+# Отсутствие пакета фильтруется по флагу optional/devOptional: опциональные под
+# чужие платформы npm не ставит намеренно, каталогов у них нет никогда. На живом
+# дереве 11.08 таких 186 из 1726 записей, и все 186 помечены. Без фильтра
+# проверка была бы вечно красной.
+#
+# Манифест всё же читается — но только как список того, что npm считает
+# установленным, чтобы найти лишнее. Версии оттуда не берутся.
 #
 # Расхождение — отказ, а не предупреждение. Предупреждение здесь уже стояло, и
 # именно оно пропустило устаревшее дерево: в логе выкатки строка есть, а
@@ -469,29 +486,48 @@ check_installed_tree() {
   local report status=0
   report=$("$SMM_NODE" -e '
     const fs = require("fs");
+    const path = require("path");
     const packages = (p) => JSON.parse(fs.readFileSync(p, "utf8")).packages || {};
     const installed = packages(process.argv[1]);
     const lock = packages(process.argv[2]);
+    const root = process.argv[3];
+    // Версия берётся с ДИСКА, а не из манифеста: манифест врёт после
+    // `npm install --package-lock-only` (см. шапку функции).
+    const onDisk = (name) => {
+      try {
+        return JSON.parse(fs.readFileSync(path.join(root, name, "package.json"), "utf8")).version;
+      } catch { return null; }
+    };
     const extra = [];
     const drift = [];
+    const missing = [];
     for (const name of Object.keys(installed)) {
+      if (!name || lock[name]) continue;
+      if (onDisk(name)) extra.push(name);
+    }
+    for (const name of Object.keys(lock)) {
       if (!name) continue;
-      const want = lock[name];
-      if (!want) { extra.push(name); continue; }
-      const have = installed[name].version;
-      if (have && want.version && have !== want.version) {
-        drift.push(name + ": на диске " + have + ", в локе " + want.version);
+      const meta = lock[name];
+      const have = onDisk(name);
+      if (!have) {
+        // Опциональные пропускаем: их npm мог не поставить намеренно.
+        if (!meta.optional && !meta.devOptional) missing.push(name);
+        continue;
+      }
+      if (meta.version && have !== meta.version) {
+        drift.push(name + ": на диске " + have + ", в локе " + meta.version);
       }
     }
-    if (!extra.length && !drift.length) process.exit(0);
+    if (!extra.length && !drift.length && !missing.length) process.exit(0);
     const head = (a, n) => a.length > n ? a.slice(0, n).concat("... и ещё " + (a.length - n)) : a;
     if (extra.length) console.log("лишних пакетов " + extra.length + ": " + head(extra, 8).join(", "));
+    if (missing.length) console.log("не установлено " + missing.length + ": " + head(missing, 8).join(", "));
     for (const d of head(drift, 8)) console.log("версия не та: " + d);
     // Отдельный код, а не 1: с единицей неотличимо от «node упал сам» —
     // битый JSON или отсутствующий бинарник тоже дают 1, и выкатка вставала бы
     // с сообщением про устаревшие модули там, где сломана сама проверка.
     process.exit(3);
-  ' "$installed" "$lock" 2>&1) || status=$?
+  ' "$installed" "$lock" "${SMM_REPO_DIR}" 2>&1) || status=$?
 
   if [ "$status" -eq 0 ]; then
     return 0

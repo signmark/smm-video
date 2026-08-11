@@ -12,7 +12,8 @@ vi.mock('tls', async (importOriginal) => {
   return { ...actual, connect: mockTlsConnect, __esModule: true };
 });
 
-import { createConnectionFactory, clearTelegramIpsCache } from '../services/social-platforms/telegram-http';
+import * as https from 'https';
+import { buildTelegramAgent, createConnectionFactory, clearTelegramIpsCache } from '../services/social-platforms/telegram-http';
 
 function fakeSocket() {
   return new (require('stream').Duplex)({ read() {}, write(_c: any, _e: any, cb: any) { cb(); } }) as any;
@@ -114,5 +115,40 @@ describe('AI-101: SNI servername', () => {
     await tick(2);
 
     expect(capturedOpts.servername).toBe('api.telegram.org');
+  });
+});
+
+
+// ── Ревью (@Clause_Dev_Hermi): шов «агент ↔ фабрика» ─────────────────────────
+// Два предыдущих кандидата были функционально верны и при этом мертвы: фабрика
+// передавалась опцией конструктора `new https.Agent({ createConnection })`, а
+// Node кладёт эту опцию в `agent.options` и на инстанс не ставит — вызывается
+// встроенная. Тесты этого не ловили, потому что проверяли фабрику отдельно.
+// Здесь проверяется именно присваивание, чтобы регресс не вернулся молча.
+describe('AI-101: агент несёт фабрику, а не наследует встроенную', () => {
+  it('createConnection — собственное свойство инстанса', () => {
+    const agent = buildTelegramAgent(['10.0.0.1']);
+    expect(Object.prototype.hasOwnProperty.call(agent, 'createConnection')).toBe(true);
+    expect((agent as any).createConnection).not.toBe((https.Agent.prototype as any).createConnection);
+  });
+
+  it('вызов agent.createConnection уходит в перебор адресов с нужным SNI', async () => {
+    let captured: any = null;
+    mockTlsConnect.mockImplementation((opts: any, cb: any) => {
+      captured = opts;
+      const sock = fakeSocket();
+      process.nextTick(() => cb(null, sock));
+      return sock;
+    });
+
+    const agent = buildTelegramAgent(['10.0.0.9']);
+    let cbCalls = 0;
+    (agent as any).createConnection({}, () => { cbCalls++; });
+    await tick(2);
+
+    expect(mockTlsConnect).toHaveBeenCalledTimes(1);
+    expect(captured.host).toBe('10.0.0.9');
+    expect(captured.servername).toBe('api.telegram.org');
+    expect(cbCalls).toBe(1);
   });
 });

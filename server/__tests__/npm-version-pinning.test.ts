@@ -24,7 +24,7 @@ function readPackageJson(): Record<string, any> {
  *  База закреплена по digest, поэтому число читается из комментария, а не из тега. */
 function dockerfileNodeNpm(): { node: string; npm: string } {
   const dockerfile = readFileSync(resolve(__dirname, '../../Dockerfile'), 'utf-8');
-  const m = dockerfile.match(/node v([\d.]+) \/ npm ([\d.]+)/);
+  const m = dockerfile.match(/node v(\d+(?:\.\d+){1,2}) \/ npm (\d+(?:\.\d+){1,2})/);
   if (!m) throw new Error('Dockerfile: не найден комментарий "node vX / npm Y"');
   return { node: m[1], npm: m[2] };
 }

@@ -340,11 +340,10 @@ export async function startAutonomousExternal(params: {
   autonomousStates.set(params.campaignId, state);
   saveAutonomousPersistence();
 
-  runAutonomousCycle(state).catch(e => state.errors.push(e.message));
-  const intervalMs = interval * 60 * 60 * 1000;
-  state.timer = setInterval(async () => {
-    await runAutonomousCycle(state).catch(e => state.errors.push(e.message));
-  }, intervalMs);
+  // Первый цикл запускаем сразу; его завершение само поставит следующий
+  // одноразовый таймер (SM-20). Никакого setInterval — одна цепочка.
+  // inFlight нужен тестам (и диагностике), чтобы дождаться завершения цикла.
+  state.inFlight = runCycleAndScheduleNext(state);
 
   return { success: true, interval, postsPerCycle, autoSchedule, platforms };
 }
@@ -531,33 +530,63 @@ export interface ContentPlanItem {
  * цикл, иначе две таймерные сетки разъезжаются: одна от момента запуска, другая
  * от фактического цикла.
  */
-function scheduleAutonomousTimers(state: AutonomousState): void {
-  const intervalMs = state.interval * 60 * 60 * 1000;
-
+/**
+ * Единый планировщик: ровно ОДИН одноразовый timeout до ближайшего цикла.
+ * Никакого setInterval — каждая отработка цикла сама ставит следующий
+ * одноразовый таймер (см. runCycleAndScheduleNext), что исключает дубли
+ * двух живых сеток (SM-20).
+ */
+export function scheduleAutonomousTimers(state: AutonomousState): void {
+  // Единый планировщик: ровно ОДИН одноразовый timeout до ближайшего цикла.
+  // Никакого setInterval — каждая отработка цикла сама ставит следующий
+  // одноразовый таймер (см. runCycleAndScheduleNext), что исключает дубли
+  // двух живых сеток (SM-20).
   if (state.firstCycleTimer) clearTimeout(state.firstCycleTimer);
-  if (state.timer) clearInterval(state.timer);
+  state.firstCycleTimer = undefined;
 
   const delayMs = computeNextCycleDelayMs(state.lastCycleAt, state.interval);
 
-  state.firstCycleTimer = setTimeout(() => {
+  state.firstCycleTimer = setTimeout(async () => {
     state.firstCycleTimer = undefined;
-    runAutonomousCycle(state)
-      .catch((e) => {
-        console.error('[AUTONOMOUS] ❌ Ошибка цикла:', e);
-        state.errors.push(e.message);
-      })
-      .finally(() => {
-        // Регулярную сетку заводим от фактического цикла, а не от момента
-        // возобновления — иначе интервал поедет.
-        if (state.paused) return;
-        state.timer = setInterval(() => {
-          runAutonomousCycle(state).catch((e) => {
-            console.error('[AUTONOMOUS] ❌ Ошибка цикла:', e);
-            state.errors.push(e.message);
-          });
-        }, intervalMs);
-      });
+    // Промис живёт в состоянии, чтобы тест мог дождаться честного завершения
+    // цикла (включая .finally) под fake-таймерами через inFlight.
+    state.inFlight = runCycleAndScheduleNext(state);
   }, delayMs);
+}
+
+/**
+ * Запускает цикл и, когда он завершился (успех/ошибка), ставит следующий
+ * одноразовый таймер. Единственная точка, из которой цикл переходит к
+ * следующему, — через scheduleAutonomousTimers. Если режим остановлен или
+ * на паузе — следующий таймер не ставим (остановка убрала состояние, пауза
+ * снимает таймер сам). Квота внутри цикла тоже снимает состояние, поэтому
+ * повторно планировать нечего.
+ */
+async function runCycleAndScheduleNext(state: AutonomousState): Promise<void> {
+  await cycleRunner(state);
+  // Проверка на живом состоянии: цикл мог сам снять режим (квота) или его
+  // могли остановить/поставить на паузу во время работы цикла.
+  if (!state.paused && autonomousStates.get(state.campaignId) === state) {
+    scheduleAutonomousTimers(state);
+  }
+}
+
+/**
+ * Seam для подмены runner цикла (SM-20, rev @Clause_Dev_Hermi). Прод всегда
+ * использует настоящий `runAutonomousCycle`. Тест подменяет его лёгкой
+ * заглушкой, чтобы доказать «таймер → цикл → единственный реарм» без сети и
+ * MIN_CYCLE_DELAY_MS. Не отдаёт mutable-состояние наружу.
+ */
+let cycleRunner: (state: AutonomousState) => Promise<void> = runAutonomousCycleRef;
+export function __setCycleRunnerForTest(fn: (state: AutonomousState) => Promise<void>): void {
+  cycleRunner = fn;
+}
+export function __resetCycleRunnerForTest(): void {
+  cycleRunner = runAutonomousCycleRef;
+}
+// Прод-реализация runner — содержимое настоящего runAutonomousCycle.
+async function runAutonomousCycleRef(state: AutonomousState): Promise<void> {
+  await runAutonomousCycle(state);
 }
 
 import { computeNextCycleDelayMs } from './autonomous-ai-scheduling';
@@ -594,6 +623,12 @@ interface AutonomousState {
   paused?: boolean;
   /** Когда поставлен на паузу — для отображения и диагностики (SM-20). */
   pausedAt?: Date;
+  /**
+   * Промис запущенного цикла (SM-20). Живёт, пока цикл не завершился (включая
+   * .finally). Нужен тестам, чтобы дождаться честного завершения цикла под
+   * fake-таймерами (`advanceTimersByTimeAsync`), и не отдаёт mutable-состояние.
+   */
+  inFlight?: Promise<void> | null;
   // Пайплайн: ожидание одобрения
   pendingPlan?: ContentPlanItem[];
   pendingApprovalStep?: 'plan' | 'content' | 'images';
@@ -603,6 +638,46 @@ interface AutonomousState {
 
 // Хранилище состояний автономных режимов (in-memory)
 const autonomousStates = new Map<string, AutonomousState>();
+
+/**
+ * Узкий тестовый доступ к автономным состояниям (SM-20 rev). Живая mutable-карта
+ * наружу не экспортируется — только геттер по id, возвращающий безопасный
+ * обезличенный снимок без ссылок на таймеры, плюс тестовый сброс карты.
+ * Продакшен-пути этим не пользуются; экспорт существует для behavioral-тестов.
+ */
+export function getAutonomousStateForTest(campaignId: string): {
+  campaignId: string;
+  postsPerCycle: number;
+  withImages: boolean;
+  autoSchedule: boolean;
+  interval: number;
+  paused: boolean;
+  hasFirstCycleTimer: boolean;
+  /** Промис запущенного цикла (для дожидания .finally под fake-таймерами). */
+  inFlight?: Promise<void> | null;
+} | null {
+  const s = autonomousStates.get(campaignId);
+  if (!s) return null;
+  return {
+    campaignId: s.campaignId,
+    postsPerCycle: s.postsPerCycle,
+    withImages: s.withImages,
+    autoSchedule: s.autoSchedule,
+    interval: s.interval,
+    paused: s.paused === true,
+    hasFirstCycleTimer: !!s.firstCycleTimer,
+    inFlight: s.inFlight,
+  };
+}
+
+/** Тестовый сброс карты состояний. Только для тестов; прод не использует. */
+export function resetAutonomousStatesForTest(): void {
+  for (const s of autonomousStates.values()) {
+    if (s.timer) clearInterval(s.timer);
+    if (s.firstCycleTimer) clearTimeout(s.firstCycleTimer);
+  }
+  autonomousStates.clear();
+}
 
 // Ошибки квоты AI — хранятся даже после остановки агента, пока пользователь не запустит снова
 const quotaErrorMap = new Map<string, { message: string; retryAfterSec?: number; stoppedAt: string }>();
@@ -3059,22 +3134,10 @@ ${titleInstruction}`;
         }
       }
 
-      // Запускаем первый цикл сразу
+      // Запускаем первый цикл сразу; завершение само поставит следующий
+      // одноразовый таймер (SM-20).
       console.log(`[AUTONOMOUS] Запуск первого цикла...`);
-      runAutonomousCycle(state).catch(error => {
-        console.error('[AUTONOMOUS] Ошибка первого цикла:', error);
-        state.errors.push(`Первый цикл: ${error.message}`);
-      });
-      
-      // Устанавливаем таймер для последующих циклов
-      const intervalMs = interval * 60 * 60 * 1000; // часы в миллисекунды
-      state.timer = setInterval(async () => {
-        console.log(`[AUTONOMOUS] ⏰ Время для нового цикла (кампания ${campaignId})`);
-        await runAutonomousCycle(state).catch(error => {
-          console.error('[AUTONOMOUS] Ошибка цикла:', error);
-          state.errors.push(`Цикл ${state.cyclesCompleted + 1}: ${error.message}`);
-        });
-      }, intervalMs);
+      state.inFlight = runCycleAndScheduleNext(state);
       
       const postsPerDay = Math.round((24 / interval) * postsPerCycle);
       return {
@@ -3117,10 +3180,11 @@ ${titleInstruction}`;
         };
       }
       
-      // Останавливаем таймер
-      if (state.timer) {
-        clearInterval(state.timer);
-      }
+      // Останавливаем таймеры (регулярный + отложенный одноразовый, SM-20)
+      if (state.timer) clearInterval(state.timer);
+      if (state.firstCycleTimer) clearTimeout(state.firstCycleTimer);
+      state.timer = undefined;
+      state.firstCycleTimer = undefined;
       
       // Удаляем состояние
       autonomousStates.delete(campaignId);
@@ -3574,6 +3638,14 @@ async function runAutonomousCycle(state: AutonomousState) {
   console.log(`[AUTONOMOUS-CYCLE] 🔄 Начало цикла ${state.cyclesCompleted + 1} для кампании ${state.campaignId}`);
   state.cycleRunning = true;
 
+  // SM-20 snapshot-on-running: цикл работат со СНИМКОМ конфигурации, снятым на
+  // старте. Если во время генерации пользователь поменял настройки, текущий
+  // цикл доработает по старым, а следующий подхватит новые (интервал читается
+  // заново при планировании следующего таймера).
+  const cyclePostsPerCycle = state.postsPerCycle;
+  const cycleWithImages = state.withImages;
+  const cycleAutoSchedule = state.autoSchedule;
+
   try {
     // Гарантируем свежий пользовательский JWT (рефреш только если истекает скоро)
     const activeToken = await ensureFreshUserToken(state);
@@ -3694,9 +3766,9 @@ async function runAutonomousCycle(state: AutonomousState) {
     // ──────────────────────────────────────────────────────────────
     // ФАЗА 2: Генерация контент-плана
     // ──────────────────────────────────────────────────────────────
-    console.log(`[PIPELINE] 📋 Фаза 2: генерация контент-плана на ${state.postsPerCycle} постов...`);
+    console.log(`[PIPELINE] 📋 Фаза 2: генерация контент-плана на ${cyclePostsPerCycle} постов...`);
     let contentPlan = await generateContentPlan({
-      count: state.postsPerCycle,
+      count: cyclePostsPerCycle,
       keywords: topKeywords,
       trends: topTrendPool,
       platforms: state.platforms,
@@ -3874,7 +3946,7 @@ async function runAutonomousCycle(state: AutonomousState) {
                   userId: state.userId,
                   authToken: request.authToken
                 });
-                if (state.withImages) {
+                if (cycleWithImages) {
                   await TOOL_IMPLEMENTATIONS.generateImage({
                     prompt: imagePrompt,
                     contentId,
@@ -3950,7 +4022,7 @@ async function runAutonomousCycle(state: AutonomousState) {
             userId: state.userId,
             authToken: request.authToken
           });
-          if (state.withImages) {
+          if (cycleWithImages) {
             await TOOL_IMPLEMENTATIONS.generateImage({
               prompt: imagePrompt,
               contentId,
@@ -3990,7 +4062,7 @@ async function runAutonomousCycle(state: AutonomousState) {
       return;
     }
 
-    if (state.autoSchedule && createdPosts.length > 0) {
+    if (cycleAutoSchedule && createdPosts.length > 0) {
       console.log(`[AUTONOMOUS-CYCLE] 📅 Автопланирование ${createdPosts.length} постов с учётом МСК...`);
       
       // Получаем уже запланированные на ближайшее будущее посты этой кампании,
@@ -4134,6 +4206,9 @@ ${criteriaLines}
       console.error(`[AUTONOMOUS-CYCLE] 🚫 Квота AI исчерпана — автоматически останавливаем агент для кампании ${state.campaignId}`);
       quotaErrorMap.set(state.campaignId, { ...quotaErr, stoppedAt: new Date().toISOString() });
       if (state.timer) clearInterval(state.timer);
+      if (state.firstCycleTimer) clearTimeout(state.firstCycleTimer);
+      state.timer = undefined;
+      state.firstCycleTimer = undefined;
       autonomousStates.delete(state.campaignId);
       deleteAutonomousPersistence(state.campaignId);
     } else {

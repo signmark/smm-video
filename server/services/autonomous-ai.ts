@@ -454,31 +454,32 @@ export function updateAutonomousSettingsExternal(
   if (state.interval === params.interval && state.postsPerCycle === params.postsPerCycle) {
     return { success: true, changed: { interval: state.interval, postsPerCycle: state.postsPerCycle } };
   }
-  state.interval = params.interval;
-  state.postsPerCycle = params.postsPerCycle;
-  if (typeof params.autoSchedule === 'boolean') state.autoSchedule = params.autoSchedule;
-  if (typeof params.withImages === 'boolean') state.withImages = params.withImages;
-  // Если цикл сейчас НЕ идёт — перепланируем таймеры сразу
-  // (без этого изменение интервала примет участие только при следующем
-  // стоп+старт). Этого SM-20 не требует, но цена поддержки минимальная,
-  // а в UI походе «сохранять, потом перезапускать» это лишний шаг.
-  if (!state.cycleRunning) {
-    scheduleAutonomousTimers(state);
-  }
-  // SM-20: контракт «текущий цикл дорабатывает со СТАРЫМИ настройками,
-  // новые — со следующего». Цикл читает state.postsPerCycle на фазе 2;
-  // если обновление прилетело раньше, фаза 2 подхватит новые значения и
-  // пользователь увидит, что «сохранил, а тут же применилось» — нарушение
-  // контракта. Запоминаем «снимок» обновлённых значений и просим цикл
-  // его НЕ читать; цикл в phase 2 берёт state.cyclePendingConfig, если
-  // оно сохранено — иначе state.postsPerCycle. cyclePendingConfig обнуляется
-  // после первого цикла, который его использовал.
-  state.cyclePendingConfig = {
+  // SM-20: снимаем снимок СТАРЫХ значений ДО мутации. Цикл, который
+  // уже идёт, прочтёт этот снимок в фазе 2 — и получит именно те
+  // значения, что были на момент старта, как и обещает контракт AC #3.
+  // Без этого фикса (первый проход) снимок хранил НОВЫЕ значения,
+  // потому что state.* уже были перезаписаны — @Clause_Dev_Hermi это
+  // поймал в ревью.
+  const oldConfig = {
     interval: state.interval,
     postsPerCycle: state.postsPerCycle,
     autoSchedule: state.autoSchedule,
     withImages: state.withImages,
   };
+  state.interval = params.interval;
+  state.postsPerCycle = params.postsPerCycle;
+  if (typeof params.autoSchedule === 'boolean') state.autoSchedule = params.autoSchedule;
+  if (typeof params.withImages === 'boolean') state.withImages = params.withImages;
+  // Цикл не идёт — сразу перепланировать таймеры с новым interval.
+  // Цикл идёт — пишем снимок старых значений в state.cyclePendingConfig;
+  // цикл в фазе 2 прочтёт его и будет использовать СТАРЫЕ значения до конца.
+  // После прочтения снимок стирается. Если цикл упал к этому моменту,
+  // стёртый снимок не подхватится (следующий цикл берёт state.*).
+  if (!state.cycleRunning) {
+    scheduleAutonomousTimers(state);
+  } else {
+    state.cyclePendingConfig = oldConfig;
+  }
   saveAutonomousPersistence();
   return {
     success: true,
@@ -680,7 +681,10 @@ interface AutonomousState {
 }
 
 // Хранилище состояний автономных режимов (in-memory)
+// SM-20: экспортировано для тестов только.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const autonomousStates = new Map<string, AutonomousState>();
+export const __autonomousStatesForTests = autonomousStates;
 
 // Ошибки квоты AI — хранятся даже после остановки агента, пока пользователь не запустит снова
 const quotaErrorMap = new Map<string, { message: string; retryAfterSec?: number; stoppedAt: string }>();
@@ -3948,7 +3952,7 @@ async function runAutonomousCycle(state: AutonomousState) {
                   userId: state.userId,
                   authToken: request.authToken
                 });
-                if (state.withImages) {
+                if (cycleWithImages) {
                   await TOOL_IMPLEMENTATIONS.generateImage({
                     prompt: imagePrompt,
                     contentId,
@@ -4010,7 +4014,7 @@ async function runAutonomousCycle(state: AutonomousState) {
     // ФАЗА 6 (controlled): Генерация картинок после одобрения текстов
     // ──────────────────────────────────────────────────────────────
     if (mode === 'controlled' && createdPosts.length > 0) {
-      console.log(`[PIPELINE] 🖼️ Controlled: генерация промтов${state.withImages ? ' + картинок' : ''} для ${createdPosts.length} постов...`);
+      console.log(`[PIPELINE] 🖼️ Controlled: генерация промтов${cycleWithImages ? ' + картинок' : ''} для ${createdPosts.length} постов...`);
       for (const post of createdPosts) {
         const { contentId, postText, topic } = post;
         if (!contentId) continue;
@@ -4024,7 +4028,7 @@ async function runAutonomousCycle(state: AutonomousState) {
             userId: state.userId,
             authToken: request.authToken
           });
-          if (state.withImages) {
+          if (cycleWithImages) {
             await TOOL_IMPLEMENTATIONS.generateImage({
               prompt: imagePrompt,
               contentId,
@@ -4064,7 +4068,7 @@ async function runAutonomousCycle(state: AutonomousState) {
       return;
     }
 
-    if (state.autoSchedule && createdPosts.length > 0) {
+    if (cycleAutoSchedule && createdPosts.length > 0) {
       console.log(`[AUTONOMOUS-CYCLE] 📅 Автопланирование ${createdPosts.length} постов с учётом МСК...`);
       
       // Получаем уже запланированные на ближайшее будущее посты этой кампании,

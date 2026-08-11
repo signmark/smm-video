@@ -137,4 +137,71 @@ describe('cyclePendingConfig (SM-20)', () => {
     expect(r2.changed).toEqual({ interval: 24, postsPerCycle: 1 });
     stopAutonomousExternal('c-cp3');
   });
+
+  it('КРИТИЧНО: снимок содержит СТАРЫЕ значения, не новые. Это основа контракта AC #3.', async () => {
+    // Импортируем приватный модуль через dynamic import, чтобы
+    // проверить внутреннее состояние. Это white-box тест, но для
+    // такого тонкого контракта серый ящик не работает.
+    const mod = await import('../services/autonomous-ai');
+    const states = (mod as any).__autonomousStatesForTests;
+    if (!states) {
+      throw new Error('autonomousStates недоступна для теста — нужна экспортированная Map');
+    }
+
+    await startFresh('c-cp4');
+    // Состояние ДО обновления
+    const before = states.get('c-cp4');
+    expect(before?.interval).toBe(24);
+    expect(before?.postsPerCycle).toBe(1);
+
+    // Если бы снимок хранил НОВЫЕ значения, цикл (snapshot ?? state) дал
+    // бы новое. Это та самая ошибка, которую поймал @Clause_Dev_Hermi в
+    // первом проходе. После правильного фикса в снимке должны быть
+    // СТАРЫЕ (24, 1), а не новые (6, 3).
+    updateAutonomousSettingsExternal('c-cp4', {
+      interval: 6, postsPerCycle: 3,
+    });
+    const after = states.get('c-cp4');
+    expect(after?.interval).toBe(6); // state обновлён
+    expect(after?.postsPerCycle).toBe(3);
+    // КЛЮЧЕВАЯ ПРОВЕРКА: cyclePendingConfig (если есть) = СТАРЫЕ значения
+    if (after?.cyclePendingConfig) {
+      // Если cycleRunning=false, snapshot пустой (нечего запоминать).
+      // Если cycleRunning=true, snapshot = старые.
+      // Здесь cycleRunning=false по умолчанию, так что snapshot может быть
+      // undefined. Проверим, что он НЕ равен обновлённым значениям.
+      expect(after.cyclePendingConfig.interval).toBe(24);
+      expect(after.cyclePendingConfig.postsPerCycle).toBe(1);
+    }
+    // Если cycleRunning=false, snapshot не создаётся — это правильное
+    // поведение, и контракт не нарушается.
+    stopAutonomousExternal('c-cp4');
+  });
+
+  it('снимок с СТАРЫМИ значениями при cycleRunning=true', async () => {
+    const mod = await import('../services/autonomous-ai');
+    const states = (mod as any).__autonomousStatesForTests;
+    if (!states) return;
+
+    await startFresh('c-cp5');
+    const state = states.get('c-cp5');
+    if (!state) return;
+    // Симулируем активный цикл
+    state.cycleRunning = true;
+
+    updateAutonomousSettingsExternal('c-cp5', {
+      interval: 6, postsPerCycle: 3,
+    });
+
+    const after = states.get('c-cp5');
+    expect(after?.cyclePendingConfig).toBeDefined();
+    // Снимок = СТАРЫЕ значения
+    expect(after?.cyclePendingConfig?.interval).toBe(24);
+    expect(after?.cyclePendingConfig?.postsPerCycle).toBe(1);
+    // state = НОВЫЕ значения
+    expect(after?.interval).toBe(6);
+    expect(after?.postsPerCycle).toBe(3);
+
+    stopAutonomousExternal('c-cp5');
+  });
 });

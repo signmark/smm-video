@@ -21,6 +21,54 @@ interface TelegramPostContent {
   videoUrl?: string;
 }
 
+/**
+ * AI-102: собирает читаемый текст ошибки из всего, что дал транспорт.
+ *
+ * Породивший случай: публикация во все Telegram-каналы встала, а в логах и в
+ * карточке контента было пустое «Ошибка Telegram API». Диагностика ушла в права
+ * ботов и стоила нескольких часов, тогда как настоящей причиной был отказ
+ * TCP/443 к одному из адресов api.telegram.org.
+ *
+ * Почему одного `err.message` мало: у сетевых отказов Node весь смысл лежит
+ * рядом с сообщением (`code`, `syscall`, `address`, `port`), у ошибок API — в
+ * `response.data.description`, а у AggregateError (несколько адресов подряд)
+ * `message` бывает пустым, и всё содержательное лежит в `errors[]`.
+ *
+ * Функция обязана вернуть непустую строку всегда: пустая строка тут — это и
+ * есть тот самый дефект.
+ */
+export function describeTelegramError(err: any): string {
+  const parts: string[] = [];
+  const push = (v: unknown) => {
+    const s = typeof v === 'string' ? v.trim() : v == null ? '' : String(v).trim();
+    if (s && !parts.includes(s)) parts.push(s);
+  };
+
+  push(err?.response?.data?.description);
+  const status = err?.response?.status;
+  if (status) push(`HTTP ${status}`);
+
+  const cause = err?.cause || {};
+  const code = err?.code || cause.code;
+  push(code);
+
+  const syscall = err?.syscall || cause.syscall;
+  const address = err?.address || cause.address;
+  const port = err?.port ?? cause.port;
+  if (syscall || address) {
+    push([syscall, address ? (port ? `${address}:${port}` : address) : ''].filter(Boolean).join(' '));
+  }
+
+  push(err?.message);
+  push(cause.message);
+
+  // AggregateError: перебор нескольких адресов — сообщение снаружи часто пустое.
+  const inner = Array.isArray(err?.errors) ? err.errors : [];
+  for (const e of inner) push(e?.message || e?.code);
+
+  return parts.join(' | ') || 'Telegram: ошибка без текста (тип: ' + (err?.constructor?.name || typeof err) + ')';
+}
+
 export interface TelegramPublishResult {
   success: boolean;
   messageId?: number;
@@ -292,7 +340,7 @@ class TelegramService {
       log.info(`[${opId}] [Telegram] Успешно: messageId=${messageId}, url=${postUrl}`);
       return { success: true, messageId, postUrl };
     } catch (err: any) {
-      const errMsg = err.response?.data?.description || err.message;
+      const errMsg = describeTelegramError(err);
       log.error(`[${opId}] [Telegram] Ошибка: ${errMsg}`);
       return { success: false, error: errMsg };
     }

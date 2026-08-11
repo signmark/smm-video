@@ -1436,9 +1436,15 @@ export async function generateContentPlan(params: {
   alwaysInclude: string;
   launchCommand: string;
   analyticsInsights: string;
+  // AI-105: тематика кампании. Без неё блок «КОНТЕКСТ КАМПАНИИ» держался на
+  // одном globalPrompt, а он у части кампаний обезличен.
+  campaignName?: string;
+  campaignContext?: string;
   request: { userId: string; authToken: string };
 }): Promise<ContentPlanItem[]> {
   const { count, keywords, trends, platforms, globalPrompt, alwaysInclude, launchCommand, analyticsInsights, request } = params;
+  const campaignName = params.campaignName || '';
+  const campaignContext = params.campaignContext || '';
 
   const topTrends = trends
     .slice(0, 10)
@@ -1454,7 +1460,7 @@ export async function generateContentPlan(params: {
   const prompt = `Ты — опытный SMM-стратег. Составь контент-план из ${count} постов для публикации в соцсетях.
 
 КОНТЕКСТ КАМПАНИИ:
-${launchCommand ? `[ГЛАВНАЯ ИНСТРУКЦИЯ]\n${launchCommand}\n\n` : ''}${globalPromptResolved ? `Стиль и аудитория: ${globalPromptResolved}\n` : ''}${alwaysInclude ? `Обязательно включать в посты: ${alwaysInclude}\n` : ''}Платформы: ${platformList}
+${campaignName ? `Кампания: ${campaignName}\n` : ''}${campaignContext ? `Чем занимается бизнес (тематика постов должна быть про это):\n${campaignContext}\n` : ''}${launchCommand ? `[ГЛАВНАЯ ИНСТРУКЦИЯ]\n${launchCommand}\n\n` : ''}${globalPromptResolved ? `Стиль и аудитория: ${globalPromptResolved}\n` : ''}${alwaysInclude ? `Обязательно включать в посты: ${alwaysInclude}\n` : ''}Платформы: ${platformList}
 Ключевые слова: ${kwList || 'не заданы'}
 ${topTrends ? `Актуальные тренды:\n- ${topTrends}` : ''}
 ${analyticsInsights ? `Данные аналитики: ${analyticsInsights}` : ''}
@@ -3609,8 +3615,15 @@ async function runAutonomousCycle(state: AutonomousState) {
     // Поле user_campaigns.autonomous_settings (JSON):
     //   { globalPrompt: string, alwaysInclude: string, signature: string }
     let autoSettings: { globalPrompt?: string; alwaysInclude?: string; signature?: string; useEditorPass?: boolean; humanize?: boolean; adaptForPlatforms?: boolean; autoSelectPlatforms?: boolean; randomKeywords?: boolean } = {};
+    // AI-105: имя и описание кампании приходят тем же запросом, что и настройки,
+    // и раньше просто отбрасывались — при обезличенном globalPrompt модель не
+    // знала о кампании ничего.
+    let campaignName = '';
+    let campaignContext = '';
     try {
       const camp: any = await directusCrud.getById('user_campaigns', state.campaignId, directusAuth(request.authToken));
+      if (camp?.name) campaignName = String(camp.name);
+      if (camp?.description) campaignContext = String(camp.description);
       const raw = camp?.autonomous_settings;
       if (raw && typeof raw === 'object') autoSettings = raw;
       else if (typeof raw === 'string' && raw.trim()) {
@@ -3687,6 +3700,8 @@ async function runAutonomousCycle(state: AutonomousState) {
       keywords: topKeywords,
       trends: topTrendPool,
       platforms: state.platforms,
+      campaignName,
+      campaignContext,
       globalPrompt: autoSettings.globalPrompt || '',
       alwaysInclude: autoSettings.alwaysInclude || '',
       launchCommand,

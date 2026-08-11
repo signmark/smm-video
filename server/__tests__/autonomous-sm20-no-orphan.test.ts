@@ -77,7 +77,8 @@ describe('SM-20: одна цепочка одноразовых таймеров
     // start сразу запускает первый цикл (через seam); дождёмся его inFlight.
     const s0 = getAutonomousStateForTest('c1');
     expect(s0).not.toBeNull();
-    if (s0?.inFlight) await s0.inFlight;
+    expect(s0?.inFlight).toBeDefined(); // отсутствие промиса — провал, а не «пропустить»
+    await s0!.inFlight;
     // Цикл завершился и перевзвёл ровно один следующий одноразовый таймер.
     expect(cycles).toBe(1);
     expect(vi.getTimerCount()).toBe(1);
@@ -87,7 +88,8 @@ describe('SM-20: одна цепочка одноразовых таймеров
     // Сдвиг на MIN_CYCLE_DELAY_MS + 1 зажигает ровно следующий таймер.
     await vi.advanceTimersByTimeAsync(5001);
     const s1 = getAutonomousStateForTest('c1');
-    if (s1?.inFlight) await s1.inFlight;
+    expect(s1?.inFlight).toBeDefined(); // иначе второй цикл не ждали
+    await s1!.inFlight;
 
     // После этого цикла снова ровно один одноразовый таймер — НЕ два и не
     // интервал: исходная регрессия дала бы два живых handle (duplicate chains).
@@ -105,7 +107,8 @@ describe('SM-20: одна цепочка одноразовых таймеров
       authToken: 'tok', platforms: ['telegram'],
     });
     const s = getAutonomousStateForTest('c2');
-    if (s?.inFlight) await s.inFlight;
+    expect(s?.inFlight).toBeDefined();
+    await s!.inFlight;
     expect(getAutonomousStateForTest('c2')?.hasFirstCycleTimer).toBe(true);
 
     stopAutonomousExternal('c2');
@@ -129,7 +132,8 @@ describe('SM-20: одна цепочка одноразовых таймеров
       authToken: 'tok', platforms: ['telegram'],
     });
     const s0 = getAutonomousStateForTest('c4');
-    if (s0?.inFlight) await s0.inFlight; // первый цикл завершён
+    expect(s0?.inFlight).toBeDefined(); // первый цикл обязан быть запущен
+    await s0!.inFlight;
 
     // Первый цикл увидел postsPerCycle=2 (старый конфиг).
     expect(seen[0]).toBe(2);
@@ -137,7 +141,8 @@ describe('SM-20: одна цепочка одноразовых таймеров
     // Исполняем следующий timeout — второй цикл стартует и видит уже 3.
     await vi.advanceTimersByTimeAsync(5001);
     const s1 = getAutonomousStateForTest('c4');
-    if (s1?.inFlight) await s1.inFlight;
+    expect(s1?.inFlight).toBeDefined(); // второй цикл обязан быть запущен
+    await s1!.inFlight;
 
     expect(seen[1]).toBe(3); // новый конфиг подхвачен следующим циклом
     // По-прежнему одна цепочка таймеров.

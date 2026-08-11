@@ -342,7 +342,8 @@ export async function startAutonomousExternal(params: {
 
   // Первый цикл запускаем сразу; его завершение само поставит следующий
   // одноразовый таймер (SM-20). Никакого setInterval — одна цепочка.
-  runCycleAndScheduleNext(state);
+  // inFlight нужен тестам (и диагностике), чтобы дождаться завершения цикла.
+  state.inFlight = runCycleAndScheduleNext(state);
 
   return { success: true, interval, postsPerCycle, autoSchedule, platforms };
 }
@@ -3136,7 +3137,7 @@ ${titleInstruction}`;
       // Запускаем первый цикл сразу; завершение само поставит следующий
       // одноразовый таймер (SM-20).
       console.log(`[AUTONOMOUS] Запуск первого цикла...`);
-      runCycleAndScheduleNext(state);
+      state.inFlight = runCycleAndScheduleNext(state);
       
       const postsPerDay = Math.round((24 / interval) * postsPerCycle);
       return {

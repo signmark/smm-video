@@ -13,8 +13,15 @@
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
-import { satisfies, major } from 'semver';
 import { resolve } from 'path';
+// AI-99: без декларации `semver` (TS7016) import из npm-модуля не проходит.
+// @types/semver ставить нельзя — это правит package-lock.json, а лок в этой
+// ветке трогать запрещено. Поэтому require с узким типом: компилятор проверяет
+// имена методов, а не молчит про any.
+const semver = require('semver') as {
+  satisfies(version: string, range: string): boolean;
+  major(version: string): number;
+};
 
 function readPackageJson(): Record<string, any> {
   return JSON.parse(readFileSync(resolve(__dirname, '../../package.json'), 'utf-8'));
@@ -37,25 +44,25 @@ describe('AI-99: npm version pinning', () => {
     expect(pkg.packageManager).toBeDefined();
     const m = /^npm@(\d+\.\d+\.\d+)/.exec(String(pkg.packageManager));
     expect(m).not.toBeNull();
-    expect(major(m![1])).toBe(10);
+    expect(semver.major(m![1])).toBe(10);
   });
 
   it('engines.npm пропускает 10.9.x', () => {
     const range = pkg.engines?.npm;
     expect(range).toBeDefined();
-    expect(satisfies('10.9.0', range)).toBe(true);
-    expect(satisfies('10.9.8', range)).toBe(true);
+    expect(semver.satisfies('10.9.0', range)).toBe(true);
+    expect(semver.satisfies('10.9.8', range)).toBe(true);
   });
 
   it('engines.npm отвергает npm 11', () => {
     const range = pkg.engines?.npm;
-    expect(satisfies('11.0.0', range)).toBe(false);
-    expect(satisfies('11.10.0', range)).toBe(false);
+    expect(semver.satisfies('11.0.0', range)).toBe(false);
+    expect(semver.satisfies('11.10.0', range)).toBe(false);
   });
 
   it('npm из Dockerfile попадает в диапазон engines.npm', () => {
     const range = pkg.engines?.npm;
-    expect(satisfies(docker.npm, range)).toBe(true);
+    expect(semver.satisfies(docker.npm, range)).toBe(true);
   });
 
   it('node в .nvmrc совпадает с версией из Dockerfile', () => {

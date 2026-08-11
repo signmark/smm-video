@@ -87,6 +87,20 @@ export class PublishScheduler {
   
   // Кэш для предотвращения повторной публикации (ЛИМИТИРОВАННЫЙ)
   private processedContentCache = new Map<string, Set<string>>(); // contentId -> Set<platform>
+  /**
+   * AI-102: когда в последний раз печатали сохранённую ошибку terminal-записи.
+   *
+   * Запись в статусе `failed` планировщик не отправляет — он её только
+   * пропускает. Но лог с её ошибкой выводился на КАЖДОМ проходе, то есть раз в
+   * 30 секунд, бесконечно. В утреннем инциденте это забило журнал текстом
+   * ошибок, которые никуда не уходят, и увело диагностику в сторону.
+   *
+   * Совсем убирать лог нельзя: по нему видно, что записи висят. Поэтому не
+   * чаще одного раза в час на связку контент+платформа+текст ошибки — смена
+   * текста ошибки печатается сразу.
+   */
+  private terminalErrorLoggedAt = new Map<string, number>();
+  private terminalErrorCooldownMs = 60 * 60 * 1000;
   private maxCacheSize = 1000; // Максимум 1000 элементов в кэше
   private cacheCleanupInterval = 2 * 60 * 60 * 1000; // очищаем кэш каждые 2 часа
   private lastCacheCleanup = Date.now();
@@ -409,9 +423,12 @@ export class PublishScheduler {
             // Пропускаем платформы с failed статусом (логируем только критические)
             if (data.status === 'failed') {
               log(`  ⏭️ ${content.id}:${platformName} SKIP - status=failed`, 'scheduler', 'debug');
-              // Логируем только если это критическая ошибка конфигурации
+              // Логируем только критические ошибки конфигурации и не чаще
+              // раза в час на одну и ту же запись (AI-102).
               if (data.error && (data.error.includes('CRITICAL') || data.error.includes('not found'))) {
-                log(`❌ ${platformName} ${content.id}: ${data.error}`, 'scheduler');
+                if (this.shouldLogTerminalError(content.id, platformName, data.error)) {
+                  log(`❌ ${platformName} ${content.id}: ${data.error}`, 'scheduler');
+                }
               }
               continue;
             }
@@ -903,6 +920,25 @@ export class PublishScheduler {
       await this.scheduleRetryOrFail(content, 'facebook', errMsg, content.social_platforms || {});
       return { platform: 'facebook', success: false, error: errMsg };
     }
+  }
+
+  /**
+   * AI-102: разрешено ли сейчас печатать сохранённую ошибку terminal-записи.
+   * Возвращает true при первой встрече, при смене текста ошибки и по истечении
+   * часа. Карта чистится, чтобы не расти бесконечно.
+   */
+  shouldLogTerminalError(contentId: string, platform: string, error: string): boolean {
+    const key = `${contentId}:${platform}:${error}`;
+    const now = Date.now();
+    const last = this.terminalErrorLoggedAt.get(key);
+    if (last !== undefined && now - last < this.terminalErrorCooldownMs) return false;
+    if (this.terminalErrorLoggedAt.size > this.maxCacheSize) {
+      for (const [k, ts] of this.terminalErrorLoggedAt) {
+        if (now - ts >= this.terminalErrorCooldownMs) this.terminalErrorLoggedAt.delete(k);
+      }
+    }
+    this.terminalErrorLoggedAt.set(key, now);
+    return true;
   }
 
   /**

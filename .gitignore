@@ -8,7 +8,9 @@
 .pnpm-store/
 
 # Dependencies
-node_modules/
+# Без слэша намеренно: в воркдеревьях node_modules — СИМЛИНК, а
+# `node_modules/` симлинк не покрывает, и `git add -A` его коммитит.
+node_modules
 dist/
 .DS_Store
 

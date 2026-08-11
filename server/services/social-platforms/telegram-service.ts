@@ -7,6 +7,7 @@ import axios from 'axios';
 import FormData from 'form-data';
 import log from '../../utils/logger';
 import { toTelegramHtml } from '../../utils/telegram-html';
+import { telegramAxios } from './telegram-http';
 
 export interface TelegramSettings {
   token: string;
@@ -126,13 +127,15 @@ class TelegramService {
       if (!token || !chatId) throw new Error('Telegram не настроен: отсутствует token или chatId');
 
       const cleanText = this.sanitizeText(content.text);
-      const apiUrl = `${this.apiBase}/bot${token}`;
       const imageUrls = Array.from(new Set([
         ...(content.imageUrl ? [content.imageUrl] : []),
         ...this.normalizeAdditionalImages(content.additionalImages),
       ]));
 
       log.info(`[${opId}] [Telegram] Публикуем в ${chatId}, images=${imageUrls.length}, video=${!!content.videoUrl}`);
+
+      // AI-101: telegramAxios has DNS A-record failover
+      const tg = await telegramAxios(token);
 
       let messageId: number;
       let res: any;
@@ -148,7 +151,7 @@ class TelegramService {
         };
         if (captionFits) videoParams.caption = cleanText;
 
-        const resp = await axios.post(`${apiUrl}/sendVideo`, videoParams);
+        const resp = await tg.post(`/sendVideo`, videoParams);
         res = resp.data;
         messageId = res.result?.message_id;
 
@@ -161,7 +164,7 @@ class TelegramService {
           const text = cleanText.length <= MAX
             ? cleanText
             : cleanText.slice(0, cleanText.lastIndexOf(' ', MAX - 1)) + '…';
-          const textResp = await axios.post(`${apiUrl}/sendMessage`, {
+          const textResp = await tg.post(`/sendMessage`, {
             chat_id: chatId,
             text,
             parse_mode: 'HTML',
@@ -193,7 +196,7 @@ class TelegramService {
               ? { caption: cleanText, parse_mode: 'HTML' }
               : {}),
           }));
-          const resp = await axios.post(`${apiUrl}/sendMediaGroup`, {
+          const resp = await tg.post(`/sendMediaGroup`, {
             chat_id: chatId,
             media,
           });
@@ -214,7 +217,7 @@ class TelegramService {
           const text = cleanText.length <= MAX
             ? cleanText
             : cleanText.slice(0, boundary > 0 ? boundary : MAX - 1) + '…';
-          const textResp = await axios.post(`${apiUrl}/sendMessage`, {
+          const textResp = await tg.post(`/sendMessage`, {
             chat_id: chatId,
             text,
             parse_mode: 'HTML',
@@ -239,7 +242,7 @@ class TelegramService {
         };
         if (captionFits) params.caption = cleanText;
 
-        const resp = await axios.post(`${apiUrl}/sendPhoto`, params);
+        const resp = await tg.post(`/sendPhoto`, params);
         res = resp.data;
         messageId = res.result?.message_id;
 
@@ -254,7 +257,7 @@ class TelegramService {
             ? cleanText
             : cleanText.slice(0, cleanText.lastIndexOf(' ', MAX - 1)) + '…';
 
-          const textResp = await axios.post(`${apiUrl}/sendMessage`, {
+          const textResp = await tg.post(`/sendMessage`, {
             chat_id: chatId,
             text,
             parse_mode: 'HTML',
@@ -268,7 +271,7 @@ class TelegramService {
           }
         }
       } else {
-        const resp = await axios.post(`${apiUrl}/sendMessage`, {
+        const resp = await tg.post(`/sendMessage`, {
           chat_id: chatId,
           text: cleanText,
           parse_mode: 'HTML'

@@ -600,32 +600,34 @@ export interface ContentPlanItem {
  */
 // Экспортировано для тестов (SM-20). В production вызывается только из
 // start/stop/pause/resume/update-settings и в конце runAutonomousCycle.
+// SM-20: смена подхода к перевзводу таймеров. До этого scheduleAutonomousTimers
+// ставил одноразовый setTimeout (firstCycleTimer), а в .finally() цепочки
+// ставил setInterval ОТ ЦИКЛА. Если перевзвод таймеров случался в середине
+// цикла (например, в конце runAutonomousCycle после фикс #3), старая цепочка
+// .finally() всё равно отрабатывала и ставила setInterval поверх новых
+// таймеров — дубль, как поймал @Clause_Dev_Hermi в ревью 6c56579.
+//
+// Новая структура: scheduleAutonomousTimers ставит ТОЛЬКО одноразовый
+// таймер, который после цикла в runAutonomousCycle планирует СЛЕДУЮЩИЙ
+// цикл. setInterval больше не используется — каждый цикл планирует следующий,
+// и state.interval читается заново при каждом расчёте. Меньше состояний,
+// нет генерации, нет гонки между новым setInterval и старым .finally().
 export function scheduleAutonomousTimers(state: AutonomousState): void {
-  const intervalMs = state.interval * 60 * 60 * 1000;
-
-  if (state.firstCycleTimer) clearTimeout(state.firstCycleTimer);
-  if (state.timer) clearInterval(state.timer);
+  if (state.firstCycleTimer) {
+    clearTimeout(state.firstCycleTimer);
+    state.firstCycleTimer = undefined;
+  }
 
   const delayMs = computeNextCycleDelayMs(state.lastCycleAt, state.interval);
 
   state.firstCycleTimer = setTimeout(() => {
     state.firstCycleTimer = undefined;
-    runAutonomousCycle(state)
-      .catch((e) => {
-        console.error('[AUTONOMOUS] ❌ Ошибка цикла:', e);
-        state.errors.push(e.message);
-      })
-      .finally(() => {
-        // Регулярную сетку заводим от фактического цикла, а не от момента
-        // возобновления — иначе интервал поедет.
-        if (state.paused) return;
-        state.timer = setInterval(() => {
-          runAutonomousCycle(state).catch((e) => {
-            console.error('[AUTONOMOUS] ❌ Ошибка цикла:', e);
-            state.errors.push(e.message);
-          });
-        }, intervalMs);
-      });
+    runAutonomousCycle(state).catch((e) => {
+      console.error('[AUTONOMOUS] ❌ Ошибка цикла:', e);
+      state.errors.push(e.message);
+    });
+    // .finally() нет — следующий цикл планируется в runAutonomousCycle
+    // (см. конец try/catch). Без этого колбэка не возникнет вторая сетка.
   }, delayMs);
 }
 
@@ -686,7 +688,13 @@ interface AutonomousState {
 // SM-20: экспортировано для тестов только.
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 const autonomousStates = new Map<string, AutonomousState>();
-export const __autonomousStatesForTests = autonomousStates;
+// SM-20: тестовый геттер вместо живого экспорта Map'ы. Любой импортёр
+// получает только read-only-доступ (новые state через replace не
+// подменяются). Это устраняет поверхность атаки, на которую указал
+// @Clause_Dev_Hermi.
+export function __getAutonomousStateForTests(campaignId: string): AutonomousState | undefined {
+  return autonomousStates.get(campaignId);
+}
 
 // Ошибки квоты AI — хранятся даже после остановки агента, пока пользователь не запустит снова
 const quotaErrorMap = new Map<string, { message: string; retryAfterSec?: number; stoppedAt: string }>();

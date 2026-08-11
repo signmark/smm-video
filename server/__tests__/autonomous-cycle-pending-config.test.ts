@@ -143,14 +143,14 @@ describe('cyclePendingConfig (SM-20)', () => {
     // проверить внутреннее состояние. Это white-box тест, но для
     // такого тонкого контракта серый ящик не работает.
     const mod = await import('../services/autonomous-ai');
-    const states = (mod as any).__autonomousStatesForTests;
-    if (!states) {
-      throw new Error('autonomousStates недоступна для теста — нужна экспортированная Map');
+    const getState = (mod as any).__getAutonomousStateForTests;
+    if (!getState) {
+      throw new Error('getter __getAutonomousStateForTests недоступен');
     }
 
     await startFresh('c-cp4');
     // Состояние ДО обновления
-    const before = states.get('c-cp4');
+    const before = getState('c-cp4');
     expect(before?.interval).toBe(24);
     expect(before?.postsPerCycle).toBe(1);
 
@@ -161,7 +161,7 @@ describe('cyclePendingConfig (SM-20)', () => {
     updateAutonomousSettingsExternal('c-cp4', {
       interval: 6, postsPerCycle: 3,
     });
-    const after = states.get('c-cp4');
+    const after = getState('c-cp4');
     expect(after?.interval).toBe(6); // state обновлён
     expect(after?.postsPerCycle).toBe(3);
     // КЛЮЧЕВАЯ ПРОВЕРКА: cyclePendingConfig (если есть) = СТАРЫЕ значения
@@ -180,11 +180,11 @@ describe('cyclePendingConfig (SM-20)', () => {
 
   it('снимок с СТАРЫМИ значениями при cycleRunning=true', async () => {
     const mod = await import('../services/autonomous-ai');
-    const states = (mod as any).__autonomousStatesForTests;
-    if (!states) return;
+    const getState = (mod as any).__getAutonomousStateForTests;
+    if (!getState) return;
 
     await startFresh('c-cp5');
-    const state = states.get('c-cp5');
+    const state = getState('c-cp5');
     if (!state) return;
     // Симулируем активный цикл
     state.cycleRunning = true;
@@ -193,7 +193,7 @@ describe('cyclePendingConfig (SM-20)', () => {
       interval: 6, postsPerCycle: 3,
     });
 
-    const after = states.get('c-cp5');
+    const after = getState('c-cp5');
     expect(after?.cyclePendingConfig).toBeDefined();
     // Снимок = СТАРЫЕ значения
     expect(after?.cyclePendingConfig?.interval).toBe(24);

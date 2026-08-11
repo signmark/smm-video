@@ -28,6 +28,30 @@ export interface GenerateContentParams {
   matchStyle?: boolean;
 }
 
+/**
+ * Стоит ли при падении Gemini пробовать DeepSeek.
+ *
+ * ПОЧЕМУ ЭТО НЕ «ТОЛЬКО КВОТА». До 11.08 условие перечисляло 429, 503, quota и
+ * rate limit — то есть только исчерпание лимитов. В то утро владелец получил в
+ * интерфейсе сырую ошибку Gemini `401 ACCESS_TOKEN_TYPE_UNSUPPORTED`: приложение
+ * держало в памяти устаревший ключ. Под старое условие 401 не попадал, исключение
+ * пробрасывалось наверх, и DeepSeek — рабочий, с валидным ключом — не пробовался
+ * вовсе. С точки зрения пользователя разницы между «кончилась квота» и «протух
+ * ключ» нет: текст не сгенерировался, хотя второй движок стоял рядом.
+ *
+ * Поэтому логика перевёрнута: пробуем запасной движок при ЛЮБОМ отказе Gemini,
+ * кроме случаев, когда виноват сам запрос. Их два, и оба смена движка не лечит:
+ *   INVALID_ARGUMENT — запрос неверен по существу, DeepSeek ответит так же;
+ *   блокировка фильтрами — это не сбой, а решение по содержимому, и обходить
+ *   его подстановкой другой модели нельзя.
+ */
+export function shouldFallbackToDeepSeek(err: any): boolean {
+  const msg = String(err?.message || '');
+  if (/INVALID_ARGUMENT/i.test(msg)) return false;
+  if (/SAFETY|BLOCKED|PROHIBITED_CONTENT|RECITATION/i.test(msg)) return false;
+  return true;
+}
+
 export class AiService {
   /**
    * Проверяет валидность API ключей для различных сервисов
@@ -453,20 +477,14 @@ export class AiService {
       }
     }
 
-    const isQuotaError = (err: any) => {
-      const msg: string = err?.message || '';
-      return msg.includes('429') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('quota') ||
-        msg.includes('rate limit') || msg.includes('503') || msg.includes('UNAVAILABLE') ||
-        msg.includes('high demand') || msg.includes('temporarily');
-    };
 
     let result;
     if (service.includes('gemini') || service === 'apiservice') {
       try {
         result = await this.generateWithGemini(params);
       } catch (geminiErr: any) {
-        if (isQuotaError(geminiErr)) {
-          log(`[AiService] ⚠️ Gemini квота исчерпана — переключаемся на DeepSeek`, 'warn');
+        if (shouldFallbackToDeepSeek(geminiErr)) {
+          log(`[AiService] ⚠️ Gemini недоступен (${geminiErr.message?.slice(0, 120)}) — переключаемся на DeepSeek`, 'warn');
           try {
             result = await this.generateWithDeepSeek({ ...params, model: 'deepseek-chat', service: 'deepseek' });
             result = { ...result, isFallback: true, originalService: service };
@@ -488,8 +506,8 @@ export class AiService {
       try {
         result = await this.generateWithGemini(params);
       } catch (geminiErr: any) {
-        if (isQuotaError(geminiErr)) {
-          log(`[AiService] ⚠️ Gemini квота исчерпана — переключаемся на DeepSeek`, 'warn');
+        if (shouldFallbackToDeepSeek(geminiErr)) {
+          log(`[AiService] ⚠️ Gemini недоступен (${geminiErr.message?.slice(0, 120)}) — переключаемся на DeepSeek`, 'warn');
           try {
             result = await this.generateWithDeepSeek({ ...params, model: 'deepseek-chat', service: 'deepseek' });
             result = { ...result, isFallback: true, originalService: service };

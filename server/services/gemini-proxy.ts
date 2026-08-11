@@ -4,6 +4,12 @@ import { SocksProxyAgent } from 'socks-proxy-agent';
 import fetch from 'node-fetch';
 
 
+/**
+ * Отправляется во все запросы к Gemini. См. комментарий у fetchOptions:
+ * без User-Agent воркер Cloudflare отвечает 403 / error code 1010.
+ */
+export const GEMINI_USER_AGENT = 'smm-manager/1.0 (+https://smm.nplanner.ru)';
+
 interface GeminiProxyOptions {
   apiKey: string;
   proxyHost?: string;
@@ -154,7 +160,15 @@ export class GeminiProxyService {
         const fetchOptions: any = {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            // User-Agent обязателен. Запросы к Gemini идут через воркер
+            // Cloudflare (обход блокировки по региону), а Cloudflare отбивает
+            // запрос без User-Agent как ботовый: HTTP 403, тело «error code:
+            // 1010». Снаружи это неотличимо от «Gemini не работает».
+            // Проверено 11.08 с прода: без заголовка 403, с заголовком 200.
+            // Умолчание библиотеки сюда подставлять нельзя — оно меняется от
+            // версии к версии, а заголовок здесь несёт функцию, а не вежливость.
+            'User-Agent': GEMINI_USER_AGENT
           },
           body: JSON.stringify(body)
         };

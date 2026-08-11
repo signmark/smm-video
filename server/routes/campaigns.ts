@@ -888,8 +888,38 @@ export function registerCampaignRoutes(app: Express) {
       try {
         const { directusCrud } = await import('../services/directus-crud');
         const camp = await directusCrud.getById('user_campaigns', campaignId, { authToken: token });
-        if (camp?.target_audience) campaignAudience = camp.target_audience;
-        if (camp?.business_description) campaignBusinessContext = camp.business_description;
+        // AI-105: раньше здесь читались camp.target_audience и
+        // camp.business_description — колонок с такими именами в user_campaigns
+        // нет (анкета лежит отдельной коллекцией business_questionnaire).
+        // Оба условия были ложны ВСЕГДА, поэтому в модель уходили дефолты и
+        // промт выходил обезличенным: тестировщик получил общий SMM-текст на
+        // кампании про натуральный камень.
+        if (camp?.description) campaignBusinessContext = String(camp.description);
+
+        try {
+          const rows: any[] = await directusCrud.list('business_questionnaire', {
+            authToken: token,
+            filter: { campaign_id: { _eq: campaignId } },
+            limit: 1,
+          });
+          const q: any = Array.isArray(rows) ? rows[0] : undefined;
+          if (q?.target_audience) campaignAudience = String(q.target_audience);
+          const businessParts = [
+            q?.company_name && `Компания: ${q.company_name}`,
+            q?.business_description && `Чем занимается: ${q.business_description}`,
+            q?.main_directions && `Направления: ${q.main_directions}`,
+            q?.products_services && `Продукты и услуги: ${q.products_services}`,
+            q?.competitive_advantages && `Преимущества: ${q.competitive_advantages}`,
+          ].filter(Boolean) as string[];
+          // Анкета богаче описания кампании, поэтому перекрывает его, но только
+          // если в ней действительно что-то заполнено.
+          if (businessParts.length > 0) campaignBusinessContext = businessParts.join('\n');
+        } catch (qErr: any) {
+          log(`[generate-assistant-prompt] Анкета кампании недоступна: ${qErr?.message}`, 'warn');
+        }
+        if (!campaignBusinessContext) {
+          log('[generate-assistant-prompt] Нет ни анкеты, ни описания кампании — промт будет обезличенным', 'warn');
+        }
 
         // SM-18 follow-up: определяем фактически подключённые соцсети, чтобы
         // сгенерированный промт упоминал ТОЛЬКО их, а не дефолтный Facebook.

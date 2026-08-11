@@ -423,3 +423,72 @@ describe('generateContentPlan integration (тракт, а не хелпер)', (
     expect(capturedPrompt).toContain('Facebook');
   });
 });
+
+
+// ── AI-105 ────────────────────────────────────────────────────────────────────
+// Кампания «Мир гранита» получала посты не по своей теме. Блок «КОНТЕКСТ КАМПАНИИ»
+// в промте плана состоял из стиля, ключевых слов и трендов — про сам бизнес там
+// не было ничего, и при обезличенном globalPrompt модель не знала о кампании.
+describe('generateContentPlan: тематика кампании в промте (AI-105)', () => {
+  const GRANITE = 'Полный цикл работ с натуральным камнем: добыча, обработка, монтаж.';
+
+  function capture(): () => string {
+    let captured = '';
+    (aiService.generateContent as any).mockImplementation(
+      async (opts: { prompt: string }) => {
+        captured = opts.prompt;
+        return { content: JSON.stringify([
+          { id: '1', topic: 'Тема', contentType: 'обучающий', platform: 'telegram', rationale: 'Причина' }
+        ]) };
+      }
+    );
+    return () => captured;
+  }
+
+  it('передаёт в модель название и описание кампании', async () => {
+    const prompt = capture();
+
+    await generateContentPlan({
+      count: 1,
+      keywords: [],
+      trends: [],
+      platforms: ['telegram'],
+      campaignName: 'Мир гранита',
+      campaignContext: GRANITE,
+      // Обезличенный промт — ровно тот случай, что был у тестировщика.
+      globalPrompt: 'Ты — SMM-менеджер, специализирующийся на SMM и E-commerce.',
+      alwaysInclude: '',
+      launchCommand: '',
+      analyticsInsights: '',
+      request: { userId: 'u1', authToken: 't1' },
+    });
+
+    const sent = prompt();
+    expect(sent).toContain('Кампания: Мир гранита');
+    expect(sent).toContain('натуральным камнем');
+    // Стиль остаётся на месте: тематику добавляем, ничего не подменяя.
+    expect(sent).toContain('Стиль и аудитория:');
+  });
+
+  it('без описания кампании промт остаётся валидным', async () => {
+    const prompt = capture();
+
+    await generateContentPlan({
+      count: 1,
+      keywords: ['кейс'],
+      trends: [],
+      platforms: ['telegram'],
+      globalPrompt: 'Ты — SMM-менеджер.',
+      alwaysInclude: '',
+      launchCommand: '',
+      analyticsInsights: '',
+      request: { userId: 'u1', authToken: 't1' },
+    });
+
+    const sent = prompt();
+    expect(sent).toContain('КОНТЕКСТ КАМПАНИИ:');
+    expect(sent).toContain('Платформы: telegram');
+    // Пустых заголовков без содержания в промт не попадает.
+    expect(sent).not.toContain('Кампания: \n');
+  });
+});

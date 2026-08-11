@@ -598,7 +598,9 @@ export interface ContentPlanItem {
  * цикл, иначе две таймерные сетки разъезжаются: одна от момента запуска, другая
  * от фактического цикла.
  */
-function scheduleAutonomousTimers(state: AutonomousState): void {
+// Экспортировано для тестов (SM-20). В production вызывается только из
+// start/stop/pause/resume/update-settings и в конце runAutonomousCycle.
+export function scheduleAutonomousTimers(state: AutonomousState): void {
   const intervalMs = state.interval * 60 * 60 * 1000;
 
   if (state.firstCycleTimer) clearTimeout(state.firstCycleTimer);
@@ -3763,7 +3765,6 @@ async function runAutonomousCycle(state: AutonomousState) {
     // ──────────────────────────────────────────────────────────────
     // ФАЗА 2: Генерация контент-плана
     // ──────────────────────────────────────────────────────────────
-    console.log(`[PIPELINE] 📋 Фаза 2: генерация контент-плана на ${state.postsPerCycle} постов...`);
     // SM-20: если во время обновления настроек был активный цикл и пользователь
     // поменял interval/postsPerCycle, цикл, который уже начался, должен
     // доработать СТАРЫМИ значениями. Снимок читаем ровно один раз в фазе 2
@@ -3775,6 +3776,7 @@ async function runAutonomousCycle(state: AutonomousState) {
     const cyclePostsPerCycle = snapshot?.postsPerCycle ?? state.postsPerCycle;
     const cycleWithImages = snapshot?.withImages ?? state.withImages;
     const cycleAutoSchedule = snapshot?.autoSchedule ?? state.autoSchedule;
+    console.log(`[PIPELINE] 📋 Фаза 2: генерация контент-плана на ${cyclePostsPerCycle} постов (interval=${cycleInterval}ч, withImages=${cycleWithImages})...`);
     let contentPlan = await generateContentPlan({
       count: cyclePostsPerCycle,
       keywords: topKeywords,
@@ -4205,6 +4207,18 @@ ${criteriaLines}
     // параллельно; оставляем — следующий цикл разберётся.
     state.cycleRunning = false;
 
+    // SM-20: перевзвод таймеров с актуальными state.interval/postsPerCycle.
+    // Без этого перевзвода новый interval, выставленный через /update-settings
+    // во время активного цикла, не дойдёт до планировщика — `setInterval` в
+    // `scheduleAutonomousTimers` захватывает intervalMs в замыкании. Вызов
+    // очищает предыдущие таймеры (firstCycleTimer и timer) и заводит новые
+    // с актуальными значениями.
+    // Условия: не на паузе, кампания всё ещё в autonomousStates (иначе
+    // состояние удалили, нет смысла перевзводить).
+    if (!state.paused && autonomousStates.has(state.campaignId)) {
+      scheduleAutonomousTimers(state);
+    }
+
     console.log(`[AUTONOMOUS-CYCLE] ✅ Цикл ${state.cyclesCompleted} завершён. Создано постов: ${createdPosts.length}`);
     
   } catch (error: any) {
@@ -4225,6 +4239,12 @@ ${criteriaLines}
     // уже поменял.
     state.cyclePendingConfig = undefined;
     state.cycleRunning = false;
+    // SM-20: после ошибки (если не было квоты/остановки) перевзводим
+    // таймеры с актуальными state.interval. См. успешную ветку — там
+    // тот же вызов с тем же обоснованием.
+    if (!state.paused && autonomousStates.has(state.campaignId)) {
+      scheduleAutonomousTimers(state);
+    }
   }
 }
 

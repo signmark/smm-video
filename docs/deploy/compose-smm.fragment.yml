@@ -36,5 +36,10 @@ services:
     image: root-smm:deployed
     container_name: smm
     restart: always
+    # api.telegram.org: пин рабочего IP. Без него плановая публикация
+    # встанет — клиент ходит на api.telegram.org одной A-записью без
+    # перебора. Пин снимается задачей AI-101 после миграции всех путей.
+    extra_hosts:
+      - "api.telegram.org:149.154.167.220"
     # build: — намеренно отсутствует, см. выше. Добавление вернёт footgun и
     # будет отклонено preflight-проверкой deploy-скрипта.

@@ -20,6 +20,10 @@ let cachedIps: string[] | null = null;
 let cachedAt = 0;
 const CACHE_TTL = 5 * 60 * 1000;
 
+// Shared keepAlive agent — one per process
+let _agent: https.Agent | null = null;
+let _agentBuiltFor: string | null = null; // IP list fingerprint
+
 async function getTelegramIps(): Promise<string[]> {
   if (cachedIps && Date.now() - cachedAt < CACHE_TTL) return cachedIps;
   try {
@@ -34,8 +38,11 @@ async function getTelegramIps(): Promise<string[]> {
 /** Create an axios instance with Telegram DNS failover on the given token. */
 export async function telegramAxios(token: string): Promise<AxiosInstance> {
   const ips = await getTelegramIps();
+  const ipFingerprint = ips.join(',');
 
-  const agent = new https.Agent({
+  // Reuse agent unless IP list changed
+  if (!_agent || _agentBuiltFor !== ipFingerprint) {
+    _agent = new https.Agent({
     keepAlive: true,
     createConnection: (options: any, cb: any) => {
       let idx = 0;
@@ -47,28 +54,35 @@ export async function telegramAxios(token: string): Promise<AxiosInstance> {
           cb(new Error(`Telegram: all ${targets.length} IPs unreachable`));
           return;
         }
+        let settled = false;
         const tlsOpts = {
           ...options,
           host: targets[idx],
-          servername: TELEGRAM_HOST, // SNI must be the hostname
+          servername: TELEGRAM_HOST,
         };
         const sock = tls.connect(tlsOpts, () => {
-          // TLS handshake OK — after this, NO more IP rotation
-          // (any HTTP response means the post may be live)
+          // TLS handshake OK. After this, NO more IP rotation — any HTTP
+          // response means the post may already be live on Telegram's side.
+          // Remove error listener so a late ECONNRESET does NOT trigger IP2.
+          settled = true;
+          sock.removeListener('error', onError);
           cb(null, sock);
         });
-        sock.once('error', () => {
+        function onError() {
+          if (settled) return; // late error after handshake, ignore
           idx++;
           sock.destroy();
           tryConnect();
-        });
+        }
+        sock.once('error', onError);
       }
-    },
-  });
+    });
+    _agentBuiltFor = ipFingerprint;
+  }
 
   return axios.create({
     baseURL: `https://${TELEGRAM_HOST}/bot${token}`,
-    httpsAgent: agent,
+    httpsAgent: _agent,
     timeout: 30_000,
   });
 }
@@ -77,4 +91,5 @@ export async function telegramAxios(token: string): Promise<AxiosInstance> {
 export function clearTelegramIpsCache(): void {
   cachedIps = null;
   cachedAt = 0;
+  _agentBuiltFor = null;
 }

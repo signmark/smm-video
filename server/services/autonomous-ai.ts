@@ -420,6 +420,54 @@ export function stopAutonomousExternal(campaignId: string) {
   };
 }
 
+export interface UpdateAutonomousSettingsParams {
+  interval: number;
+  postsPerCycle: number;
+  autoSchedule?: boolean;
+  withImages?: boolean;
+}
+
+/**
+ * SM-20: обновление настроек запущенного автономного режима.
+ *
+ * Соглашение с фронтом (terminal #3): режим остаётся включённым,
+ * текущий цикл дорабатывает со СТАРЫМИ настройками (если в момент
+ * обновления cycleRunning=true — просто перезаписываем state, цикл
+ * уже использует зафиксированные в начале значения), а новые значения
+ * принимаются со следующего цикла.
+ *
+ * Конкретно: обновляем state.interval и state.postsPerCycle, пересоздаём
+ * setInterval ТОЛЬКО после окончания текущего цикла. Именно это и
+ * проверяет тест red-before в кейсе: смена interval/posts-per-cycle
+ * во время работы не должна ни терять прогресс, ни сбивать таймер.
+ */
+export function updateAutonomousSettingsExternal(
+  campaignId: string,
+  params: UpdateAutonomousSettingsParams,
+): { success: boolean; error?: string; changed?: { interval: number; postsPerCycle: number } } {
+  const state = autonomousStates.get(campaignId);
+  if (!state) return { success: false, error: 'Автономный режим не активен' };
+  if (state.interval === params.interval && state.postsPerCycle === params.postsPerCycle) {
+    return { success: true, changed: { interval: state.interval, postsPerCycle: state.postsPerCycle } };
+  }
+  state.interval = params.interval;
+  state.postsPerCycle = params.postsPerCycle;
+  if (typeof params.autoSchedule === 'boolean') state.autoSchedule = params.autoSchedule;
+  if (typeof params.withImages === 'boolean') state.withImages = params.withImages;
+  // Если цикл сейчас НЕ идёт — перепланируем таймеры сразу
+  // (без этого изменение интервала примет участие только при следующем
+  // стоп+старт). Этого SM-20 не требует, но цена поддержки минимальная,
+  // а в UI походе «сохранять, потом перезапускать» это лишний шаг.
+  if (!state.cycleRunning) {
+    scheduleAutonomousTimers(state);
+  }
+  saveAutonomousPersistence();
+  return {
+    success: true,
+    changed: { interval: state.interval, postsPerCycle: state.postsPerCycle },
+  };
+}
+
 export function getAutonomousStatusExternal(campaignId: string) {
   const quotaError = quotaErrorMap.get(campaignId) || null;
   const state = autonomousStates.get(campaignId);

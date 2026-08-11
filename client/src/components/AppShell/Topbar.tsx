@@ -14,6 +14,7 @@ import { LanguageSwitcher } from "@/components/LanguageSwitcher";
 import { useTranslation } from 'react-i18next';
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
+import { AutonomousControlModal } from "../AutonomousControlModal";
 
 type PipelineMode = 'full_auto' | 'controlled' | 'mixed';
 
@@ -40,6 +41,10 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [showModeDialog, setShowModeDialog] = useState(false);
+  // SM-20: модалка управления запущенным режимом (Pause/Resume/Disable + настройки).
+  // Отдельный state, чтобы клик по активной иконке Bot открывал её, а не
+  // выключал режим (старый баг — один клик = stop).
+  const [showControlModal, setShowControlModal] = useState(false);
   const [selectedMode, setSelectedMode] = useState<PipelineMode>('full_auto');
   
   // Нормализуем location и скрываем селектор на Dashboard и списке кампаний
@@ -386,8 +391,12 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
                     variant="ghost"
                     size="icon"
                     onClick={() => {
+                      // SM-20: при активном режиме клик открывает модалку
+                      // управления (Pause/Resume + Disable + настройки),
+                      // а НЕ выключает режим. Прежнее поведение — один
+                      // клик = stop — было ошибкой по жалобе тестировщика.
                       if (isAutonomousActive) {
-                        stopAutonomous();
+                        setShowControlModal(true);
                       } else {
                         setShowModeDialog(true);
                       }
@@ -397,13 +406,13 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
                     disabled={isTogglingAutonomous || isStoppingAutonomous}
                     aria-label={
                       isAutonomousActive
-                        ? t('nav.autonomous.stopLabel')
+                        ? t('nav.autonomous.manageLabel') || 'Управление автономным режимом'
                         : t('nav.autonomous.startLabel')
                     }
                     aria-pressed={isAutonomousActive}
                     title={
                       isAutonomousActive
-                        ? t('nav.autonomous.stopLabel')
+                        ? t('nav.autonomous.manageLabel') || 'Управление автономным режимом'
                         : t('nav.autonomous.startLabel')
                     }
                   >
@@ -633,6 +642,31 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
         </div>
       </DialogContent>
     </Dialog>
+
+    {/* SM-20: модалка управления запущенным автономным режимом. */}
+    <AutonomousControlModal
+      open={showControlModal}
+      onOpenChange={setShowControlModal}
+      campaignId={selectedCampaignId || ''}
+      token={token}
+      status={
+        isAutonomousActive && autonomousStatus
+          ? {
+              isActive: true,
+              paused: !!isAutonomousPaused,
+              interval: autonomousStatus.interval ?? 24,
+              postsPerCycle: autonomousStatus.postsPerCycle ?? 1,
+              autoSchedule: autonomousStatus.autoSchedule ?? true,
+              withImages: autonomousStatus.withImages ?? true,
+              cyclesCompleted: autonomousStatus.cyclesCompleted ?? 0,
+              postsCreated: autonomousStatus.postsCreated ?? 0,
+            }
+          : null
+      }
+      onPause={() => pauseAutonomous()}
+      onResume={() => resumeAutonomous()}
+      onDisable={() => stopAutonomous()}
+    />
     </>
   );
 }

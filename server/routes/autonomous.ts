@@ -4,6 +4,7 @@ import {
   stopAutonomousExternal,
   pauseAutonomousExternal,
   resumeAutonomousExternal,
+  updateAutonomousSettingsExternal,
   getAutonomousStatusExternal,
   getAllAutonomousStatuses,
   getActiveAutonomousCampaignIds,
@@ -104,6 +105,33 @@ router.post('/resume', async (req: Request, res: Response) => {
     if (!campaignId) return res.status(400).json({ error: 'campaignId обязателен' });
     if (!(await ensureCampaignAccess(req, res, String(campaignId)))) return;
     const result = resumeAutonomousExternal(campaignId);
+    return res.json(result);
+  } catch (e: any) {
+    return res.status(500).json({ error: e.message });
+  }
+});
+
+// SM-20: обновление настроек запущенного режима (interval, postsPerCycle,
+// autoSchedule, withImages). Режим не выключается, новые значения применяются
+// с ближайшего цикла. Если цикл сейчас НЕ идёт — таймеры перепроводятся
+// сразу; иначе берутся со следующего цикла.
+router.post('/update-settings', async (req: Request, res: Response) => {
+  try {
+    const { campaignId, interval, postsPerCycle, autoSchedule, withImages } = req.body || {};
+    if (!campaignId) return res.status(400).json({ error: 'campaignId обязателен' });
+    if (!(await ensureCampaignAccess(req, res, String(campaignId)))) return;
+    if (typeof interval !== 'number' || interval <= 0) {
+      return res.status(400).json({ error: 'interval должен быть положительным числом' });
+    }
+    if (typeof postsPerCycle !== 'number' || postsPerCycle <= 0) {
+      return res.status(400).json({ error: 'postsPerCycle должен быть положительным числом' });
+    }
+    const result = updateAutonomousSettingsExternal(String(campaignId), {
+      interval,
+      postsPerCycle,
+      autoSchedule: typeof autoSchedule === 'boolean' ? autoSchedule : undefined,
+      withImages: typeof withImages === 'boolean' ? withImages : undefined,
+    });
     return res.json(result);
   } catch (e: any) {
     return res.status(500).json({ error: e.message });

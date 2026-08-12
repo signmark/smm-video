@@ -73,7 +73,9 @@ describe('isPlatformConnected — данные без токенов', () => {
   });
 
   it('понимает snake_case из Directus', () => {
-    expect(isPlatformConnected({ telegram: { chat_id: '@ch' } }, 'telegram')).toBe(true);
+    // SM-24: telegram now also requires credential proof (hasToken or token).
+    // snake_case chat_id alone is not enough — credential must be present.
+    expect(isPlatformConnected({ telegram: { chat_id: '@ch', hasToken: true } }, 'telegram')).toBe(true);
     expect(isPlatformConnected({ vk: { group_id: '1' } }, 'vk')).toBe(true);
     expect(isPlatformConnected({ facebook: { page_id: '1' } }, 'facebook')).toBe(true);
     expect(isPlatformConnected({ youtube: { channel_id: '1' } }, 'youtube')).toBe(true);
@@ -87,6 +89,32 @@ describe('isPlatformConnected — данные без токенов', () => {
       expect(isPlatformConnected({ [platform]: null }, platform)).toBe(false);
       expect(isPlatformConnected({ [platform]: 'строка' }, platform)).toBe(false);
     }
+  });
+
+  // SM-24: Four explicit connected-fixture cases per sanitiser contract.
+  //   server/services/oauth-response-sanitizer.ts:63-79
+  //   Non-empty token → hasToken:true, token field stripped entirely.
+  //   Empty/missing token → no hasToken, no token.
+
+  it('SM-24: sanitized hasToken + chat = connected', () => {
+    expect(isPlatformConnected(
+      { telegram: { chatId: '@ch', hasToken: true } }, 'telegram')).toBe(true);
+  });
+
+  it('SM-24: unsanitized token + chat = connected (internal callers)', () => {
+    expect(isPlatformConnected(
+      { telegram: { chatId: '@ch', token: 'abc123' } }, 'telegram')).toBe(true);
+  });
+
+  it('SM-24: token-only (no chat) = not connected', () => {
+    expect(isPlatformConnected(
+      { telegram: { token: 'abc123' } }, 'telegram')).toBe(false);
+  });
+
+  it('SM-24: chat-only (no hasToken, no token) = not connected (product red)', () => {
+    // Before SM-24, this returned true — the bug this fixes.
+    expect(isPlatformConnected(
+      { telegram: { chatId: '@ch' } }, 'telegram')).toBe(false);
   });
 });
 
@@ -104,7 +132,9 @@ describe('getConnectedPlatformsMap', () => {
 
   it('различает подключённые и неподключённые', () => {
     const partial = {
-      telegram: { chatId: '@ch' },
+      // SM-24: telegram now requires credential proof. chatId alone is not "connected".
+      // Add hasToken:true to model sanitized configured state.
+      telegram: { chatId: '@ch', hasToken: true },
       vk: { groupId: '1' },
       facebook: { pageId: '1' },
       instagram: {},

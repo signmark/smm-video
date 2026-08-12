@@ -155,7 +155,8 @@ class TelegramService {
    */
   async deletePost(settings: TelegramSettings, messageId: number): Promise<boolean> {
     try {
-      const res = await axios.post(`${this.apiBase}/bot${settings.token}/deleteMessage`, {
+      const tg = await telegramAxios(settings.token);
+      const res = await tg.post('/deleteMessage', {
         chat_id: settings.chatId,
         message_id: messageId
       });

@@ -7,6 +7,7 @@ import { begetS3StorageAws } from '../beget-s3-storage-aws';
 import { begetS3VideoService } from '../beget-s3-video-service';
 import { log } from '../../utils/logger';
 import { describeTelegramError } from '../social-platforms/telegram-service';
+import { telegramHttp } from '../social-platforms/telegram-http';
 
 export interface TelegramVideoMessageOptions {
   caption?: string;
@@ -169,7 +170,8 @@ export class TelegramS3Integration {
       
       log.info(`Sending request to Telegram API: ${apiUrl}`, this.logPrefix);
       
-      const response = await axios.post(apiUrl, formData, {
+      const tg = await telegramHttp();
+      const response = await tg.post(apiUrl, formData, {
         headers: formData.getHeaders(),
         timeout: 60000 // 60 секунд таймаут для больших видео
       });

@@ -4,13 +4,11 @@ const telegramHtmlMockState = vi.hoisted(() => ({ shouldThrow: false }));
 
 vi.mock('axios', async (importOriginal) => {
   const actual = await importOriginal<typeof import('axios')>();
-  return {
-    ...actual,
-    default: {
-      ...actual.default,
-      post: vi.fn(),
-    },
-  };
+  const mocked: any = { ...actual.default, post: vi.fn() };
+  // AI-101 Phase 2A: отправка идёт через клиент из axios.create. Настоящий
+  // create отдал бы живой инстанс с живым post — то есть тест ушёл бы в сеть.
+  mocked.create = vi.fn(() => mocked);
+  return { ...actual, default: mocked };
 });
 
 vi.mock('../utils/logger', () => ({ log: vi.fn() }));

@@ -10,6 +10,9 @@ vi.mock('../../utils/logger', () => ({
 import axios from 'axios';
 vi.mock('axios');
 const mockedAxios = vi.mocked(axios, true);
+// AI-101 Phase 2A: отправка идёт через клиент из axios.create. Возвращаем из
+// create тот же мок, чтобы подменённым остался ровно тот же шов — axios.post.
+mockedAxios.create.mockReturnValue(mockedAxios as any);
 
 vi.mock('../beget-s3-storage-aws', () => ({ begetS3StorageAws: {} }));
 vi.mock('../beget-s3-video-service', () => ({
@@ -23,6 +26,7 @@ describe('AI-106: sendVideoToTelegram error messages', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockedAxios.create.mockReturnValue(mockedAxios as any);
     integration = new TelegramS3Integration();
   });
 

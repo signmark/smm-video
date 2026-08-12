@@ -14,6 +14,7 @@ import { directusCrud } from '../services/directus-crud';
 import { authorizeCampaignAccess, CampaignAccessError } from '../services/campaign-access';
 import { mergeOAuthSettings, sanitizeOAuthSecrets } from '../services/oauth-response-sanitizer';
 import { normalizePlatformMentionsToPlaceholder } from '../services/social-prompt';
+import { normalizeTelegramChatId } from '../utils/telegram-chatid';
 
 /**
  * Удаляет все связанные элементы указанной коллекции для кампании
@@ -263,6 +264,30 @@ export function registerCampaignRoutes(app: Express) {
       // Если обновляются social_media_settings — мержим VK поля с существующими,
       // чтобы не потерять refreshToken / clientId / deviceId сохранённые token-webhook'ом
       if (updateData.social_media_settings) {
+        // SM-24: Normalize Telegram chatId before any Directus call.
+        // Reject invalid chatId early; reject ambiguous dual-key input.
+        const tg = updateData.social_media_settings?.telegram || {};
+        const hasCamel = tg.chatId !== undefined && tg.chatId !== null && tg.chatId !== '';
+        const hasSnake = tg.chat_id !== undefined && tg.chat_id !== null && tg.chat_id !== '';
+
+        if (hasCamel && hasSnake) {
+          return res.status(400).json({
+            error: 'Ambiguous Telegram chat ID: both chatId and chat_id provided. Use chatId only.'
+          });
+        }
+
+        const rawChatId = hasCamel ? tg.chatId : tg.chat_id;
+        if (rawChatId !== undefined && rawChatId !== null && rawChatId !== '') {
+          const normalized = normalizeTelegramChatId(String(rawChatId));
+          if (!normalized) {
+            return res.status(400).json({
+              error: 'Invalid Telegram chat ID. Expected: @username, -100XXXXXXXXX, numeric ID, or t.me link'
+            });
+          }
+          tg.chatId = normalized;
+          delete tg.chat_id; // Canonicalize to camelCase
+        }
+
         const existingResp = await directusApi.get(`/items/user_campaigns/${id}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });

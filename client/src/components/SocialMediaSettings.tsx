@@ -1736,10 +1736,20 @@ export function SocialMediaSettings({
         description: "Настройки соцсетей обновлены"
       });
     } catch (error: any) {
+      // SM-24: If server returned a field-level validation error, set it on the form.
+      // Server errors use { error: '...' }, not { message: '...' }.
+      const serverError = error.response?.data?.error || error.response?.data?.message;
+      const description = serverError || error.message || 'Ошибка при обновлении настроек';
+
+      // Map Telegram validation errors to the form field
+      if (serverError && serverError.includes('Telegram chat ID')) {
+        form.setError('telegram.chatId', { message: serverError });
+      }
+
       toast({
-        variant: "destructive",
-        title: "Ошибка!",
-        description: error.response?.data?.message || error.message || "Ошибка при обновлении настроек"
+        variant: 'destructive',
+        title: 'Ошибка!',
+        description,
       });
     } finally {
       setIsLoading(false);
@@ -1923,6 +1933,7 @@ export function SocialMediaSettings({
                     <FormControl>
                       <Input 
                         placeholder="Например: -1001234567890 или @channel_name" 
+                        autoComplete="off"
                         {...field} 
                         value={field.value || ''}
                         className={field.value?.startsWith('@') ? "border-green-500" : ""}

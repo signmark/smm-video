@@ -6,6 +6,7 @@ import FormData from 'form-data';
 import { begetS3StorageAws } from '../beget-s3-storage-aws';
 import { begetS3VideoService } from '../beget-s3-video-service';
 import { log } from '../../utils/logger';
+import { describeTelegramError } from '../social-platforms/telegram-service';
 
 export interface TelegramVideoMessageOptions {
   caption?: string;
@@ -167,7 +168,11 @@ export class TelegramS3Integration {
       });
       
       if (!response.data.ok) {
-        throw new Error(`Telegram API error: ${JSON.stringify(response.data)}`);
+        // AI-106: throw an Error with .response so describeTelegramError can
+        // extract the human-readable description from response.data
+        const e: any = new Error(response.data?.description || 'Telegram API error');
+        e.response = { data: response.data, status: response.status };
+        throw e;
       }
       
       const messageId = response.data.result.message_id;
@@ -182,10 +187,11 @@ export class TelegramS3Integration {
         url: messageUrl
       };
     } catch (error) {
-      log.error(`Error sending video to Telegram: ${(error as Error).message}`, this.logPrefix);
+      const errMsg = describeTelegramError(error);
+      log.error(`Error sending video to Telegram: ${errMsg}`, this.logPrefix);
       return {
         success: false,
-        error: (error as Error).message
+        error: errMsg
       };
     }
   }

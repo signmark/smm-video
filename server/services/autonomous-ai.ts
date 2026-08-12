@@ -3697,7 +3697,7 @@ async function runAutonomousCycle(state: AutonomousState) {
     }
     // Проигравший unique-race: слот уже зарезервирован — не генерируем.
   }
-  console.log(`[AUTONOMOUS-CYCLE] 🎯 Зарезервировано слотов цикла: ${cycleSlots.size}/${cyclePostsPerCycle}`);
+  log(`[AUTONOMOUS-CYCLE] 🎯 Зарезервировано слотов цикла: ${cycleSlots.size}/${cyclePostsPerCycle}`, 'autonomous');
 
   try {
     // Гарантируем свежий пользовательский JWT (рефреш только если истекает скоро)

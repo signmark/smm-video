@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { telegramHttp } from './social-platforms/telegram-http';
 import crypto from 'crypto';
 import { log } from '../utils/logger';
 import { sendEmail } from './email';
@@ -203,10 +204,12 @@ async function tryNotifyViaTelegram(
       `<a href="${reconnectUrl}">🔗 Переподключить VK</a>`;
 
     const apiBase = `https://api.telegram.org/bot${botToken}`;
+    // AI-101 Phase 2B: клиент один на все сессии — агент и так общий.
+    const tg = await telegramHttp();
     let sent = false;
     for (const session of sessions) {
       try {
-        await axios.post(`${apiBase}/sendMessage`, {
+        await tg.post(`${apiBase}/sendMessage`, {
           chat_id: session.chat_id,
           text,
           parse_mode: 'HTML',

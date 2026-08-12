@@ -6,6 +6,7 @@
 import axios from 'axios';
 import { log } from '../utils/logger';
 import { normalizeVkGroupId } from '../utils/vk-group-id';
+import { telegramHttp } from './social-platforms/telegram-http';
 
 /**
  * Результат проверки API ключа
@@ -26,7 +27,9 @@ export async function validateTelegramToken(token: string): Promise<ApiKeyValida
     log(`Проверка токена Telegram: [redacted len=${token?.length}]`, 'api-validator');
     
     // Запрос к Telegram API для получения информации о боте
-    const response = await axios.get(`https://api.telegram.org/bot${token}/getMe`, {
+    // AI-101 Phase 2B: через отказоустойчивый транспорт, таймаут прежний.
+    const tg = await telegramHttp();
+    const response = await tg.get(`https://api.telegram.org/bot${token}/getMe`, {
       timeout: 10000
     });
     

@@ -1,6 +1,7 @@
 import { Telegraf, Context, Markup } from 'telegraf';
 import { message } from 'telegraf/filters';
 import axios from 'axios';
+import { telegramHttp } from '../services/social-platforms/telegram-http';
 import * as fs from 'fs';
 import * as path from 'path';
 import { telegramSessionStorage } from '../services/telegram-session-storage';
@@ -944,13 +945,15 @@ class TelegramBotService {
             const userChatId = userJson.data?.telegram_chat_id;
             if (userChatId) {
               const botToken = process.env.TELEGRAM_BOT_TOKEN;
-              await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-                method: 'POST',
+              // AI-101 Phase 2B: через отказоустойчивый транспорт. validateStatus
+              // сохраняет поведение fetch — тот не бросал на 4xx/5xx.
+              const tg = await telegramHttp();
+              await tg.post(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                chat_id: userChatId,
+                text: `🎉 Подписка активирована!\n📦 Тариф: ${planName}\n📅 До: ${expireDate.toLocaleDateString('ru-RU')}`,
+              }, {
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  chat_id: userChatId,
-                  text: `🎉 Подписка активирована!\n📦 Тариф: ${planName}\n📅 До: ${expireDate.toLocaleDateString('ru-RU')}`,
-                }),
+                validateStatus: () => true,
               }).catch(() => {});
             }
           }
@@ -1725,7 +1728,9 @@ class TelegramBotService {
       }
 
       const fileUrl = `https://api.telegram.org/file/bot${botToken}/${fileInfo.file_path}`;
-      const response = await axios.get(fileUrl, { responseType: 'arraybuffer' });
+      // AI-101 Phase 2B: тот же хост api.telegram.org, значит и тот же перебор адресов.
+      const tgFiles = await telegramHttp();
+      const response = await tgFiles.get(fileUrl, { responseType: 'arraybuffer' });
 
       // Сохраняем файл временно
       const tempDir = path.join(process.cwd(), 'uploads', 'temp');

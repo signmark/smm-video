@@ -442,6 +442,14 @@ export default function PublicationCalendar({
 
     // SM-22: маркеры рисует общий компонент — тот же, что и на экране постов.
     // Предел на число видимых точек живёт там, в одном месте на оба календаря.
+    //
+    // SM-22 follow-up: «неудачи первыми» в этом календаре уже сделано через
+    // фильтры выше (см. `:353` `if (post.status !== 'scheduled') return false;`
+    // внутри `getDayContent`, начало `:347`; и `:364-366` — исключение
+    // частично опубликованных). Сюда доходят только запланированные, поэтому
+    // провалов в этом календаре не бывает вовсе. Дополнительной сортировки
+    // здесь делать нечего; red-проверка в PublicationCalendar выходит за
+    // рамки #44.
     const dots: CalendarDayDot[] = [];
     Object.entries(contentByStatus).forEach(([status, typesCounts]) => {
       const { opacity, ring } = getStatusStyle(status);

@@ -36,6 +36,39 @@ export function splitDayDots(dots: CalendarDayDot[]): {
   return { visible, remaining: dots.length - visible.length };
 }
 
+/**
+ * Сборка маркеров дня для экрана `pages/posts` (SM-22 follow-up).
+ *
+ * Здесь вход — два раздельных массива (опубликованные и провалившиеся), и
+ * семантика «failed первыми» реализуется через порядок spread'а. Общий
+ * компонент `CalendarDayDots` НЕ знает про приоритеты статусов; порядок
+ * маркеров фиксируется этой функцией и проверяется в
+ * `calendar-markers-failed-first.test.tsx`.
+ *
+ * `getColorForType` — функция цвета, которая зависит от локали и
+ * передаётся с call-site.
+ *
+ * `t` — функция перевода, передаётся с call-site по той же причине.
+ */
+export function buildPostsScreenDayDots<TKey extends string, TPublication extends { key: TKey; contentType?: string | null }, TFailed extends { id: TKey }>(params: {
+  publicationsForDay: TPublication[];
+  failedAttemptsForDay: TFailed[];
+  getColorForType: (type: string) => string;
+  t: (key: string) => string;
+}): CalendarDayDot[] {
+  return [
+    ...params.failedAttemptsForDay.map((content) => ({
+      key: `${content.id}:failed`,
+      color: 'bg-red-500',
+      title: params.t('publishing.published.publicationError'),
+    })),
+    ...params.publicationsForDay.map((publication) => ({
+      key: publication.key,
+      color: params.getColorForType(publication.contentType || 'text'),
+    })),
+  ];
+}
+
 export function CalendarDayDots({ dots }: { dots: CalendarDayDot[] }) {
   if (dots.length === 0) return null;
 

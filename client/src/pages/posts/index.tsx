@@ -39,7 +39,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { getPublishedPlatformTimeSummary } from '@shared/schedule-time';
 import { QueryErrorState } from '@/components/QueryErrorState';
-import { CalendarDayDots, type CalendarDayDot } from '@/components/calendar-day-dots';
+import { CalendarDayDots, buildPostsScreenDayDots, type CalendarDayDot } from '@/components/calendar-day-dots';
 
 function markdownToHtml(text: string): string {
   if (!text) return '';
@@ -414,17 +414,19 @@ export default function Posts() {
     // сам, без предела на количество, и день с семнадцатью публикациями
     // выкидывал точки за границы ячейки — при том что во втором календаре
     // ограничение уже стояло.
-    const dots: CalendarDayDot[] = [
-      ...publicationsForDay.map((publication) => ({
-        key: publication.key,
-        color: getColorForType(publication.contentType || 'text'),
-      })),
-      ...failedAttemptsForDay.map((content) => ({
-        key: `${content.id}:failed`,
-        color: 'bg-red-500',
-        title: t('publishing.published.publicationError'),
-      })),
-    ];
+    //
+    // SM-22 follow-up: неудачи идут ПЕРВЫМИ, это осознанно — всего четыре
+    // видимых маркера, и «в этот день что-то не опубликовалось» — это тот
+    // самый сигнал, который человек ищет. Если складывать в конец, при четырёх
+    // и более успешных публикациях красная точка первой уедет под «+N» и день
+    // будет выглядеть благополучным. Чистая функция сборки вынесена в
+    // calendar-day-dots.tsx и проверена в calendar-markers-failed-first.test.tsx.
+    const dots: CalendarDayDot[] = buildPostsScreenDayDots({
+      publicationsForDay,
+      failedAttemptsForDay,
+      getColorForType,
+      t,
+    });
 
     return <CalendarDayDots dots={dots} />;
   };

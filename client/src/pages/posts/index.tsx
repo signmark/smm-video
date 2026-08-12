@@ -414,15 +414,21 @@ export default function Posts() {
     // сам, без предела на количество, и день с семнадцатью публикациями
     // выкидывал точки за границы ячейки — при том что во втором календаре
     // ограничение уже стояло.
+    //
+    // SM-22 follow-up: неудачи идут ПЕРВЫМИ, это осознанно — всего четыре
+    // видимых маркера, и «в этот день что-то не опубликовалось» — это тот
+    // самый сигнал, который человек ищет. Если складывать в конец, при четырёх
+    // и более успешных публикациях красная точка первой уедет под «+N» и день
+    // будет выглядеть благополучным.
     const dots: CalendarDayDot[] = [
-      ...publicationsForDay.map((publication) => ({
-        key: publication.key,
-        color: getColorForType(publication.contentType || 'text'),
-      })),
       ...failedAttemptsForDay.map((content) => ({
         key: `${content.id}:failed`,
         color: 'bg-red-500',
         title: t('publishing.published.publicationError'),
+      })),
+      ...publicationsForDay.map((publication) => ({
+        key: publication.key,
+        color: getColorForType(publication.contentType || 'text'),
       })),
     ];
 

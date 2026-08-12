@@ -40,6 +40,10 @@ function stateToRecord(state: AutonomousState): Record<string, any> {
     posts_created: state.postsCreated,
     launch_command: state.launchCommand || null,
     last_cycle_at: state.lastCycleAt ? state.lastCycleAt.toISOString() : null,
+    // SM-20 Phase2 (A): durable cycle identity — source of truth is БД.
+    run_id: state.runId || null,
+    cycle_id: state.cycleId || null,
+    phase: state.phase || 'running',
   };
 }
 
@@ -50,6 +54,7 @@ function activateRestoredState(saved: {
   launchCommand?: string; lastCycleAt?: string;
   paused?: boolean; pausedAt?: string;
   cyclesCompleted?: number; postsCreated?: number;
+  runId?: string; cycleId?: string; phase?: 'running' | 'pausing' | 'paused';
 }) {
   if (autonomousStates.has(saved.campaignId)) return;
   const state: AutonomousState = {
@@ -73,6 +78,10 @@ function activateRestoredState(saved: {
     lastCycleAt: saved.lastCycleAt ? new Date(saved.lastCycleAt) : undefined,
     paused: saved.paused === true,
     pausedAt: saved.pausedAt ? new Date(saved.pausedAt) : undefined,
+    // SM-20 Phase2 (A): durable identity; legacy sessions (без полей) безопасны.
+    runId: saved.runId,
+    cycleId: saved.cycleId,
+    phase: saved.phase || 'running',
   } as any;
   autonomousStates.set(saved.campaignId, state);
   // SM-20: раньше здесь стояли свои таймеры — setInterval сразу (сетка от
@@ -623,6 +632,15 @@ interface AutonomousState {
   paused?: boolean;
   /** Когда поставлен на паузу — для отображения и диагностики (SM-20). */
   pausedAt?: Date;
+  /**
+   * SM-20 Phase2 (A): durable cycle identity. run_id — opaque UUID старта
+   * сессии авторежима; cycle_id — UUID конкретного цикла; phase — durable
+   * `running|pausing|paused`. Source of truth = БД (autonomous_sessions);
+   * файловый restore при расхождении не выигрывает.
+   */
+  runId?: string;
+  cycleId?: string;
+  phase?: 'running' | 'pausing' | 'paused';
   /**
    * Промис запущенного цикла (SM-20). Живёт, пока цикл не завершился (включая
    * .finally). Нужен тестам, чтобы дождаться честного завершения цикла под

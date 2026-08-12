@@ -264,15 +264,19 @@ export function registerCampaignRoutes(app: Express) {
       // Если обновляются social_media_settings — мержим VK поля с существующими,
       // чтобы не потерять refreshToken / clientId / deviceId сохранённые token-webhook'ом
       if (updateData.social_media_settings) {
-        const existingResp = await directusApi.get(`/items/user_campaigns/${id}`, {
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
-        const existingSettings = existingResp.data.data?.social_media_settings || {};
-        updateData.social_media_settings = mergeOAuthSettings(existingSettings, updateData.social_media_settings);
-
-        // SM-24: Normalize Telegram chatId before saving (both camelCase and snake_case)
+        // SM-24: Normalize Telegram chatId before any Directus call.
+        // Reject invalid chatId early; reject ambiguous dual-key input.
         const tg = updateData.social_media_settings?.telegram || {};
-        const rawChatId = tg.chatId || tg.chat_id;
+        const hasCamel = tg.chatId !== undefined && tg.chatId !== null && tg.chatId !== '';
+        const hasSnake = tg.chat_id !== undefined && tg.chat_id !== null && tg.chat_id !== '';
+
+        if (hasCamel && hasSnake) {
+          return res.status(400).json({
+            error: 'Ambiguous Telegram chat ID: both chatId and chat_id provided. Use chatId only.'
+          });
+        }
+
+        const rawChatId = hasCamel ? tg.chatId : tg.chat_id;
         if (rawChatId !== undefined && rawChatId !== null && rawChatId !== '') {
           const normalized = normalizeTelegramChatId(String(rawChatId));
           if (!normalized) {
@@ -283,6 +287,12 @@ export function registerCampaignRoutes(app: Express) {
           tg.chatId = normalized;
           delete tg.chat_id; // Canonicalize to camelCase
         }
+
+        const existingResp = await directusApi.get(`/items/user_campaigns/${id}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const existingSettings = existingResp.data.data?.social_media_settings || {};
+        updateData.social_media_settings = mergeOAuthSettings(existingSettings, updateData.social_media_settings);
       }
 
       const response = await directusApi.patch(`/items/user_campaigns/${id}`, updateData, {

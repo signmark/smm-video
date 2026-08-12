@@ -97,18 +97,54 @@ describe('task #10: shared cache', () => {
         status: 200, headers: { 'Content-Type': 'application/json' },
       });
     }) as any;
+
+    // Prime both caches via QueryObserver (same as production consumers)
     try {
+      const obs1 = new QueryObserver(qc, obsOpts('user-1', qc));
+      const obs2 = new QueryObserver(qc, obsOpts('user-2', qc));
+      await Promise.all([waitFor(obs1), waitFor(obs2)]);
+      expect(count).toBe(2);
+
+      // Production path: scoped setQueryData for user-1 (same as store:130)
+      qc.setQueryData(campaignsListKey('user-1'), (old: any) => {
+        if (!old || !old.data) return old;
+        return { ...old, data: old.data.filter((c: any) => c.id !== 'del') };
+      });
+
+      // user-2 was NOT touched — its data is unchanged
+      const s2 = qc.getQueryState(campaignsListKey('user-2'));
+      expect(s2?.isInvalidated).toBeFalsy();
+    } finally { globalThis.fetch = orig; }
+  });
+
+  it('prefix invalidation matches all scoped keys', async () => {
+    const qc = createQC();
+    let count = 0;
+    const orig = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockImplementation(async () => {
+      count++;
+      return new Response(JSON.stringify({ success: true, data: [{ id: String(count) }] }), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
+      });
+    }) as any;
+    try {
+      // Prime both users
       await qc.fetchQuery(obsOpts('user-1', qc));
       await qc.fetchQuery(obsOpts('user-2', qc));
       expect(count).toBe(2);
 
-      qc.invalidateQueries({ queryKey: campaignsListKey('user-1') });
-      await qc.fetchQuery(obsOpts('user-1', qc));
-      expect(count).toBe(3); // only user-1 refetched
+      // Existing broad prefix invalidation (used in 6 call-sites)
+      qc.invalidateQueries({ queryKey: ['/api/campaigns'] });
 
-      // user-2 was NOT invalidated
+      // Both scoped keys are invalidated
+      const s1 = qc.getQueryState(campaignsListKey('user-1'));
       const s2 = qc.getQueryState(campaignsListKey('user-2'));
-      expect(s2?.isInvalidated).toBeFalsy();
+      expect(s1?.isInvalidated).toBe(true);
+      expect(s2?.isInvalidated).toBe(true);
+
+      // Refetch — both go to network
+      await qc.fetchQuery(obsOpts('user-1', qc));
+      expect(count).toBe(3);
     } finally { globalThis.fetch = orig; }
   });
 });

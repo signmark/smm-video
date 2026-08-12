@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitest/config';
+import react from '@vitejs/plugin-react';
 import path from 'path';
 
 const sharedAlias = {
@@ -7,6 +8,10 @@ const sharedAlias = {
 };
 
 export default defineConfig({
+  // AI-107: react() на верхнем уровне — иначе import-analysis в vitest
+  // не понимает JSX в *.test.tsx (tsconfig "jsx": "preserve" без плагина).
+  // production build использует свой plugins: [react()] в vite.config.ts.
+  plugins: [react()],
   test: {
     globals: true,
     alias: sharedAlias,
@@ -15,7 +20,6 @@ export default defineConfig({
     },
     projects: [
       {
-        // Server + shared tests — node environment (existing behaviour)
         test: {
           name: 'server',
           globals: true,
@@ -35,7 +39,6 @@ export default defineConfig({
         },
       },
       {
-        // Client tests — jsdom for component tests (.tsx), also covers pure-logic (.ts)
         test: {
           name: 'client',
           globals: true,

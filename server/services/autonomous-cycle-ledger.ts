@@ -57,6 +57,8 @@ export interface CycleItemRef {
   runId: string;
   cycleId: string;
   itemIndex: number;
+  /** preallocated content_id (UUID), известна до вызова модели. */
+  contentId: string;
 }
 
 export type CycleItemState = 'reserved' | 'filled' | 'consumed' | 'tombstone';
@@ -92,9 +94,12 @@ export class AutonomousCycleLedger {
         run_id: ref.runId,
         cycle_id: ref.cycleId,
         item_index: ref.itemIndex,
+        // preallocated UUID (SM-20 Phase2 A): известен ДО модели; создание
+        // campaign_content с этим id делает материализацию идемпотентной.
+        content_id: ref.contentId,
         state: 'reserved',
       }, { headers: ledgerAuthHeaders() });
-      log(`🔖 CycleLedger: reserved ${key}`, 'cycle-ledger');
+      log(`🔖 CycleLedger: reserved ${key} -> ${ref.contentId}`, 'cycle-ledger');
       return true;
     } catch (err: any) {
       if (isUniqueViolation(err)) {

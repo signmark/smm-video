@@ -224,6 +224,82 @@ export async function telegramHttp(): Promise<AxiosInstance> {
   return axios.create({ httpsAgent: _agent });
 }
 
+/**
+ * Канонический порт Telegram API. Фасад не соединяется никуда, кроме
+ * `api.telegram.org:443` — см. проверку в `getTelegramAgent`.
+ */
+const TELEGRAM_PORT = 443;
+
+let _facadeAgent: https.Agent | null = null;
+
+/**
+ * Стабильный агент для Telegraf: один объект на процесс, адреса разрешаются
+ * в момент соединения.
+ *
+ * Telegraf читает `options.agent` на КАЖДЫЙ вызов
+ * (`node_modules/telegraf/lib/core/network/client.js:300`), но сам объект
+ * получает один раз — при `new Telegraf`. Отдать сюда `_agent` из
+ * `telegramAxios` нельзя: тот пересобирается по отпечатку, а захваченный
+ * объект застынет со списком адресов на весь процесс — ровно та беда, ради
+ * которой транспорт и делался.
+ *
+ * Поэтому цели резолвятся не при постройке, а внутри `createConnection`, на
+ * каждое НОВОЕ соединение; callback-форма это позволяет. Уже открытые сокеты
+ * keepAlive остаются на своих адресах: ротация касается новых соединений,
+ * рвать живые незачем.
+ *
+ * `attachmentAgent` этим агентом НЕ задаётся. Telegraf качает им произвольные
+ * URL медиа (`client.js:197`) — наш S3, ссылки пользователей; перебор адресов
+ * Telegram увёл бы эти запросы не туда.
+ */
+export function getTelegramAgent(): https.Agent {
+  if (_facadeAgent) return _facadeAgent;
+
+  const agent = new https.Agent({ keepAlive: true });
+
+  (agent as any).createConnection = (options: any, cb: (err: Error | null, sock?: any) => void) => {
+    let settled = false;
+    const settle = (err: Error | null, sock?: any) => {
+      // Колбэк обязан сработать ровно один раз: и перебор, и проверка хоста,
+      // и падение резолва ведут сюда.
+      if (settled) return;
+      settled = true;
+      cb(err, sock);
+    };
+
+    // Fail-close. Через custom apiRoot (локальный Bot API, прокси) сюда легко
+    // приходит чужой хост — и запрос уехал бы на IP Telegram с чужим SNI.
+    // Отказ громче молчаливого соединения не туда.
+    const host = options?.servername || options?.host;
+    const port = Number(options?.port ?? TELEGRAM_PORT);
+    if (host !== TELEGRAM_HOST || port !== TELEGRAM_PORT) {
+      settle(new Error(`[telegram-transport] агент Telegram вызван для ${host}:${port} — соединение отклонено`));
+      return;
+    }
+
+    // Ошибка резолва уходит в колбэк, а не в воздух: промис, упавший мимо cb,
+    // оставил бы запрос висеть и всплыл бы unhandledRejection.
+    Promise.all([getTargets(), getDnsIps()]).then(
+      ([targets, dnsIps]) => {
+        try {
+          createConnectionFactory(targets, dnsIps)(options, settle);
+        } catch (err: any) {
+          settle(err instanceof Error ? err : new Error(String(err)));
+        }
+      },
+      (err: any) => settle(err instanceof Error ? err : new Error(String(err))),
+    );
+  };
+
+  _facadeAgent = agent;
+  return agent;
+}
+
+/** Только для тестов: сбросить фасад между прогонами. */
+export function _resetTelegramAgentForTests(): void {
+  _facadeAgent = null;
+}
+
 /** Export for tests — the same factory used by telegramAxios in production. */
 export function buildTelegramAgent(ips: string[], dnsIps: string[] = ips): https.Agent {
   const agent = new https.Agent({ keepAlive: true });

@@ -1,7 +1,7 @@
 import { Telegraf, Context, Markup } from 'telegraf';
 import { message } from 'telegraf/filters';
 import axios from 'axios';
-import { telegramHttp } from '../services/social-platforms/telegram-http';
+import { telegramHttp, getTelegramAgent } from '../services/social-platforms/telegram-http';
 import * as fs from 'fs';
 import * as path from 'path';
 import { telegramSessionStorage } from '../services/telegram-session-storage';
@@ -88,7 +88,14 @@ class TelegramBotService {
   private sessionSyncInterval?: NodeJS.Timeout;
 
   constructor(token: string) {
-    this.bot = new Telegraf<BotContext>(token);
+    // AI-101 Phase 2C: без агента вся библиотека ходит на api.telegram.org
+    // мимо транспорта — long polling, ctx.reply, getFile. Агент читается
+    // на каждый вызов (client.js:300), сам объект берётся отсюда один раз.
+    // attachmentAgent намеренно не задаём: им качаются произвольные URL
+    // медиа (client.js:197), и перебор адресов Telegram увёл бы их не туда.
+    this.bot = new Telegraf<BotContext>(token, {
+      telegram: { agent: getTelegramAgent() },
+    });
     this.setupMiddleware();
     this.setupCommands();
     this.setupHandlers();

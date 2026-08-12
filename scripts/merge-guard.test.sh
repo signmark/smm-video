@@ -187,28 +187,26 @@ run reject "2-parent merge"
 # ── 9. remote advance between validation and push → non-FF reject ────────
 new_fixture
 build_merge
-# Prepare a competing commit (not yet pushed), then install a bare-repo
-# pre-receive hook that, on receiving the guard's push, first advances main to
-# the competing ref and then rejects — a deterministic simulation of a
-# concurrent merge that lands between the guard's fetch and its push. The
-# guard's plain push must then fail non-FF; the competing main is preserved and
-# the candidate merge does not land.
+# Prepare a competing commit in a SECOND clone (SEED is a separate clone with
+# no hooks → no recursion). A pre-push hook in the worktree pushes it to
+# origin/main as a genuine FF push while the guard's own push is mid-flight —
+# deterministic simulation of a concurrent merge landing between the guard's
+# fetch and its plain push.
 git -C "$SEED" checkout -q main
 echo "concurrent-$RANDOM" >> "$SEED/main.txt"
 git -C "$SEED" add -A
 git -C "$SEED" commit -qm "concurrent merge"
 COMPETING_REF="$(git -C "$SEED" rev-parse main)"
-git -C "$SEED" push -q origin "HEAD:refs/heads/concurrent"
 
-export COMPETING_REF
-cat > "$BARE/hooks/pre-receive" <<'HOOK'
+export SEED COMPETING_REF
+cat > "$WT/.git/hooks/pre-push" <<'HOOK'
 #!/usr/bin/env bash
-# Advance main to the competing ref (object already on remote), then reject the
-# now-non-FF push.
-git update-ref refs/heads/main "$COMPETING_REF" 2>/dev/null
-exit 1
+# Genuine FF push of the competing commit from the second clone, before the
+# guard's own push lands.
+git -C "$SEED" push -q origin main
+exit 0
 HOOK
-chmod +x "$BARE/hooks/pre-receive"
+chmod +x "$WT/.git/hooks/pre-push"
 
 ARGS=( --candidate "$CANDIDATE" --gate-tree "$MERGE_TREE" --gated-main "$BASE_MAIN" \
        --author "Executor Name <executor@example.com>" \
@@ -216,13 +214,36 @@ ARGS=( --candidate "$CANDIDATE" --gate-tree "$MERGE_TREE" --gated-main "$BASE_MA
 out="$(cd "$WT" && "$GUARD" "${ARGS[@]}" 2>&1)"
 rc=$?
 FINAL_MAIN="$(git -C "$BARE" rev-parse main)"
-if [ "$rc" -ne 0 ] && [ "$FINAL_MAIN" != "$MERGE_SHA" ]; then
-  ok "remote race: push rejected (rc=$rc), merge did not land (main=$FINAL_MAIN)"
+if [ "$rc" -ne 0 ] && [ "$FINAL_MAIN" = "$COMPETING_REF" ]; then
+  ok "remote race: push non-FF (rc=$rc), competing main kept, merge did not land"
 else
-  bad "remote race: rc=$rc final_main=$FINAL_MAIN merge=$MERGE_SHA"
+  bad "remote race: rc=$rc final_main=$FINAL_MAIN competing=$COMPETING_REF merge=$MERGE_SHA"
   echo "$out" | sed 's/^/      | /'
 fi
-unset COMPETING_REF BARE
+unset SEED COMPETING_REF
+
+# ── 10. red-before: manual push (no guard) admits wrong committer identity ──
+# The 12.08 defect also leaked the host's shared git identity: the merge landed
+# with committer Mimo_2_5 instead of the executor. This test proves the
+# pre-guard manual path pushes such a merge cleanly; the guard (test #6) rejects
+# the exact same fixture.
+new_fixture
+# Build the merge with the WRONG committer identity (simulating shared config).
+git -C "$WT" checkout -q origin/main
+GIT_COMMITTER_NAME="Mimo_2_5" GIT_COMMITTER_EMAIL="mimo@smm.ai" \
+  git -C "$WT" merge --no-ff -q -m "merge candidate" origin/candidate
+BAD_MERGE="$(git -C "$WT" rev-parse HEAD)"
+# Raw manual push (pre-guard path) — must SUCCEED, proving the defect.
+manual_out="$(cd "$WT" && git push origin HEAD:main 2>&1)"
+manual_rc=$?
+LANDED="$(git -C "$BARE" rev-parse main)"
+LANDED_COMMITTER="$(git -C "$BARE" log -1 --format='%cn <%ce>' main)"
+if [ "$manual_rc" -eq 0 ] && [ "$LANDED" = "$BAD_MERGE" ] && [ "$LANDED_COMMITTER" = "Mimo_2_5 <mimo@smm.ai>" ]; then
+  ok "red-before: manual push admitted wrong-identity merge (main=$LANDED, committer=$LANDED_COMMITTER)"
+else
+  bad "red-before: manual rc=$manual_rc main=$LANDED committer=$LANDED_COMMITTER"
+  echo "$manual_out" | sed 's/^/      | /'
+fi
 
 echo ""
 echo "=== results: $pass passed, $failcnt failed ==="

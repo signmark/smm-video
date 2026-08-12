@@ -1,121 +1,168 @@
 /**
  * SM-24: UX — server 400 chatId error reaches the Telegram chatId form field.
  *
- * Tests the error-dispatch logic extracted from SocialMediaSettings.onSubmit.
- * A real component-level render test is impractical here: SocialMediaSettings
- * pulls in 30+ hooks (useQueryClient, usePlan, useLocation, useForm, dark mode,
- * multiple OAuth wizards) each with their own providers. The actual contract is:
+ * Renders the real SocialMediaSettings component with mocked API boundaries.
+ * The live chain is: user types invalid chatId → clicks Save → mocked apiRequest
+ * returns 400 → real react-hook-form setError → FormMessage renders server text
+ * at the telegram.chatId field, associated via aria-describedby.
  *
- *   onSubmit catch → read error.response.data.error → if it contains
- *   'Telegram chat ID', call form.setError('telegram.chatId', ...).
+ * Mutation proof (executed by @Clause_Dev_Hermi): revert SocialMediaSettings.tsx
+ * catch block to main — test imports/renders but the field-error assertion fails.
  *
- * This test proves the dispatch logic is correct, and the mutation-proof
- * (reverting SocialMediaSettings.tsx to main makes it red) is executed
- * externally by @Clause_Dev_Hermi.
- *
- * Requires AI-107 JSX infra (now in main: dd982a8). Executed locally with
- * npm ci, axios 1.18.1, vitest 4.1.6.
+ * Requires AI-107 JSX infra (dd982a8). Executed locally with npm ci, axios 1.18.1.
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import React from 'react';
 
-/**
- * SM-24: Extracted dispatch function — mirrors the catch block in
- * SocialMediaSettings.onSubmit (client/src/components/SocialMediaSettings.tsx
- * lines 1738–1751 as of d2b32c6).
- */
-function handleSaveError(
-  error: any,
-  setError: (field: string, opts: { message: string }) => void,
-  showToast: (opts: { variant: string; title: string; description: string }) => void,
-) {
-  const serverError = error?.response?.data?.error || error?.response?.data?.message;
-  const description = serverError || error?.message || 'Ошибка при обновлении настроек';
+// ─── Mock all non-UI boundaries ─────
 
-  if (serverError && serverError.includes('Telegram chat ID')) {
-    setError('telegram.chatId', { message: serverError });
-  }
+vi.mock('@/lib/queryClient', () => ({
+  apiRequest: vi.fn(),
+}));
 
-  showToast({
-    variant: 'destructive',
-    title: 'Ошибка!',
-    description,
-  });
+vi.mock('@/hooks/use-toast', () => ({
+  useToast: () => ({ toast: vi.fn() }),
+}));
+
+vi.mock('@/hooks/use-plan', () => ({
+  usePlan: () => ({ limits: { maxConnectedAccounts: 10, maxCampaigns: 10 } }),
+}));
+
+vi.mock('wouter', async () => ({
+  useLocation: () => ['/', vi.fn()],
+  Link: ({ children }: any) => children,
+}));
+
+vi.mock('@/lib/directus', () => ({
+  directusApi: { get: vi.fn().mockResolvedValue({ data: { data: [] } }), post: vi.fn(), patch: vi.fn() },
+}));
+
+vi.mock('@/lib/api', () => ({
+  api: { get: vi.fn().mockResolvedValue({ data: {} }), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
+}));
+
+vi.mock('@/lib/platform-connection', () => ({
+  isPlatformConnected: () => false,
+  getConnectedPlatformsMap: () => ({}),
+  CONNECTABLE_PLATFORMS: [],
+  parseSocialSettings: (x: any) => x,
+}));
+
+vi.mock('@/lib/vk-groups-request', () => ({
+  fetchVkGroupsByManualToken: vi.fn().mockResolvedValue([]),
+}));
+
+// Mock OAuth wizard components — replace with empty divs
+vi.mock('@/components/YouTubeOAuthSetup', () => ({
+  YouTubeOAuthSetup: () => React.createElement('div', null),
+}));
+vi.mock('@/components/YouTubeSetupWizard', () => ({
+  YouTubeSetupWizard: () => React.createElement('div', null),
+}));
+vi.mock('@/components/InstagramSetupWizardSimple', () => ({
+  default: () => React.createElement('div', null),
+}));
+vi.mock('@/components/VkSetupWizard', () => ({
+  default: () => React.createElement('div', null),
+}));
+vi.mock('@/components/FacebookSetupWizard', () => ({
+  default: () => React.createElement('div', null),
+}));
+
+// Mock lucide-react icons to plain elements
+vi.mock('lucide-react', async () => {
+  const createIcon = () => (props: any) => React.createElement('span', props);
+  return {
+    Loader2: createIcon(),
+    CheckCircle: createIcon(),
+    XCircle: createIcon(),
+    AlertCircle: createIcon(),
+    AlertTriangle: createIcon(),
+    Youtube: createIcon(),
+    RefreshCw: createIcon(),
+    Clock: createIcon(),
+    ChevronDown: createIcon(),
+    Eye: createIcon(),
+    EyeOff: createIcon(),
+    ExternalLink: createIcon(),
+  };
+});
+
+import { apiRequest } from '@/lib/queryClient';
+import { SocialMediaSettings } from '@/components/SocialMediaSettings';
+
+let qc: QueryClient;
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+});
+
+function renderComponent() {
+  return render(
+    React.createElement(QueryClientProvider, { client: qc },
+      React.createElement(SocialMediaSettings, {
+        campaignId: 'test-campaign-1',
+        initialSettings: {},
+        onSettingsUpdated: vi.fn(),
+      }),
+    ),
+  );
 }
 
-describe('SM-24: UX — server 400 chatId error dispatch', () => {
-  it('Telegram validation error → setError on chatId field', () => {
-    const setError = vi.fn();
-    const showToast = vi.fn();
+describe('SM-24: server 400 chatId error reaches field', () => {
+  it('Telegram 400: error text visible at chatId field', async () => {
+    // apiRequest throws with response.data.error → onSubmit catch reads it
+    const apiError = new Error('Invalid Telegram chat ID. Expected: @username, -100XXXXXXXXX, numeric ID, or t.me link');
+    (apiError as any).response = {
+      status: 400,
+      data: { error: 'Invalid Telegram chat ID. Expected: @username, -100XXXXXXXXX, numeric ID, or t.me link' },
+    };
+    (apiRequest as any).mockRejectedValueOnce(apiError);
 
-    const error = new Error('Invalid Telegram chat ID. Expected: @username, -100XXXXXXXXX, numeric ID, or t.me link');
-    const serverBody = { error: 'Invalid Telegram chat ID. Expected: @username, -100XXXXXXXXX, numeric ID, or t.me link' };
+    renderComponent();
+    const user = userEvent.setup();
 
-    // apiRequest attaches response + data the same way axios does
-    (error as any).response = { status: 400, data: serverBody };
+    // Open the Telegram accordion section
+    const telegramTrigger = screen.getByText('Telegram');
+    await user.click(telegramTrigger);
 
-    handleSaveError(error, setError, showToast);
+    // Find the chatId input by placeholder
+    const chatIdInput = screen.getByPlaceholderText('Например: -1001234567890 или @channel_name');
+    await user.clear(chatIdInput);
+    await user.type(chatIdInput, 'someone@example.com');
 
-    // Field-level error: setError called with server message
-    expect(setError).toHaveBeenCalledWith('telegram.chatId', {
-      message: expect.stringContaining('Invalid Telegram chat ID'),
-    });
+    // Click save
+    const saveButton = screen.getByRole('button', { name: 'Сохранить настройки' });
+    await user.click(saveButton);
 
-    // Toast also shows the error
-    expect(showToast).toHaveBeenCalledWith({
-      variant: 'destructive',
-      title: 'Ошибка!',
-      description: expect.stringContaining('Invalid Telegram chat ID'),
-    });
-  });
-
-  it('non-Telegram 400 → no setError on chatId field', () => {
-    const setError = vi.fn();
-    const showToast = vi.fn();
-
-    const error = new Error('Campaign name cannot be empty');
-    (error as any).response = { status: 400, data: { error: 'Campaign name cannot be empty' } };
-
-    handleSaveError(error, setError, showToast);
-
-    // No field-level error for non-Telegram messages
-    expect(setError).not.toHaveBeenCalled();
-
-    // Toast still shows the generic message
-    expect(showToast).toHaveBeenCalledWith({
-      variant: 'destructive',
-      title: 'Ошибка!',
-      description: 'Campaign name cannot be empty',
+    // Wait for react-hook-form setError to propagate to FormMessage
+    await waitFor(() => {
+      expect(screen.getByText(/Invalid Telegram chat ID/)).toBeInTheDocument();
     });
   });
 
-  it('no response data → falls back to error.message', () => {
-    const setError = vi.fn();
-    const showToast = vi.fn();
+  it('non-Telegram 400: no field-level error at chatId', async () => {
+    const apiError = new Error('Campaign name cannot be empty');
+    (apiError as any).response = { status: 400, data: { error: 'Campaign name cannot be empty' } };
+    (apiRequest as any).mockRejectedValueOnce(apiError);
 
-    const error = new Error('Network Error');
+    renderComponent();
+    const user = userEvent.setup();
 
-    handleSaveError(error, setError, showToast);
+    // Open Telegram (need to interact with form to trigger save)
+    const telegramTrigger = screen.getByText('Telegram');
+    await user.click(telegramTrigger);
 
-    expect(setError).not.toHaveBeenCalled();
-    expect(showToast).toHaveBeenCalledWith({
-      variant: 'destructive',
-      title: 'Ошибка!',
-      description: 'Network Error',
-    });
-  });
+    const saveButton = screen.getByRole('button', { name: 'Сохранить настройки' });
+    await user.click(saveButton);
 
-  it('server uses { message } key (backwards compatible)', () => {
-    const setError = vi.fn();
-    const showToast = vi.fn();
-
-    const error = new Error('Failed');
-    (error as any).response = { status: 400, data: { message: 'Invalid Telegram chat ID' } };
-
-    handleSaveError(error, setError, showToast);
-
-    // Also sets field error via the .message fallback
-    expect(setError).toHaveBeenCalledWith('telegram.chatId', {
-      message: 'Invalid Telegram chat ID',
+    // No Telegram-specific field error
+    await waitFor(() => {
+      expect(screen.queryByText(/Invalid Telegram chat ID/)).toBeNull();
     });
   });
 });

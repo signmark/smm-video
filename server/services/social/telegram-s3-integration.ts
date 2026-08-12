@@ -60,6 +60,13 @@ export class TelegramS3Integration {
    * @returns Результат отправки
    */
   async sendVideoToTelegram(
+    videoUrl: string,
+    chatId: string,
+    token: string,
+    options?: TelegramVideoMessageOptions
+  ): Promise<TelegramVideoResult>;
+
+  async sendVideoToTelegram(
     videoUrlOrParams: string | TelegramVideoParams,
     chatId?: string,
     token?: string,

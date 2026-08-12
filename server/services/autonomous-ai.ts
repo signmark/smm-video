@@ -3567,9 +3567,16 @@ ${instructions}
 
 /**
  * Генерирует промт для изображения на основе текста поста.
- * Сохраняет промт в поле image_prompt записи campaign_content в Directus.
+ * Сохраняет промт в поле `prompt` записи campaign_content в Directus.
+ *
+ * AI-109: раньше здесь стояло `image_prompt` — поля с таким именем в коллекции нет.
+ * Directus отбивал КАЖДУЮ запись 403 ("or it does not exist"), а catch ниже писал
+ * предупреждение и шёл дальше: цикл выглядел успешным, промт пропадал молча.
+ * Настоящее поле называется `prompt`, его же читает редактор
+ * (client/src/components/ContentPlanGenerator.tsx:240).
  */
-async function buildImagePromptFromText(params: {
+// Экспорт нужен тесту: проверяем имя поля, с которым уходит запись.
+export async function buildImagePromptFromText(params: {
   postText: string;
   topic: string;
   contentId: string;
@@ -3614,11 +3621,11 @@ Respond with ONLY the image prompt, nothing else.`,
   // Сохраняем промт в Directus чтобы он был виден в редакторе
   try {
     await directusCrud.updateItem('campaign_content', contentId, {
-      image_prompt: imagePrompt
+      prompt: imagePrompt
     }, authToken ? { authToken } : { useAdminToken: true });
     console.log(`[IMAGE-PROMPT] ✅ Промт сохранён для ${contentId}: "${imagePrompt.substring(0, 80)}..."`);
   } catch (saveErr: any) {
-    console.warn(`[IMAGE-PROMPT] ⚠️ Не удалось сохранить промт в Directus: ${saveErr.message}`);
+    console.error(`[IMAGE-PROMPT] ❌ Не удалось сохранить промт в Directus: ${saveErr.message}`);
   }
 
   return imagePrompt;

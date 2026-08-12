@@ -32,7 +32,7 @@ import { join } from 'node:path';
  * (сообщение переносится). Планка, снятая грепом, оказалась бы завышенной, и
  * храповик молча пропускал бы регрессии.
  */
-const BASELINE = 400; // AI-106: fixed missing sendVideoToTelegram overload declaration, -1 error
+const BASELINE = 398; // AI-101 Phase 2A: telegram-тесты получают отдельный клиент вместо `mockedAxios as any`, -2 ошибки
 
 const ROOT = join(__dirname, '..', '..');
 

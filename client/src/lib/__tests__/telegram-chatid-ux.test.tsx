@@ -11,11 +11,19 @@
  *
  * Requires AI-107 JSX infra (dd982a8). Executed locally with npm ci, axios 1.18.1.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
+
+// ─── Silence unhandled background fetch errors (jsdom has no URL base) ─────
+
+const _origFetch = globalThis.fetch;
+
+globalThis.fetch = vi.fn().mockImplementation(() =>
+  Promise.resolve(new Response(JSON.stringify({}), { status: 200, headers: { 'Content-Type': 'application/json' } })),
+) as any;
 
 // ─── Mock all non-UI boundaries ─────
 
@@ -114,7 +122,7 @@ function renderComponent() {
 }
 
 describe('SM-24: server 400 chatId error reaches field', () => {
-  it('Telegram 400: error text visible at chatId field', async () => {
+  it('Telegram 400: error text visible at chatId field with aria association', async () => {
     // apiRequest throws with response.data.error → onSubmit catch reads it
     const apiError = new Error('Invalid Telegram chat ID. Expected: @username, -100XXXXXXXXX, numeric ID, or t.me link');
     (apiError as any).response = {
@@ -140,12 +148,21 @@ describe('SM-24: server 400 chatId error reaches field', () => {
     await user.click(saveButton);
 
     // Wait for react-hook-form setError to propagate to FormMessage
-    await waitFor(() => {
-      expect(screen.getByText(/Invalid Telegram chat ID/)).toBeInTheDocument();
-    });
+    const errorNode = await screen.findByText(/Invalid Telegram chat ID/);
+    expect(errorNode).toBeInTheDocument();
+
+    // Field-level proof: input aria-invalid and aria-describedby → error node
+    expect(chatIdInput).toHaveAttribute('aria-invalid', 'true');
+    const describedBy = chatIdInput.getAttribute('aria-describedby');
+    expect(describedBy).toBeTruthy();
+    // The error node's id should be referenced by the input's aria-describedby
+    expect(errorNode.id).toBeTruthy();
+    if (describedBy) {
+      expect(describedBy).toContain(errorNode.id);
+    }
   });
 
-  it('non-Telegram 400: no field-level error at chatId', async () => {
+  it('non-Telegram 400: no field-level error at chatId, submit still happened', async () => {
     const apiError = new Error('Campaign name cannot be empty');
     (apiError as any).response = { status: 400, data: { error: 'Campaign name cannot be empty' } };
     (apiRequest as any).mockRejectedValueOnce(apiError);
@@ -159,6 +176,11 @@ describe('SM-24: server 400 chatId error reaches field', () => {
 
     const saveButton = screen.getByRole('button', { name: 'Сохранить настройки' });
     await user.click(saveButton);
+
+    // Proof that submit actually happened: apiRequest was called with PATCH
+    expect(apiRequest).toHaveBeenCalledTimes(1);
+    expect(apiRequest).toHaveBeenCalledWith('/api/campaigns/test-campaign-1',
+      expect.objectContaining({ method: 'PATCH' }));
 
     // No Telegram-specific field error
     await waitFor(() => {

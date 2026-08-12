@@ -47,10 +47,11 @@ non-fast-forward rejection.
 To close task #55, a follow-up host-integration step (owner: infra/Tech Lead)
 must:
 
-1. install the **reviewed exact version** of `merge-guard.sh` (checksum-pinned)
-   into the canonical merge host;
-2. require the guard as the final step of `/root/bin/merge-gate.sh`'s push path,
-   so the operator cannot `git push` around it in the normal workflow;
+1. install the **reviewed exact version** of `merge-guard.sh` (checksum-pinned
+   against the reviewed repository SHA) into the canonical merge host;
+2. make the canonical gate invoke the trusted wrapper as its final push step —
+   the wrapper itself performs the one `git push`; there is **no manual push gap**
+   after it in the normal workflow;
 3. verify checksum/version match to the reviewed repository SHA.
 
 Scope limitation recorded honestly: a repository-side wrapper can still be

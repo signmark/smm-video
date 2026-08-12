@@ -184,6 +184,46 @@ ARGS=( --candidate "$CANDIDATE" --gate-tree "$MERGE_TREE" --gated-main "$BASE_MA
        --committer "Executor Name <executor@example.com>" )
 run reject "2-parent merge"
 
+# ── 9. remote advance between validation and push → non-FF reject ────────
+new_fixture
+build_merge
+# Prepare a competing commit (not yet pushed), then install a bare-repo
+# pre-receive hook that, on receiving the guard's push, first advances main to
+# the competing ref and then rejects — a deterministic simulation of a
+# concurrent merge that lands between the guard's fetch and its push. The
+# guard's plain push must then fail non-FF; the competing main is preserved and
+# the candidate merge does not land.
+git -C "$SEED" checkout -q main
+echo "concurrent-$RANDOM" >> "$SEED/main.txt"
+git -C "$SEED" add -A
+git -C "$SEED" commit -qm "concurrent merge"
+COMPETING_REF="$(git -C "$SEED" rev-parse main)"
+git -C "$SEED" push -q origin "HEAD:refs/heads/concurrent"
+
+export COMPETING_REF
+cat > "$BARE/hooks/pre-receive" <<'HOOK'
+#!/usr/bin/env bash
+# Advance main to the competing ref (object already on remote), then reject the
+# now-non-FF push.
+git update-ref refs/heads/main "$COMPETING_REF" 2>/dev/null
+exit 1
+HOOK
+chmod +x "$BARE/hooks/pre-receive"
+
+ARGS=( --candidate "$CANDIDATE" --gate-tree "$MERGE_TREE" --gated-main "$BASE_MAIN" \
+       --author "Executor Name <executor@example.com>" \
+       --committer "Executor Name <executor@example.com>" )
+out="$(cd "$WT" && "$GUARD" "${ARGS[@]}" 2>&1)"
+rc=$?
+FINAL_MAIN="$(git -C "$BARE" rev-parse main)"
+if [ "$rc" -ne 0 ] && [ "$FINAL_MAIN" != "$MERGE_SHA" ]; then
+  ok "remote race: push rejected (rc=$rc), merge did not land (main=$FINAL_MAIN)"
+else
+  bad "remote race: rc=$rc final_main=$FINAL_MAIN merge=$MERGE_SHA"
+  echo "$out" | sed 's/^/      | /'
+fi
+unset COMPETING_REF BARE
+
 echo ""
 echo "=== results: $pass passed, $failcnt failed ==="
 [ "$failcnt" -eq 0 ]

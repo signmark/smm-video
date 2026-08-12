@@ -117,6 +117,33 @@ describe('task #31 Phase 2A+2B: обращения к Telegram идут чере
     }
   });
 
+  it('Telegraf создаётся только с нашим агентом', () => {
+    // Библиотека ходит на api.telegram.org своим node-fetch. Без агента мимо
+    // транспорта уезжает всё сразу: long polling, ответы бота, getFile —
+    // и ни одна проверка вызовов этого не увидит, потому что вызовов в нашем
+    // коде тут нет вовсе.
+    const src = read('server/telegram-bot/index.ts');
+    const positions: number[] = [];
+    const re = /new Telegraf\b/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(src)) !== null) positions.push(m.index);
+
+    expect(positions.length, 'создание бота исчезло — проверь, не переехало ли в другой файл').toBeGreaterThan(0);
+    for (const at of positions) {
+      const call = src.slice(at, at + 400);
+      expect(
+        /agent:\s*getTelegramAgent\(\)/.test(call),
+        'new Telegraf без agent: getTelegramAgent() — библиотека пойдёт мимо транспорта',
+      ).toBe(true);
+      // attachmentAgent качает произвольные URL медиа (client.js:197): наш
+      // агент увёл бы их на адреса Telegram с чужим SNI.
+      expect(
+        /attachmentAgent/.test(call),
+        'attachmentAgent не должен задаваться нашим агентом',
+      ).toBe(false);
+    }
+  });
+
   it('в переведённых файлах не остаётся неиспользуемого импорта axios', () => {
     // Импорт, из которого больше никто не зовёт, — след недоделанного перевода:
     // следующий, кто допишет вызов, возьмёт именно его, потому что он уже здесь.

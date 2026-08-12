@@ -270,16 +270,18 @@ export function registerCampaignRoutes(app: Express) {
         const existingSettings = existingResp.data.data?.social_media_settings || {};
         updateData.social_media_settings = mergeOAuthSettings(existingSettings, updateData.social_media_settings);
 
-        // SM-24: Normalize Telegram chatId before saving
-        const tgChatId = updateData.social_media_settings?.telegram?.chatId;
-        if (tgChatId !== undefined && tgChatId !== null && tgChatId !== '') {
-          const normalized = normalizeTelegramChatId(String(tgChatId));
+        // SM-24: Normalize Telegram chatId before saving (both camelCase and snake_case)
+        const tg = updateData.social_media_settings?.telegram || {};
+        const rawChatId = tg.chatId || tg.chat_id;
+        if (rawChatId !== undefined && rawChatId !== null && rawChatId !== '') {
+          const normalized = normalizeTelegramChatId(String(rawChatId));
           if (!normalized) {
             return res.status(400).json({
               error: 'Invalid Telegram chat ID. Expected: @username, -100XXXXXXXXX, numeric ID, or t.me link'
             });
           }
-          updateData.social_media_settings.telegram.chatId = normalized;
+          tg.chatId = normalized;
+          delete tg.chat_id; // Canonicalize to camelCase
         }
       }
 

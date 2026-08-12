@@ -19,14 +19,14 @@ export function normalizeTelegramChatId(raw: string): string | null {
   if (/^-?\d{6,15}$/.test(trimmed)) return trimmed;
 
   // Extract username from t.me / https://t.me links
-  const urlMatch = trimmed.match(/^(?:https?:\/\/)?t\.me\/([a-zA-Z]\w{3,31})\/?$/);
+  const urlMatch = trimmed.match(/^(?:https?:\/\/)?t\.me\/([a-zA-Z]\w{4,31})\/?$/);
   if (urlMatch) return `@${urlMatch[1]}`;
 
   // Already @username
-  if (/^@[a-zA-Z]\w{3,31}$/.test(trimmed)) return trimmed;
+  if (/^@[a-zA-Z]\w{4,31}$/.test(trimmed)) return trimmed;
 
   // Bare username (no @, no URL)
-  if (/^[a-zA-Z]\w{3,31}$/.test(trimmed)) return `@${trimmed}`;
+  if (/^[a-zA-Z]\w{4,31}$/.test(trimmed)) return `@${trimmed}`;
 
   // Invalid: email, description, garbage
   return null;

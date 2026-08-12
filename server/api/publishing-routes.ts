@@ -1348,8 +1348,9 @@ export function registerPublishingRoutes(app: Express): void {
               sourceId: contentData.source_id,
               sourceType: contentData.source_type,
               metadata: contentData.metadata || {},
-              // Дополнительные поля, которые могут быть в Directus (опциональные)
-              imagePrompt: contentData.image_prompt
+              // Дополнительные поля, которые могут быть в Directus (опциональные).
+              // AI-109: поле называется prompt; image_prompt не существует и всегда давало undefined.
+              imagePrompt: contentData.prompt
             };
             
             log(`Контент получен через прямой API запрос`, 'api');

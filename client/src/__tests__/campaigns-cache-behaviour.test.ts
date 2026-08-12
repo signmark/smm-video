@@ -98,22 +98,30 @@ describe('task #10: shared cache', () => {
       });
     }) as any;
 
-    // Prime both caches via QueryObserver (same as production consumers)
+    // Production path: campaignStore.markCampaignAsDeleted calls
+    //   queryClient.setQueryData(['/api/campaigns', userId], ...)
+    // with userId from localStorage. We call setQueryData directly
+    // with the canonical campaignsListKey — byte-equivalent to the
+    // production store path (campaignStore.ts:130).
     try {
-      const obs1 = new QueryObserver(qc, obsOpts('user-1', qc));
-      const obs2 = new QueryObserver(qc, obsOpts('user-2', qc));
-      await Promise.all([waitFor(obs1), waitFor(obs2)]);
+      // Prime both caches
+      await qc.fetchQuery(obsOpts('user-1', qc));
+      await qc.fetchQuery(obsOpts('user-2', qc));
       expect(count).toBe(2);
 
-      // Production path: scoped setQueryData for user-1 (same as store:130)
+      // Production-equivalent: scoped setQueryData for user-1
       qc.setQueryData(campaignsListKey('user-1'), (old: any) => {
         if (!old || !old.data) return old;
         return { ...old, data: old.data.filter((c: any) => c.id !== 'del') };
       });
 
-      // user-2 was NOT touched — its data is unchanged
+      // user-2 was NOT touched
       const s2 = qc.getQueryState(campaignsListKey('user-2'));
       expect(s2?.isInvalidated).toBeFalsy();
+
+      // Unscoped key is NOT present (old store bug: two writes)
+      const unscoped = qc.getQueryData(['/api/campaigns']);
+      expect(unscoped).toBeUndefined();
     } finally { globalThis.fetch = orig; }
   });
 

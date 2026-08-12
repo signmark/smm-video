@@ -9,6 +9,9 @@ import { log } from '../utils/logger';
 // SM-18: единый помощник подстановки [socialNetworks] — один источник правды.
 import { substituteSocialNetworks } from './social-prompt';
 export { substituteSocialNetworks };
+// SM-20 Phase2 (A): durable reservation ledger for cycle items.
+import { autonomousCycleLedger } from './autonomous-cycle-ledger';
+import { randomUUID } from 'crypto';
 
 const AUTONOMOUS_PERSIST_FILE = join(process.cwd(), 'data', 'autonomous-states.json');
 
@@ -3670,6 +3673,31 @@ async function runAutonomousCycle(state: AutonomousState) {
   const cyclePostsPerCycle = state.postsPerCycle;
   const cycleWithImages = state.withImages;
   const cycleAutoSchedule = state.autoSchedule;
+
+  // SM-20 Phase2 (A): durable cycle identity. run_id — UUID сессии (однажды
+  // и навсегда); cycle_id — UUID этого цикла. Источник истины — БД.
+  if (!state.runId) state.runId = randomUUID();
+  state.cycleId = randomUUID();
+
+  // Резервируем ВСЕ слоты цикла ДО генерации с preallocated content_id.
+  // Проигравший unique-race не генерирует (дубль невозможен на уровне БД).
+  const cycleSlots = new Map<number, string>(); // itemIndex -> preallocated content_id
+  for (let itemIndex = 0; itemIndex < cyclePostsPerCycle; itemIndex++) {
+    const contentId = randomUUID();
+    const ok = await autonomousCycleLedger.reserveItem({
+      campaignId: state.campaignId,
+      userId: state.userId,
+      runId: state.runId,
+      cycleId: state.cycleId,
+      itemIndex,
+      contentId,
+    });
+    if (ok) {
+      cycleSlots.set(itemIndex, contentId);
+    }
+    // Проигравший unique-race: слот уже зарезервирован — не генерируем.
+  }
+  console.log(`[AUTONOMOUS-CYCLE] 🎯 Зарезервировано слотов цикла: ${cycleSlots.size}/${cyclePostsPerCycle}`);
 
   try {
     // Гарантируем свежий пользовательский JWT (рефреш только если истекает скоро)

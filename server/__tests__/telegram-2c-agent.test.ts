@@ -106,6 +106,34 @@ describe('Phase 2C: бот отдаёт Telegraf наш агент', () => {
     await expectGoesThroughAgent(() =>
       service.bot.telegram.callApi('getUpdates', { timeout: 50, offset: 0, allowed_updates: ['message'] }),
     );
+
+    // ctx.reply — то же самое из обработчика, а не отдельная дорога.
+    const { Context } = await import('telegraf');
+    const update: any = {
+      update_id: 1,
+      message: { message_id: 1, date: 0, chat: { id: 555, type: 'private' }, text: 'привет' },
+    };
+    const ctx: any = new (Context as any)(update, service.bot.telegram, { id: 1, username: 'bot' });
+    await expectGoesThroughAgent(() => ctx.reply('ответ'));
+  });
+
+  it('произвольный URL медиа качается НЕ нашим агентом', async () => {
+    const service = await buildService();
+    // Конструктор бота сам ходит в Telegram (регистрация команд) — ждём, пока
+    // этот запрос отстреляется, и только потом очищаем журнал соединений.
+    await new Promise((r) => setTimeout(r, 100));
+    connects.length = 0;
+
+    // Telegraf качает медиа по ссылке своим fetch с attachmentAgent
+    // (client.js:197). Он не задан — значит идёт обычным путём, и наша фабрика
+    // соединений об этой ссылке не знает. Хост заведомо нерезолвимый: важно,
+    // что запрос даже не пытался пойти через агент Telegram.
+    await expect(
+      service.bot.telegram.sendPhoto(555, { url: 'https://media.invalid/a.jpg' } as any),
+    ).rejects.toThrow();
+
+    expect(connects).toEqual([]);
+    expect(service.bot.telegram.options.attachmentAgent).toBeUndefined();
   });
 });
 

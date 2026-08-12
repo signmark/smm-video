@@ -71,8 +71,8 @@ d0UOaV8cXYdEQuOGlrZlLyz2WEGXMRAnFv7M
 type Fixture = {
   server: tls.Server;
   connections: number;
-  /** Что отвечать: обычный ответ, ошибка сервера или молчание. */
-  mode: 'ok' | 'error500' | 'silent';
+  /** Что отвечать: обычный ответ, отказ, ошибка сервера, обрыв или молчание. */
+  mode: 'ok' | 'error403' | 'error500' | 'reset' | 'silent';
   body: string;
 };
 
@@ -90,6 +90,13 @@ function startFixture(host: string, port: number): Promise<Fixture> {
     fx.connections++;
     socket.on('error', () => {});
     socket.once('data', () => {
+      if (fx.mode === 'reset') {
+        // Заголовки обещают тело, а соединение закрывается на полуслове.
+        // Запрос уже ушёл — второй адрес означал бы дубль.
+        socket.write('HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\n{"ok"');
+        socket.destroy();
+        return;
+      }
       if (fx.mode === 'silent') {
         // Соединение установлено, запрос принят — и тишина. Ровно так вёл себя
         // адрес Telegram в инциденте 11.08. До рукопожатия на такое молчание
@@ -97,7 +104,10 @@ function startFixture(host: string, port: number): Promise<Fixture> {
         // запрос уже ушёл, и второй адрес означал бы дубль поста.
         return;
       }
-      const status = fx.mode === 'error500' ? '500 Internal Server Error' : '200 OK';
+      const status =
+        fx.mode === 'error500' ? '500 Internal Server Error'
+        : fx.mode === 'error403' ? '403 Forbidden'
+        : '200 OK';
       socket.write(
         `HTTP/1.1 ${status}\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(fx.body)}\r\nConnection: close\r\n\r\n${fx.body}`,
       );
@@ -173,17 +183,35 @@ describe('Phase 2C на проводе: перебор адресов и зап�
     expect(fixtures[1].connections).toBe(0);
   });
 
-  it('после рукопожатия: ответ 500 не ведёт на следующий адрес', async () => {
+  it.each([
+    ['403', 'error403' as const, 403],
+    ['500', 'error500' as const, 500],
+  ])('после рукопожатия: ответ %s не ведёт на следующий адрес', async (_name, mode, expected) => {
     reset();
-    fixtures[0].mode = 'error500';
+    fixtures[0].mode = mode;
     const agent = wireAgent(['127.0.0.2', '127.0.0.3']);
 
     const res = await httpsGet(`https://api.telegram.org:${PORT}/botX/sendMessage`, agent);
     await settle();
 
-    expect(res.status).toBe(500);
     // Ровно одно соединение: второй адрес не пробовался. Это и есть запрет
-    // повтора после HTTP — иначе пост ушёл бы дважды.
+    // повтора после HTTP — иначе пост ушёл бы дважды. Ответ мог быть любым:
+    // и отказ, и ошибка сервера означают «Telegram нас услышал».
+    expect(res.status).toBe(expected);
+    expect(fixtures[0].connections).toBe(1);
+    expect(fixtures[1].connections).toBe(0);
+  });
+
+  it('после рукопожатия: обрыв ответа не ведёт на следующий адрес', async () => {
+    reset();
+    fixtures[0].mode = 'reset';
+    const agent = wireAgent(['127.0.0.2', '127.0.0.3']);
+
+    await expect(
+      httpsGet(`https://api.telegram.org:${PORT}/botX/sendMessage`, agent),
+    ).rejects.toThrow();
+    await settle();
+
     expect(fixtures[0].connections).toBe(1);
     expect(fixtures[1].connections).toBe(0);
   });

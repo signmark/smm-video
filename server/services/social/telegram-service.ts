@@ -1,4 +1,4 @@
-import axios from 'axios';
+import { telegramHttp } from '../social-platforms/telegram-http';
 import { log } from '../../utils/logger';
 import { CampaignContent, SocialMediaSettings, SocialPlatform, SocialPublication } from '@shared/schema';
 import { BaseSocialService } from './base-service';
@@ -335,7 +335,8 @@ export class TelegramService extends BaseSocialService {
       
       // Отправляем запрос в API Telegram
       const baseUrl = `https://api.telegram.org/bot${token}`;
-      const response = await axios.post(`${baseUrl}/sendMessage`, messageBody, {
+      const tg = await telegramHttp();
+      const response = await tg.post(`${baseUrl}/sendMessage`, messageBody, {
         headers: { 'Content-Type': 'application/json' },
         timeout: 30000, // Увеличенный таймаут
         validateStatus: () => true // Всегда возвращаем ответ, даже если это ошибка
@@ -363,7 +364,7 @@ export class TelegramService extends BaseSocialService {
           };
           
           // Отправляем повторный запрос без HTML
-          const plainResponse = await axios.post(`${baseUrl}/sendMessage`, plainMessageBody, {
+          const plainResponse = await tg.post(`${baseUrl}/sendMessage`, plainMessageBody, {
             headers: { 'Content-Type': 'application/json' },
             timeout: 30000,
             validateStatus: () => true
@@ -411,6 +412,7 @@ export class TelegramService extends BaseSocialService {
       if (!images || images.length === 0) {
         return { success: false, error: 'No images provided' };
       }
+      const tg = await telegramHttp();
       
       let lastMessageId: number | undefined;
       
@@ -440,7 +442,7 @@ export class TelegramService extends BaseSocialService {
             }
           }
           
-          const response = await axios.post(`${baseUrl}/sendPhoto`, requestBody, {
+          const response = await tg.post(`${baseUrl}/sendPhoto`, requestBody, {
             headers: { 'Content-Type': 'application/json' },
             timeout: 30000,
             validateStatus: () => true
@@ -533,7 +535,7 @@ export class TelegramService extends BaseSocialService {
               continue; // Пропускаем эту группу и переходим к следующей
             }
             
-            const response = await axios.post(`${baseUrl}/sendMediaGroup`, {
+            const response = await tg.post(`${baseUrl}/sendMediaGroup`, {
               chat_id: chatId,
               media
             }, {
@@ -597,9 +599,10 @@ export class TelegramService extends BaseSocialService {
     try {
       log(`Запрос информации о чате: ${chatId}`, 'social-publishing');
       const baseUrl = `https://api.telegram.org/bot${token}`;
+      const tg = await telegramHttp();
       
       // Используем post чтобы быть совместимым с другими методами API и тестами
-      const response = await axios.post(`${baseUrl}/getChat`, {
+      const response = await tg.post(`${baseUrl}/getChat`, {
         chat_id: chatId
       }, {
         timeout: 10000,
@@ -810,6 +813,7 @@ export class TelegramService extends BaseSocialService {
       
       // Создаем URL API Telegram
       const baseUrl = `https://api.telegram.org/bot${token}`;
+      const tg = await telegramHttp();
       
       // Проверяем наличие изображений
       const hasImages = processedContent.imageUrl || 
@@ -1077,7 +1081,7 @@ export class TelegramService extends BaseSocialService {
           log(`Отправка фото в Telegram: ${imageUrl}`, 'social-publishing');
           
           // Используем validateStatus чтобы получить полный ответ даже в случае ошибки
-          const response = await axios.post(`${baseUrl}/sendPhoto`, {
+          const response = await tg.post(`${baseUrl}/sendPhoto`, {
             chat_id: formattedChatId,
             photo: imageUrl,
             caption: text,
@@ -1122,7 +1126,7 @@ export class TelegramService extends BaseSocialService {
               
               try {
                 // Отправляем изображение и текст как медиагруппу
-                const mediaResponse = await axios.post(`${baseUrl}/sendMediaGroup`, {
+                const mediaResponse = await tg.post(`${baseUrl}/sendMediaGroup`, {
                   chat_id: formattedChatId,
                   media: [
                     {
@@ -1162,7 +1166,7 @@ export class TelegramService extends BaseSocialService {
                   log(`Альтернативный метод тоже не сработал. Пробуем отправить изображение и текст отдельно...`, 'social-publishing');
                   
                   // Отправляем сначала изображение без подписи
-                  const imageOnlyResponse = await axios.post(`${baseUrl}/sendPhoto`, {
+                  const imageOnlyResponse = await tg.post(`${baseUrl}/sendPhoto`, {
                     chat_id: formattedChatId,
                     photo: imageUrl
                   }, {
@@ -1222,7 +1226,7 @@ export class TelegramService extends BaseSocialService {
             log(`Пробуем отправить текст и изображение отдельно после сбоя...`, 'social-publishing');
             
             // Отправляем сначала изображение без подписи
-            await axios.post(`${baseUrl}/sendPhoto`, {
+            await tg.post(`${baseUrl}/sendPhoto`, {
               chat_id: formattedChatId,
               photo: processedContent.imageUrl
             }, {
@@ -1294,7 +1298,7 @@ export class TelegramService extends BaseSocialService {
               }
               
               // Отправляем изображение с подписью
-              const photoResponse = await axios.post(`${baseUrl}/sendPhoto`, {
+              const photoResponse = await tg.post(`${baseUrl}/sendPhoto`, {
                 chat_id: formattedChatId,
                 photo: imageUrl,
                 caption: imageCaption,
@@ -1332,7 +1336,7 @@ export class TelegramService extends BaseSocialService {
               if (mediaItems.length > 0) {
                 log(`Отправка ${mediaItems.length} дополнительных изображений через sendMediaGroup`, 'social-publishing');
                 
-                const mediaResponse = await axios.post(`${baseUrl}/sendMediaGroup`, {
+                const mediaResponse = await tg.post(`${baseUrl}/sendMediaGroup`, {
                   chat_id: formattedChatId,
                   media: mediaItems
                 }, {

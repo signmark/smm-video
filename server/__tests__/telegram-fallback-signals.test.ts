@@ -28,11 +28,13 @@ vi.mock('dns/promises', () => ({ resolve4: mockResolve4, default: { resolve4: mo
 // модуль, который telegram-http.ts тянет как '../../utils/logger'.
 vi.mock('../utils/logger', () => ({ log: mockLog, default: mockLog }));
 
+import axios from 'axios';
 import {
   createConnectionFactory,
   getTargets,
   getFallbackIps,
   shouldWarn,
+  telegramAxios,
   clearTelegramIpsCache,
 } from '../services/social-platforms/telegram-http';
 
@@ -78,6 +80,30 @@ function runFactory(targets: string[], dnsIps: string[], alive: (ip: string) => 
   const factory = createConnectionFactory(targets, dnsIps);
   factory({} as any, (err: any) => { outcome.err = err; });
   return { tried, outcome };
+}
+
+/**
+ * Агент, который telegramAxios отдал axios последним вызовом create.
+ * Смотрим именно его, а не возвращённый инстанс: axios в этом наборе тестов
+ * подменён глобально в setup.ts и конфиг до defaults не доносит.
+ */
+function lastAgent(): any {
+  const calls = (axios as any).create.mock.calls;
+  return calls[calls.length - 1][0].httpsAgent;
+}
+
+/** Дёрнуть перебор через конкретный агент — то, что реально пойдёт в сеть. */
+function connectVia(agent: any, alive: (ip: string) => boolean) {
+  const tried: string[] = [];
+  mockTlsConnect.mockImplementation((opts: any, onSecure: any) => {
+    tried.push(opts.host);
+    const sock = fakeSocket();
+    if (alive(opts.host)) process.nextTick(() => onSecure());
+    else process.nextTick(() => sock.emit('error', new Error('ECONNREFUSED')));
+    return sock;
+  });
+  agent.createConnection({}, () => {});
+  return { tried };
 }
 
 function warns(): string[] {
@@ -288,5 +314,67 @@ describe('task #31: релиз без своей переменной не пр�
     getFallbackIps();
 
     expect(warns()).toHaveLength(1);
+  });
+});
+
+
+/**
+ * Оба случая ниже найдены на ревью Phase 1 и внесены в приёмку Phase 2A.
+ * Общее у них одно: сигнал остаётся формально правдивым по коду и ложным по смыслу.
+ */
+describe('task #31 Phase 2A: сигнал не должен врать, когда запаса нет', () => {
+  it('ни DNS, ни переменная не дали адресов — это деградация, а не «запас спас»', async () => {
+    // Единственная цель — имя хоста, разрешение ушло системному резолверу,
+    // перебора нет. Прежний код объявлял такой успех спасением запаса, хотя
+    // спасать было нечем: дежурный пошёл бы искать несуществующий запасной адрес.
+    const { tried, outcome } = runFactory([], [], () => true);
+    await tick();
+
+    expect(tried).toEqual(['api.telegram.org']);
+    expect(outcome.err).toBeNull();
+    expect(saved()).toHaveLength(0);
+
+    const w = warns();
+    expect(w).toHaveLength(1);
+    expect(w[0]).toContain('по имени api.telegram.org');
+    expect(w[0]).toContain('перебора не будет');
+  });
+
+  it('DNS умер, а его адреса совпадали с запасом — агент обязан пересобраться', async () => {
+    // Список целей в обоих замерах один и тот же, меняется только его
+    // происхождение. Отпечаток по одним целям этого не видит, агент доживает со
+    // старым fromDns, и «запас спас» не печатается ровно тогда, когда запас
+    // единственный, кто держит публикацию.
+    process.env.TELEGRAM_API_IPS = '149.154.167.220,149.154.166.110';
+
+    // Время двигаем руками, а кэш НЕ сбрасываем: сброс обнуляет отпечаток и
+    // заставляет агента пересобраться в любом случае — проверка выродилась бы
+    // в проверку сброса. На проде кэш протухает сам, по TTL.
+    const real = Date.now;
+    let now = 1_700_000_000_000;
+    Date.now = () => now;
+    try {
+      mockResolve4.mockResolvedValue(['149.154.167.220', '149.154.166.110']);
+      await telegramAxios('token');
+      const healthy = lastAgent();
+      expect(connectVia(healthy, () => true).tried).toEqual(['149.154.167.220']);
+      await tick();
+      expect(saved()).toHaveLength(0); // адрес пришёл из DNS — сигналу неоткуда взяться
+
+      now += 6 * 60 * 1000; // больше CACHE_TTL: следующий вызов идёт в резолвер
+      mockLog.mockClear();
+      mockResolve4.mockRejectedValue(Object.assign(new Error('ENOTFOUND'), { code: 'ENOTFOUND' }));
+
+      await telegramAxios('token');
+      const dnsDead = lastAgent();
+      expect(dnsDead).not.toBe(healthy); // список целей тот же, происхождение другое
+      expect(connectVia(dnsDead, () => true).tried).toEqual(['149.154.167.220']);
+      await tick();
+
+      expect(saved()).toHaveLength(1);
+      expect(saved()[0]).toContain('149.154.167.220');
+    } finally {
+      Date.now = real;
+    }
   });
 });

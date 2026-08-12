@@ -7,6 +7,7 @@ import * as path from 'path';
 import * as os from 'os';
 import FormData from 'form-data';
 import { TelegramService } from './social/telegram-service';
+import { telegramHttp } from './social-platforms/telegram-http';
 import { DirectusAuthManager } from './directus-auth-manager';
 
 /**
@@ -201,6 +202,7 @@ export class SocialPublishingService {
       // Разные методы API в зависимости от типа контента
       let response;
       const baseUrl = `https://api.telegram.org/bot${token}`;
+      const tg = await telegramHttp();
 
       // Собираем все доступные изображения
       const images = [];
@@ -322,7 +324,7 @@ export class SocialPublishingService {
         
         log(`Отправляем запрос к Telegram API (sendMediaGroup): ${JSON.stringify(requestBody)}`, 'social-publishing');
         
-        response = await axios.post(`${baseUrl}/sendMediaGroup`, requestBody, {
+        response = await tg.post(`${baseUrl}/sendMediaGroup`, requestBody, {
           headers: { 'Content-Type': 'application/json' }
         });
       } else if (images.length === 1) {
@@ -338,7 +340,7 @@ export class SocialPublishingService {
         
         log(`Отправляем запрос фото к Telegram API: ${JSON.stringify(photoRequestBody)}`, 'social-publishing');
         
-        response = await axios.post(`${baseUrl}/sendPhoto`, photoRequestBody, {
+        response = await tg.post(`${baseUrl}/sendPhoto`, photoRequestBody, {
           headers: { 'Content-Type': 'application/json' }
         });
       } else if (hasVideo) {
@@ -353,7 +355,7 @@ export class SocialPublishingService {
         
         log(`Отправляем запрос видео к Telegram API: ${JSON.stringify(videoRequestBody)}`, 'social-publishing');
         
-        response = await axios.post(`${baseUrl}/sendVideo`, videoRequestBody, {
+        response = await tg.post(`${baseUrl}/sendVideo`, videoRequestBody, {
           headers: { 'Content-Type': 'application/json' }
         });
       } else if (content.contentType === 'text' || !content.contentType) {
@@ -367,7 +369,7 @@ export class SocialPublishingService {
         
         log(`Отправляем текстовый запрос к Telegram API: ${JSON.stringify(messageRequestBody)}`, 'social-publishing');
         
-        response = await axios.post(`${baseUrl}/sendMessage`, messageRequestBody, {
+        response = await tg.post(`${baseUrl}/sendMessage`, messageRequestBody, {
           headers: { 'Content-Type': 'application/json' }
         });
       } else {
@@ -382,7 +384,7 @@ export class SocialPublishingService {
           
           log(`Отправляем fallback-текстовый запрос к Telegram API: ${JSON.stringify(fallbackMessageBody)}`, 'social-publishing');
           
-          response = await axios.post(`${baseUrl}/sendMessage`, fallbackMessageBody, {
+          response = await tg.post(`${baseUrl}/sendMessage`, fallbackMessageBody, {
             headers: { 'Content-Type': 'application/json' }
           });
         } catch (error) {

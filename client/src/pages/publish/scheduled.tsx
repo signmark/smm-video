@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { DISPLAY_TIME_ZONE } from '@/lib/date-utils';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
+import { useCampaignsList } from '@/hooks/use-campaigns';
 import { useTranslation } from 'react-i18next';
 import { CampaignContent, Campaign, SocialPlatform, PlatformPublishInfo } from '@/types';
 import { apiRequest } from '@/lib/queryClient';
@@ -115,15 +116,9 @@ export default function ScheduledPublications() {
   const getAuthToken = useAuthStore((state) => state.getAuthToken);
   
   // Получаем список кампаний пользователя (для отображения названия кампании)
-  // /api/campaigns отвечает {success, data}, а дефолтный queryFn кладёт ответ как
-  // есть. Без select сюда попадал объект-обёртка вместо массива, Array.isArray
-  // давал false, и имя кампании всегда было «Неизвестная кампания»
-  // (находка ревью 2026-07-28).
-  const { data: campaigns = [] } = useQuery<Campaign[]>({
-    queryKey: ['/api/campaigns'],
-    enabled: !!userId,
-    select: (raw: any) => (Array.isArray(raw) ? raw : raw?.data ?? []),
-  });
+  // SM-24/task-10: use canonical useCampaignsList hook for shared cache.
+  const { data: campaignsResponse } = useCampaignsList();
+  const campaigns = (Array.isArray(campaignsResponse?.data) ? campaignsResponse.data : []) as Campaign[];
   
   // Получаем запланированные публикации ТОЛЬКО для выбранной кампании
   const {

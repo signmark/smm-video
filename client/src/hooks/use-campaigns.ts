@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, queryOptions } from '@tanstack/react-query';
 import { useAuthStore } from '@/lib/store';
 
 /**
@@ -39,15 +39,11 @@ export interface CampaignsListResponse {
 }
 
 /** Список кампаний пользователя. Один запрос на всё приложение. */
-export function useCampaignsList() {
-  const userId = useAuthStore((state) => state.userId);
-  const token = useAuthStore((state) => state.token);
-  const getAuthToken = useAuthStore((state) => state.getAuthToken);
-
-  return useQuery<CampaignsListResponse>({
+export function campaignsListQueryOptions(userId: string | null) {
+  return queryOptions<CampaignsListResponse>({
     queryKey: campaignsListKey(userId),
     queryFn: async () => {
-      const token = getAuthToken();
+      const token = useAuthStore.getState().getAuthToken();
       if (!token) throw new Error('Отсутствует токен авторизации');
 
       const response = await fetch('/api/campaigns', { headers: authHeaders(token, userId) });
@@ -61,10 +57,21 @@ export function useCampaignsList() {
 
       return response.json();
     },
-    enabled: !!userId && !!token,
-    staleTime: 30 * 1000,
+    enabled: !!userId,
+    staleTime: 60_000,
     refetchOnWindowFocus: false,
     retry: 1,
+  });
+}
+
+/** Список кампаний пользователя. Один запрос на всё приложение. */
+export function useCampaignsList() {
+  const userId = useAuthStore((state) => state.userId);
+  const token = useAuthStore((state) => state.token);
+
+  return useQuery<CampaignsListResponse>({
+    ...campaignsListQueryOptions(userId),
+    enabled: !!userId && !!token,
   });
 }
 

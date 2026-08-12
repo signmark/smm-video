@@ -1,0 +1,114 @@
+/**
+ * Task #10: Behavioural — shared cache + user isolation + invalidation.
+ */
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { QueryClient, QueryObserver } from '@tanstack/react-query';
+import { campaignsListKey } from '@/hooks/use-campaigns';
+
+vi.mock('@/lib/store', () => ({
+  useAuthStore: { getState: () => ({ getAuthToken: () => 'test-token' }) },
+}));
+
+import { campaignsListQueryOptions } from '@/hooks/use-campaigns';
+
+function createQC() {
+  return new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: 0 } } });
+}
+
+function obsOpts(userId: string, qc: QueryClient) {
+  return { ...campaignsListQueryOptions(userId), staleTime: 0, queryClient: qc };
+}
+
+function waitFor(obs: QueryObserver<any>): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const unsub = obs.subscribe((r) => {
+      if (r.isError) { unsub(); reject(r.error); }
+      else if (r.isSuccess && r.data !== undefined) { unsub(); resolve(r.data); }
+    });
+  });
+}
+
+describe('task #10: shared cache', () => {
+  it('two observers same userId → 1 fetch', async () => {
+    const qc = createQC();
+    let count = 0;
+    const orig = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockImplementation(async () => {
+      count++;
+      return new Response(JSON.stringify({ success: true, data: [{ id: '1' }] }), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
+      });
+    }) as any;
+    try {
+      const opts = obsOpts('user-1', qc);
+      await Promise.all([waitFor(new QueryObserver(qc, opts)), waitFor(new QueryObserver(qc, opts))]);
+      expect(count).toBe(1);
+    } finally { globalThis.fetch = orig; }
+  });
+
+  it('different userIds → 2 fetches', async () => {
+    const qc = createQC();
+    let count = 0;
+    const orig = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockImplementation(async () => {
+      count++;
+      return new Response(JSON.stringify({ success: true, data: [] }), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
+      });
+    }) as any;
+    try {
+      await Promise.all([
+        waitFor(new QueryObserver(qc, obsOpts('user-1', qc))),
+        waitFor(new QueryObserver(qc, obsOpts('user-2', qc))),
+      ]);
+      expect(count).toBe(2);
+    } finally { globalThis.fetch = orig; }
+  });
+
+  it('invalidateQueries → refetch via fetchQuery', async () => {
+    const qc = createQC();
+    let count = 0;
+    const orig = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockImplementation(async () => {
+      count++;
+      return new Response(JSON.stringify({ success: true, data: [{ id: String(count) }] }), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
+      });
+    }) as any;
+    try {
+      // Prime the cache
+      await qc.fetchQuery(obsOpts('user-1', qc));
+      expect(count).toBe(1);
+
+      // Invalidate and re-fetch
+      qc.invalidateQueries({ queryKey: campaignsListKey('user-1') });
+      await qc.fetchQuery(obsOpts('user-1', qc));
+      expect(count).toBe(2);
+    } finally { globalThis.fetch = orig; }
+  });
+
+  it('scoped invalidation: user-1 refetch, user-2 untouched', async () => {
+    const qc = createQC();
+    let count = 0;
+    const orig = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockImplementation(async () => {
+      count++;
+      return new Response(JSON.stringify({ success: true, data: [] }), {
+        status: 200, headers: { 'Content-Type': 'application/json' },
+      });
+    }) as any;
+    try {
+      await qc.fetchQuery(obsOpts('user-1', qc));
+      await qc.fetchQuery(obsOpts('user-2', qc));
+      expect(count).toBe(2);
+
+      qc.invalidateQueries({ queryKey: campaignsListKey('user-1') });
+      await qc.fetchQuery(obsOpts('user-1', qc));
+      expect(count).toBe(3); // only user-1 refetched
+
+      // user-2 was NOT invalidated
+      const s2 = qc.getQueryState(campaignsListKey('user-2'));
+      expect(s2?.isInvalidated).toBeFalsy();
+    } finally { globalThis.fetch = orig; }
+  });
+});

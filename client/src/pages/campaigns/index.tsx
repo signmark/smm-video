@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useCampaignsList } from "@/hooks/use-campaigns";
 import { useTranslation } from "react-i18next";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { CampaignForm } from "@/components/CampaignForm";
@@ -39,39 +40,8 @@ export default function Campaigns() {
   // Получаем функции для управления кампаниями  
   const { setSelectedCampaign } = useCampaignStore();
   
-  // Запрос на получение списка кампаний (с polling для обновления статуса ассистента)
-  const { data: campaignsResponse, isLoading, error } = useQuery<{data: UserCampaign[]}>({
-    queryKey: ["/api/campaigns", userId],
-    refetchInterval: 15000,
-    queryFn: async () => {
-      const token = localStorage.getItem('auth_token');
-      const storedUserId = localStorage.getItem('user_id');
-      
-      if (!token) {
-        throw new Error("Отсутствует токен авторизации");
-      }
-      
-      if (!storedUserId && !userId) {
-        throw new Error("Отсутствует ID пользователя");
-      }
-      
-      const response = await fetch('/api/campaigns', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'x-user-id': storedUserId || userId || ''
-        }
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: response.statusText }));
-        throw new Error(errorData.error || "Не удалось загрузить кампании");
-      }
-      
-      const result = await response.json();
-      return result;
-    },
-    enabled: !!(userId || localStorage.getItem('user_id')), // Запрос выполняется только при наличии userId
-  });
+  // canonical shared hook, polling removed (invalidation after mutations)
+  const { data: campaignsResponse, isLoading, error } = useCampaignsList();
   
   // Сортировка кампаний по дате создания (сначала новые)
   const sortedCampaigns = useMemo(() => {

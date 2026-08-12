@@ -14,12 +14,11 @@
  * компонента, ни ограничения — падают тесты про исходники обоих экранов;
  * до вынесения общей функции падает и проверка на четыре маркера.
  *
- * Разметка собирается через `createElement`, а не JSX: в этом репозитории
- * vitest сконфигурирован без react-плагина, и JSX прямо в тесте не парсится.
+ * AI-107: после фикса инфраструктуры (jsx: react-jsx в tsconfig.json
+ * + plugins: [react()] в vitest-конфиге) рендерим через обычный JSX.
  */
 
 import { describe, it, expect } from 'vitest';
-import { createElement } from 'react';
 import { render, screen } from '@testing-library/react';
 import fs from 'fs';
 import path from 'path';
@@ -34,7 +33,7 @@ const makeDots = (n: number): CalendarDayDot[] =>
   Array.from({ length: n }, (_, i) => ({ key: `dot-${i}`, color: 'bg-blue-500' }));
 
 const renderDots = (dots: CalendarDayDot[]) =>
-  render(createElement(CalendarDayDots, { dots }));
+  render(<CalendarDayDots dots={dots} />);
 
 const readSource = (relative: string) =>
   fs.readFileSync(path.resolve(__dirname, '../../../..', relative), 'utf-8');

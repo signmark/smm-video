@@ -6,15 +6,7 @@
  * появилось только в одном из них, и день с семнадцатью публикациями во втором
  * календаре по-прежнему выкидывал точки за границы ячейки. Отсюда правило:
  * маркеры дня рисует ОДНА функция, а календари передают ей только данные.
- *
- * Разметка собирается через `createElement`, а не JSX, намеренно: клиентский
- * проект vitest сейчас не трансформирует JSX (в tsconfig стоит `jsx: preserve`,
- * react-плагина в конфигурации тестов нет), и модуль с JSX невозможно
- * импортировать из теста — падает на разборе исходника. Как только конфигурация
- * тестов научится JSX, этот файл можно переписать обычным способом.
  */
-
-import { createElement } from 'react';
 
 export const MAX_VISIBLE_DOTS = 4;
 
@@ -49,37 +41,28 @@ export function CalendarDayDots({ dots }: { dots: CalendarDayDot[] }) {
 
   const { visible, remaining } = splitDayDots(dots);
 
-  const children: ReturnType<typeof createElement>[] = visible.map((dot) =>
-    createElement('div', {
-      key: dot.key,
-      'data-testid': 'calendar-day-dot',
-      className: `h-1.5 w-1.5 rounded-full flex-shrink-0 ${dot.color} ${dot.ring || ''}`,
-      style: dot.opacity ? { opacity: dot.opacity } : undefined,
-      title: dot.title,
-    }),
-  );
-
-  if (remaining > 0) {
-    children.push(
-      createElement(
-        'span',
-        {
-          key: 'overflow',
-          'data-testid': 'calendar-day-dots-overflow',
-          className: 'text-[9px] leading-none text-muted-foreground font-medium',
-        },
-        `+${remaining}`,
-      ),
-    );
-  }
-
-  return createElement(
-    'div',
-    {
-      className:
-        'flex justify-center flex-wrap gap-0.5 mt-0.5 overflow-hidden max-w-full',
-      'data-testid': 'calendar-day-dots',
-    },
-    children,
+  return (
+    <div
+      className="flex justify-center flex-wrap gap-0.5 mt-0.5 overflow-hidden max-w-full"
+      data-testid="calendar-day-dots"
+    >
+      {visible.map((dot) => (
+        <div
+          key={dot.key}
+          data-testid="calendar-day-dot"
+          className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${dot.color} ${dot.ring || ''}`}
+          style={dot.opacity ? { opacity: dot.opacity } : undefined}
+          title={dot.title}
+        />
+      ))}
+      {remaining > 0 && (
+        <span
+          data-testid="calendar-day-dots-overflow"
+          className="text-[9px] leading-none text-muted-foreground font-medium"
+        >
+          +{remaining}
+        </span>
+      )}
+    </div>
   );
 }

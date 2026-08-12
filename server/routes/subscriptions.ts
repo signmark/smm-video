@@ -1,9 +1,9 @@
 import { Router, Request, Response } from 'express';
-import axios from 'axios';
 import crypto from 'crypto';
 import { sendSubscriptionRequestEmail } from '../services/email';
 import { getAppBaseUrl } from '../utils/app-base-url';
 import { resolvePlanPrice } from '../services/plan-pricing';
+import { telegramHttp } from '../services/social-platforms/telegram-http';
 
 // ─── Реестр обработанных заявок (in-memory, TTL 72ч) ───────────────────────
 // Ключ — userId. Предотвращает повторное одобрение после отклонения и наоборот.
@@ -117,7 +117,9 @@ export async function sendSubscriptionNotification(
   };
 
   try {
-    await axios.post(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    // AI-101 Phase 2B: через отказоустойчивый транспорт, запрос прежний.
+    const tg = await telegramHttp();
+    await tg.post(`https://api.telegram.org/bot${botToken}/sendMessage`, {
       chat_id: adminChatId,
       text,
       parse_mode: 'HTML',
@@ -192,14 +194,16 @@ router.get('/subscriptions/approve', async (req: Request, res: Response) => {
         if (userChatId) {
           const botToken = process.env.TELEGRAM_BOT_TOKEN;
           if (botToken) {
-            await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-              method: 'POST',
+            // AI-101 Phase 2B: через отказоустойчивый транспорт. validateStatus
+            // сохраняет поведение fetch — тот не бросал на 4xx/5xx.
+            const tgUser = await telegramHttp();
+            await tgUser.post(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+              chat_id: userChatId,
+              text: `🎉 <b>Подписка активирована!</b>\n📦 Тариф: <b>${plan}</b>\n📅 До: <b>${expireDate.toLocaleDateString('ru-RU')}</b>`,
+              parse_mode: 'HTML',
+            }, {
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                chat_id: userChatId,
-                text: `🎉 <b>Подписка активирована!</b>\n📦 Тариф: <b>${plan}</b>\n📅 До: <b>${expireDate.toLocaleDateString('ru-RU')}</b>`,
-                parse_mode: 'HTML',
-              }),
+              validateStatus: () => true,
             }).catch(() => {});
           }
         }

@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { sendPurchasePostback } from '../services/partner-postback';
 import { getAppBaseUrl } from '../utils/app-base-url';
 import { getPublicHost } from '../utils/public-url';
+import { telegramHttp } from '../services/social-platforms/telegram-http';
 import { resolvePlanPrice, PlanPriceKey } from '../services/plan-pricing';
 import { validatePromoCode, applyPromoDiscount } from '../services/promo-validation';
 import {
@@ -446,14 +447,16 @@ async function activateSubscription(userId: string, plan: string): Promise<void>
       const name = [data?.first_name, data?.last_name].filter(Boolean).join(' ') || 'Пользователь';
       const botToken = process.env.TELEGRAM_BOT_TOKEN;
       if (chatId && botToken) {
-        await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: 'POST',
+        // AI-101 Phase 2B: через отказоустойчивый транспорт. validateStatus
+        // сохраняет поведение fetch — тот не бросал на 4xx/5xx.
+        const tg = await telegramHttp();
+        await tg.post(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+          chat_id: chatId,
+          text: `🎉 <b>Оплата прошла!</b>\n\nПривет, ${name}!\nТариф <b>${plan}</b> активирован до <b>${expireDate.toLocaleDateString('ru-RU')}</b>.\n\nСпасибо за подписку! 🚀`,
+          parse_mode: 'HTML',
+        }, {
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: `🎉 <b>Оплата прошла!</b>\n\nПривет, ${name}!\nТариф <b>${plan}</b> активирован до <b>${expireDate.toLocaleDateString('ru-RU')}</b>.\n\nСпасибо за подписку! 🚀`,
-            parse_mode: 'HTML',
-          }),
+          validateStatus: () => true,
         }).catch(() => {});
       }
     }

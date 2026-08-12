@@ -187,7 +187,11 @@ export async function getTargets(): Promise<string[]> {
 export async function telegramAxios(token: string): Promise<AxiosInstance> {
   const targets = await getTargets();
   const dnsIps = await getDnsIps();
-  const fingerprint = targets.join(',');
+  // Отпечаток включает СОСТАВ DNS, а не только список целей. Иначе смерть DNS,
+  // чьи адреса совпадали с TELEGRAM_API_IPS, оставляет список целей прежним, агент
+  // не пересобирается и доживает со старым представлением о том, какие адреса
+  // «из DNS». Молчание получается ровно в том случае, ради которого запас и вводился.
+  const fingerprint = targets.join(',') + '|dns:' + dnsIps.join(',');
 
   if (!_agent || _agentBuiltFor !== fingerprint) {
     _agent = buildTelegramAgent(targets, dnsIps);
@@ -199,6 +203,25 @@ export async function telegramAxios(token: string): Promise<AxiosInstance> {
     httpsAgent: _agent,
     timeout: 30_000,
   });
+}
+
+/**
+ * Тот же агент, но без baseURL и без своего таймаута — для мест, где URL уже
+ * собран и переписывать его незачем. Отсутствие таймаута здесь намеренно: у
+ * загрузки медиа он свой, больше общего, и подставить общий значило бы тихо
+ * оборвать длинную загрузку, которая раньше доходила.
+ */
+export async function telegramHttp(): Promise<AxiosInstance> {
+  const targets = await getTargets();
+  const dnsIps = await getDnsIps();
+  const fingerprint = targets.join(',') + '|dns:' + dnsIps.join(',');
+
+  if (!_agent || _agentBuiltFor !== fingerprint) {
+    _agent = buildTelegramAgent(targets, dnsIps);
+    _agentBuiltFor = fingerprint;
+  }
+
+  return axios.create({ httpsAgent: _agent });
 }
 
 /** Export for tests — the same factory used by telegramAxios in production. */
@@ -253,8 +276,17 @@ export function createConnectionFactory(ips: string[], dnsIps: string[] = ips) {
         // Проверка именно такая, а не «idx > 0»: когда DNS лёг совсем, запасной
         // адрес стоит первым и idx равен нулю — а это ровно тот случай, ради
         // которого всё затевалось.
-        if (!fromDns.has(targets[idx]) && shouldWarn('fallback_saved:' + targets[idx])) {
-          log(`[telegram-transport] запас спас: ${targets[idx]} ответил, когда адреса из DNS не ответили`, 'telegram-transport', 'warn');
+        const okTarget = targets[idx];
+        if (okTarget === TELEGRAM_HOST) {
+          // Соединение по имени хоста — не спасение запасом, а деградация: ни DNS,
+          // ни TELEGRAM_API_IPS не дали ни одного адреса, и разрешение имени ушло
+          // системному резолверу. Перебора здесь нет вовсе — цель одна. Назвать это
+          // «запас спас» значит соврать в том самом логе, по которому ищут причину.
+          if (shouldWarn('no_targets_hostname')) {
+            log(`[telegram-transport] ни DNS, ни TELEGRAM_API_IPS не дали адресов — соединяюсь по имени ${TELEGRAM_HOST}, перебора не будет`, 'telegram-transport', 'warn');
+          }
+        } else if (!fromDns.has(okTarget) && shouldWarn('fallback_saved:' + okTarget)) {
+          log(`[telegram-transport] запас спас: ${okTarget} ответил, когда адреса из DNS не ответили`, 'telegram-transport', 'warn');
         }
         // Снимаем ОБА наших обработчика: после рукопожатия запрос уже мог уйти,
         // и любой поздний обрыв обязан достаться вызывающему, а не увести нас

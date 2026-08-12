@@ -2,6 +2,7 @@ import express from 'express';
 import axios from 'axios';
 import { authenticateUser } from '../middleware/user-auth';
 import { assertContentBelongsToRequester } from '../services/content-access';
+import { telegramHttp } from '../services/social-platforms/telegram-http';
 
 const router = express.Router();
 
@@ -195,7 +196,7 @@ async function deleteFromPlatform(platform: string, postId: string, userToken: s
       // Формат postId может быть "chatId_messageId" или просто "messageId" если chatId в настройках
       if (postId.includes('_')) {
         const [chatId, messageId] = postId.split('_');
-        await axios.post(`https://api.telegram.org/bot${botToken}/deleteMessage`, {
+        await (await telegramHttp()).post(`https://api.telegram.org/bot${botToken}/deleteMessage`, {
           chat_id: chatId,
           message_id: messageId
         });
@@ -209,7 +210,7 @@ async function deleteFromPlatform(platform: string, postId: string, userToken: s
         );
         const chatId = campaignResponse.data.data.social_media_settings?.telegram?.chat_id;
         if (chatId) {
-          await axios.post(`https://api.telegram.org/bot${botToken}/deleteMessage`, {
+          await (await telegramHttp()).post(`https://api.telegram.org/bot${botToken}/deleteMessage`, {
             chat_id: chatId,
             message_id: postId
           });

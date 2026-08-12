@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCampaignsList } from "@/hooks/use-campaigns";
 import { Card, CardContent } from "@/components/ui/card";
 import { KeywordTable } from "@/components/KeywordTable";
 import { useToast } from "@/hooks/use-toast";
@@ -28,11 +29,8 @@ export default function Keywords() {
   const queryClient = useQueryClient();
   // Используем глобальное состояние кампании из общего хранилища
   const { selectedCampaignId, selectedCampaignName } = useCampaignStore();
-  const { data: campaignsResponse, isLoading: isLoadingCampaigns } = useQuery({
-    queryKey: ["/api/campaigns"],
-    queryFn: () => api.campaigns.list()
-  });
-  
+  const { data: campaignsResponse, isLoading: isLoadingCampaigns } = useCampaignsList();
+
   const campaigns = campaignsResponse?.data || [];
 
   // Получаем ID выбранной кампании из глобального хранилища

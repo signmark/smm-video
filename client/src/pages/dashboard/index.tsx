@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { useCampaignsList } from "@/hooks/use-campaigns";
 import { toDisplayDateKey, isDisplayToday, isInDisplayWeek, formatDateWithTimezone } from '@/lib/date-utils';
 import { authHeaders } from '@/lib/auth-headers';
 import { useState, useEffect } from "react";
@@ -100,11 +101,8 @@ export default function Dashboard() {
     }
   };
   
-  // Получаем все кампании с обработкой ошибок
-  const { data: campaignsResponse, isLoading: campaignsLoading, isError: campaignsError, error: campaignsErrorMessage } = useQuery<CampaignsResponse>({
-    queryKey: ["/api/campaigns", userId],
-    enabled: !!userId,
-  });
+  // Получаем все кампании с обработкой ошибок (canonical hook)
+  const { data: campaignsResponse, isLoading: campaignsLoading, isError: campaignsError, error: campaignsErrorMessage } = useCampaignsList();
 
   // Агрегаты по контенту для плиток и графика.
   // История вопроса: сначала здесь был useQuery без queryFn — дефолтный берёт URL

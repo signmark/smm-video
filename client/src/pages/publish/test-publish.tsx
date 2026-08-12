@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCampaignsList } from '@/hooks/use-campaigns';
 import { CampaignContent, Campaign, SocialPlatform } from '@/types';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
@@ -56,11 +57,9 @@ export default function TestPublish() {
   const userId = useAuthStore((state) => state.userId);
   const getAuthToken = useAuthStore((state) => state.getAuthToken);
   
-  // Получение списка кампаний для выбора
-  const { data: campaigns = [] } = useQuery<Campaign[]>({
-    queryKey: ['/api/campaigns'],
-    enabled: !!userId,
-  });
+  // Получение списка кампаний для выбора (dev: canonical hook)
+  const { data: campaignsResponse } = useCampaignsList();
+  const campaigns = (campaignsResponse?.data || []) as Campaign[];
   
   // Создание временного контента для публикации
   const createTestContent = async () => {

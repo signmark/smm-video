@@ -131,10 +131,6 @@ export const useCampaignStore = create<CampaignState>()(
             if (!oldData || !oldData.data) return oldData;
             return { ...oldData, data: oldData.data.filter((c: any) => c.id !== id) };
           });
-          queryClient.setQueryData(['/api/campaigns'], (oldData: any) => {
-            if (!oldData || !oldData.data) return oldData;
-            return { ...oldData, data: oldData.data.filter((c: any) => c.id !== id) };
-          });
         } catch (err) {
           console.error('Ошибка при обновлении кэша React Query:', err);
         }

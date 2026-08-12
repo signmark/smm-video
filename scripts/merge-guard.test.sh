@@ -13,6 +13,7 @@ GUARD="$ROOT/scripts/merge-guard.sh"
 
 pass=0
 failcnt=0
+fixture_idx=0
 ok()  { echo "ok   $1"; pass=$((pass+1)); }
 bad() { echo "FAIL $1"; failcnt=$((failcnt+1)); }
 
@@ -20,12 +21,17 @@ bad() { echo "FAIL $1"; failcnt=$((failcnt+1)); }
 BARE=""; SEED=""; WT=""; CANDIDATE=""; MERGE_TREE=""; MERGE_SHA=""; BASE_MAIN=""
 EXPECT_PUSH=""
 
+# Single throwaway root for ALL fixtures; removed on exit so /tmp never
+# accumulates leaked merge-guard-test.* dirs (the 12.08 AI-108 disk-pressure
+# class). Each fixture lives in its own subdir under this root.
+TESTROOT="$(mktemp -d /tmp/merge-guard-test.XXXXXX)"
+trap 'rm -rf "$TESTROOT"' EXIT
+
 # Create a fresh isolated bare remote + seed + worktree with a merge built.
-# kwargs consumed via a small inline DSL below each case.
 new_fixture() {
-  local d
-  d="$(mktemp -d /tmp/merge-guard-test.XXXXXX)"
-  FRESH_DIR="$d"
+  local d="$TESTROOT/$(printf 'fx%02d' "$((fixture_idx))")"
+  fixture_idx=$((fixture_idx + 1))
+  mkdir -p "$d"
   BARE="$d/origin.git"
   SEED="$d/seed"
   WT="$d/worktree"
@@ -76,7 +82,8 @@ build_merge() {
 
 run() {
   local expect="$1" needle="$2"
-  local out rc pushed
+  local out rc pushed before
+  before="$(git -C "$BARE" rev-parse main 2>/dev/null || echo 'none')"
   out="$(cd "$WT" && "$GUARD" "${ARGS[@]}" 2>&1)"
   rc=$?
   pushed="$(git -C "$BARE" rev-parse main 2>/dev/null || echo 'none')"
@@ -88,16 +95,32 @@ run() {
       echo "$out" | sed 's/^/      | /'
     fi
   else
-    if [ "$rc" -ne 0 ] && echo "$out" | grep -q "$needle"; then
-      ok "$needle: reject rc=$rc (remote main untouched: $pushed)"
+    # reject MUST leave remote main untouched: assert actual remote state, not
+    # just rc/needle — otherwise a guard that pushes before validating would
+    # still pass this suite.
+    if [ "$rc" -ne 0 ] && echo "$out" | grep -q "$needle" && [ "$pushed" = "$before" ]; then
+      ok "$needle: reject rc=$rc, remote main untouched ($pushed)"
     else
-      bad "$needle: reject rc=$rc"
+      bad "$needle: reject rc=$rc pushed=$pushed before=$before"
       echo "$out" | sed 's/^/      | /'
     fi
   fi
 }
 
 echo "=== merge-guard.sh tests ==="
+
+# ── 0. empty/missing args → usage exit 2, remote untouched ──
+new_fixture
+build_merge
+BEFORE0="$(git -C "$BARE" rev-parse main)"
+out0="$(cd "$WT" && "$GUARD" 2>&1)"; rc0=$?
+out0b="$(cd "$WT" && "$GUARD" --candidate "$CANDIDATE" --gate-tree "$MERGE_TREE" --gated-main "$BASE_MAIN" --author "" --committer "" 2>&1)"; rc0b=$?
+AFTER0="$(git -C "$BARE" rev-parse main)"
+if [ "$rc0" -eq 2 ] && [ "$rc0b" -eq 2 ] && [ "$AFTER0" = "$BEFORE0" ]; then
+  ok "empty/missing args: rc=2 fail-close, remote untouched"
+else
+  bad "empty/missing args: rc0=$rc0 rc0b=$rc0b after=$AFTER0 before=$BEFORE0"
+fi
 
 # ── 1. Correct form → accept, push ───────────────────────────
 new_fixture
@@ -130,7 +153,7 @@ build_merge
 ARGS=( --candidate "$CANDIDATE" --gate-tree "0000000000000000000000000000000000000000" --gated-main "$BASE_MAIN" \
        --author "Executor Name <executor@example.com>" \
        --committer "Executor Name <executor@example.com>" )
-run reject "tree"
+run reject "tree does not match"
 
 # ── 5. wrong author ──────────────────────────────────────────
 new_fixture

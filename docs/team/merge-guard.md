@@ -63,4 +63,6 @@ part of task #55.
 
 `scripts/merge-guard.test.sh` builds a throwaway bare remote + worktree and runs
 the real guard. It covers: correct form accepts+pushes; and each of checks 0–6
-fails closed with no push. No real origin/main, no /root, no hooks, no force.
+fails closed with no push. No real origin/main, no /root; the pre-push/pre-receive
+hooks used by the race test are throwaway hooks inside the temp fixtures, not repo
+hooks. No force flags anywhere.

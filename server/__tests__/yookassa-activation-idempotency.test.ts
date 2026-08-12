@@ -45,7 +45,12 @@ const UNIQUES: Record<string, string[]> = {
 };
 
 let userPatches: any[] = [];
-let telegramSends = 0;
+/**
+ * Счётчик уведомлений в Telegram. Объект, а не число, потому что его трогает
+ * фабрика vi.mock — она поднимается выше объявлений, и обычную переменную
+ * оттуда не видно.
+ */
+const tgSends = vi.hoisted(() => ({ n: 0 }));
 
 const PAYMENT = {
   id: 'pay-777',
@@ -82,7 +87,9 @@ const fetchMock = vi.fn((url: any, init?: any) => {
   const body = init?.body ? JSON.parse(init.body) : null;
 
   if (u.includes('api.yookassa.ru')) return jsonResponse(yookassaPayment);
-  if (u.includes('api.telegram.org')) { telegramSends++; return jsonResponse({ ok: true }); }
+  // Ветку оставляем: если завтра уведомление вернётся на голый fetch, счётчик
+  // это увидит, и тест скажет об этом, а не промолчит.
+  if (u.includes('api.telegram.org')) { tgSends.n++; return jsonResponse({ ok: true }); }
 
   const itemsMatch = u.match(/\/items\/(\w+)/);
   if (itemsMatch) {
@@ -125,6 +132,18 @@ const fetchMock = vi.fn((url: any, init?: any) => {
 
 vi.stubGlobal('fetch', fetchMock);
 
+// AI-101 Phase 2B: уведомление об оплате идёт через отказоустойчивый транспорт,
+// а не через глобальный fetch. Подменяем именно транспорт — иначе запрос уйдёт
+// в настоящую сеть, и прогон станет зависеть от неё.
+vi.mock('../services/social-platforms/telegram-http', () => ({
+  telegramHttp: async () => ({
+    post: async () => {
+      tgSends.n++;
+      return { status: 200, data: { ok: true } };
+    },
+  }),
+}));
+
 let app: express.Express;
 
 async function buildApp() {
@@ -151,7 +170,7 @@ beforeEach(async () => {
   seq = 0;
   liveCollections = new Set(['payment_activations', 'promo_reservations', 'promo_code_uses', 'promo_codes']);
   userPatches = [];
-  telegramSends = 0;
+  tgSends.n = 0;
   sendPurchasePostback.mockClear();
   yookassaPayment = PAYMENT;
   app = await buildApp();
@@ -169,7 +188,7 @@ describe('повтор активации', () => {
   it('повтор в одном процессе не меняет expire_date, не шлёт уведомление и не дублирует postback', async () => {
     await activate();
     const expireAfterFirst = userPatches[0].expire_date;
-    const tgAfterFirst = telegramSends;
+    const tgAfterFirst = tgSends.n;
 
     const second = await activate();
 
@@ -177,7 +196,7 @@ describe('повтор активации', () => {
     expect(second.body.alreadyProcessed).toBe(true);
     expect(userPatches).toHaveLength(1);
     expect(userPatches[0].expire_date).toBe(expireAfterFirst);
-    expect(telegramSends).toBe(tgAfterFirst);
+    expect(tgSends.n).toBe(tgAfterFirst);
     expect(sendPurchasePostback).toHaveBeenCalledTimes(1);
   });
 

@@ -6,6 +6,7 @@ import FormData from 'form-data';
 import { begetS3StorageAws } from '../beget-s3-storage-aws';
 import { begetS3VideoService } from '../beget-s3-video-service';
 import { log } from '../../utils/logger';
+import { describeTelegramError } from './telegram-service';
 
 export interface TelegramVideoMessageOptions {
   caption?: string;
@@ -182,10 +183,11 @@ export class TelegramS3Integration {
         url: messageUrl
       };
     } catch (error) {
-      log.error(`Error sending video to Telegram: ${(error as Error).message}`, this.logPrefix);
+      const errMsg = describeTelegramError(error);
+      log.error(`Error sending video to Telegram: ${errMsg}`, this.logPrefix);
       return {
         success: false,
-        error: (error as Error).message
+        error: errMsg
       };
     }
   }

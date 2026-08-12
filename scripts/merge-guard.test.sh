@@ -102,7 +102,7 @@ echo "=== merge-guard.sh tests ==="
 # ── 1. Correct form → accept, push ───────────────────────────
 new_fixture
 build_merge
-ARGS=( --candidate "$CANDIDATE" --tree "$MERGE_TREE" --base-main "$BASE_MAIN" \
+ARGS=( --candidate "$CANDIDATE" --gate-tree "$MERGE_TREE" --gated-main "$BASE_MAIN" \
        --author "Executor Name <executor@example.com>" \
        --committer "Executor Name <executor@example.com>" )
 run accept "correct merge"
@@ -111,7 +111,7 @@ run accept "correct merge"
 new_fixture
 build_merge
 advance_remote
-ARGS=( --candidate "$CANDIDATE" --tree "$MERGE_TREE" --base-main "$BASE_MAIN" \
+ARGS=( --candidate "$CANDIDATE" --gate-tree "$MERGE_TREE" --gated-main "$BASE_MAIN" \
        --author "Executor Name <executor@example.com>" \
        --committer "Executor Name <executor@example.com>" )
 run reject "main advanced"
@@ -119,7 +119,7 @@ run reject "main advanced"
 # ── 3. wrong candidate (second parent) ───────────────────────
 new_fixture
 build_merge
-ARGS=( --candidate "0000000000000000000000000000000000000000" --tree "$MERGE_TREE" --base-main "$BASE_MAIN" \
+ARGS=( --candidate "0000000000000000000000000000000000000000" --gate-tree "$MERGE_TREE" --gated-main "$BASE_MAIN" \
        --author "Executor Name <executor@example.com>" \
        --committer "Executor Name <executor@example.com>" )
 run reject "second parent"
@@ -127,7 +127,7 @@ run reject "second parent"
 # ── 4. wrong tree ────────────────────────────────────────────
 new_fixture
 build_merge
-ARGS=( --candidate "$CANDIDATE" --tree "0000000000000000000000000000000000000000" --base-main "$BASE_MAIN" \
+ARGS=( --candidate "$CANDIDATE" --gate-tree "0000000000000000000000000000000000000000" --gated-main "$BASE_MAIN" \
        --author "Executor Name <executor@example.com>" \
        --committer "Executor Name <executor@example.com>" )
 run reject "tree"
@@ -135,7 +135,7 @@ run reject "tree"
 # ── 5. wrong author ──────────────────────────────────────────
 new_fixture
 build_merge
-ARGS=( --candidate "$CANDIDATE" --tree "$MERGE_TREE" --base-main "$BASE_MAIN" \
+ARGS=( --candidate "$CANDIDATE" --gate-tree "$MERGE_TREE" --gated-main "$BASE_MAIN" \
        --author "Impostor <bad@example.com>" \
        --committer "Executor Name <executor@example.com>" )
 run reject "author"
@@ -143,7 +143,7 @@ run reject "author"
 # ── 6. wrong committer ───────────────────────────────────────
 new_fixture
 build_merge
-ARGS=( --candidate "$CANDIDATE" --tree "$MERGE_TREE" --base-main "$BASE_MAIN" \
+ARGS=( --candidate "$CANDIDATE" --gate-tree "$MERGE_TREE" --gated-main "$BASE_MAIN" \
        --author "Executor Name <executor@example.com>" \
        --committer "Impostor <bad@example.com>" )
 run reject "committer"
@@ -162,7 +162,7 @@ advance_remote
 # To isolate first-parent specifically, ALSO run a variant where base-main is
 # set to the now-current remote main, so only first-parent can fire.
 NEW_MAIN="$(git -C "$BARE" rev-parse main)"
-ARGS=( --candidate "$CANDIDATE" --tree "$MERGE_TREE" --base-main "$NEW_MAIN" \
+ARGS=( --candidate "$CANDIDATE" --gate-tree "$MERGE_TREE" --gated-main "$NEW_MAIN" \
        --author "Executor Name <executor@example.com>" \
        --committer "Executor Name <executor@example.com>" )
 run reject "first parent"
@@ -179,7 +179,7 @@ git -C "$WT" commit -qm "linear, not a merge"
 MERGE_SHA="$(git -C "$WT" rev-parse HEAD)"
 MERGE_TREE="$(git -C "$WT" rev-parse 'HEAD^{tree}')"
 EXPECT_PUSH="$MERGE_SHA"
-ARGS=( --candidate "$CANDIDATE" --tree "$MERGE_TREE" --base-main "$BASE_MAIN" \
+ARGS=( --candidate "$CANDIDATE" --gate-tree "$MERGE_TREE" --gated-main "$BASE_MAIN" \
        --author "Executor Name <executor@example.com>" \
        --committer "Executor Name <executor@example.com>" )
 run reject "2-parent merge"

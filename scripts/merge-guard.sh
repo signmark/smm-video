@@ -13,11 +13,11 @@
 # a no-ff merge made from a stale local main.
 #
 # What it enforces (fail-closed, one diagnostic per failed check, both values):
-#   0. fresh origin/main == --base-main (main did not advance during the gate)
+#   0. fresh origin/main == --gated-main (main did not advance during the gate)
 #   1. HEAD is a real 2-parent merge (rejects ff / squash / octopus / extra parent)
 #   2. HEAD^1  == fresh origin/main
 #   3. HEAD^2  == --candidate (exact SHA)
-#   4. HEAD^{tree} == --tree (the tree the green gate ran on)
+#   4. HEAD^{tree} == --gate-tree (the tree the green gate ran on)
 #   5. author    == --author  (explicit, never read from shared git config)
 #   6. committer == --committer
 #
@@ -26,32 +26,32 @@
 #
 # Usage:
 #   merge-guard.sh \
-#     --candidate <sha> --tree <sha> --base-main <sha> \
+#     --candidate <sha> --gate-tree <sha> --gated-main <sha> \
 #     --author '<name> <email>' --committer '<name> <email>'
 #
 # All inputs are REQUIRED; the guard infers nothing from shared identity.
 set -euo pipefail
 
 usage() {
-  echo "usage: $0 --candidate <sha> --tree <sha> --base-main <sha> --author '<n> <e>' --committer '<n> <e>'" >&2
+  echo "usage: $0 --candidate <sha> --gate-tree <sha> --gated-main <sha> --author '<n> <e>' --committer '<n> <e>'" >&2
   exit 2
 }
 
 # ── Parse inputs ──────────────────────────────────────────────
-candidate=""; tree=""; base_main=""; author=""; committer=""
+candidate=""; gate_tree=""; gated_main=""; author=""; committer=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --candidate) candidate="${2:-}"; shift 2 ;;
-    --tree)      tree="${2:-}"; shift 2 ;;
-    --base-main) base_main="${2:-}"; shift 2 ;;
+    --gate-tree) gate_tree="${2:-}"; shift 2 ;;
+    --gated-main) gated_main="${2:-}"; shift 2 ;;
     --author)    author="${2:-}"; shift 2 ;;
     --committer) committer="${2:-}"; shift 2 ;;
     *) usage ;;
   esac
 done
 
-if [ -z "$candidate" ] || [ -z "$tree" ] || [ -z "$base_main" ] || [ -z "$author" ] || [ -z "$committer" ]; then
-  echo "merge-guard: --candidate, --tree, --base-main, --author, --committer are all required" >&2
+if [ -z "$candidate" ] || [ -z "$gate_tree" ] || [ -z "$gated_main" ] || [ -z "$author" ] || [ -z "$committer" ]; then
+  echo "merge-guard: --candidate, --gate-tree, --gated-main, --author, --committer are all required" >&2
   usage
 fi
 
@@ -76,9 +76,9 @@ head_parent_count="$(git log -1 --format='%P' HEAD | wc -w)"
 fail=0
 
 # 0. fresh origin/main must equal the main the green gate ran against
-if [ "$origin_main" != "$base_main" ]; then
+if [ "$origin_main" != "$gated_main" ]; then
   echo "merge-guard: FAIL main advanced while the gate was running" >&2
-  echo "  expected: $base_main (main the gate ran on)" >&2
+  echo "  expected: $gated_main (main the gate ran on)" >&2
   echo "  actual:   $origin_main (fresh origin/main)" >&2
   fail=1
 fi
@@ -108,9 +108,9 @@ if [ "$head_second" != "$candidate" ]; then
 fi
 
 # 4. tree == gate tree
-if [ "$head_tree" != "$tree" ]; then
+if [ "$head_tree" != "$gate_tree" ]; then
   echo "merge-guard: FAIL tree does not match the gate tree" >&2
-  echo "  expected: $tree" >&2
+  echo "  expected: $gate_tree" >&2
   echo "  actual:   $head_tree" >&2
   fail=1
 fi

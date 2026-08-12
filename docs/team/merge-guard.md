@@ -29,11 +29,11 @@ diagnostic with both values, nothing pushed) if any of:
 
 | # | check | rejects |
 |---|-------|---------|
-| 0 | fresh `origin/main` == `--base-main` | main advanced while the gate ran |
+| 0 | fresh `origin/main` == `--gated-main` | main advanced while the gate ran |
 | 1 | HEAD is exactly a 2-parent merge | ff / squash / octopus / extra parent |
 | 2 | `HEAD^1` == fresh `origin/main` | stale local main |
 | 3 | `HEAD^2` == `--candidate` | wrong candidate |
-| 4 | `HEAD^{tree}` == `--tree` | gate-tree mismatch / hand-resolved conflicts |
+| 4 | `HEAD^{tree}` == `--gate-tree` | gate-tree mismatch / hand-resolved conflicts |
 | 5 | author == `--author` | wrong/shared identity |
 | 6 | committer == `--committer` | wrong/shared identity |
 

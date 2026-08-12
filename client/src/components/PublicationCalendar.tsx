@@ -443,27 +443,13 @@ export default function PublicationCalendar({
     // SM-22: маркеры рисует общий компонент — тот же, что и на экране постов.
     // Предел на число видимых точек живёт там, в одном месте на оба календаря.
     //
-    // SM-22 follow-up: здесь, в PublicationCalendar, в отличие от экрана постов,
-    // у нас одна общая группа «посты дня» (contentByStatus), а не два раздельных
-    // списка. Поэтому «неудачи идут первыми» реализуется через сортировку
-    // ключей по приоритету статуса перед сборкой массива — а не через сам
-    // компонент CalendarDayDots, который не знает про приоритеты статусов.
-    // Это и есть «разная реализация, одинаковая семантика» — parity-test
-    // стережёт, что оба экрана рисуют red раньше зелёного.
-    const STATUS_PRIORITY: Record<string, number> = {
-      // failed/errored сначала — это «что-то сломалось»,
-      failed: 0, error: 0,
-      // затем draft (ещё не постили),
-      draft: 1,
-      // затем published и scheduled — рабочие состояния.
-      scheduled: 2, published: 3, partial: 3, partially_published: 3,
-      // дефолт для будущих статусов — позже остальных.
-    };
-    const sortedStatuses = Object.entries(contentByStatus).sort(
-      ([a], [b]) => (STATUS_PRIORITY[a] ?? 99) - (STATUS_PRIORITY[b] ?? 99),
-    );
+    // SM-22 follow-up: «неудачи первыми» в этом календаре уже сделано через
+    // фильтры выше (см. строки 315-316, 358-360): postsForDay сюда приходит
+    // уже без failed постов — они убраны выше. Поэтому дополнительной
+    // сортировки здесь делать нечего; red-проверка в PublicationCalendar
+    // выходит за рамки #44 (см. PM-замечание).
     const dots: CalendarDayDot[] = [];
-    sortedStatuses.forEach(([status, typesCounts]) => {
+    Object.entries(contentByStatus).forEach(([status, typesCounts]) => {
       const { opacity, ring } = getStatusStyle(status);
       Object.keys(typesCounts).forEach((type) => {
         const count = typesCounts[type];

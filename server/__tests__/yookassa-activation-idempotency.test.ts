@@ -51,6 +51,12 @@ let userPatches: any[] = [];
  * оттуда не видно.
  */
 const tgSends = vi.hoisted(() => ({ n: 0 }));
+/**
+ * Уведомления, ушедшие мимо транспорта — через глобальный fetch.
+ * Свидетель: без него тест одинаково зелен и когда вызов переведён,
+ * и когда его вернули на fetch.
+ */
+const tgViaFetch = vi.hoisted(() => ({ n: 0 }));
 
 const PAYMENT = {
   id: 'pay-777',
@@ -87,9 +93,9 @@ const fetchMock = vi.fn((url: any, init?: any) => {
   const body = init?.body ? JSON.parse(init.body) : null;
 
   if (u.includes('api.yookassa.ru')) return jsonResponse(yookassaPayment);
-  // Ветку оставляем: если завтра уведомление вернётся на голый fetch, счётчик
-  // это увидит, и тест скажет об этом, а не промолчит.
-  if (u.includes('api.telegram.org')) { tgSends.n++; return jsonResponse({ ok: true }); }
+  // Ветку оставляем и считаем отдельно: вернётся уведомление на голый
+  // fetch — тест это скажет, а не зачтёт за успех.
+  if (u.includes('api.telegram.org')) { tgViaFetch.n++; return jsonResponse({ ok: true }); }
 
   const itemsMatch = u.match(/\/items\/(\w+)/);
   if (itemsMatch) {
@@ -171,6 +177,7 @@ beforeEach(async () => {
   liveCollections = new Set(['payment_activations', 'promo_reservations', 'promo_code_uses', 'promo_codes']);
   userPatches = [];
   tgSends.n = 0;
+  tgViaFetch.n = 0;
   sendPurchasePostback.mockClear();
   yookassaPayment = PAYMENT;
   app = await buildApp();
@@ -188,6 +195,9 @@ describe('повтор активации', () => {
   it('повтор в одном процессе не меняет expire_date, не шлёт уведомление и не дублирует postback', async () => {
     await activate();
     const expireAfterFirst = userPatches[0].expire_date;
+    // Уведомление об оплате обязано идти транспортом, и только им.
+    expect(tgSends.n).toBeGreaterThan(0);
+    expect(tgViaFetch.n).toBe(0);
     const tgAfterFirst = tgSends.n;
 
     const second = await activate();
@@ -197,6 +207,7 @@ describe('повтор активации', () => {
     expect(userPatches).toHaveLength(1);
     expect(userPatches[0].expire_date).toBe(expireAfterFirst);
     expect(tgSends.n).toBe(tgAfterFirst);
+    expect(tgViaFetch.n).toBe(0);
     expect(sendPurchasePostback).toHaveBeenCalledTimes(1);
   });
 

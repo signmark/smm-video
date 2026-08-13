@@ -21,6 +21,10 @@ paths = [
   '''docs/social_media/FACEBOOK_IMPLEMENTATION_PLAN\.md''',
   # Фикстуры теста OAuth-потока, значения заведомо фейковые.
   '''server/__tests__/youtube-oauth-flow\.test\.ts''',
+  # Одноразовый самоподписанный сертификат для проверки транспорта Telegram
+  # (AI-101 фаза 2C): поднимает локальный TLS-сервер на 127.0.0.2/127.0.0.3.
+  # Ключ выпущен для этого теста, живёт только в нём и ничего не защищает.
+  '''server/__tests__/telegram-2c-wire\.test\.ts''',
   # Вендоренный AWS SDK: примеры в d.ts-доках.
   '''custom_modules/''',
 ]

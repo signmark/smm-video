@@ -69,7 +69,13 @@ export function ContentGenerationPanel({ selectedTopics, onGenerated }: ContentG
   const [generatedContent, setGeneratedContent] = useState<string | null>(null);
   const [matchStyle, setMatchStyle] = useState(false);
 
+  // SM-25: промт после генерации больше НЕ стирается (остаётся в поле для
+  // правки/перегенерации). Очистка — по явному действию: смена кампании.
   const campaignId = selectedTopics[0]?.campaign_id || selectedTopics[0]?.campaignId;
+  useEffect(() => {
+    setPrompt("");
+    setGeneratedContent(null);
+  }, [campaignId]);
 
   // Подтягиваем данные кампании для проверки наличия стиля
   const { data: campaignData } = useQuery({
@@ -196,7 +202,6 @@ export function ContentGenerationPanel({ selectedTopics, onGenerated }: ContentG
         description: "Контент сохранён как черновик"
       });
       setGeneratedContent(null);
-      setPrompt("");
       onGenerated?.();
     },
     onError: (error: Error) => {

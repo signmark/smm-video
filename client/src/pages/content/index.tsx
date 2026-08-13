@@ -851,6 +851,10 @@ export default function ContentPage() {
         prompt: "", // Сохраняем поле prompt
         keywords: []
       });
+      // SM-25: явная очистка промта — после успешного создания контента форма
+      // пересобирается (новый контент = новый промт). Это явное действие,
+      // не генерация.
+      setAiPromptText('');
 
       // Закрываем диалог сразу
       setIsCreateDialogOpen(false);
@@ -1321,7 +1325,9 @@ export default function ContentPage() {
         : cleaned.split('\n\n').filter(p => p.trim()).map(p => `<p>${p.replace(/\n/g, '<br>').replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\*(.*?)\*/g, '<em>$1</em>')}</p>`).join('');
       targetSetter(html || `<p>${cleaned}</p>`);
       setShowAiPanel(false);
-      setAiPromptText('');
+      // SM-25: промт после генерации НЕ стираем — человек должен найти его на
+      // месте, вернувшись в панель. Очистка aiPromptText — на явное действие.
+      // (см. место закрытия/нового контента, где стоит setAiPromptText('')).
       const MODEL_NAMES: Record<string, string> = {
         'gemini-3.5-flash': 'Gemini 3.5 Flash',
         'gemini-3.0-pro': 'Gemini 3.0 Pro',

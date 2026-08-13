@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,14 +9,7 @@ import { User, Save } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuthStore } from "@/lib/store";
-
-interface UserProfile {
-  id: string;
-  email: string;
-  first_name: string;
-  last_name: string;
-  is_smm_admin: boolean;
-}
+import { useUserProfile } from "@/hooks/use-user-profile";
 
 interface ProfileDialogProps {
   isOpen: boolean;
@@ -28,8 +21,6 @@ export function ProfileDialog({ isOpen, onClose }: ProfileDialogProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   
-  // Получаем userId и token из store
-  const userId = useAuthStore((state) => state.userId);
   const token = useAuthStore((state) => state.token);
   
   const [formData, setFormData] = useState({
@@ -40,20 +31,17 @@ export function ProfileDialog({ isOpen, onClose }: ProfileDialogProps) {
     current_password: ""
   });
 
-  // Загружаем профиль пользователя — enabled только когда диалог открыт и есть токен
-  const { data: userProfile, isLoading, refetch } = useQuery<UserProfile>({
-    queryKey: ['/api/user/profile', userId || 'me'],
-    enabled: isOpen && !!token,
-    staleTime: 0,
-    refetchOnMount: true,
-  });
+  // Профиль — единый каноник useUserProfile (task #84). Диалог не заводит свой
+  // useQuery: присоединяется к общему кэшу профиля, а свежесть при открытии
+  // обеспечивает явный refetch (см. useEffect ниже).
+  const { data: userProfile, isLoading, refetch } = useUserProfile();
 
   // При открытии диалога всегда перезапрашиваем актуальные данные
   useEffect(() => {
     if (isOpen && token) {
       refetch();
     }
-  }, [isOpen, token]);
+  }, [isOpen, token, refetch]);
 
   // Обновляем форму при загрузке профиля
   useEffect(() => {

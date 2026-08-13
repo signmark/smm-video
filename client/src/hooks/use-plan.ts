@@ -1,6 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
-import { useAuthStore } from '@/lib/store';
-import { PROFILE_FRESHNESS } from './profile-freshness';
+import { useUserProfile } from './use-user-profile';
 
 export type PlanType = 'free' | 'basic' | 'trial' | 'pro' | 'enterprise';
 
@@ -97,18 +95,9 @@ export const PLAN_LABELS: Record<PlanType, string> = {
 };
 
 export function usePlan() {
-  const token = useAuthStore((state) => state.token);
-  const userId = useAuthStore((state) => state.userId);
-
-  const { data: profile } = useQuery<{
-    plan?: string;
-    expire_date?: string | null;
-    is_smm_admin?: boolean;
-  }>({
-    queryKey: ['/api/user/profile', userId || 'me'],
-    enabled: !!token,
-    ...PROFILE_FRESHNESS,
-  });
+  // Профиль — единый каноник из useUserProfile (task #84), а не свой useQuery.
+  // usePlan только читает из него plan/expire_date/is_smm_admin.
+  const { data: profile } = useUserProfile();
 
   const plan = (profile?.plan || 'basic') as PlanType;
   const expireDate = profile?.expire_date ?? null;

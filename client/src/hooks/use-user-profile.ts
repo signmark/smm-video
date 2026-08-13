@@ -47,7 +47,10 @@ export function useUserProfile() {
     enabled: !!userId,
     staleTime: PROFILE_STALE_TIME,
     refetchOnMount: false,
-    refetchOnWindowFocus: true,
+    // 'always' форсит refetch по фокусу окна даже при свежих данных — внешнее
+    // одобрение тарифа (Telegram/письмо) видно сразу на ЛЮБОМ маршруте, без
+    // превращения кэша в «всегда устаревший» (то, что ломало dedup раньше).
+    refetchOnWindowFocus: 'always',
     retry: 1,
   });
 }

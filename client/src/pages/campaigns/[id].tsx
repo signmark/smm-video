@@ -72,9 +72,11 @@ export default function CampaignDetails() {
 
   // Feature flag: стиль доступен только для signmark@gmail.com
   const userId = user?.user?.id || user?.id;
-  const token = localStorage.getItem('auth_token');
   const { data: userProfile } = useQuery<{ email: string }>({
-    queryKey: ['/api/user/profile', userId || 'me', token],
+    // Ключ совпадает с content/index.tsx (`['/api/user/profile', userId || 'me']`);
+    // token в ключе был лишним дискриминатором и не давал профилю схлопнуться
+    // в один запрос (task #81/C).
+    queryKey: ['/api/user/profile', userId || 'me'],
     enabled: !!userId,
   });
   const isStyleFeatureEnabled = userProfile?.email === 'signmark@gmail.com';

@@ -577,10 +577,14 @@ export default function ContentPage() {
     }
   }, [location, selectedCampaignId, navigate]);
 
-  // Force refetch data when campaign changes OR when navigating to content page
+  // Force refetch data when the selected CAMPAIGN changes (not on every route
+  // entry — that re-downloaded the whole content list on each return).
+  // The `location` guard is dropped: keeping it re-triggered the fetch on plain
+  // navigation to /content, which is exactly the 79KB re-download the perf
+  // task eliminates. Mutations invalidate the query themselves, so freshness
+  // after publish/edit/delete does not depend on this route-entry effect.
   useEffect(() => {
-    if (selectedCampaignId && selectedCampaignId !== 'loading' && selectedCampaignId !== 'empty' &&
-        (location === '/content' || location === '/content/new')) {
+    if (selectedCampaignId && selectedCampaignId !== 'loading' && selectedCampaignId !== 'empty') {
       // refetchQueries форсирует запрос независимо от staleTime.
       // Раньше здесь было два вызова — со вторым ключом `selectedCampaignId || ""`.
       // Внутри этого if selectedCampaignId заведомо непустой, поэтому ключи
@@ -592,7 +596,7 @@ export default function ContentPage() {
       setContentLimit(CONTENT_PAGE_SIZE);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCampaignId, location]); // location нужен чтобы перечитывать при навигации на страницу
+  }, [selectedCampaignId]); // только смена кампании, не навигация на маршрут
 
   // Запрос списка кампаний. Общий с CampaignSelector в топбаре — раньше у них
   // были разные ключи (['/api/campaigns'] против ['/api/campaigns', userId]),

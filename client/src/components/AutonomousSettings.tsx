@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -8,7 +8,11 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { getConnectedPlatformsMap } from "@/lib/platform-connection";
+import { useQuery } from "@tanstack/react-query";
+import { api } from "@/lib/api-client";
+import { getConnectedPlatformsMap, CONNECTABLE_PLATFORMS, type ConnectablePlatform } from "@/lib/platform-connection";
+import { extractUnconnectedMentions } from "@/lib/disconnected-mention-detector";
+import { platformNames } from "@/lib/social-platforms";
 import {
   Loader2, Save, Bot, Pencil, Users, Share2, Target, Shuffle,
   Sparkles, ChevronDown, ChevronUp, Check, Wand2, RotateCcw,
@@ -259,39 +263,31 @@ export default function AutonomousSettings({ campaignId, initialSettings, onSett
   const [showBuilder, setShowBuilder] = useState(false);
   const [appliedTemplate, setAppliedTemplate] = useState<string | null>(null);
   const [builder, setBuilder] = useState<AssistantBuilderConfig>(DEFAULT_BUILDER);
-  // SM-18 follow-up: подключённые соцсети для подсказки про [socialNetworks]
-  const [connectedPlatforms, setConnectedPlatforms] = useState<string[]>([]);
-
   useEffect(() => { setValues(parseSettings(initialSettings)); }, [initialSettings]);
 
-  // SM-18 follow-up: читаем подключённые соцсети кампании для подсказки в промте.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await apiRequest(`/api/campaigns/${campaignId}`);
-        // endpoint возвращает envelope { success, data: campaign } — берём data
-        const campaign = (res as any)?.data || (res as any) || null;
-        if (cancelled || !campaign) return;
+  // SM-18 follow-up: подключённые соцсети кампании — для подсказки про
+  // [socialNetworks] и для предупреждения о неподключённой сети в промте.
+  //
+  // Ключ ровно тот же, что у страницы кампании: секция «Подключение социальных
+  // сетей» после сохранения инвалидирует его, и предупреждение обновляется само,
+  // без перезагрузки (критерий 4 SM-18). Свой fetch мимо кэша этого не умел и
+  // заодно уходил вторым запросом за той же кампанией.
+  const { data: campaignResponse } = useQuery({
+    queryKey: ["/api/proxy/campaign", campaignId],
+    queryFn: () => api.campaigns.get(campaignId),
+    enabled: !!campaignId,
+  });
 
-        const names: Record<string, string> = {
-          telegram: 'Telegram', vk: 'ВКонтакте', instagram: 'Instagram',
-          facebook: 'Facebook', youtube: 'YouTube', tiktok: 'TikTok', threads: 'Threads',
-        };
-        // Каноничный helper: не зависит от секретных токенов (их вырезает sanitizeOAuthSecrets).
-        const map = getConnectedPlatformsMap(campaign.social_media_settings);
-        if (!map) {
-          if (!cancelled) setConnectedPlatforms([]);
-          return;
-        }
-        const connected = (['telegram', 'vk', 'instagram', 'facebook', 'youtube', 'tiktok', 'threads'] as const)
-          .filter(p => (map as any)[p] === true)
-          .map(p => names[p] || p);
-        if (!cancelled) setConnectedPlatforms(connected);
-      } catch { /* не критично */ }
-    })();
-    return () => { cancelled = true; };
-  }, [campaignId]);
+  // Держим идентификаторы платформ, а не подписи. Подпись — дело вывода: как
+  // только сравнение шло по человекочитаемой строке, любая правка названия в
+  // интерфейсе молча ломала проверку «подключена ли сеть».
+  const connectedPlatforms: ConnectablePlatform[] = useMemo(() => {
+    const campaign = (campaignResponse as any)?.data ?? campaignResponse;
+    // Каноничный helper: не зависит от секретных токенов (их вырезает sanitizeOAuthSecrets).
+    const map = campaign ? getConnectedPlatformsMap(campaign.social_media_settings) : null;
+    if (!map) return [];
+    return CONNECTABLE_PLATFORMS.filter((p) => map[p] === true);
+  }, [campaignResponse]);
 
   const updateValue = (key: keyof AutonomousSettingsValue) => (e: React.ChangeEvent<HTMLTextAreaElement | HTMLInputElement>) => {
     setValues((prev) => ({ ...prev, [key]: e.target.value }));
@@ -677,24 +673,59 @@ export default function AutonomousSettings({ campaignId, initialSettings, onSett
             <p className="text-foreground/90 whitespace-pre-wrap">
               {values.globalPrompt.split("[socialNetworks]").join(
                 connectedPlatforms.length > 0
-                  ? connectedPlatforms.join(", ")
+                  ? connectedPlatforms.map((p) => platformNames[p]).join(", ")
                   : "социальных сетей кампании"
               )}
             </p>
           </div>
         ) : (
-          <div className="flex items-start gap-1.5 text-xs text-muted-foreground bg-muted/40 rounded px-3 py-2" title={connectedPlatforms.length > 0 ? `Подключённые соцсети: ${connectedPlatforms.join(', ')}` : 'Соцсети не подключены'}>            <Lightbulb className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+          <div className="flex items-start gap-1.5 text-xs text-muted-foreground bg-muted/40 rounded px-3 py-2" title={connectedPlatforms.length > 0 ? `Подключённые соцсети: ${connectedPlatforms.map((p) => platformNames[p]).join(', ')}` : 'Соцсети не подключены'}>            <Lightbulb className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
             <p>
               Доступная переменная: <code className="bg-background px-1 rounded border border-border font-mono">[socialNetworks]</code> —{' '}
               заменится на подключённые соцсети автоматически.{' '}
               {connectedPlatforms.length > 0 ? (
-                <span className="font-medium">Текущие: {connectedPlatforms.join(', ')}</span>
+                <span className="font-medium">Текущие: {connectedPlatforms.map((p) => platformNames[p]).join(', ')}</span>
               ) : (
                 <span className="italic">Соцсети не подключены — подставится «социальных сетей кампании»</span>
               )}
             </p>
           </div>
         )}
+
+        {/* SM-18: предупреждение о неподключённой сети, упомянутой в промте.
+            Показываем только positive mentions (не в отрицающем контексте),
+            и только если такая сеть реально не подключена. */}
+        {(() => {
+          const unconnectedMentions = values.globalPrompt
+            ? extractUnconnectedMentions({
+                prompt: values.globalPrompt,
+                isConnected: (p) => connectedPlatforms.includes(p),
+              })
+            : [];
+          if (unconnectedMentions.length === 0) return null;
+          return (
+            <div
+              data-testid="warning-disconnected-platforms"
+              className="rounded border border-amber-500/40 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-xs text-amber-900 dark:text-amber-200"
+              role="status"
+              aria-live="polite"
+            >
+              <p className="font-semibold flex items-center gap-1.5">
+                <span aria-hidden="true">⚠</span>
+                В промте упомянуты соцсети, которые не подключены у кампании
+              </p>
+              <p className="mt-1">
+                Эти названия в промте модель воспримет буквально и попытается
+                генерировать посты в них — публикация провалится с 403.
+                Подключите соответствующие соцсети в настройках кампании или
+                уберите упоминания из промта.
+              </p>
+              <p className="mt-1 font-medium" data-testid="warning-disconnected-list">
+                Не подключены: {unconnectedMentions.map((p) => platformNames[p]).join(", ")}
+              </p>
+            </div>
+          );
+        })()}
       </div>
 
       <div className="space-y-2">

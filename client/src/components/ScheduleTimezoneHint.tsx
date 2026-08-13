@@ -9,8 +9,11 @@ import { buildScheduleTimezoneHint } from '@/lib/schedule-timezone';
  * Строка с московским эквивалентом — только когда дата уже выбрана И пояс
  * отличается от московского (дата нужна только для пересчёта).
  */
-export function ScheduleTimezoneHint({ date }: { date?: Date }) {
-  const hint = useMemo(() => buildScheduleTimezoneHint(date ?? new Date()), [date]);
+export function ScheduleTimezoneHint({ date, zone }: { date?: Date; zone?: string }) {
+  const hint = useMemo(
+    () => buildScheduleTimezoneHint(date ?? new Date(), new Date(), zone),
+    [date, zone],
+  );
 
   return (
     <div className="text-xs text-muted-foreground">

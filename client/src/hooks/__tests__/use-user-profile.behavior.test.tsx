@@ -210,3 +210,27 @@ describe('task #84: вход на pricing дергает canonical refetch', () 
     expect(fetchCount).toBe(2);
   });
 });
+
+describe('task #84: повторный вход ТЕМ ЖЕ пользователем (новый сеанс)', () => {
+  it('logout-clear стирает старый профиль, новый сеанс user-1 с новыми данными', async () => {
+    mockFetch({ id: 'u1', email: 'old@x.c', plan: 'basic', first_name: '', last_name: '', is_smm_admin: false });
+    const qc = makeQC();
+    const { result, rerender } = renderHook(() => useUserProfile(), { wrapper: wrapper(qc) });
+    await waitFor(() => expect(result.current.data?.email).toBe('old@x.c'));
+    expect(fetchCount).toBe(1);
+
+    // Реальная граница logout: queryClient.clear() (то же, что logout/forceLogout).
+    act(() => { qc.clear(); });
+
+    // Новый сеанс — ТОТ ЖЕ user-1, но сервер отдал новый email/plan.
+    profilePayload = { id: 'u1', email: 'new@x.c', plan: 'pro', first_name: '', last_name: '', is_smm_admin: false };
+    act(() => { setUser('user-1'); });
+    rerender();
+
+    await waitFor(() => expect(result.current.data?.email).toBe('new@x.c'));
+    // Ровно один свежий вызов после перезахода тем же пользователем.
+    expect(fetchCount).toBe(2);
+    // Старый email нигде не рендерится.
+    expect(result.current.data?.email).not.toBe('old@x.c');
+  });
+});

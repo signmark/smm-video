@@ -14,6 +14,7 @@ import { describe, it, expect } from 'vitest';
 import {
   buildScheduleTimezoneHint,
   browserDiffersFromMoscow,
+  browserUtcOffsetLabel,
   formatInMoscow,
   scheduleTimezoneLabel,
   SCHEDULE_DISPLAY_TIME_ZONE,
@@ -57,6 +58,30 @@ describe('SM-28: buildScheduleTimezoneHint — пересчёт только п�
     expect(hint.differs).toBe(true);
     expect(hint.msk).not.toBeNull();
     expect(hint.msk).toContain('17:00');
+  });
+});
+
+describe('SM-28: значение смещения для явных поясов (знак и минуты)', () => {
+  it('Москва летом — UTC+3', () => {
+    expect(browserUtcOffsetLabel(new Date('2026-07-16T12:00:00.000Z'), 'Europe/Moscow')).toBe('UTC+3');
+  });
+
+  it('Нью-Йорк летом — UTC−4, зимой — UTC−5', () => {
+    expect(browserUtcOffsetLabel(new Date('2026-07-16T12:00:00.000Z'), 'America/New_York')).toBe('UTC−4');
+    expect(browserUtcOffsetLabel(new Date('2026-01-16T12:00:00.000Z'), 'America/New_York')).toBe('UTC−5');
+  });
+
+  it('получасовой пояс Калькутта — UTC+5:30', () => {
+    expect(browserUtcOffsetLabel(new Date('2026-07-16T12:00:00.000Z'), 'Asia/Kolkata')).toBe('UTC+5:30');
+  });
+
+  it('подпись buildScheduleTimezoneHint несёт правильное смещение', () => {
+    const hint = buildScheduleTimezoneHint(
+      new Date('2026-07-16T12:00:00.000Z'),
+      new Date('2026-07-16T12:00:00.000Z'),
+      'Europe/Moscow',
+    );
+    expect(hint.label).toContain('UTC+3');
   });
 });
 

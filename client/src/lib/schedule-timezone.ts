@@ -57,7 +57,7 @@ export function browserUtcOffsetLabel(now: Date = new Date(), zone?: string): st
         Number(get('hour')),
         Number(get('minute')),
       );
-      const totalMinutes = Math.round((now.getTime() - asUtc) / 60000);
+      const totalMinutes = Math.round((asUtc - now.getTime()) / 60000);
       const sign = totalMinutes >= 0 ? '+' : '−';
       const abs = Math.abs(totalMinutes);
       const hours = Math.floor(abs / 60);

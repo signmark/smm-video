@@ -4,17 +4,18 @@ import { buildScheduleTimezoneHint } from '@/lib/schedule-timezone';
 /**
  * Подпись часового пояса под выбором даты/времени публикации (SM-28).
  *
- * Показывает, в каком поясе будет выполнена публикация (пояс браузера, которым
- * ставит время календарь), и — если он отличается от московского, в котором
- * говорит остальной продукт — тот же момент в МСК.
+ * Имя применяемого пояса и смещение показываются ВСЕГДА — неоднозначность
+ * «по чьему времени» существует в момент выбора, ещё до того, как дата задана.
+ * Строка с московским эквивалентом — только когда дата уже выбрана И пояс
+ * отличается от московского (дата нужна только для пересчёта).
  */
-export function ScheduleTimezoneHint({ date }: { date: Date }) {
-  const hint = useMemo(() => buildScheduleTimezoneHint(date), [date]);
+export function ScheduleTimezoneHint({ date }: { date?: Date }) {
+  const hint = useMemo(() => buildScheduleTimezoneHint(date ?? new Date()), [date]);
 
   return (
     <div className="text-xs text-muted-foreground">
       <p>{hint.label}</p>
-      {hint.differs && hint.msk && (
+      {date && hint.differs && hint.msk && (
         <p className="text-muted-foreground/80">
           {hint.msk} МСК
         </p>

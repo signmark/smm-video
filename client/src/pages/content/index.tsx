@@ -3664,9 +3664,7 @@ export default function ContentPage() {
                       value={scheduleDate}
                       onChange={setScheduleDate}
                     />
-                    {scheduleDate && (
-                      <ScheduleTimezoneHint date={scheduleDate} />
-                    )}
+                    <ScheduleTimezoneHint date={scheduleDate} />
                   </div>
                 </TabsContent>
               </Tabs>

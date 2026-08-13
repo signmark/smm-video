@@ -9,10 +9,12 @@
  * Собственного зум-движка здесь нет: показываем оригинал в натуральную величину
  * и даём прокрутку — этого достаточно, чтобы разглядеть детали, и не тянет
  * лишнюю библиотеку. Модалка — тот же shadcn Dialog, что и везде; он же даёт
- * закрытие по Esc и по клику вне, роль диалога и возврат фокуса на лупу,
- * с которой открыли.
+ * закрытие по Esc и по клику вне и роль диалога. Возврат фокуса на лупу, с
+ * которой открыли, сделан явно: авто-возврат Radix зависит от того, что было
+ * сфокусировано в момент монтирования, и это не то же самое, что «кнопка, по
+ * которой кликнули». Явная ссылка на элемент надёжнее и проверяется тестом.
  */
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { ZoomIn } from "lucide-react";
 
@@ -24,6 +26,7 @@ interface GeneratedImagesPreviewProps {
 
 export function GeneratedImagesPreview({ images, selectedIndex, onSelect }: GeneratedImagesPreviewProps) {
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  const openedFromRef = useRef<HTMLButtonElement | null>(null);
   const previewUrl = previewIndex === null ? null : images[previewIndex];
 
   return (
@@ -52,6 +55,7 @@ export function GeneratedImagesPreview({ images, selectedIndex, onSelect }: Gene
                 // Всплытие гасим здесь: иначе лупа заодно меняла бы выбор.
                 onClick={(event) => {
                   event.stopPropagation();
+                  openedFromRef.current = event.currentTarget;
                   setPreviewIndex(index);
                 }}
               >
@@ -68,7 +72,13 @@ export function GeneratedImagesPreview({ images, selectedIndex, onSelect }: Gene
           if (!open) setPreviewIndex(null);
         }}
       >
-        <DialogContent className="max-w-[95vw] sm:max-w-[90vw]">
+        <DialogContent
+          className="max-w-[95vw] sm:max-w-[90vw]"
+          onCloseAutoFocus={(event) => {
+            event.preventDefault();
+            openedFromRef.current?.focus();
+          }}
+        >
           <DialogHeader>
             <DialogTitle>{`Изображение ${(previewIndex ?? 0) + 1} из ${images.length}`}</DialogTitle>
             <DialogDescription>

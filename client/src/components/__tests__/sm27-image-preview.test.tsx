@@ -11,6 +11,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { useState } from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { GeneratedImagesPreview } from '@/components/GeneratedImagesPreview';
 
 const IMAGES = ['https://example.test/a.png', 'https://example.test/b.png'];
@@ -62,6 +63,43 @@ describe('SM-27: крупный просмотр сгенерированной 
 
     expect(onSelect).not.toHaveBeenCalled();
     expect(screen.getByTestId('выбрано').textContent).toBe('1');
+  });
+
+  it('клик вне окна закрывает просмотр', async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+    await user.click(screen.getByLabelText('Открыть изображение 1 крупно'));
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument());
+
+    // Radix вешает pointer-events:none на body, пока модалка открыта, поэтому
+    // user-event туда «кликнуть» не даёт. Шлём именно тот сигнал, который слушает
+    // сам Radix: pointerdown вне содержимого модалки.
+    fireEvent.pointerDown(document.body);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  });
+
+  it('после закрытия по Esc фокус вернулся на ту же лупу', async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+    const zoom = screen.getByLabelText('Открыть изображение 1 крупно');
+    await user.click(zoom);
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument());
+
+    await user.keyboard('{Escape}');
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(zoom));
+  });
+
+  it('после закрытия кликом вне фокус вернулся на ту же лупу', async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+    const zoom = screen.getByLabelText('Открыть изображение 2 крупно');
+    await user.click(zoom);
+    await waitFor(() => expect(screen.getByRole('dialog')).toBeInTheDocument());
+
+    fireEvent.pointerDown(document.body);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(zoom));
   });
 
   it('клик по самому превью по-прежнему выбирает картинку', () => {

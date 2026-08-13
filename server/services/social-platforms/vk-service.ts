@@ -200,7 +200,10 @@ class VkService {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
       });
       if (serverRes.data?.error) {
-        throw new Error(`photos.getWallUploadServer: ${serverRes.data.error.error_msg || JSON.stringify(serverRes.data.error)}`);
+        const vkErr: any = new Error(serverRes.data.error.error_msg || serverRes.data.error.message || 'VK API error');
+        vkErr.response = { data: serverRes.data, status: serverRes.status };
+        vkErr.code = serverRes.data.error.error_code;
+        throw vkErr;
       }
       const uploadUrl: string = serverRes.data?.response?.upload_url;
       if (!uploadUrl) throw new Error('Не получен upload_url от VK');
@@ -242,7 +245,10 @@ class VkService {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
       });
       if (saveRes.data?.error) {
-        throw new Error(`photos.saveWallPhoto: ${saveRes.data.error.error_msg || JSON.stringify(saveRes.data.error)}`);
+        const vkErr: any = new Error(saveRes.data.error.error_msg || saveRes.data.error.message || 'VK API error');
+        vkErr.response = { data: saveRes.data, status: saveRes.status };
+        vkErr.code = saveRes.data.error.error_code;
+        throw vkErr;
       }
       const savedPhoto = saveRes.data?.response?.[0];
       if (!savedPhoto) throw new Error('Не удалось сохранить фото в VK');

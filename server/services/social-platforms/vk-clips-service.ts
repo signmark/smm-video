@@ -411,7 +411,10 @@ export class VKClipsService extends BaseSocialService {
     
     // Проверяем ошибки в ответе
     if (response.data.error) {
-      throw new Error(`Clips Upload Error: ${JSON.stringify(response.data.error)}`);
+      const vkErr: any = new Error(response.data.error.error_msg || response.data.error.message || 'VK Clips Upload Error');
+      vkErr.response = { data: response.data, status: response.status };
+      vkErr.code = response.data.error.error_code;
+      throw vkErr;
     }
     
     // Проверяем base64-encoded ошибку в upload_result (как в VK Stories)

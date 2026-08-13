@@ -295,7 +295,10 @@ export class VKStoriesService {
     log(`VK Upload response keys: ${Object.keys(response.data || {}).join(', ')}, error=${response.data?.error ? JSON.stringify(response.data.error) : 'нет'}`, LOG_PREFIX);
     
     if (response.data.error) {
-      throw new Error(`Upload Error: ${JSON.stringify(response.data.error)}`);
+      const vkErr: any = new Error(response.data.error.error_msg || response.data.error.message || 'VK Upload Error');
+      vkErr.response = { data: response.data, status: response.status };
+      vkErr.code = response.data.error.error_code;
+      throw vkErr;
     }
     
     // VK возвращает upload_result в разных местах в зависимости от типа

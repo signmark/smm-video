@@ -1,6 +1,7 @@
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCampaignDetail, campaignDetailKey } from "@/hooks/use-campaigns";
+import { useUserProfile } from "@/hooks/use-user-profile";
 import { Card, CardContent } from "@/components/ui/card";
 import { KeywordSelector } from "@/components/KeywordSelector";
 import { api as apiClient } from "@/lib/api-client";
@@ -71,15 +72,9 @@ export default function CampaignDetails() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
 
-  // Feature flag: стиль доступен только для signmark@gmail.com
-  const userId = user?.user?.id || user?.id;
-  const { data: userProfile } = useQuery<{ email: string }>({
-    // Ключ совпадает с content/index.tsx (`['/api/user/profile', userId || 'me']`);
-    // token в ключе был лишним дискриминатором и не давал профилю схлопнуться
-    // в один запрос (task #81/C).
-    queryKey: ['/api/user/profile', userId || 'me'],
-    enabled: !!userId,
-  });
+  // Feature flag: стиль доступен только для signmark@gmail.com.
+  // Профиль — единый каноник useUserProfile (task #84), а не свой useQuery.
+  const { data: userProfile } = useUserProfile();
   const isStyleFeatureEnabled = userProfile?.email === 'signmark@gmail.com';
   const [isSearchingKeywords, setIsSearchingKeywords] = useState(false);
   const [suggestedKeywords, setSuggestedKeywords] = useState<

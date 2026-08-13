@@ -8,6 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { useAuthStore } from "@/lib/store";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCampaignDetail } from "@/hooks/use-campaigns";
+import { useUserProfile } from "@/hooks/use-user-profile";
 import { useThemeStore } from "@/lib/themeStore";
 import { useCampaignStore } from "@/lib/campaignStore";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
@@ -232,18 +233,8 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
     },
   });
 
-  // Загружаем полный профиль пользователя из API.
-  // Ключ БЕЗ токена: с ним запрос не схлопывался с точно таким же из usePlan
-  // (ключ ['/api/user/profile', userId]) — профиль ехал дважды параллельно.
-  // Смена пользователя и так чистит кеш (queryClient.clear в use-auth), а смена
-  // токена того же пользователя новых данных профиля не даёт.
-  const { data: userProfile, isLoading, error } = useQuery<UserProfile>({
-    queryKey: ['/api/user/profile', userId || 'me'],
-    enabled: !!token,
-    staleTime: 5 * 60 * 1000,
-    refetchOnWindowFocus: true,
-    retry: 1
-  });
+  // Полный профиль пользователя — единый каноник useUserProfile (task #84).
+  const { data: userProfile, isLoading, error } = useUserProfile();
 
 
   // Формируем отображаемое имя пользователя

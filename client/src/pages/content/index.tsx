@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { usePlan } from "@/hooks/use-plan";
+import { useUserProfile } from "@/hooks/use-user-profile";
 import { useAuthStore } from "@/lib/store";
 import { useCampaignsList, useCampaignDetail } from "@/hooks/use-campaigns";
 import { PublishingStatus } from "@/components/PublishingStatus";
@@ -204,14 +205,9 @@ export default function ContentPage() {
   const { limits, effectivePlan, isExpired } = usePlan();
 
   // Feature flag: стиль доступен только для signmark@gmail.com.
-  // userId берём из useAuthStore, а не из useAuth(): ключ профиля должен совпасть
-  // с ключом в usePlan и топбаре ДО символа, иначе запрос не схлопнется. Раньше
-  // здесь был id из /api/auth/me плюс token в ключе — и профиль ехал дважды.
-  const userId = useAuthStore((state) => state.userId);
-  const { data: userProfile } = useQuery<{ email: string }>({
-    queryKey: ['/api/user/profile', userId || 'me'],
-    enabled: !!userId,
-  });
+  // Профиль берём из единого каноника useUserProfile (task #84), а не своим
+  // useQuery — иначе getRace по свежести с usePlan давала двойнойfetch.
+  const { data: userProfile } = useUserProfile();
   const isStyleFeatureEnabled = userProfile?.email === 'signmark@gmail.com';
 
   const { data: imageGenUsage } = useQuery<{

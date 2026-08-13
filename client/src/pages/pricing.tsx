@@ -1,4 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
+import { useUserProfile } from '@/hooks/use-user-profile';
+import { usePricingEntryProfileRefresh } from '@/hooks/use-pricing-entry';
 import { Check, X, Zap, BarChart3, Globe2, Bot, ArrowRight, Star, Shield, Clock, CreditCard, Send, Loader2, CheckCircle, Tag, XCircle, Crown } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { SiInstagram, SiYoutube, SiTelegram, SiVk, SiFacebook, SiThreads } from 'react-icons/si';
@@ -156,8 +158,13 @@ export default function PricingPage() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [userPlan, setUserPlan] = useState<string | null>(null);
-  const [expireDate, setExpireDate] = useState<string | null>(null);
+  // Профиль (plan/expire_date) — единый каноник useUserProfile (task #84), а не
+  // императивный fetch. refetch() при входе на тарифную панель даёт свежий тариф.
+  const { data: userProfile } = useUserProfile();
+  const userPlan = userProfile?.plan ?? null;
+  const expireDate = userProfile?.expire_date ?? null;
+  // Вход на тарифную панель → перечит профиль (внешнее одобрение тарифа).
+  usePricingEntryProfileRefresh();
   const [plans, setPlans] = useState(PLANS);
   const [selectedPlan, setSelectedPlan] = useState<typeof PLANS[0] | null>(null);
   const [modalState, setModalState] = useState<ModalState>('idle');
@@ -197,20 +204,6 @@ export default function PricingPage() {
     const userId = localStorage.getItem('user_id');
     const authenticated = !!(token && userId);
     setIsAuthenticated(authenticated);
-
-    if (authenticated && token) {
-      // /api/user/profile возвращает { plan, expire_date, ... }
-      fetch('/api/user/profile', { headers: { Authorization: `Bearer ${token}` } })
-        .then(r => r.ok ? r.json() : null)
-        .then(data => {
-          if (!data) return;
-          const plan: string = data.plan || 'basic';
-          const expireDate: string | null = data.expire_date || null;
-          setUserPlan(plan);
-          setExpireDate(expireDate);
-        })
-        .catch(() => {});
-    }
 
     fetch('/api/payments/available')
       .then(r => r.json())

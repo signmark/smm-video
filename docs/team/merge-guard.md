@@ -1,12 +1,11 @@
 # merge-guard.sh — merge push guard (staged migration)
 
-**Status: Phase A merged; host integration installed and pending independent
-verification (task #59).**
+**Status: verified. The host integration is installed on the canonical merge
+path and has been independently confirmed (task #59).**
 
 This document is the integration contract for `scripts/merge-guard.sh`. The host
-side is described in section 3; until its independent verification is recorded,
-treat the canonical two-step flow as the intended path rather than a settled
-obligation.
+side is described in section 3, and the two-step flow described there is the
+canonical path — not a migration note.
 
 ## 1. Why
 
@@ -56,8 +55,10 @@ different gap — assembling SHAs by hand and typing `git push`.
 2. a **green** gate emits an immutable receipt (root-owned, mode 0400) carrying
    the gated main, the candidate, the gate tree, the gate merge SHA, the guard
    checksum and the reviewed SHA it came from, plus a safe printed invocation
-   quoting the receipt path. A red gate emits no receipt. The gate neither merges
-   nor pushes;
+   quoting the receipt path. A red gate emits no receipt. The gate *does* build the
+   merge — in a throwaway worktree, because the tree it checks is the tree of the
+   future merge and not of the candidate alone — but it does not merge into main
+   and does not push;
 3. after the review verdict and the merge GO, the executor runs the canonical
    approved-merge entrypoint with the receipt path and an explicit author and
    committer. It validates receipt ownership, mode, schema and checksum, matches

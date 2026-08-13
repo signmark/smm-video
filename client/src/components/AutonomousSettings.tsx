@@ -8,7 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
-import { getConnectedPlatformsMap } from "@/lib/platform-connection";
+import { getConnectedPlatformsMap, PLATFORM_NAMES_RU } from "@/lib/platform-connection";
+import { extractUnconnectedMentions } from "@/lib/disconnected-mention-detector";
 import {
   Loader2, Save, Bot, Pencil, Users, Share2, Target, Shuffle,
   Sparkles, ChevronDown, ChevronUp, Check, Wand2, RotateCcw,
@@ -695,6 +696,41 @@ export default function AutonomousSettings({ campaignId, initialSettings, onSett
             </p>
           </div>
         )}
+
+        {/* SM-18: предупреждение о неподключённой сети, упомянутой в промте.
+            Показываем только positive mentions (не в отрицающем контексте),
+            и только если такая сеть реально не подключена. */}
+        {(() => {
+          const unconnectedMentions = values.globalPrompt
+            ? extractUnconnectedMentions({
+                prompt: values.globalPrompt,
+                isConnected: (p) => connectedPlatforms.includes(PLATFORM_NAMES_RU[p]),
+              })
+            : [];
+          if (unconnectedMentions.length === 0) return null;
+          return (
+            <div
+              data-testid="warning-disconnected-platforms"
+              className="rounded border border-amber-500/40 bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-xs text-amber-900 dark:text-amber-200"
+              role="status"
+              aria-live="polite"
+            >
+              <p className="font-semibold flex items-center gap-1.5">
+                <span aria-hidden="true">⚠</span>
+                В промте упомянуты соцсети, которые не подключены у кампании
+              </p>
+              <p className="mt-1">
+                Эти названия в промте модель воспримет буквально и попытается
+                генерировать посты в них — публикация провалится с 403.
+                Подключите соответствующие соцсети в настройках кампании или
+                уберите упоминания из промта.
+              </p>
+              <p className="mt-1 font-medium" data-testid="warning-disconnected-list">
+                Не подключены: {unconnectedMentions.map((p) => PLATFORM_NAMES_RU[p]).join(", ")}
+              </p>
+            </div>
+          );
+        })()}
       </div>
 
       <div className="space-y-2">

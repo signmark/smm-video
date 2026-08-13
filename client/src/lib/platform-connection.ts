@@ -31,6 +31,23 @@ export const CONNECTABLE_PLATFORMS = [
 
 export type ConnectablePlatform = (typeof CONNECTABLE_PLATFORMS)[number];
 
+/**
+ * Канонический список литеральных названий для каждой платформы.
+ *
+ * Должен совпадать с `PLATFORM_NAMES_RU` в `server/services/social-prompt.ts`
+ * — единый источник правды для разбора промта и подстановки. Этот файл —
+ * client-side mirror; если добавится новая платформа, обновить в обоих
+ * местах и убедиться, что parity-test (общий источник) зелёный.
+ */
+export const PLATFORM_NAMES_RU: Record<ConnectablePlatform, string> = {
+  telegram: 'Telegram',
+  vk: 'ВКонтакте',
+  instagram: 'Instagram',
+  facebook: 'Facebook',
+  youtube: 'YouTube',
+  threads: 'Threads',
+};
+
 /** Directus иногда отдаёт JSON строкой — разбираем, прежде чем читать поля. */
 export function parseSocialSettings(raw: unknown): Record<string, any> | null {
   let settings: unknown = raw;

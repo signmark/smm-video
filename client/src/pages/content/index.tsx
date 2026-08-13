@@ -577,22 +577,21 @@ export default function ContentPage() {
     }
   }, [location, selectedCampaignId, navigate]);
 
-  // Force refetch data when campaign changes OR when navigating to content page
+  // Сброс состояния при СМЕНЕ кампании. Принудительного refetch здесь нет:
+  // основной запрос клиентского списка имеет refetchOnMount:false + staleTime
+  // 10с, поэтому возврат на маршрут в пределах gcTime (30 мин) обслуживается из
+  // кэша без повторной загрузки (~80 КБ на списке). Свежесть после мутаций
+  // держат scoped invalidateQueries (критерий 4), а смена кампании меняет
+  // selectedCampaignId в queryKey — это уже новый запрос.
   useEffect(() => {
-    if (selectedCampaignId && selectedCampaignId !== 'loading' && selectedCampaignId !== 'empty' &&
-        (location === '/content' || location === '/content/new')) {
-      // refetchQueries форсирует запрос независимо от staleTime.
-      // Раньше здесь было два вызова — со вторым ключом `selectedCampaignId || ""`.
-      // Внутри этого if selectedCampaignId заведомо непустой, поэтому ключи
-      // совпадали и один и тот же запрос на ~2 МБ уходил дважды подряд.
-      queryClient.refetchQueries({ queryKey: ["/api/campaign-content", selectedCampaignId] });
+    if (selectedCampaignId && selectedCampaignId !== 'loading' && selectedCampaignId !== 'empty') {
       queryClient.invalidateQueries({ queryKey: ["/api/keywords", selectedCampaignId] });
       // Поднятый лимит не тащим в другую кампанию: там он мог бы вытянуть
       // всё разом без спроса. Каждая кампания начинает с обычной порции.
       setContentLimit(CONTENT_PAGE_SIZE);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedCampaignId, location]); // location нужен чтобы перечитывать при навигации на страницу
+  }, [selectedCampaignId]); // только смена кампании, не навигация на маршрут
 
   // Запрос списка кампаний. Общий с CampaignSelector в топбаре — раньше у них
   // были разные ключи (['/api/campaigns'] против ['/api/campaigns', userId]),

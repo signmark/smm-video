@@ -1,5 +1,6 @@
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useCampaignDetail, campaignDetailKey } from "@/hooks/use-campaigns";
 import { Card, CardContent } from "@/components/ui/card";
 import { KeywordSelector } from "@/components/KeywordSelector";
 import { api as apiClient } from "@/lib/api-client";
@@ -72,9 +73,11 @@ export default function CampaignDetails() {
 
   // Feature flag: стиль доступен только для signmark@gmail.com
   const userId = user?.user?.id || user?.id;
-  const token = localStorage.getItem('auth_token');
   const { data: userProfile } = useQuery<{ email: string }>({
-    queryKey: ['/api/user/profile', userId || 'me', token],
+    // Ключ совпадает с content/index.tsx (`['/api/user/profile', userId || 'me']`);
+    // token в ключе был лишним дискриминатором и не давал профилю схлопнуться
+    // в один запрос (task #81/C).
+    queryKey: ['/api/user/profile', userId || 'me'],
     enabled: !!userId,
   });
   const isStyleFeatureEnabled = userProfile?.email === 'signmark@gmail.com';
@@ -151,34 +154,20 @@ export default function CampaignDetails() {
     staleTime: 1 * 60 * 1000,
   });
 
-  const { data: campaignResponse, isLoading } = useQuery({
-    queryKey: ["/api/proxy/campaign", id],
-    queryFn: async () => {
-      if (!id) throw new Error("Campaign ID is required");
-
-      try {
-        return await apiClient.campaigns.get(id);
-      } catch (err: any) {
-        console.error("Error fetching campaign:", err);
-        const errorMessage = err.message || "Кампания не найдена или у вас нет прав доступа к ней";
-        throw new Error(errorMessage);
-      }
-    },
-    enabled: !!id,
-    staleTime: 30 * 1000,  // 30 секунд — обновляемся чаще
-    refetchOnWindowFocus: true,
-    refetchOnMount: true,
-    retry: false,
-  });
+  // Карточка кампании — общий запрос с useCampaignDetail (тот же campaignDetailKey
+  // и тот же queryFn). Раньше был свой ключ ['/api/proxy/campaign', id] и свой
+  // apiClient.campaigns.get, из-за чего один URL ехал двумя запросами под двумя
+  // ключами (task #81). Теперь campaignResponse — уже развёрнутый объект кампании.
+  const { data: campaignResponse, isLoading } = useCampaignDetail(id);
 
   useEffect(() => {
-    const data = campaignResponse?.data;
+    const data = campaignResponse;
     if (data && data.id && data.name) {
       setSelectedCampaign(data.id, data.name);
     }
   }, [campaignResponse, setSelectedCampaign]);
 
-  const campaign = campaignResponse?.data;
+  const campaign = campaignResponse;
 
   const { mutate: updateCampaign } = useMutation({
     mutationFn: async (values: { name?: string; link?: string }) => {
@@ -189,7 +178,7 @@ export default function CampaignDetails() {
       await apiClient.campaigns.update(id, values);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/proxy/campaign", id] });
+      queryClient.invalidateQueries({ queryKey: campaignDetailKey(id) });
       if (!silentUpdate) {
         toast({
           title: "Успешно",
@@ -1098,7 +1087,7 @@ export default function CampaignDetails() {
                 initialSettings={campaign?.trend_analysis_settings}
                 onSettingsUpdated={() => {
                   queryClient.invalidateQueries({
-                    queryKey: ["/api/proxy/campaign", id],
+                    queryKey: campaignDetailKey(id),
                   });
                 }}
               />
@@ -1154,10 +1143,10 @@ export default function CampaignDetails() {
                 onSettingsUpdated={() => {
                   // Принудительный рефetch — invalidateQueries + refetchQueries
                   queryClient.invalidateQueries({
-                    queryKey: ["/api/proxy/campaign", id],
+                    queryKey: campaignDetailKey(id),
                   });
                   queryClient.refetchQueries({
-                    queryKey: ["/api/proxy/campaign", id],
+                    queryKey: campaignDetailKey(id),
                   });
                 }}
               />
@@ -1212,7 +1201,7 @@ export default function CampaignDetails() {
                   initialStyle={(campaign as any)?.content_style}
                   onStyleUpdated={() => {
                     queryClient.invalidateQueries({
-                      queryKey: ["/api/proxy/campaign", id],
+                      queryKey: campaignDetailKey(id),
                     });
                   }}
                 />
@@ -1297,7 +1286,7 @@ export default function CampaignDetails() {
               initialSettings={(campaign as any)?.autonomous_settings}
               onSettingsUpdated={() => {
                 queryClient.invalidateQueries({
-                  queryKey: ["/api/proxy/campaign", id],
+                  queryKey: campaignDetailKey(id),
                 });
               }}
             />

@@ -21,7 +21,7 @@
     "check:legacy": "tsc -p tsconfig.json",
     "test": "vitest",
     "test:run": "vitest run",
-    "test:dates:msk": "TZ=Europe/Moscow vitest run client/src/lib/__tests__/server-date.test.ts client/src/lib/__tests__/display-timezone.test.ts client/src/lib/__tests__/publication-day.test.ts client/src/lib/__tests__/posts-page-day-boundaries.test.ts client/src/lib/__tests__/scheduled-classification.test.ts",
+    "test:dates:msk": "TZ=Europe/Moscow vitest run client/src/lib/__tests__/server-date.test.ts client/src/lib/__tests__/display-timezone.test.ts client/src/lib/__tests__/publication-day.test.ts client/src/lib/__tests__/posts-page-day-boundaries.test.ts client/src/lib/__tests__/scheduled-classification.test.ts client/src/lib/__tests__/schedule-timezone.test.ts",
     "test:run:unit": "vitest run --exclude=**/auth_flow.test.ts --exclude=**/api_routes_new.test.ts --exclude=**/STORY_FLOW.test.ts --exclude=**/BUSINESS_SURVEY_REAL.test.ts --exclude=**/GEMINI_FINAL_CHECK.test.ts",
     "test:coverage:vitest": "vitest run --coverage --exclude=**/auth_flow.test.ts --exclude=**/api_routes_new.test.ts --exclude=**/STORY_FLOW.test.ts --exclude=**/BUSINESS_SURVEY_REAL.test.ts --exclude=**/GEMINI_FINAL_CHECK.test.ts",
     "test:jest": "NODE_ENV=test jest",

@@ -10,6 +10,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query';
 import { useUserProfile, profileQueryKey } from '@/hooks/use-user-profile';
+import { usePricingEntryProfileRefresh } from '@/hooks/use-pricing-entry';
 import { useAuthStore } from '@/lib/store';
 import { getQueryFn } from '@/lib/queryClient';
 
@@ -166,5 +167,46 @@ describe('task #84: изоляция при смене аккаунта', () => 
     // Ключ user-2 закэширован; старый ключ user-1 продолжает жить в кэше (gcTime),
     // но ни один observer его больше не читает.
     expect(qc.getQueryData(profileQueryKey('user-2'))).toBeDefined();
+  });
+});
+
+describe('task #84: logout/clear + новый сеанс (граница forceLogout)', () => {
+  it('logout clear стирает старые данные, новая сессия — ровно один новый fetch', async () => {
+    mockFetch({ id: 'u1', email: 'u1@x.c', plan: 'basic', first_name: '', last_name: '', is_smm_admin: false });
+    const qc = makeQC();
+    const { result } = renderHook(() => useUserProfile(), { wrapper: wrapper(qc) });
+    await waitFor(() => expect(result.current.data?.email).toBe('u1@x.c'));
+    expect(fetchCount).toBe(1);
+
+    // Граница logout: queryClient.clear() (то же, что forceLogout) + сброс auth.
+    act(() => { qc.clear(); useAuthStore.getState().clearAuth(); });
+
+    // Новый сеанс того же/нового пользователя.
+    profilePayload = { id: 'u2', email: 'u2@x.c', plan: 'pro', first_name: '', last_name: '', is_smm_admin: false };
+    act(() => { setUser('user-2'); });
+
+    // Ровно один новый fetch, старый email/plan не рендерится.
+    await waitFor(() => expect(result.current.data?.email).toBe('u2@x.c'));
+    expect(result.current.data?.email).not.toBe('u1@x.c');
+    expect(fetchCount).toBe(2);
+  });
+});
+
+describe('task #84: вход на pricing дергает canonical refetch', () => {
+  it('usePricingEntryProfileRefresh → один canonical вызов, другой наблюдатель видит обновление', async () => {
+    mockFetch({ id: 'u1', email: 'a@b.c', plan: 'basic', first_name: '', last_name: '', is_smm_admin: false });
+    const qc = makeQC();
+    const a = renderHook(() => useUserProfile(), { wrapper: wrapper(qc) });
+    await waitFor(() => expect(a.result.current.data?.plan).toBe('basic'));
+    expect(fetchCount).toBe(1);
+
+    profilePayload = { id: 'u1', email: 'a@b.c', plan: 'enterprise', first_name: '', last_name: '', is_smm_admin: false };
+
+    // Вход на pricing монтирует границу refresh.
+    renderHook(() => usePricingEntryProfileRefresh(), { wrapper: wrapper(qc) });
+
+    await waitFor(() => expect(a.result.current.data?.plan).toBe('enterprise'));
+    // Монтирование pricing-границы + её canonical refetch = ровно один новый вызов.
+    expect(fetchCount).toBe(2);
   });
 });

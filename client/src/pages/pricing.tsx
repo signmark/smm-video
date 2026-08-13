@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useUserProfile } from '@/hooks/use-user-profile';
+import { usePricingEntryProfileRefresh } from '@/hooks/use-pricing-entry';
 import { Check, X, Zap, BarChart3, Globe2, Bot, ArrowRight, Star, Shield, Clock, CreditCard, Send, Loader2, CheckCircle, Tag, XCircle, Crown } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { SiInstagram, SiYoutube, SiTelegram, SiVk, SiFacebook, SiThreads } from 'react-icons/si';
@@ -159,9 +160,11 @@ export default function PricingPage() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   // Профиль (plan/expire_date) — единый каноник useUserProfile (task #84), а не
   // императивный fetch. refetch() при входе на тарифную панель даёт свежий тариф.
-  const { data: userProfile, refetch: refetchProfile } = useUserProfile();
+  const { data: userProfile } = useUserProfile();
   const userPlan = userProfile?.plan ?? null;
   const expireDate = userProfile?.expire_date ?? null;
+  // Вход на тарифную панель → перечит профиль (внешнее одобрение тарифа).
+  usePricingEntryProfileRefresh();
   const [plans, setPlans] = useState(PLANS);
   const [selectedPlan, setSelectedPlan] = useState<typeof PLANS[0] | null>(null);
   const [modalState, setModalState] = useState<ModalState>('idle');
@@ -202,12 +205,6 @@ export default function PricingPage() {
     const authenticated = !!(token && userId);
     setIsAuthenticated(authenticated);
 
-    // Свежий тариф при входе на панель: явный refetch каноничного профиля
-    // (внешнее одобрение могло прийти из Telegram/письма).
-    if (authenticated) {
-      refetchProfile();
-    }
-
     fetch('/api/payments/available')
       .then(r => r.json())
       .then(d => setYookassaAvailable(!!d.available))
@@ -225,7 +222,7 @@ export default function PricingPage() {
         }));
       })
       .catch(() => {});
-  }, [refetchProfile]);
+  }, []);
 
   // Уровень текущего тарифа пользователя (null = не авторизован)
   // trial(0) и free(−1) — показываем все тарифы

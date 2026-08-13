@@ -4,8 +4,8 @@
  * Контракт:
  *   1. failed/red markers идут первыми, затем non-failed;
  *   2. стабильный порядок внутри групп;
- *   3. cap=4 (в `calendar-day-dots.test.tsx` — это контракт компонента);
- *   4. +N считает весь overflow;
+ *   3. в ряду 4 места (в `calendar-day-dots.test.tsx` — контракт компонента);
+ *   4. +N считает весь overflow, включая точку, чьё место занял счётчик;
  *   5. в `PublicationCalendar` сначала status-priority sort и затем общий
  *      dots component; в `posts` screen — failed-first для отдельного списка;
  *   6. red-before на каждом call-site;
@@ -126,15 +126,17 @@ describe('SM-22 follow-up: failed first в общем компоненте (pari
     expect(first.className).toContain('bg-red-500');
   });
 
-  it('cap=4 / +N: 5 → 4 видимых +1, 4 → 4 без overflow', () => {
+  it('мест в ряду 4: 5 → 3 видимых +2, 4 → 4 без overflow', () => {
     // Cleanup DOM между assertions — RTL render не unmount автоматически.
+    // SM-22: счётчик занимает одно из четырёх мест ряда, а не появляется сверх
+    // них — иначе он не влезает в 36px ячейки и переносом растягивает день.
     const dots5: CalendarDayDot[] = Array.from({ length: 5 }, (_, i) => ({
       key: `p-${i}`,
       color: 'bg-blue-500',
     }));
     const { unmount: u5 } = render(<CalendarDayDots dots={dots5} />);
-    expect(screen.getAllByTestId('calendar-day-dot')).toHaveLength(4);
-    expect(screen.getByTestId('calendar-day-dots-overflow').textContent).toBe('+1');
+    expect(screen.getAllByTestId('calendar-day-dot')).toHaveLength(3);
+    expect(screen.getByTestId('calendar-day-dots-overflow').textContent).toBe('+2');
     u5();
 
     const dots4: CalendarDayDot[] = Array.from({ length: 4 }, (_, i) => ({

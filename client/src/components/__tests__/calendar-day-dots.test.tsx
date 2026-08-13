@@ -39,10 +39,13 @@ const readSource = (relative: string) =>
   fs.readFileSync(path.resolve(__dirname, '../../../..', relative), 'utf-8');
 
 describe('SM-22: маркеры дня ограничены четырьмя', () => {
-  it('день с 17 публикациями даёт ровно 4 точки и индикатор +13', () => {
+  it('день с 17 публикациями даёт три точки и индикатор +14', () => {
+    // SM-22 регрессия центрирования: мест в ряду четыре, и счётчик занимает
+    // одно из них. Раньше он рисовался сверх четырёх точек, не влезал в 36px
+    // и переносом на вторую строку растягивал ячейку дня.
     renderDots(makeDots(17));
-    expect(screen.getAllByTestId('calendar-day-dot')).toHaveLength(4);
-    expect(screen.getByTestId('calendar-day-dots-overflow').textContent).toBe('+13');
+    expect(screen.getAllByTestId('calendar-day-dot')).toHaveLength(MAX_VISIBLE_DOTS - 1);
+    expect(screen.getByTestId('calendar-day-dots-overflow').textContent).toBe('+14');
   });
 
   it('день с 3 публикациями даёт три точки и не даёт индикатора', () => {
@@ -76,12 +79,12 @@ describe('SM-22: маркеры дня ограничены четырьмя', (
       { key: 'failed-2', color: 'bg-red-500' },
       { key: 'failed-3', color: 'bg-red-500' },
     ]);
-    expect(screen.getAllByTestId('calendar-day-dot')).toHaveLength(4);
-    expect(screen.getByTestId('calendar-day-dots-overflow').textContent).toBe('+2');
+    expect(screen.getAllByTestId('calendar-day-dot')).toHaveLength(MAX_VISIBLE_DOTS - 1);
+    expect(screen.getByTestId('calendar-day-dots-overflow').textContent).toBe('+3');
   });
 
   it('splitDayDots считает остаток без рендера', () => {
-    expect(splitDayDots(makeDots(17)).remaining).toBe(13);
+    expect(splitDayDots(makeDots(17)).remaining).toBe(14);
     expect(splitDayDots(makeDots(4)).remaining).toBe(0);
     expect(splitDayDots(makeDots(1)).visible).toHaveLength(1);
   });

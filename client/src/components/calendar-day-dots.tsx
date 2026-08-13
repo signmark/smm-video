@@ -32,7 +32,13 @@ export function splitDayDots(dots: CalendarDayDot[]): {
   visible: CalendarDayDot[];
   remaining: number;
 } {
-  const visible = dots.slice(0, MAX_VISIBLE_DOTS);
+  // Мест в ряду ровно MAX_VISIBLE_DOTS, и счётчик занимает одно из них, а не
+  // появляется сверх. Иначе ряд шире ячейки: четыре точки — уже 30px из 36, и
+  // счётчик уезжает на вторую строку, растягивая день по высоте (SM-22).
+  if (dots.length <= MAX_VISIBLE_DOTS) {
+    return { visible: dots, remaining: 0 };
+  }
+  const visible = dots.slice(0, MAX_VISIBLE_DOTS - 1);
   return { visible, remaining: dots.length - visible.length };
 }
 
@@ -76,7 +82,10 @@ export function CalendarDayDots({ dots }: { dots: CalendarDayDot[] }) {
 
   return (
     <div
-      className="flex justify-center flex-wrap gap-0.5 mt-0.5 overflow-hidden max-w-full"
+      // flex-nowrap и фиксированная высота — часть контракта: ряд маркеров
+      // всегда ровно одна строка одной и той же высоты, независимо от того,
+      // один там маркер или четыре со счётчиком.
+      className="flex flex-nowrap items-center justify-center gap-0.5 mt-0.5 h-2 overflow-hidden max-w-full"
       data-testid="calendar-day-dots"
     >
       {visible.map((dot) => (
@@ -91,7 +100,7 @@ export function CalendarDayDots({ dots }: { dots: CalendarDayDot[] }) {
       {remaining > 0 && (
         <span
           data-testid="calendar-day-dots-overflow"
-          className="text-[9px] leading-none text-muted-foreground font-medium"
+          className="text-[9px] leading-none text-muted-foreground font-medium flex-shrink-0"
         >
           +{remaining}
         </span>

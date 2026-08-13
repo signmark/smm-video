@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select";
 import { Loader2, Image, RefreshCw, Sparkles, Pencil } from "lucide-react";
 import { api } from "@/lib/api";
+import { GeneratedImagesPreview } from "@/components/GeneratedImagesPreview";
 import { SUPPORTED_STYLES, STYLE_DESCRIPTIONS, ASPECT_RATIOS } from "../../../shared/fal-ai-styles";
 
 /**
@@ -1030,26 +1031,11 @@ export function ImageGenerationDialog({
       {generatedImages.length > 0 && (
         <div className="mt-4 space-y-4">
           <h3 className="text-base font-semibold">Сгенерированные изображения</h3>
-          <div className={`grid ${generatedImages.length > 2 ? 'grid-cols-3' : 'grid-cols-2'} gap-2 generated-images-grid`}>
-            {generatedImages.map((imageUrl, index) => (
-              <div 
-                key={index}
-                className={`relative rounded-md overflow-hidden border-2 cursor-pointer ${selectedImageIndex === index ? 'border-primary' : 'border-transparent'}`}
-                onClick={() => handleSelectImage(index)}
-              >
-                <div className="w-full aspect-square bg-gray-100 flex items-center justify-center relative">
-                  <img 
-                    src={imageUrl} 
-                    alt={`Изображение ${index + 1}`} 
-                    className="w-full h-auto object-cover aspect-square"
-                    crossOrigin="anonymous"
-                    referrerPolicy="no-referrer"
-                    loading="lazy"
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
+          <GeneratedImagesPreview
+            images={generatedImages}
+            selectedIndex={selectedImageIndex}
+            onSelect={handleSelectImage}
+          />
           
           <div className="flex justify-between mt-2">
             <Button variant="outline" size="sm" onClick={() => generateImage()}>

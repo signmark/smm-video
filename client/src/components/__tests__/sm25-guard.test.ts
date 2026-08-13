@@ -17,6 +17,7 @@ import { resolve } from 'node:path';
  * Тот же приём уже применяется в `telegram-transport-coverage.test.ts`.
  */
 const PAGE = resolve(__dirname, '../../pages/content/index.tsx');
+const PANEL = resolve(__dirname, '../ContentGenerationPanel.tsx');
 
 /**
  * Комментарии выкусываются целыми строками. Иначе сторож считает упоминание
@@ -62,6 +63,38 @@ describe('SM-25: запрос переживает генерацию', () => {
       const tail = code.slice(from, from + 400);
       expect(tail).not.toMatch(/setAiPromptText\(\s*(''|"")\s*\)/);
       from = code.indexOf(PANEL_CLOSE, from + 1);
+    }
+  });
+});
+
+/**
+ * Вторая точка того же дефекта. Панель генерации в карточке кампании держит
+ * свой prompt, и там очистка тоже стояла на успехе генерации. Без этого блока
+ * возврат setPrompt("") в onSuccess проходит мимо сторожа: тестов на панель
+ * нет вовсе, а поднимать её целиком — те же моки и та же гниль, что описаны
+ * выше.
+ */
+describe('SM-25: запрос переживает генерацию в панели кампании', () => {
+  const code = stripCommentLines(readFileSync(PANEL, 'utf8'));
+  const CLEAR = /setPrompt\(\s*(''|"")\s*\)/g;
+
+  it('поле запроса очищается ровно в одном месте', () => {
+    expect(code.match(CLEAR) ?? []).toHaveLength(1);
+  });
+
+  it('очистка живёт только в сбросе на смену кампании, а не в успехе мутации', () => {
+    const hits = [...code.matchAll(CLEAR)];
+    expect(hits.length).toBeGreaterThan(0);
+
+    for (const hit of hits) {
+      const at = hit.index ?? -1;
+      const before = code.slice(0, at);
+      const effect = before.lastIndexOf('useEffect(');
+      const success = before.lastIndexOf('onSuccess');
+
+      expect(effect).toBeGreaterThan(-1);
+      expect(effect).toBeGreaterThan(success);
+      expect(code.slice(at, at + 400)).toMatch(/\}, \[campaignId\]\)/);
     }
   });
 });

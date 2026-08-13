@@ -1,24 +1,36 @@
 /**
  * task #81: сценарные регрессии (критерии 4 и 5 из handoff #80).
  *
- * Критерий 4 — свежесть после мутации: правка B убрала форс refetch на входе
- * в маршрут; свежесть должна обеспечиваться инвалидациями, которые уже есть у
- * каждой мутации. Здесь доказываем, что scoped `invalidateQueries` по
- * campaign-content приводит к re-fetch именно этой кампании, а не требуе
- * route-entry форс.
+ * Критерий 5 — изоляция аккаунтов на двух уровнях:
+ *   - внутри сессии: key-фабрики списка/детали кампании и профиля несут
+ *     userId/campaignId, поэтому кэш двух tenant не склеивается;
+ *   - между сессиями: смена учётной записи фиксируется `isSameSession` (по
+ *     userId + sessionId) и приводит к `queryClient.clear()` — старый кэш
+ *     не переживает вход другого аккаунта.
  *
- * Критерий 5 — изоляция двух аккаунтов: key-фабрики кампаний/профиля несут
- * userId/campaignId, поэтому кэш двух tenant не склеивается.
+ * Критерий 4 — свежесть после мутации: правка B сняла route-entry форс;
+ * свежесть держится на scoped invalidateQueries, который каждая мутация уже
+ * вызывает. Доказываем, что scoped invalidation помечает устаревшим только
+ * целевую кампанию и что реальный хелпер `updateContentCachesAfterMoveToDraft`
+ * пишет по тому же scoped ключу.
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { QueryClient } from '@tanstack/react-query';
 import { campaignsListKey, campaignDetailKey } from '@/hooks/use-campaigns';
+import { updateContentCachesAfterMoveToDraft } from '@/lib/content-cache-updates';
+import { getSessionSnapshot, isSameSession, rotateSessionId } from '@/lib/sessionCoordinator';
+
+const SESSION_ID_KEY = 'auth_session_id';
 
 beforeEach(() => {
-  vi.restoreAllMocks();
+  localStorage.clear();
 });
 
-describe('task #81: изоляция кэша по tenant (критерий 5)', () => {
+afterEach(() => {
+  localStorage.clear();
+});
+
+describe('task #81: изоляция кэша по tenant внутри сессии (критерий 5)', () => {
   it('список кампаний двух пользователей — разные ключи', () => {
     expect(campaignsListKey('user-1')).toEqual(['/api/campaigns', 'user-1']);
     expect(campaignsListKey('user-2')).toEqual(['/api/campaigns', 'user-2']);
@@ -31,36 +43,46 @@ describe('task #81: изоляция кэша по tenant (критерий 5)',
     expect(campaignDetailKey('camp-a')).not.toEqual(campaignDetailKey('camp-b'));
   });
 
-  it('на разных ключах QueryClient хранит разные записи', () => {
+  it('на разных ключах QueryClient хранит разные записи без затирания', () => {
     const qc = new QueryClient();
     qc.setQueryData(campaignsListKey('user-1'), { data: [{ id: 'a-of-u1' }] });
     qc.setQueryData(campaignsListKey('user-2'), { data: [{ id: 'a-of-u2' }] });
 
     expect(qc.getQueryData(campaignsListKey('user-1'))).toEqual({ data: [{ id: 'a-of-u1' }] });
     expect(qc.getQueryData(campaignsListKey('user-2'))).toEqual({ data: [{ id: 'a-of-u2' }] });
-    // Запись user-2 не затирает user-1.
     expect(qc.getQueryData(campaignsListKey('user-1'))).toEqual({ data: [{ id: 'a-of-u1' }] });
   });
 });
 
-describe('task #81: свежесть после мутации без route-entry форса (критерий 4)', () => {
-  it('scoped invalidateQueries по campaign-content помечает запрос устаревшим → re-fetch', () => {
-    const qc = new QueryClient();
-    const contentKey = ['/api/campaign-content', 'camp-a'] as const;
+describe('task #81: изоляция при смене аккаунта (критерий 5)', () => {
+  it('isSameSession различает аккаунты по userId', () => {
+    localStorage.setItem('auth_token', 't1');
+    localStorage.setItem('user_id', 'user-1');
+    const sessionId = rotateSessionId();
 
-    // Сначала кладём данные в кэш под ключом (как после первичной загрузки).
-    qc.setQueryData(contentKey, [{ id: 'c1', status: 'draft' }]);
+    const snap = getSessionSnapshot();
+    expect(isSameSession(snap)).toBe(true);
 
-    // Мутация публикации делает scoped invalidate (тот же вызов, что в content/index.tsx).
-    qc.invalidateQueries({ queryKey: ['/api/campaign-content', 'camp-a'] });
-
-    const state = qc.getQueryState(contentKey);
-    // invalidateQueries помечает запрос stale/invalidated — после этого React Query
-    // при следующем mount/refetch подтянет свежее, не дожидаясь route-entry форса.
-    expect(state?.isInvalidated).toBe(true);
+    // Смена userId при том же token/sessionId — это другой аккаунт.
+    localStorage.setItem('user_id', 'user-2');
+    expect(isSameSession(snap)).toBe(false);
   });
 
-  it('scoped invalidate НЕ трогает другую кампанию', () => {
+  it('queryClient.clear() стирает кэш предыдущего аккаунта (граница forceLogout)', () => {
+    // forceLogout() в queryClient.ts делает ровно это: queryClient.clear() после
+    // logout. Проверяем сам факт, что clear убирает кэш старого tenant.
+    const qc = new QueryClient();
+    qc.setQueryData(campaignsListKey('user-1'), { data: [{ id: 'stale' }] });
+
+    // Граница смены сессии.
+    qc.clear();
+
+    expect(qc.getQueryData(campaignsListKey('user-1'))).toBeUndefined();
+  });
+});
+
+describe('task #81: свежесть после мутации (критерий 4)', () => {
+  it('scoped invalidateQueries помечает устаревшим только целевую кампанию', () => {
     const qc = new QueryClient();
     qc.setQueryData(['/api/campaign-content', 'camp-a'], [{ id: 'a' }]);
     qc.setQueryData(['/api/campaign-content', 'camp-b'], [{ id: 'b' }]);
@@ -69,5 +91,17 @@ describe('task #81: свежесть после мутации без route-entr
 
     expect(qc.getQueryState(['/api/campaign-content', 'camp-a'])?.isInvalidated).toBe(true);
     expect(qc.getQueryState(['/api/campaign-content', 'camp-b'])?.isInvalidated).toBeFalsy();
+  });
+
+  it('реальный хелпер moveToDraft пишет по тому же scoped ключу', () => {
+    const qc = new QueryClient();
+    qc.setQueryData(['/api/campaign-content', 'camp-a'], [
+      { id: '1', status: 'scheduled', scheduledAt: 'x', socialPlatforms: { tg: { status: 'pending' } } },
+    ]);
+
+    updateContentCachesAfterMoveToDraft(qc, 'camp-a', '1');
+
+    const list = qc.getQueryData(['/api/campaign-content', 'camp-a']) as any[];
+    expect(list[0].status).toBe('draft');
   });
 });

@@ -178,7 +178,9 @@ describe('task #84: logout/clear + новый сеанс (граница forceLo
     await waitFor(() => expect(result.current.data?.email).toBe('u1@x.c'));
     expect(fetchCount).toBe(1);
 
-    // Граница logout: queryClient.clear() (то же, что forceLogout) + сброс auth.
+    // Граница logout на ЛОКАЛЬНОМ тестовом QueryClient (не синглтоне):
+    // сброс кэша + сброс auth. Реальную синглтон-очистку проверяет
+    // task84-clear-boundaries.test.tsx (T1/T2/T3).
     act(() => { qc.clear(); useAuthStore.getState().clearAuth(); });
 
     // Новый сеанс того же/нового пользователя.
@@ -219,7 +221,7 @@ describe('task #84: повторный вход ТЕМ ЖЕ пользовате
     await waitFor(() => expect(result.current.data?.email).toBe('old@x.c'));
     expect(fetchCount).toBe(1);
 
-    // Реальная граница logout: queryClient.clear() (то же, что logout/forceLogout).
+    // Граница logout на ЛОКАЛЬНОМ тестовом QueryClient (не синглтоне).
     act(() => { qc.clear(); });
 
     // Новый сеанс — ТОТ ЖЕ user-1, но сервер отдал новый email/plan.

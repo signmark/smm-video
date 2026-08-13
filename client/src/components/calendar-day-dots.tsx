@@ -80,19 +80,26 @@ export function CalendarDayDots({ dots }: { dots: CalendarDayDot[] }) {
 
   const { visible, remaining } = splitDayDots(dots);
 
+  // Ячейка дня — 36px в ширину, и счётчик в неё сам по себе не помещается:
+  // три точки по 6px с зазорами 2px плюс «+2» девятым кеглем дают 37.28px, а
+  // «+14» (день с семнадцатью публикациями — ровно случай тестировщика) ещё
+  // шире. Поэтому ряд со счётчиком идёт тесной геометрией; дни без
+  // переполнения — а их подавляющее большинство — выглядят как раньше.
+  const tight = remaining > 0;
+
   return (
     <div
       // flex-nowrap и фиксированная высота — часть контракта: ряд маркеров
       // всегда ровно одна строка одной и той же высоты, независимо от того,
       // один там маркер или четыре со счётчиком.
-      className="flex flex-nowrap items-center justify-center gap-0.5 mt-0.5 h-2 overflow-hidden max-w-full"
+      className={`flex flex-nowrap items-center justify-center mt-0.5 h-2 overflow-hidden max-w-full ${tight ? 'gap-px' : 'gap-0.5'}`}
       data-testid="calendar-day-dots"
     >
       {visible.map((dot) => (
         <div
           key={dot.key}
           data-testid="calendar-day-dot"
-          className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${dot.color} ${dot.ring || ''}`}
+          className={`${tight ? 'h-1 w-1' : 'h-1.5 w-1.5'} rounded-full flex-shrink-0 ${dot.color} ${dot.ring || ''}`}
           style={dot.opacity ? { opacity: dot.opacity } : undefined}
           title={dot.title}
         />
@@ -100,7 +107,7 @@ export function CalendarDayDots({ dots }: { dots: CalendarDayDot[] }) {
       {remaining > 0 && (
         <span
           data-testid="calendar-day-dots-overflow"
-          className="text-[9px] leading-none text-muted-foreground font-medium flex-shrink-0"
+          className="text-[8px] leading-none text-muted-foreground font-medium flex-shrink-0"
         >
           +{remaining}
         </span>

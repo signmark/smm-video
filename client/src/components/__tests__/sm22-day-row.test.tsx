@@ -60,6 +60,24 @@ describe('SM-22: ряд маркеров дня не растягивает яч
     expect(screen.queryByTestId('calendar-day-dots-overflow')).toBeNull();
   });
 
+  it('ряд со счётчиком идёт тесной геометрией, иначе не влезает в ширину дня', () => {
+    // Замер в браузере: 3 точки по 6px + зазоры 2px + «+2» девятым кеглем =
+    // 37.28px при ячейке 36px; «+14» ещё шире. Тесная геометрия даёт 26.8 и
+    // 31.89px соответственно.
+    render(<CalendarDayDots dots={makeDots(17)} />);
+    const box = screen.getByTestId('calendar-day-dots');
+    expect(box.className).toContain('gap-px');
+    expect(box.className).not.toContain('gap-0.5');
+    expect(screen.getAllByTestId('calendar-day-dot')[0].className).toContain('h-1 w-1');
+    expect(screen.getByTestId('calendar-day-dots-overflow').className).toContain('text-[8px]');
+  });
+
+  it('день без счётчика сохраняет прежний размер точек и зазор', () => {
+    render(<CalendarDayDots dots={makeDots(MAX_VISIBLE_DOTS)} />);
+    expect(screen.getByTestId('calendar-day-dots').className).toContain('gap-0.5');
+    expect(screen.getAllByTestId('calendar-day-dot')[0].className).toContain('h-1.5 w-1.5');
+  });
+
   it('splitDayDots считает то же самое без рендера', () => {
     expect(splitDayDots(makeDots(4))).toEqual({ visible: makeDots(4), remaining: 0 });
     expect(splitDayDots(makeDots(17)).visible).toHaveLength(MAX_VISIBLE_DOTS - 1);

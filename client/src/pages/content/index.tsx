@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, createRef } from "react";
 import { formatDateWithTimezone, serverDate, serverDateOrNull, toDisplayDateKey } from '@/lib/date-utils';
+import { ScheduleTimezoneHint } from '@/components/ScheduleTimezoneHint';
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useTranslation } from "react-i18next";
@@ -3663,6 +3664,9 @@ export default function ContentPage() {
                       value={scheduleDate}
                       onChange={setScheduleDate}
                     />
+                    {scheduleDate && (
+                      <ScheduleTimezoneHint date={scheduleDate} />
+                    )}
                   </div>
                 </TabsContent>
               </Tabs>

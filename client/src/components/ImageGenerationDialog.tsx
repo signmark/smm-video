@@ -21,6 +21,14 @@ import {
 import { Loader2, Image, RefreshCw, Sparkles, Pencil } from "lucide-react";
 import { api } from "@/lib/api";
 import { GeneratedImagesPreview } from "@/components/GeneratedImagesPreview";
+import { ReferenceImagesField } from "@/components/ReferenceImagesField";
+import {
+  REFERENCE_MODEL_ID,
+  REFERENCE_MODEL_LABEL,
+  isReferenceMissing,
+  referencePayload,
+  supportsReference,
+} from "@/components/image-generation/reference-models";
 import { SUPPORTED_STYLES, STYLE_DESCRIPTIONS, ASPECT_RATIOS } from "../../../shared/fal-ai-styles";
 
 /**
@@ -72,11 +80,12 @@ const DEFAULT_MODELS = [
     name: '🍌⚡ NanoBanana Pro',
     description: 'Gemini 3 Pro Image - высочайшее качество ($0.15)'
   },
-  // NanoBanana Pro/Edit - редактирование изображений
+  // Генерация по образцу: единственная модель со входом для картинок-образцов.
+  // Прежнее имя «NanoBanana Pro/Edit» читалось как код, и возможность не находили.
   {
-    id: 'fal-ai/nano-banana-pro/edit',
-    name: '🍌✏️ NanoBanana Pro/Edit',
-    description: 'Редактирование изображений по промту ($0.15)'
+    id: REFERENCE_MODEL_ID,
+    name: `🍌🖼 ${REFERENCE_MODEL_LABEL}`,
+    description: 'Приложите одну или несколько картинок-образцов — модель повторит стиль или объект ($0.15)'
   },
   // GPT-Image-2 через FAL.AI (не требует верификации организации)
   {
@@ -160,12 +169,13 @@ export function ImageGenerationDialog({
   const [generatedPrompt, setGeneratedPrompt] = useState<string>(""); // Сохраняем сгенерированный промт
   const [savePrompt, setSavePrompt] = useState<boolean>(true); // Флаг для сохранения промта в БД
   const [availableModels, setAvailableModels] = useState<{id: string, name: string, description: string, type?: string}[]>([]); // Список моделей с сервера
-  const [sourceImageUrl, setSourceImageUrl] = useState<string>(""); // URL исходного изображения для редактирования
-  const [sourceImagePreview, setSourceImagePreview] = useState<string>(""); // Превью загруженного изображения
+  // Образцы для генерации по образцу. Их может быть несколько: сервер принимает
+  // список (`imageUrls`), и раньше интерфейс отдавал ровно одну ссылку.
+  const [sourceImageUrls, setSourceImageUrls] = useState<string[]>([]);
   const [gptImageQuality, setGptImageQuality] = useState<'low' | 'medium' | 'high'>('medium'); // Качество для GPT-Image-1
   
-  // Проверяем, является ли выбранная модель edit-моделью
-  const isEditModel = modelType === 'fal-ai/nano-banana-pro/edit';
+  // Поддерживает ли выбранная модель генерацию по образцу.
+  const isEditModel = supportsReference(modelType);
   const isGptImageModel = modelType === 'openai/gpt-image-2' || modelType === 'gpt-image-2' || modelType === 'openai/gpt-image-1' || modelType === 'gpt-image-1';
   
   // При монтировании компонента и при изменении входных параметров сбрасываем и инициализируем значения
@@ -492,7 +502,7 @@ export function ImageGenerationDialog({
           numImages: numImages,
           stylePreset,
           savePrompt: false,
-          ...(isEditModel && sourceImageUrl ? { imageUrls: [sourceImageUrl] } : {}),
+          ...referencePayload(modelType, sourceImageUrls),
           ...(isGptImageModel ? { quality: gptImageQuality } : {})
         };
         
@@ -520,7 +530,8 @@ export function ImageGenerationDialog({
             modelName: modelType,
             stylePreset,
             numImages,
-            savePrompt: false
+            savePrompt: false,
+            ...referencePayload(modelType, sourceImageUrls),
           };
         } else {
           try {
@@ -804,73 +815,11 @@ export function ImageGenerationDialog({
         </div>
       )}
 
-      {isEditModel && (
-        <div className={`mb-3 p-3 border rounded-lg transition-colors ${!sourceImageUrl ? 'border-destructive/50 bg-destructive/5' : 'bg-muted/30'}`}>
-          <Label className="text-sm font-medium mb-2 block">
-            📷 Исходное изображение для редактирования <span className="text-destructive">*</span>
-          </Label>
-          <div className="flex gap-2 items-start">
-            <div className="flex-1">
-              <Input
-                type="url"
-                value={sourceImageUrl}
-                onChange={(e) => {
-                  setSourceImageUrl(e.target.value);
-                  setSourceImagePreview(e.target.value);
-                }}
-                placeholder="Вставьте URL изображения или загрузите файл..."
-                className="h-9"
-              />
-              <div className="flex gap-2 mt-2">
-                <label className="cursor-pointer">
-                  <input
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={async (e) => {
-                      const file = e.target.files?.[0];
-                      if (file) {
-                        const reader = new FileReader();
-                        reader.onload = (event) => {
-                          const base64 = event.target?.result as string;
-                          setSourceImageUrl(base64);
-                          setSourceImagePreview(base64);
-                        };
-                        reader.readAsDataURL(file);
-                      }
-                    }}
-                  />
-                  <span className="inline-flex items-center px-3 py-1.5 text-xs bg-primary text-primary-foreground rounded-md hover:bg-primary/90 transition-colors">
-                    📁 Загрузить файл
-                  </span>
-                </label>
-                {sourceImageUrl && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSourceImageUrl("");
-                      setSourceImagePreview("");
-                    }}
-                    className="px-3 py-1.5 text-xs bg-destructive text-destructive-foreground rounded-md hover:bg-destructive/90"
-                  >
-                    ✕ Очистить
-                  </button>
-                )}
-              </div>
-            </div>
-            {sourceImagePreview && (
-              <div className="w-20 h-20 rounded-md overflow-hidden border bg-muted flex-shrink-0">
-                <img
-                  src={sourceImagePreview}
-                  alt="Preview"
-                  className="w-full h-full object-cover"
-                  onError={() => setSourceImagePreview("")}
-                />
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      <ReferenceImagesField
+        modelId={modelType}
+        urls={sourceImageUrls}
+        onChange={setSourceImageUrls}
+      />
 
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value)} className="w-full">
         <TabsList className="grid grid-cols-2 mb-2">
@@ -1015,14 +964,14 @@ export function ImageGenerationDialog({
         </TabsContent>
       </Tabs>
       
-      {isEditModel && !sourceImageUrl && (
+      {isReferenceMissing(modelType, sourceImageUrls) && (
         <p className="text-xs text-destructive mt-3 text-center">
-          ⚠️ Загрузите исходное изображение для редактирования
+          ⚠️ Приложите хотя бы один образец для генерации
         </p>
       )}
       <Button 
         onClick={() => generateImage()} 
-        disabled={isLoading || (isEditModel && !sourceImageUrl) || (activeTab === "prompt" && !prompt) || (activeTab === "text" && (!generatedPrompt || !content))}
+        disabled={isLoading || isReferenceMissing(modelType, sourceImageUrls) || (activeTab === "prompt" && !prompt) || (activeTab === "text" && (!generatedPrompt || !content))}
         className="w-full mt-2"
       >
         {isLoading ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Генерация...</> : <><Sparkles className="mr-2 h-4 w-4" />Сгенерировать изображение</>}

@@ -577,19 +577,14 @@ export default function ContentPage() {
     }
   }, [location, selectedCampaignId, navigate]);
 
-  // Force refetch data when the selected CAMPAIGN changes (not on every route
-  // entry — that re-downloaded the whole content list on each return).
-  // The `location` guard is dropped: keeping it re-triggered the fetch on plain
-  // navigation to /content, which is exactly the 79KB re-download the perf
-  // task eliminates. Mutations invalidate the query themselves, so freshness
-  // after publish/edit/delete does not depend on this route-entry effect.
+  // Сброс состояния при СМЕНЕ кампании. Принудительного refetch здесь нет:
+  // основной запрос клиентского списка имеет refetchOnMount:false + staleTime
+  // 10с, поэтому возврат на маршрут в пределах gcTime (30 мин) обслуживается из
+  // кэша без повторной загрузки (~80 КБ на списке). Свежесть после мутаций
+  // держат scoped invalidateQueries (критерий 4), а смена кампании меняет
+  // selectedCampaignId в queryKey — это уже новый запрос.
   useEffect(() => {
     if (selectedCampaignId && selectedCampaignId !== 'loading' && selectedCampaignId !== 'empty') {
-      // refetchQueries форсирует запрос независимо от staleTime.
-      // Раньше здесь было два вызова — со вторым ключом `selectedCampaignId || ""`.
-      // Внутри этого if selectedCampaignId заведомо непустой, поэтому ключи
-      // совпадали и один и тот же запрос на ~2 МБ уходил дважды подряд.
-      queryClient.refetchQueries({ queryKey: ["/api/campaign-content", selectedCampaignId] });
       queryClient.invalidateQueries({ queryKey: ["/api/keywords", selectedCampaignId] });
       // Поднятый лимит не тащим в другую кампанию: там он мог бы вытянуть
       // всё разом без спроса. Каждая кампания начинает с обычной порции.

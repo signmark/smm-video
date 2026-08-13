@@ -1,12 +1,12 @@
 # merge-guard.sh — merge push guard (staged migration)
 
-**Status: Phase A in review. NOT yet wired into the canonical merge path.**
+**Status: Phase A merged; host integration installed and pending independent
+verification (task #59).**
 
-This document is the integration contract for `scripts/merge-guard.sh`. Until the
-host-integration subtask lands (point 3), the guard is a repo-contained,
-reviewed script with executable tests but is **not** yet a required step in the
-production merge workflow. Treat "run merge-guard.sh before push" as a
-still-open migration note, not a current obligation.
+This document is the integration contract for `scripts/merge-guard.sh`. The host
+side is described in section 3; until its independent verification is recorded,
+treat the canonical two-step flow as the intended path rather than a settled
+obligation.
 
 ## 1. Why
 
@@ -42,20 +42,36 @@ On pass it performs the single plain `git push origin HEAD:main`. There is no
 there is no operator step, so a concurrent main advance surfaces as a normal
 non-fast-forward rejection.
 
-## 3. Integration contract (host-integration subtask, not yet done)
+## 3. Integration contract (host, two steps)
 
-To close task #55, a follow-up host-integration step (owner: infra/Tech Lead)
-must:
+The canonical flow is **two steps, not one**. A green gate is a statement about
+the tree, not permission to merge: the reviewer verdict and the merge GO sit
+between them, and that gap is deliberate. What the integration removes is a
+different gap — assembling SHAs by hand and typing `git push`.
 
-1. install the **reviewed exact version** of `merge-guard.sh` (checksum-pinned
-   against the reviewed repository SHA) into the canonical merge host;
-2. make the canonical gate invoke the trusted wrapper as its final push step —
-   the wrapper itself performs the one `git push`; there is **no manual push gap**
-   after it in the normal workflow;
-3. verify checksum/version match to the reviewed repository SHA.
+1. install the **reviewed exact version** of `merge-guard.sh` into the canonical
+   merge host, checksum-pinned against the reviewed repository SHA. The checksum
+   is computed from `git show <reviewed SHA>:scripts/merge-guard.sh`, never from
+   a local copy;
+2. a **green** gate emits an immutable receipt (root-owned, mode 0400) carrying
+   the gated main, the candidate, the gate tree, the gate merge SHA, the guard
+   checksum and the reviewed SHA it came from, plus a safe printed invocation
+   quoting the receipt path. A red gate emits no receipt. The gate neither merges
+   nor pushes;
+3. after the review verdict and the merge GO, the executor runs the canonical
+   approved-merge entrypoint with the receipt path and an explicit author and
+   committer. It validates receipt ownership, mode, schema and checksum, matches
+   the installed guard against both the receipt and the reviewed repository
+   source, requires fresh `origin/main` to equal the gated main, builds the merge
+   with the identity given on the command line, checks the tree, and then hands
+   over to the guard — which performs the **sole** push. Nothing is `eval`-ed or
+   copy-pasted out of the receipt, and there is no manual push gap after
+   validation.
 
-Scope limitation recorded honestly: a repository-side wrapper can still be
-bypassed by a raw `git push`. Full non-bypass requires server-side branch
+Scope limitation recorded honestly: the receipt checksum detects accidental
+corruption and careless edits, not an actor who can write the file — ownership
+and mode 0400 are what guard that. A raw `git push` also still bypasses the whole
+path. Full non-bypass requires server-side branch
 protection / a pre-receive hook — that is a separate owner/admin decision, not
 part of task #55.
 

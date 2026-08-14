@@ -218,7 +218,7 @@ export class AutonomousCycleLedger {
    * (campaign/user/run/cycle/item/content совпадают), затем CAS reserved→filled.
    * Чужая запись с совпавшим ключом — hard integrity error, не filled.
    */
-  async reconcileAndFill(ref: CycleItemRef): Promise<'filled' | 'still_reserved' | 'integrity_error' | 'absent'> {
+  async reconcileAndFill(ref: CycleItemRef): Promise<'filled' | 'still_reserved' | 'integrity_error' | 'absent' | 'content_missing'> {
     const item = await this.findItem(ref);
     if (!item) return 'absent';
     const ok =
@@ -234,6 +234,31 @@ export class AutonomousCycleLedger {
     }
     if (item.state !== 'reserved') {
       return item.state === 'filled' ? 'filled' : 'still_reserved';
+    }
+    // SM-20 Phase2 (A): НЕ помечаем filled только по ownership-матчу реестра.
+    // Сначала убеждаемся, что campaign_content для preallocated content_id реально
+    // существует И принадлежит той же кампании/пользователю. Если контента нет
+    // (crash после reserve / после модели ДО создания) — слот остаётся reserved
+    // (восстановимый), not filled. Чужой контент с тем же id — hard integrity error.
+    try {
+      const resp = await directusApi.get(`/items/campaign_content/${ref.contentId}`, {
+        params: { fields: ['id', 'campaign_id', 'user_id', 'status'] },
+        headers: ledgerAuthHeaders(),
+      });
+      const content = resp?.data?.data;
+      if (!content || !content.id) return 'content_missing';
+      if (String(content.campaign_id) !== String(ref.campaignId) ||
+          String(content.user_id) !== String(ref.userId)) {
+        log(`⛔ CycleLedger: INTEGRITY ERROR ${this.itemKey(ref)} — campaign_content принадлежит другой кампании`, 'cycle-ledger');
+        return 'integrity_error';
+      }
+    } catch (err: any) {
+      const code = err?.response?.data?.errors?.[0]?.extensions?.code;
+      if (code === 'RECORD_NOT_FOUND' || code === 'FORBIDDEN') {
+        return 'content_missing';
+      }
+      log(`⛔ CycleLedger: reconcile read content failed for ${ref.contentId}: ${err?.message}`, 'cycle-ledger');
+      return 'still_reserved';
     }
     const filled = await this.fillItem(ref, ref.contentId);
     return filled ? 'filled' : 'still_reserved';

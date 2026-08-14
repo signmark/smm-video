@@ -9,6 +9,21 @@ export interface InstagramStoryResult {
   error?: string;
 }
 
+/**
+ * AI-110: читаемая причина отказа Graph API. Строка — как есть, иначе message /
+ * error_user_msg, иначе код. Никогда не [object Object] и не сырой JSON.
+ */
+function describeGraphError(e: any): string {
+  const graphError = e?.response?.data?.error;
+  if (typeof graphError === 'string' && graphError) return graphError;
+  const described = graphError?.error_user_msg || graphError?.message;
+  if (described) return described;
+  if (graphError && typeof graphError === 'object') {
+    return `код ${graphError.code ?? 'unknown'}`;
+  }
+  return e?.message || 'неизвестная ошибка';
+}
+
 async function pollContainerStatus(
   containerId: string,
   accessToken: string,
@@ -166,9 +181,13 @@ export async function publishInstagramStory(
       { params: containerParams, timeout: 30000 }
     );
     containerId = containerResp.data?.id;
-    if (!containerId) throw new Error('Пустой id в ответе создания контейнера');
+    if (!containerId) {
+      // AI-110: человеку стабильная фраза, тело ответа — в журнал сервера.
+      log(`[IGStories] Ответ создания контейнера без id: ${JSON.stringify(containerResp.data)}`, 'warn');
+      throw new Error('Пустой id в ответе создания контейнера');
+    }
   } catch (e: any) {
-    const detail = e.response?.data?.error?.message || e.message;
+    const detail = describeGraphError(e);
     return { success: false, error: `Ошибка создания контейнера Stories: ${detail}` };
   }
 
@@ -187,9 +206,13 @@ export async function publishInstagramStory(
       { params: { creation_id: containerId, access_token: accessToken }, timeout: 30000 }
     );
     postId = publishResp.data?.id;
-    if (!postId) throw new Error('Пустой id в ответе публикации');
+    if (!postId) {
+      // AI-110: см. выше.
+      log(`[IGStories] Ответ публикации без id: ${JSON.stringify(publishResp.data)}`, 'warn');
+      throw new Error('Пустой id в ответе публикации');
+    }
   } catch (e: any) {
-    const detail = e.response?.data?.error?.message || e.message;
+    const detail = describeGraphError(e);
     return { success: false, error: `Ошибка публикации Stories: ${detail}` };
   }
 

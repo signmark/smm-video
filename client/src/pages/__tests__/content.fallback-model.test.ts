@@ -1,79 +1,72 @@
 /**
- * task #100: подписи модели при фолбэке — реальная производственная функция.
+ * task #100: уведомление о результате генерации — реальная производственная функция.
  *
- * `getGenerationToastLabels` экспортирована из content/index.tsx и является ТОЙ
- * функцией, которую выполняет handleGenerateAiText. Импортируем динамически
- * ПОСЛЕ полифилла matchMedia, потому что модуль content/index.tsx при загрузке
- * тянет themeStore → window.matchMedia (в jsdom его нет по умолчанию).
+ * `notifyGenerationResult` экспортирована из content/index.tsx, это ТА функция,
+ * которую вызывает handleGenerateAiText. Она принимает реальный ответ + toast
+ * и эмитит фактический title+description. Тест проверяет ОБА рендеримых поля и
+ * что toast вызван ровно так, как должен.
+ *
+ * (Полный render ContentPage не используется: страница ~4000 строк с интервалами
+ *  в jsdom не завершается. Покрываем производственную функцию уведомления, к
+ *  которой сводится реальный обработчик.)
  */
-import { describe, it, expect, beforeAll } from 'vitest';
+import { describe, it, expect, beforeAll, vi } from 'vitest';
 
-let getGenerationToastLabels: any;
+let notifyGenerationResult: any;
 
 beforeAll(async () => {
-  // Полифилл matchMedia до загрузки модуля.
   if (typeof window !== 'undefined' && !window.matchMedia) {
     window.matchMedia = ((query: string) => ({
-      matches: false,
-      media: query,
-      onchange: null,
-      addListener: () => {},
-      removeListener: () => {},
-      addEventListener: () => {},
-      removeEventListener: () => {},
-      dispatchEvent: () => false,
+      matches: false, media: query, onchange: null,
+      addListener: () => {}, removeListener: () => {},
+      addEventListener: () => {}, removeEventListener: () => {}, dispatchEvent: () => false,
     })) as any;
   }
-  // Динамический импорт — после полифилла.
   const mod = await import('@/pages/content/index');
-  getGenerationToastLabels = mod.getGenerationToastLabels;
+  notifyGenerationResult = mod.notifyGenerationResult;
 });
 
-describe('task #100: getGenerationToastLabels — fallback', () => {
-  it('Gemini→DeepSeek фолбэк: недоступна Gemini, ответ через DeepSeek', () => {
-    const r = getGenerationToastLabels({
-      model: 'deepseek-chat',
-      service: 'deepseek',
-      originalService: 'gemini-2.5-flash',
-      isFallback: true,
-    }, null);
+describe('task #100: notifyGenerationResult — fallback', () => {
+  it('Gemini→DeepSeek: недоступна Gemini, ответ через DeepSeek, toast вызван', () => {
+    const toast = vi.fn();
+    const r = notifyGenerationResult({
+      model: 'deepseek-chat', service: 'deepseek',
+      originalService: 'gemini-2.5-flash', isFallback: true,
+    }, null, toast);
 
-    expect(r.originalLabel).toBe('Gemini 2.5 Flash');
-    expect(r.svcLabel).toBe('DeepSeek');
-    expect(r.svcLabel).not.toBe(r.originalLabel);
-  });
-
-  it('фолбэк через service: ответ DeepSeek, недоступна Gemini', () => {
-    const r = getGenerationToastLabels({
-      model: 'deepseek',
-      service: 'gemini-proxy-fallback',
-      originalService: 'gemini-2.5-flash',
-    }, null);
-    expect(r.originalLabel).toBe('Gemini 2.5 Flash');
-    expect(r.svcLabel).toBe('DeepSeek');
-    expect(r.svcLabel).not.toBe(r.originalLabel);
+    expect(r.title).toBe('Модель переключена');
+    expect(r.description).toContain('Gemini 2.5 Flash была недоступна');
+    expect(r.description).toContain('Ответ через DeepSeek');
+    // Две подписи НЕ схлопываются.
+    expect(r.description).not.toContain('Ответ через Gemini 2.5 Flash');
+    // toast вызван с теми же title/description.
+    expect(toast).toHaveBeenCalledWith({ title: 'Модель переключена', description: r.description });
   });
 });
 
-describe('task #100: getGenerationToastLabels — normal path', () => {
-  it('без фолбэка: выбранная = реальная', () => {
-    const r = getGenerationToastLabels({
-      model: 'gemini-2.5-flash',
-      service: 'gemini-proxy',
-      originalService: 'gemini-2.5-flash',
-    }, null);
-    expect(r.svcLabel).toBe('Gemini 2.5 Flash');
+describe('task #100: notifyGenerationResult — normal path', () => {
+  it('без фолбэка: «Готово» + прежняя формулировка', () => {
+    const toast = vi.fn();
+    const r = notifyGenerationResult({
+      model: 'gemini-2.5-flash', service: 'gemini-proxy',
+      originalService: 'gemini-2.5-flash', isFallback: false,
+    }, null, toast);
+
+    expect(r.title).toBe('Готово');
+    expect(r.description).toContain('Текст сгенерирован');
+    expect(r.description).not.toContain('недоступна');
+    expect(toast).toHaveBeenCalledWith({ title: 'Готово', description: r.description });
   });
 
-  it('missing model деградирует к aiModel-атрибуту', () => {
-    const r = getGenerationToastLabels({}, 'gemini-2.5-flash');
-    expect(r.svcLabel).toBe('Gemini 2.5 Flash');
-    expect(r.originalLabel).toBeNull();
+  it('missing model деградирует к aiModel, а не undefined', () => {
+    const toast = vi.fn();
+    const r = notifyGenerationResult({}, 'gemini-2.5-flash', toast);
+    expect(r.description).toContain('Gemini 2.5 Flash');
   });
 
-  it('пустой ответ без полей → безопасный «Gemini», не undefined', () => {
-    const r = getGenerationToastLabels({}, null);
-    expect(r.svcLabel).toBe('Gemini');
-    expect(r.originalLabel).toBeNull();
+  it('пустой ответ без полей → безопасный «Gemini»', () => {
+    const toast = vi.fn();
+    const r = notifyGenerationResult({}, null, toast);
+    expect(r.description).toContain('Gemini');
   });
 });

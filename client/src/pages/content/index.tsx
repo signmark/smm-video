@@ -200,7 +200,15 @@ const cleanAiText = (text: string): string => {
   return cleaned.trim();
 };
 
-const getGenerationToastLabels = (data: any, aiModel: string | null): { svcLabel: string; originalLabel: string | null } => {
+// task #100: уведомление о результате генерации. Принимает реальный ответ
+// сервера и зависимость toast (инжектируется в тесте / берётся из хэндлера),
+// эмитит фактический title+description. Единственная точка, где собираются обе
+// подписи — «X была недоступна» и «Ответ через Y».
+const notifyGenerationResult = (
+  data: any,
+  aiModel: string | null,
+  toast: (opts: any) => any,
+): { title: string; description: string } => {
   const MODEL_NAMES: Record<string, string> = {
     'gemini-3.5-flash': 'Gemini 3.5 Flash',
     'gemini-3.0-pro': 'Gemini 3.0 Pro',
@@ -218,10 +226,22 @@ const getGenerationToastLabels = (data: any, aiModel: string | null): { svcLabel
   const displayModel = data.model || data.service || data.originalService || aiModel || 'Gemini';
   const svcLabel = MODEL_NAMES[displayModel] ?? displayModel;
   const originalLabel = data.originalService ? (MODEL_NAMES[data.originalService] ?? data.originalService) : null;
-  return { svcLabel, originalLabel };
+
+  let title: string;
+  let description: string;
+  if (data.isFallback && originalLabel) {
+    title = 'Модель переключена';
+    description = `${originalLabel} была недоступна. Ответ через ${svcLabel}.`;
+  } else {
+    title = 'Готово';
+    description = `Текст сгенерирован (${svcLabel})`;
+  }
+
+  toast({ title, description });
+  return { title, description };
 };
 
-export { getGenerationToastLabels };
+export { notifyGenerationResult };
 
 export default function ContentPage() {
   const { t } = useTranslation();
@@ -1351,12 +1371,8 @@ export default function ContentPage() {
       // SM-25: промт после генерации НЕ стираем — человек должен найти его на
       // месте, вернувшись в панель. Очистка aiPromptText — на явное действие.
       // (см. место закрытия/нового контента, где стоит setAiPromptText('')).
-      const { svcLabel, originalLabel } = getGenerationToastLabels(data, aiModel);
-      if (data.isFallback && originalLabel) {
-        toast({ title: 'Модель переключена', description: `${originalLabel} была недоступна. Ответ через ${svcLabel}.` });
-      } else {
-        toast({ title: 'Готово', description: `Текст сгенерирован (${svcLabel})` });
-      }
+      // Уведомление о результате — единая точка, где собираются обе подписи.
+      notifyGenerationResult(data, aiModel, toast);
     } catch (err: any) {
       const msg = err.message || '';
       const isQuota = msg.includes('429') || msg.includes('quota') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('rate limit');

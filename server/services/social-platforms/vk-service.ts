@@ -223,7 +223,7 @@ class VkService {
         throw new Error(`VK upload server: ${uploadData.error}`);
       }
       if (!uploadData?.photo || uploadData.server === undefined || !uploadData?.hash) {
-        throw new Error(`VK upload server returned incomplete data: ${JSON.stringify(uploadData)}`);
+        throw new Error('VK upload server returned incomplete data');
       }
       log.info(`[${opId}] [VK] Загружено: server=${uploadData.server}`);
 
@@ -256,8 +256,19 @@ class VkService {
         log.error(`[${opId}] [VK] Ошибка загрузки фото: ${err.message}`);
         throw err;
       }
-      const responseError = err?.response?.data?.error?.error_msg || err?.response?.data?.error || err?.response?.data;
-      const reason = responseError ? `${err.message}: ${typeof responseError === 'string' ? responseError : JSON.stringify(responseError)}` : err.message;
+      const data = err?.response?.data;
+      const vkErr = data?.error;
+      // Извлекаем читаемую причину: строка как есть, иначе error_msg/message/код.
+      // Никогда не [object Object] и не raw JSON.
+      let responseError: string | undefined;
+      if (typeof vkErr === 'string' && vkErr) {
+        responseError = vkErr;
+      } else {
+        responseError = vkErr?.error_msg || vkErr?.message
+          || data?.error_msg
+          || (typeof vkErr === 'object' && vkErr !== null ? `code ${vkErr.error_code ?? 'unknown'}` : undefined);
+      }
+      const reason = responseError ? `${err.message}: ${responseError}` : err.message;
       log.error(`[${opId}] [VK] Ошибка загрузки фото: ${reason}`);
       throw new Error(`Не удалось загрузить изображение в VK: ${reason}`);
     }

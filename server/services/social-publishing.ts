@@ -832,7 +832,7 @@ export class SocialPublishingService {
           platform: 'vk',
           status: 'failed',
           publishedAt: null,
-          error: `Неизвестный формат ответа от VK API: ${JSON.stringify(response.data)}`,
+          error: 'Неизвестный формат ответа от VK API.',
           userId: content.userId // Добавляем userId из контента
         };
       }
@@ -1442,7 +1442,7 @@ export class SocialPublishingService {
           platform: 'facebook',
           status: 'failed',
           publishedAt: null,
-          error: `Неизвестный формат ответа от Facebook API: ${JSON.stringify(response.data)}`,
+          error: 'Неизвестный формат ответа от Facebook API.',
           userId: content.userId
         };
       }

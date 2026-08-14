@@ -166,7 +166,7 @@ export async function publishInstagramStory(
       { params: containerParams, timeout: 30000 }
     );
     containerId = containerResp.data?.id;
-    if (!containerId) throw new Error(`Пустой id в ответе: ${JSON.stringify(containerResp.data)}`);
+    if (!containerId) throw new Error('Пустой id в ответе создания контейнера');
   } catch (e: any) {
     const detail = e.response?.data?.error?.message || e.message;
     return { success: false, error: `Ошибка создания контейнера Stories: ${detail}` };
@@ -187,7 +187,7 @@ export async function publishInstagramStory(
       { params: { creation_id: containerId, access_token: accessToken }, timeout: 30000 }
     );
     postId = publishResp.data?.id;
-    if (!postId) throw new Error(`Пустой id в ответе публикации: ${JSON.stringify(publishResp.data)}`);
+    if (!postId) throw new Error('Пустой id в ответе публикации');
   } catch (e: any) {
     const detail = e.response?.data?.error?.message || e.message;
     return { success: false, error: `Ошибка публикации Stories: ${detail}` };

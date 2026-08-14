@@ -1205,12 +1205,12 @@ export class TelegramService extends BaseSocialService {
                 log(`Ошибка при альтернативной отправке: ${mediaError.message}`, 'social-publishing');
               }
             }
-            
+            log(`Ошибка при отправке изображения с текстом в Telegram: ${JSON.stringify(response.data)}`, 'social-publishing');
             return {
               platform: 'telegram',
               status: 'failed',
               publishedAt: null,
-              error: `Ошибка при отправке изображения с текстом: ${response.data?.description || JSON.stringify(response.data)}`
+              error: `Ошибка при отправке изображения с текстом: ${response.data?.description || 'неизвестная ошибка Telegram API'}`
             };
           }
         } catch (error: any) {

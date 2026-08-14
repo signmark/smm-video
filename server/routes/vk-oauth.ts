@@ -176,7 +176,7 @@ router.get('/vk/oauth2/callback', async (req, res) => {
     const t = tokenResp.data;
 
     if (!t.access_token) {
-      throw new Error('VK не вернул access_token: ' + JSON.stringify(t));
+      throw new Error('VK не вернул access_token');
     }
 
     log(`[VK-OAUTH2] Tokens received, saving to campaign ${pending.campaignId}`, 'vk-oauth');

@@ -421,7 +421,7 @@ export class VKClipsService extends BaseSocialService {
         const decoded = Buffer.from(response.data.upload_result, 'base64').toString('utf-8');
         const parsed = JSON.parse(decoded);
         if (parsed.error || parsed.errcode) {
-          throw new Error(`Clips Upload Error: ${parsed.error || parsed.message || JSON.stringify(parsed)}`);
+          throw new Error(`Clips Upload Error: ${parsed.error || parsed.message || 'Unknown VK error'}`);
         }
       } catch (parseError) {
         // Если не JSON или не base64 - игнорируем

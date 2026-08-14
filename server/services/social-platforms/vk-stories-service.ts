@@ -318,7 +318,7 @@ export class VKStoriesService {
     }
     
     if (!uploadResult) {
-      throw new Error(`Не удалось получить upload_result из ответа VK: ${JSON.stringify(response.data)}`);
+      throw new Error('Не удалось получить upload_result из ответа VK');
     }
     
     // Проверяем на base64-закодированную ошибку в upload_result
@@ -387,7 +387,7 @@ export class VKStoriesService {
     
     if (!storyItem || !storyItem.id) {
       log(`Ответ VK не содержит данных о Story: ${JSON.stringify(response.data)}`, LOG_PREFIX);
-      throw new Error(`VK не вернул данные Story. Возможно загрузка не удалась. Ответ: ${JSON.stringify(response.data)}`);
+      throw new Error('VK не вернул данные Story. Возможно загрузка не удалась.');
     }
     
     const storyId = String(storyItem.id);

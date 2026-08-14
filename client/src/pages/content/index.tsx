@@ -207,7 +207,7 @@ const cleanAiText = (text: string): string => {
 const notifyGenerationResult = (
   data: any,
   aiModel: string | null,
-  toast: (opts: any) => any,
+  toast: (opts: { title?: string; description?: string }) => void,
 ): { title: string; description: string } => {
   const MODEL_NAMES: Record<string, string> = {
     'gemini-3.5-flash': 'Gemini 3.5 Flash',

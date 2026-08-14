@@ -70,3 +70,17 @@ describe('task #100: notifyGenerationResult — normal path', () => {
     expect(r.description).toContain('Gemini');
   });
 });
+
+describe('task #100: wiring guard — handleGenerateAiText вызывает notifyGenerationResult', () => {
+  it('источник содержит ровно один вызов notifyGenerationResult в обработчике', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { resolve } = await import('node:path');
+    const src = readFileSync(resolve(__dirname, '../content/index.tsx'), 'utf8');
+
+    // Единственная точка уведомления в обработчике генерации. Строка-якорь:
+    // не закомментированный вызов (не `// notify...`).
+    expect(src).toMatch(/^[ \t]*notifyGenerationResult\(data, aiModel, toast\);$/m);
+    // Не осталось старого inline-сбора подписей с прежним precedence.
+    expect(src).not.toMatch(/const displayModel = data\.originalService \|\| data\.model/);
+  });
+});

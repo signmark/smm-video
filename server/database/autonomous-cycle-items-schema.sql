@@ -1,0 +1,32 @@
+-- SM-20 Phase 2 (A): autonomous cycle items reservation ledger
+--
+-- Distributed reservation ledger for autonomous cycle content slots. Shape copied
+-- from publication_locks (which enforces atomic single-field unique via an INSERT
+-- race). THE UNIQUE ON item_key IS WHAT MAKES THE DUPLICATE IMPOSSIBLE (DB-level).
+--
+-- HOW TO CREATE IN DIRECTUS:
+-- 1. Go to Data Model → Create Collection
+-- 2. Name: autonomous_cycle_items
+-- 3. Singleton: NO
+--
+-- FIELDS:
+--   item_key    → Type: String, UNIQUE (checkbox "Unique" in field settings)
+--   campaign_id → Type: String            (tenant column)
+--   user_id     → Type: String            (tenant column)
+--   run_id      → Type: String, INDEX     (session identity)
+--   cycle_id    → Type: String, INDEX     (cycle identity)
+--   item_index  → Type: Integer
+--   content_id  → Type: String            (preallocated UAID for materialization)
+--   state       → Type: String            (reserved|filled|consumed|tombstone)
+--
+-- item_key format: `${run_id}:${cycle_id}:${item_index}` (single-field unique,
+-- flattens the composite key because Directus UI only supports single-field unique).
+--
+-- RECOMMENDED index for lookup: run_id + cycle_id (used by getCycleItems).
+--
+-- EXTRA DURABLE FIELDS (existing collection autonomous_sessions — NOT new unique):
+--   run_id   → Type: String   (opaque per-session UUID)
+--   cycle_id → Type: String   (UUID of the current in-progress cycle)
+--   phase    → Type: String   (running|pausing|paused)
+--   (These are plain fields, NOT unique — see @Clause_Dev_Hermi: a unique on phase
+--    would allow only one running campaign in the whole product.)

@@ -2434,11 +2434,22 @@ ${titleInstruction}`;
           }, { useAdminToken: true });
         } catch (err: any) {
           // Узко: RECORD_NOT_UNIQUE на preallocated id = контент уже материализован
-          // в этот слот (повтор после crash). Тогда берём существующую запись по id.
+          // в этот слот (повтор после crash). Тогда берём существующую запись по id
+          // ТОЛЬКО если id/campaign/user совпадают с этой резервацией (B2 replay-ownership).
           const code = err?.response?.data?.errors?.[0]?.extensions?.code;
           if (preallocatedId && code === 'RECORD_NOT_UNIQUE') {
             const existing: any = await directusCrud.getById('campaign_content', preallocatedId, { useAdminToken: true });
-            if (existing) { savedContent = existing; }
+            const exId = existing?.id != null ? String(existing.id) : null;
+            const exCamp = existing?.campaign_id != null ? String(existing.campaign_id) : '';
+            const exUser = existing?.user_id != null ? String(existing.user_id) : '';
+            const ownsHere = exId === preallocatedId &&
+              exCamp === String(params.campaignId) &&
+              exUser === String(request.userId);
+            if (existing && ownsHere) { savedContent = existing; }
+            else if (existing && !ownsHere) {
+              // B2: чужая/чужого владельца запись с тем же id — hard integrity error, не успех.
+              throw new Error('INTEGRITY ERROR: preallocated content_id принадлежит другой кампании/пользователю');
+            }
             else { throw err; }
           } else {
             throw err; // любая иная ошибка — fail-closed, не считаем успехом
@@ -3734,6 +3745,13 @@ async function runAutonomousCycle(state: AutonomousState) {  // SM-20: стра�
   // и навсегда); cycle_id — UUID этого цикла. Источник истины — БД.
   if (!state.runId) state.runId = randomUUID();
   state.cycleId = randomUUID();
+
+  // B1: awaited ledger health check ПЕРЕД первым использованием — если коллекции/
+  // схемы нет, THROW (fail-close), а не тихий ноль слотов.
+  const healthy = await autonomousCycleLedger.probeCollectionHealth();
+  if (!healthy) {
+    throw new Error('[AUTONOMOUS-CYCLE] ledger autonomous_cycle_items недоступен — цикл прерван (B1 fail-close)');
+  }
 
   // Резервируем ВСЕ слоты цикла ДО генерации с preallocated content_id.
   // Проигравший unique-race не генерирует (дубль невозможен на уровне БД).

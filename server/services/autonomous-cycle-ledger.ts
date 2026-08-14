@@ -86,6 +86,11 @@ export class AutonomousCycleLedger {
    */
   async reserveItem(ref: CycleItemRef): Promise<boolean> {
     const key = this.itemKey(ref);
+    // Тенант-изоляция: слот нельзя создать без владельца кампании/пользователя.
+    if (!ref.campaignId || !ref.userId) {
+      log(`⛔ CycleLedger: reserve ${key} без tenant (campaign/user) невозможно — отказ`, 'cycle-ledger');
+      return false;
+    }
     try {
       await directusApi.post(`/items/${LEDGER_COLLECTION}`, {
         item_key: key,

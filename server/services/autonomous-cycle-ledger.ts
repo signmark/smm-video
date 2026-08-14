@@ -186,6 +186,53 @@ export class AutonomousCycleLedger {
       return null;
     }
   }
+
+  /** Читает строку реестра по item_key. */
+  private async findItem(ref: CycleItemRef): Promise<any | null> {
+    const key = this.itemKey(ref);
+    try {
+      const resp = await directusApi.get(`/items/${LEDGER_COLLECTION}`, {
+        params: {
+          filter: { item_key: { _eq: key } },
+          limit: 1,
+          fields: ['item_key', 'campaign_id', 'user_id', 'run_id', 'cycle_id', 'item_index', 'content_id', 'state'],
+        },
+        headers: ledgerAuthHeaders(),
+      });
+      const data = resp?.data?.data;
+      return data?.length ? data[0] : null;
+    } catch (err: any) {
+      log(`⛔ CycleLedger: findItem failed for ${key}: ${err?.message}`, 'cycle-ledger');
+      return null;
+    }
+  }
+
+  /**
+   * SM-20 Phase2 (A): reconciliation после crash между «создан контент» и
+   * «обновился реестр». Читает слот по item_key, подтверждает ownership
+   * (campaign/user/run/cycle/item/content совпадают), затем CAS reserved→filled.
+   * Чужая запись с совпавшим ключом — hard integrity error, не filled.
+   */
+  async reconcileAndFill(ref: CycleItemRef): Promise<'filled' | 'still_reserved' | 'integrity_error' | 'absent'> {
+    const item = await this.findItem(ref);
+    if (!item) return 'absent';
+    const ok =
+      String(item.campaign_id) === String(ref.campaignId) &&
+      String(item.user_id) === String(ref.userId) &&
+      String(item.run_id) === String(ref.runId) &&
+      String(item.cycle_id) === String(ref.cycleId) &&
+      Number(item.item_index) === Number(ref.itemIndex) &&
+      String(item.content_id) === String(ref.contentId);
+    if (!ok) {
+      log(`⛔ CycleLedger: INTEGRITY ERROR ${this.itemKey(ref)} — собственник не совпадает`, 'cycle-ledger');
+      return 'integrity_error';
+    }
+    if (item.state !== 'reserved') {
+      return item.state === 'filled' ? 'filled' : 'still_reserved';
+    }
+    const filled = await this.fillItem(ref, ref.contentId);
+    return filled ? 'filled' : 'still_reserved';
+  }
 }
 
 export const autonomousCycleLedger = new AutonomousCycleLedger();

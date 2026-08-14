@@ -117,4 +117,35 @@ describe('SM-20 Phase A ledger: concurrent-loser + crash-gap', () => {
     const result = await autonomousCycleLedger.reconcileAndFill(ID);
     expect(result).toBe('integrity_error');
   });
+
+  it('CAS-success: реальный PATCH affected row → reserved→filled; на не-reserved CAS miss (0 affected) → false, state не меняется', async () => {
+    // Reserve (slot = reserved).
+    expect(await autonomousCycleLedger.reserveItem(ID)).toBe(true);
+    // fillItem выполняет CAS PATCH с фильтром state='reserved'; слот резeрвирован → успех.
+    expect(await autonomousCycleLedger.fillItem(ID, ID.contentId)).toBe(true);
+    let items = await autonomousCycleLedger.getCycleItems('run-1', 'cycle-1');
+    expect(items![0].state).toBe('filled');
+
+    // Теперь переводим слот (filled) в consumed — fillItem повторно обязан дать CAS miss
+    // (0 affected), а не «успех». Удаление фильтра state='reserved' или трактовка
+    // 0 affected как успех → этот тест краснеет (state не изменился бы/вернулся true).
+    const casMiss = await autonomousCycleLedger.setState({ ...ID, contentId: ID.contentId }, 'filled', 'consumed');
+    expect(casMiss).toBe(true);
+    expect(await autonomousCycleLedger.fillItem(ID, ID.contentId)).toBe(false);
+    items = await autonomousCycleLedger.getCycleItems('run-1', 'cycle-1');
+    expect(items![0].state).toBe('consumed'); // не перезаписан на filled
+  });
+
+  it('cross-tenant: резерв арендатора A НЕ заполняется владельцем B (ownership-предикаты обязательны)', async () => {
+    // Арендатор A резервирует слот (owned by campaign-a/user-a).
+    const tenantA = ID;
+    expect(await autonomousCycleLedger.reserveItem(tenantA)).toBe(true);
+    // Арендатор B пытается reconcile С тем же item_key/содержимым, но ДРУГОЙ кампанией/user.
+    const tenantB = { ...ID, campaignId: 'camp-B', userId: 'user-B' };
+    const result = await autonomousCycleLedger.reconcileAndFill(tenantB);
+    expect(result).toBe('integrity_error'); // ownership не совпал → hard error, не filled
+    // Слот остаётся reserved (не заполнен чужим).
+    const items = await autonomousCycleLedger.getCycleItems('run-1', 'cycle-1');
+    expect(items![0].state).toBe('reserved');
+  });
 });

@@ -2,6 +2,8 @@ import { Telegraf, Context, Markup } from 'telegraf';
 import { message } from 'telegraf/filters';
 import axios from 'axios';
 import { telegramHttp, getTelegramAgent } from '../services/social-platforms/telegram-http';
+import { toSafeErrorDetails } from '../utils/safe-error';
+import { error as logError } from '../utils/logger';
 import * as fs from 'fs';
 import * as path from 'path';
 import { telegramSessionStorage } from '../services/telegram-session-storage';
@@ -1811,6 +1813,27 @@ class TelegramBotService {
     }
   }
 
+  /**
+   * Человеческая причина отказа. Сырой текст ошибки показывать нельзя: у
+   * неудачного скачивания в нём лежит ссылка вида
+   * `https://api.telegram.org/file/bot<токен>/…`, то есть токен бота. Берём
+   * безопасный разбор ошибки и на всякий случай затираем сам сегмент с токеном.
+   */
+  private describeFailure(error: unknown): string {
+    const detail = toSafeErrorDetails(error);
+    // Ошибка программиста человеку ничего не объясняет, а имя внутреннего
+    // метода в чате — лишнее. Исходная причина остаётся в журнале сервера.
+    if (detail.name === 'TypeError' || detail.name === 'ReferenceError' || detail.name === 'SyntaxError') {
+      return 'внутренняя ошибка сервиса';
+    }
+    const reason =
+      typeof detail.status === 'number' ? `сервер ответил ${detail.status}` :
+      detail.code ? `сбой связи (${detail.code})` :
+      detail.message && detail.message !== 'Unknown error' ? detail.message :
+      'причина неизвестна';
+    return reason.replace(/\/bot[^\s/]+/gi, '/bot[REDACTED]');
+  }
+
   private async handleVoiceMessage(ctx: BotContext) {
     if (!ctx.message || !('voice' in ctx.message)) return;
 
@@ -1841,11 +1864,29 @@ class TelegramBotService {
 
       const fileUrl = `https://api.telegram.org/file/bot${botToken}/${fileInfo.file_path}`;
 
+      // AI-101 Phase 2B: тот же хост api.telegram.org, значит и тот же перебор
+      // адресов — как в обработчике фотографий рядом. Файл качаем ЗДЕСЬ, в боте:
+      // ссылка содержит токен бота, и отдавать её в сервис распознавания значит
+      // расширять область, где токен живёт, без всякой нужды.
+      let audioBuffer: Buffer;
+      try {
+        const tgFiles = await telegramHttp();
+        const response = await tgFiles.get(fileUrl, { responseType: 'arraybuffer' });
+        audioBuffer = Buffer.from(response.data);
+      } catch (error) {
+        // Через logger, а не console: он редактирует секреты и не растит
+        // храповик прямых вызовов console.* (AI-41).
+        logError('Не удалось скачать голосовое сообщение', toSafeErrorDetails(error), 'telegram-bot');
+        return ctx.reply(
+          `❌ Не удалось скачать голосовое сообщение: ${this.describeFailure(error)}. Попробуйте ещё раз.`,
+        );
+      }
+
       await ctx.reply('🔄 Распознаю речь...');
 
-      // Используем сервис speech-to-text для распознавания
+      // Сервис принимает буфер — вторая входная точка ему не нужна.
       const { speechToTextService } = await import('../services/speech-to-text');
-      const transcribedText = await speechToTextService.transcribeAudioFromUrl(fileUrl, voice.mime_type || 'audio/ogg');
+      const transcribedText = await speechToTextService.transcribeAudio(audioBuffer, voice.mime_type || 'audio/ogg');
 
       if (!transcribedText || transcribedText.trim().length === 0) {
         return ctx.reply('❌ Не удалось распознать речь. Попробуйте записать сообщение ещё раз.');
@@ -1858,8 +1899,8 @@ class TelegramBotService {
       await this.askAssistant(ctx, transcribedText);
 
     } catch (error: any) {
-      console.error('Error handling voice message:', error);
-      await ctx.reply(`❌ Ошибка при обработке голосового сообщения: ${error.message}`);
+      console.error('Error handling voice message:', toSafeErrorDetails(error));
+      await ctx.reply(`❌ Ошибка при обработке голосового сообщения: ${this.describeFailure(error)}`);
     }
   }
 

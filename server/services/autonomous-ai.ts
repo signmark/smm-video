@@ -2398,17 +2398,36 @@ ${titleInstruction}`;
         const finalTitle = count > 1 ? `${baseTitle} (${i + 1})` : baseTitle;
         console.log(`[CREATE-CONTENT] Заголовок поста ${i + 1}: "${finalTitle}"`);
 
-        // ШАГ 2: Сохраняем контент в базу данных (admin-токен — серверная операция)
-        const savedContent = await directusCrud.create('campaign_content', {
-          campaign_id: params.campaignId,
-          user_id: request.userId,
-          title: finalTitle,
-          content: generatedContent,
-          content_type: 'text',
-          status: 'draft',
-          source: 'ai_generated',
-          date_created: new Date().toISOString()
-        }, { useAdminToken: true });
+        // ШАГ 2: Сохраняем контент в базу (admin-токен — серверная операция).
+        // SM-20 Phase2 (A): если слот цикла предварительно зарезервирован,
+        // создаём с ЯВНЫМ preallocated id. Повтор после падения даёт либо успех,
+        // либо RECORD_NOT_UNIQUE ('уже создано') — идемпотентно.
+        const preallocatedId: string | undefined = params.preallocatedId;
+        let savedContent: any = null;
+        try {
+          savedContent = await directusCrud.create('campaign_content', {
+            ...(preallocatedId ? { id: preallocatedId } : {}),
+            campaign_id: params.campaignId,
+            user_id: request.userId,
+            title: finalTitle,
+            content: generatedContent,
+            content_type: 'text',
+            status: 'draft',
+            source: 'ai_generated',
+            date_created: new Date().toISOString()
+          }, { useAdminToken: true });
+        } catch (err: any) {
+          // Узко: RECORD_NOT_UNIQUE на preallocated id = контент уже материализован
+          // в этот слот (повтор после crash). Тогда берём существующую запись по id.
+          const code = err?.response?.data?.errors?.[0]?.extensions?.code;
+          if (preallocatedId && code === 'RECORD_NOT_UNIQUE') {
+            const existing: any = await directusCrud.getById('campaign_content', preallocatedId, { useAdminToken: true });
+            if (existing) { savedContent = existing; }
+            else { throw err; }
+          } else {
+            throw err; // любая иная ошибка — fail-closed, не считаем успехом
+          }
+        }
         
         console.log(`[CREATE-CONTENT] Пост ${i + 1} сохранен в базу с ID:`, (savedContent as any).id);
         
@@ -3969,11 +3988,21 @@ async function runAutonomousCycle(state: AutonomousState) {
 
         console.log(`[PIPELINE] ✍️ Пост ${i + 1}/${contentPlan.length}: "${topic}" (${contentType})`);
 
+        // SM-20 Phase2 (A): этот item соответствует слоту цикла itemIndex=i;
+        // у него есть preallocated content_id из резервирования. Если слот не
+        // зарезервирован (reserve не прошёл) — пропускаем материалзацию.
+        const preallocatedId = cycleSlots.get(i);
+        if (!preallocatedId) {
+          log(`[PIPELINE] ⏭ Слот цикла itemIndex=${i} не зарезервирован — пропускаем пост`, 'autonomous');
+          continue;
+        }
+
         const contentResult = await TOOL_IMPLEMENTATIONS.createContent({
           campaignId: state.campaignId,
           topic,
           theme: finalTheme,
           count: 1,
+          preallocatedId,
           editorGuide: autoSettings.globalPrompt
             ? substituteSocialNetworks(autoSettings.globalPrompt, state.platforms)
             : '',
@@ -4017,6 +4046,18 @@ async function runAutonomousCycle(state: AutonomousState) {
             createdPosts.push({ contentId, postText, contentType, platform: planItem.platform, topic: planItem.topic });
             state.postsCreated++;
             console.log(`[PIPELINE] ✅ Пост ${i + 1} сохранён. Итого: ${state.postsCreated}`);
+
+            // SM-20 Phase2 (A): после материалзации — CAS reserved→filled на
+            // слоте цикла. Если пауза уже перевела слот (CAS miss) — ничего не
+            // перезаписываем; содержимое всё равно создано идемпотентно.
+            await autonomousCycleLedger.fillItem({
+              campaignId: state.campaignId,
+              userId: state.userId,
+              runId: state.runId!,
+              cycleId: state.cycleId!,
+              itemIndex: i,
+              contentId: preallocatedId,
+            }, contentId);
           }
 
           await new Promise(resolve => setTimeout(resolve, 3000));

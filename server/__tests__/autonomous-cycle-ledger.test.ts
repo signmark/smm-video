@@ -47,7 +47,19 @@ function makeUniqueStore() {
       }));
       return { data: { data: out } };
     }),
-    patch: vi.fn(async () => ({ data: { data: [] } })),
+    patch: vi.fn(async (url: string, params: any) => {
+      // CAS: PATCH по query-фильтру обновляет только совпавшие строки.
+      const q = (params?.query?.filter || {});
+      const key = q.item_key?._eq;
+      const state = q.state?._eq;
+      const data = params?.data || {};
+      const affected = rows.filter((r) =>
+        (!key || r.item_key === key) && (!state || r.state === state)
+      );
+      const count = affected.length;
+      affected.forEach((r) => { Object.assign(r, data); });
+      return { data: { data: rows.slice(0, count).map((r) => ({ item_key: r.item_key })) } };
+    }),
     delete: vi.fn(async () => ({ data: {} })),
   };
   return fn;
@@ -90,13 +102,13 @@ describe('SM-20 Phase A ledger: concurrent-loser + crash-gap', () => {
   it('crash-gap: reserved-слот с существующим содержимым после crash → reconcile CAS reserved→filled', async () => {
     // reserve, затем crash ДО обновления реестра (слот остаётся reserved).
     await autonomousCycleLedger.reserveItem(ID);
-    // Содержимое campaign_content уже создано (внешне), но реестр всё ещё reserved.
     // reconcile подтверждает ownership и делает CAS reserved→filled.
     const result = await autonomousCycleLedger.reconcileAndFill(ID);
-    expect(['filled', 'still_reserved']).toContain(result);
-    // Повторный reconcile идемпотентен: не integrity-error, не absent.
+    expect(result).toBe('filled');
+    // Повторный reconcile идемпотентен: уже filled, не integrity/absent.
     const again = await autonomousCycleLedger.reconcileAndFill(ID);
-    expect(['filled', 'still_reserved']).toContain(again);
+    expect(result).toBe('filled');
+    expect(again).toBe('filled');
   });
 
   it('crash-gap: чужая запись с совпавшим item_key → hard integrity error, не filled', async () => {

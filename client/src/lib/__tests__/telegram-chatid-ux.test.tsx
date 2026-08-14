@@ -1,25 +1,41 @@
 /**
- * SM-24: UX — server 400 chatId error reaches the Telegram chatId form field.
+ * SM-24: отказ сервера по полю «ID чата» должен быть виден у самого поля.
  *
- * Renders the real SocialMediaSettings component with mocked API boundaries.
- * The live chain is: user types invalid chatId → clicks Save → mocked apiRequest
- * returns 400 → real react-hook-form setError → FormMessage renders server text
- * at the telegram.chatId field, associated via aria-describedby.
+ * Живая цепочка: пользователь вводит некорректный ID чата → «Сохранить» →
+ * сервер отвечает 400 → react-hook-form setError → FormMessage рисует подпись
+ * у поля telegram.chatId, связанную с полем через aria-describedby.
  *
- * Mutation proof (executed by @Clause_Dev_Hermi): revert SocialMediaSettings.tsx
- * catch block to main — test imports/renders but the field-error assertion fails.
+ * Почему тест переписан. Прежняя версия подкладывала ошибку вида
+ * `error.response.data.error` — такой формы клиент не создаёт никогда:
+ * `throwIfResNotOk` (client/src/lib/queryClient.ts) кладёт в `error.response`
+ * только `{ status, statusText }`, а текст сервера оставляет в `error.message`.
+ * Тест был зелёным, а на живом проде подписи у поля не появлялось: проверялась
+ * форма ошибки, которой не существует. Теперь основной случай — ровно та форма,
+ * которую строит транспорт, и отдельным случаем проверена совместимость со
+ * старой формой с телом ответа.
  *
- * Requires AI-107 JSX infra (dd982a8). Executed locally with npm ci, axios 1.18.1.
+ * Проверяется:
+ *  1. реальная форма ошибки транспорта → подпись у поля и aria-связь;
+ *  2. подпись человеческая и по-русски, англоязычный ответ сервера пользователю
+ *     не показывается;
+ *  3. токен, введённый в форму, в разметку не попадает;
+ *  4. форма ошибки с телом ответа тоже даёт подпись у поля;
+ *  5. чужая 400-ошибка не вешается на поле ID чата, но отправка формы была;
+ *  6. успешное сохранение остаётся успешным.
+ *
+ * Attributable red: убрать сопоставление ошибки с полем `telegram.chatId`
+ * в SocialMediaSettings — падают случаи 1, 2 и 4; убрать чтение текста из
+ * `error.message` — падают 1 и 2.
+ *
+ * Требует JSX-инфраструктуру AI-107.
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import React from 'react';
 
 // ─── Silence unhandled background fetch errors (jsdom has no URL base) ─────
-
-const _origFetch = globalThis.fetch;
 
 globalThis.fetch = vi.fn().mockImplementation(() =>
   Promise.resolve(new Response(JSON.stringify({}), { status: 200, headers: { 'Content-Type': 'application/json' } })),
@@ -102,6 +118,9 @@ vi.mock('lucide-react', async () => {
 import { apiRequest } from '@/lib/queryClient';
 import { SocialMediaSettings } from '@/components/SocialMediaSettings';
 
+const SERVER_TEXT = 'Invalid Telegram chat ID. Expected: @username, -100XXXXXXXXX, numeric ID, or t.me link';
+const TOKEN = 'секрет-который-не-должен-утечь-в-разметку';
+
 let qc: QueryClient;
 
 beforeEach(() => {
@@ -109,82 +128,104 @@ beforeEach(() => {
   qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 });
 
-function renderComponent() {
-  return render(
+function renderComponent(onSettingsUpdated = vi.fn()) {
+  render(
     React.createElement(QueryClientProvider, { client: qc },
       React.createElement(SocialMediaSettings, {
         campaignId: 'test-campaign-1',
         initialSettings: {},
-        onSettingsUpdated: vi.fn(),
+        onSettingsUpdated,
       }),
     ),
   );
+  return { onSettingsUpdated };
 }
 
-describe('SM-24: server 400 chatId error reaches field', () => {
-  it('Telegram 400: error text visible at chatId field with aria association', async () => {
-    // apiRequest throws with response.data.error → onSubmit catch reads it
-    const apiError = new Error('Invalid Telegram chat ID. Expected: @username, -100XXXXXXXXX, numeric ID, or t.me link');
-    (apiError as any).response = {
-      status: 400,
-      data: { error: 'Invalid Telegram chat ID. Expected: @username, -100XXXXXXXXX, numeric ID, or t.me link' },
-    };
-    (apiRequest as any).mockRejectedValueOnce(apiError);
+// Ровно то, что строит throwIfResNotOk: текст сервера в message, тела ответа нет.
+function transportError(text: string) {
+  const e: any = new Error(text);
+  e.status = 400;
+  e.response = { status: 400, statusText: 'Bad Request' };
+  e.config = { url: '/api/campaigns/test-campaign-1' };
+  return e;
+}
 
+// Старая форма с телом ответа — оставлена для совместимости.
+function bodyError(text: string) {
+  const e: any = new Error(text);
+  e.response = { status: 400, data: { error: text } };
+  return e;
+}
+
+async function openTelegramAndSave(user: ReturnType<typeof userEvent.setup>, chatId: string, withToken = false) {
+  await user.click(screen.getByText('Telegram'));
+  const chatIdInput = screen.getByPlaceholderText('Например: -1001234567890 или @channel_name');
+  if (withToken) {
+    await user.type(screen.getByPlaceholderText('Введите токен бота'), TOKEN);
+  }
+  await user.clear(chatIdInput);
+  if (chatId) await user.type(chatIdInput, chatId);
+  await user.click(screen.getByRole('button', { name: 'Сохранить настройки' }));
+  return chatIdInput;
+}
+
+describe('SM-24: отказ сервера по ID чата доходит до поля', () => {
+  it('ошибка в форме транспорта: подпись у поля, по-русски, с aria-связью', async () => {
+    (apiRequest as any).mockRejectedValueOnce(transportError(SERVER_TEXT));
     renderComponent();
     const user = userEvent.setup();
+    const chatIdInput = await openTelegramAndSave(user, 'someone@example.com', true);
 
-    // Open the Telegram accordion section
-    const telegramTrigger = screen.getByText('Telegram');
-    await user.click(telegramTrigger);
-
-    // Find the chatId input by placeholder
-    const chatIdInput = screen.getByPlaceholderText('Например: -1001234567890 или @channel_name');
-    await user.clear(chatIdInput);
-    await user.type(chatIdInput, 'someone@example.com');
-
-    // Click save
-    const saveButton = screen.getByRole('button', { name: 'Сохранить настройки' });
-    await user.click(saveButton);
-
-    // Wait for react-hook-form setError to propagate to FormMessage
-    const errorNode = await screen.findByText(/Invalid Telegram chat ID/);
+    const errorNode = await screen.findByText(/ID чата/);
     expect(errorNode).toBeInTheDocument();
+    // Пользователю показываем человеческий текст, а не ответ сервера.
+    expect(screen.queryByText(/Invalid Telegram chat ID/)).toBeNull();
 
-    // Field-level proof: input aria-invalid and aria-describedby → error node
     expect(chatIdInput).toHaveAttribute('aria-invalid', 'true');
     const describedBy = chatIdInput.getAttribute('aria-describedby');
     expect(describedBy).toBeTruthy();
-    // The error node's id should be referenced by the input's aria-describedby
     expect(errorNode.id).toBeTruthy();
-    if (describedBy) {
-      expect(describedBy).toContain(errorNode.id);
-    }
+    expect(describedBy).toContain(errorNode.id);
+
+    // Введённый токен нигде в разметке не появляется.
+    expect(document.body.textContent || '').not.toContain(TOKEN);
   });
 
-  it('non-Telegram 400: no field-level error at chatId, submit still happened', async () => {
-    const apiError = new Error('Campaign name cannot be empty');
-    (apiError as any).response = { status: 400, data: { error: 'Campaign name cannot be empty' } };
-    (apiRequest as any).mockRejectedValueOnce(apiError);
+  it('ошибка с телом ответа тоже доходит до поля', async () => {
+    (apiRequest as any).mockRejectedValueOnce(bodyError(SERVER_TEXT));
+    renderComponent();
+    const user = userEvent.setup();
+    const chatIdInput = await openTelegramAndSave(user, 'someone@example.com');
 
+    await screen.findByText(/ID чата/);
+    expect(chatIdInput).toHaveAttribute('aria-invalid', 'true');
+  });
+
+  it('чужая 400-ошибка не вешается на поле ID чата, но отправка была', async () => {
+    (apiRequest as any).mockRejectedValueOnce(transportError('Campaign name cannot be empty'));
     renderComponent();
     const user = userEvent.setup();
 
-    // Open Telegram (need to interact with form to trigger save)
-    const telegramTrigger = screen.getByText('Telegram');
-    await user.click(telegramTrigger);
+    await user.click(screen.getByText('Telegram'));
+    await user.click(screen.getByRole('button', { name: 'Сохранить настройки' }));
 
-    const saveButton = screen.getByRole('button', { name: 'Сохранить настройки' });
-    await user.click(saveButton);
-
-    // Proof that submit actually happened: apiRequest was called with PATCH
     expect(apiRequest).toHaveBeenCalledTimes(1);
     expect(apiRequest).toHaveBeenCalledWith('/api/campaigns/test-campaign-1',
       expect.objectContaining({ method: 'PATCH' }));
 
-    // No Telegram-specific field error
     await waitFor(() => {
-      expect(screen.queryByText(/Invalid Telegram chat ID/)).toBeNull();
+      expect(screen.queryByText(/ID чата\./)).toBeNull();
     });
+  });
+
+  it('успешное сохранение остаётся успешным: подписи нет, родитель уведомлён', async () => {
+    (apiRequest as any).mockResolvedValueOnce({ data: { id: 'test-campaign-1' } });
+    const { onSettingsUpdated } = renderComponent();
+    const user = userEvent.setup();
+    const chatIdInput = await openTelegramAndSave(user, '@valid_channel_name', true);
+
+    await waitFor(() => expect(onSettingsUpdated).toHaveBeenCalled());
+    expect(chatIdInput).toHaveAttribute('aria-invalid', 'false');
+    expect(screen.queryByText(/Неверный ID чата/)).toBeNull();
   });
 });

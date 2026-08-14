@@ -111,8 +111,11 @@ export class AutonomousCycleLedger {
         log(`🔖 CycleLedger: slot ${key} already reserved — skip (dup impossible)`, 'cycle-ledger');
         return false;
       }
-      log(`⛔ CycleLedger: reserve failed for ${key}: ${err?.message}`, 'cycle-ledger');
-      return false;
+      // SM-20 Phase2 (A) B1 fail-close: любая НЕ-unique ошибка (нет коллекции,
+      // нет схемы, транспортная) — THROW, а не тихий false с нулём слотов.
+      // Иначе «резервирование молча не сработало» выглядит как «слот потерян».
+      log(`⛔ CycleLedger: reserve hard-fail for ${key}: ${err?.message}`, 'cycle-ledger');
+      throw err;
     }
   }
 

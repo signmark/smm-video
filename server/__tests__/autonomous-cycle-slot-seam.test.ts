@@ -56,6 +56,12 @@ describe('SM-20 Phase A: materializeCycleSlot seam', () => {
     expect(preallocIdx).toBeGreaterThan(0);
     const loopWindow = src.slice(preallocIdx, src.indexOf('// ФАЗА 5.5'));
     expect(loopWindow).toContain('const preallocatedId = cycleSlots.get(i)');
+    // B3 binding guard: строгое присваивание БЕЗ ?? / || fallback (например
+    // `?? randomUUID()` обязан краснеть).
+    const preallocLine = loopWindow.split('\n').find((l) => l.includes('const preallocatedId = cycleSlots.get(i)')) || '';
+    expect(preallocLine.includes('??')).toBe(false);
+    expect(preallocLine.includes('||')).toBe(false);
+    expect(preallocLine.trim()).toContain('cycleSlots.get(i)');
     expect(loopWindow).toContain('materializeCycleSlot(preallocatedId, async');
     // Лосер-ветка: seam возвращает lost_reservation, loop делает continue до createContent.
     expect(loopWindow).toContain("slotResult.tag === 'lost_reservation'");

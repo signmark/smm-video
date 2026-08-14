@@ -1205,7 +1205,7 @@ export class TelegramService extends BaseSocialService {
                 log(`Ошибка при альтернативной отправке: ${mediaError.message}`, 'social-publishing');
               }
             }
-            
+            log(`Ошибка при отправке изображения с текстом в Telegram: ${JSON.stringify(response.data)}`, 'social-publishing');
             return {
               platform: 'telegram',
               status: 'failed',

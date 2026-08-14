@@ -66,4 +66,24 @@ describe('AI-110: VK catch — нет [object Object] и raw JSON', () => {
     // Причина осталась читаемой (есть код ошибки).
     expect(result.error).toContain('code 5');
   });
+
+  it('axios rejecting с VK-строкой ошибки (error: "invalid_grant") → строка сохранена', async () => {
+    mockAxiosPost.mockResolvedValueOnce({ data: { response: { upload_url: 'http://up' } }, status: 200 });
+    mockAxiosGet.mockResolvedValueOnce({ data: Buffer.from('x'), headers: { 'content-type': 'image/jpeg' } });
+    mockAxiosPost.mockResolvedValueOnce({ data: { photo: 'p', server: 1, hash: 'h' } });
+    const axiosError: any = new Error('Request failed with status code 400');
+    axiosError.response = { status: 400, data: { error: 'invalid_grant' } }; // строка, не объект
+    mockAxiosPost.mockRejectedValueOnce(axiosError);
+
+    const { vkService } = await import('../services/social-platforms/vk-service');
+    const result = await vkService.publishPost(
+      { token: 'tok', groupId: '123' },
+      { text: 'test', imageUrl: 'http://example.com/img.jpg' },
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('invalid_grant');
+    expect(result.error).not.toContain('[object Object]');
+    expect(result.error).not.toContain('{"error');
+  });
 });

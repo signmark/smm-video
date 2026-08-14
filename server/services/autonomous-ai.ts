@@ -236,7 +236,21 @@ export async function restoreAutonomousStates() {
       authToken: token,
     });
     for (const rec of (sessions || [])) {
-      if (autonomousStates.has(rec.campaign_id)) continue;
+      const dbIdentity = {
+        runId: typeof rec.run_id === 'string' && rec.run_id ? rec.run_id : undefined,
+        cycleId: typeof rec.cycle_id === 'string' && rec.cycle_id ? rec.cycle_id : undefined,
+        phase: rec.phase === 'pausing' || rec.phase === 'paused' ? rec.phase : 'running',
+      };
+      const existing = autonomousStates.get(rec.campaign_id);
+      if (existing) {
+        // SM-20 Phase2 (A): DB — источник истины для identity. Если файловый
+        // restore уже поднял сессию, перезаписываем identity из БД (файл не
+        // выигрывает при расхождении).
+        if (dbIdentity.runId) existing.runId = dbIdentity.runId;
+        if (dbIdentity.cycleId) existing.cycleId = dbIdentity.cycleId;
+        if (dbIdentity.phase) existing.phase = dbIdentity.phase;
+        continue;
+      }
       activateRestoredState({
         campaignId: rec.campaign_id,
         userId: rec.user_id,
@@ -251,12 +265,14 @@ export async function restoreAutonomousStates() {
         startedAt: rec.started_at,
         launchCommand: rec.launch_command || undefined,
         lastCycleAt: rec.last_cycle_at || undefined,
-        // SM-20: без этих полей пауза не переживала рестарт — режим молча
-        // возобновлялся при ближайшем деплое, а счётчики обнулялись.
         paused: rec.paused === true,
         pausedAt: rec.paused_at || undefined,
         cyclesCompleted: typeof rec.cycles_completed === "number" ? rec.cycles_completed : 0,
         postsCreated: typeof rec.posts_created === "number" ? rec.posts_created : 0,
+        // SM-20 Phase2 (A): DB identity.
+        runId: dbIdentity.runId,
+        cycleId: dbIdentity.cycleId,
+        phase: dbIdentity.phase,
       });
     }
     console.log(`[AUTONOMOUS] БД: восстановлено ${(sessions || []).length} сессий`);

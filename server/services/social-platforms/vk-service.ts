@@ -6,6 +6,7 @@
 import axios from 'axios';
 import FormData from 'form-data';
 import log from '../../utils/logger';
+import { formatVkErrorMessage, createVkApiError, isVkEnrichedError } from '../../utils/vk-error';
 
 export const VK_DEFAULT_APP_ID = '6121396';
 
@@ -200,7 +201,7 @@ class VkService {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
       });
       if (serverRes.data?.error) {
-        throw new Error(`photos.getWallUploadServer: ${serverRes.data.error.error_msg || JSON.stringify(serverRes.data.error)}`);
+        throw createVkApiError('photos.getWallUploadServer', serverRes.data.error, serverRes.data, serverRes.status);
       }
       const uploadUrl: string = serverRes.data?.response?.upload_url;
       if (!uploadUrl) throw new Error('Не получен upload_url от VK');
@@ -242,7 +243,7 @@ class VkService {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
       });
       if (saveRes.data?.error) {
-        throw new Error(`photos.saveWallPhoto: ${saveRes.data.error.error_msg || JSON.stringify(saveRes.data.error)}`);
+        throw createVkApiError('photos.saveWallPhoto', saveRes.data.error, saveRes.data, saveRes.status);
       }
       const savedPhoto = saveRes.data?.response?.[0];
       if (!savedPhoto) throw new Error('Не удалось сохранить фото в VK');
@@ -250,8 +251,13 @@ class VkService {
       log.info(`[${opId}] [VK] Фото сохранено: photo${savedPhoto.owner_id}_${savedPhoto.id}`);
       return `photo${savedPhoto.owner_id}_${savedPhoto.id}`;
     } catch (err: any) {
+      // If error was already enriched with typed VK info, preserve the message as-is
+      if (isVkEnrichedError(err)) {
+        log.error(`[${opId}] [VK] Ошибка загрузки фото: ${err.message}`);
+        throw err;
+      }
       const responseError = err?.response?.data?.error?.error_msg || err?.response?.data?.error || err?.response?.data;
-      const reason = responseError ? `${err.message}: ${JSON.stringify(responseError)}` : err.message;
+      const reason = responseError ? `${err.message}: ${typeof responseError === 'string' ? responseError : JSON.stringify(responseError)}` : err.message;
       log.error(`[${opId}] [VK] Ошибка загрузки фото: ${reason}`);
       throw new Error(`Не удалось загрузить изображение в VK: ${reason}`);
     }

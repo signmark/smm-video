@@ -8,6 +8,7 @@
 import axios from 'axios';
 import FormData from 'form-data';
 import { log } from '../../utils/logger';
+import { formatVkErrorMessage, createVkApiError } from '../../utils/vk-error';
 import { directusApi } from '../../directus.js';
 import { BaseSocialService, TokenValidationResult } from './base-service';
 import { CampaignContent, SocialMediaSettings } from '@shared/schema';
@@ -411,7 +412,7 @@ export class VKClipsService extends BaseSocialService {
     
     // Проверяем ошибки в ответе
     if (response.data.error) {
-      throw new Error(`Clips Upload Error: ${JSON.stringify(response.data.error)}`);
+      throw createVkApiError('VK Clips Upload', response.data.error, response.data, response.status);
     }
     
     // Проверяем base64-encoded ошибку в upload_result (как в VK Stories)

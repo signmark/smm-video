@@ -107,7 +107,12 @@ export function CalendarDayDots({ dots }: { dots: CalendarDayDot[] }) {
       {remaining > 0 && (
         <span
           data-testid="calendar-day-dots-overflow"
-          className="text-[8px] leading-none text-muted-foreground font-medium flex-shrink-0"
+          // Цвет счётчика НАСЛЕДУЕТСЯ от дня и не задаётся здесь: у выбранного
+          // дня фон `bg-primary` и текст `text-primary-foreground`, и любой
+          // собственный цвет (был `text-muted-foreground`) на нём сливается —
+          // в светлой теме это контраст 1.6:1, читать нечего. `text-current`
+          // даёт белый на выбранном дне и обычный тёмный на остальных.
+          className="text-[8px] leading-none text-current font-medium flex-shrink-0"
         >
           +{remaining}
         </span>

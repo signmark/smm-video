@@ -46,12 +46,13 @@ describe('AI-110: raw JSON не попадает в текст ошибки (sou
     expect(vkSvc).not.toContain('JSON.stringify(responseError)');
   });
 
-  it('повторный поиск по server/ не находит throw с JSON.stringify', () => {
+  it('повторный поиск по server/ не находит raw JSON в ошибке (throw или return.error)', () => {
+    // Без бэктиков в шаблоне (шелом ломает их). Ловим `throw new Error(...JSON.stringify...)`
+    // и `error: ...JSON.stringify...` (return-объект), исключая log/logger/console.
     const out = execSync(
-      `grep -rEn "throw new Error\\(.*JSON\\.stringify" --include='*.ts' server/ | grep -v __tests__ | grep -v node_modules || true`,
+      "grep -rEn 'throw new Error(.*JSON.stringify|error:.*JSON.stringify' --include='*.ts' server/ | grep -v __tests__ | grep -v node_modules | grep -vE '(log|logger|console)' || true",
       { cwd: ROOT, encoding: 'utf8' },
     );
-    // непустой вывод = нашлись прежние raw-JSON throw-места
     expect(out.trim()).toBe('');
   });
 });

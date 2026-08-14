@@ -1210,7 +1210,7 @@ export class TelegramService extends BaseSocialService {
               platform: 'telegram',
               status: 'failed',
               publishedAt: null,
-              error: `Ошибка при отправке изображения с текстом: ${response.data?.description || JSON.stringify(response.data)}`
+              error: `Ошибка при отправке изображения с текстом: ${response.data?.description || 'неизвестная ошибка Telegram API'}`
             };
           }
         } catch (error: any) {

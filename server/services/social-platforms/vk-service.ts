@@ -256,7 +256,11 @@ class VkService {
         log.error(`[${opId}] [VK] Ошибка загрузки фото: ${err.message}`);
         throw err;
       }
-      const responseError = err?.response?.data?.error?.error_msg || err?.response?.data?.error?.message || err?.response?.data?.error;
+      const vkErr = err?.response?.data?.error;
+      // Извлекаем читаемую причину: предпочитаем строку, иначе безопасное
+      // представление кода ошибки — но никогда не [object Object].
+      const responseError = vkErr?.error_msg || vkErr?.message
+        || (typeof vkErr === 'object' && vkErr !== null ? `code ${vkErr.error_code ?? 'unknown'}` : undefined);
       const reason = responseError ? `${err.message}: ${responseError}` : err.message;
       log.error(`[${opId}] [VK] Ошибка загрузки фото: ${reason}`);
       throw new Error(`Не удалось загрузить изображение в VK: ${reason}`);

@@ -386,7 +386,7 @@ export class VKStoriesService {
     }
     
     if (!storyItem || !storyItem.id) {
-      log(`Ответ VK не содержит данных о Story`, LOG_PREFIX);
+      log(`Ответ VK не содержит данных о Story: ${JSON.stringify(response.data)}`, LOG_PREFIX);
       throw new Error('VK не вернул данные Story. Возможно загрузка не удалась.');
     }
     

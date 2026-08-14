@@ -3688,8 +3688,29 @@ Respond with ONLY the image prompt, nothing else.`,
 }
 
 // Функция выполнения одного цикла автономной работы
-async function runAutonomousCycle(state: AutonomousState) {
-  // SM-20: страховка от осиротевших таймеров. Сюда можно попасть из таймера,
+
+/**
+ * SM-20 Phase2 (A): узкий typed seam для Phase-5 материалзации слота цикла.
+ * Получает preallocated content_id и callback, обёртывающий ВЕСЬ блок «модель →
+ * campaign_content» этого item. Если id отсутствует (проигравший unique-гонку
+ * за слот) — возвращает `lost_reservation` и НЕ вызывает callback, поэтому
+ * loser не может добраться ни до модели, ни до materialization. Реальный
+ * Phase-5 loop зовёт его с `cycleSlots.get(i)`.
+ */
+export type MaterializeSlotResult =
+  | { tag: 'materialized'; contentResult: any }
+  | { tag: 'lost_reservation' };
+
+export async function materializeCycleSlot(
+  preallocatedId: string | undefined,
+  fn: (id: string) => Promise<any>,
+): Promise<MaterializeSlotResult> {
+  if (!preallocatedId) return { tag: 'lost_reservation' };
+  const contentResult = await fn(preallocatedId);
+  return { tag: 'materialized', contentResult };
+}
+
+async function runAutonomousCycle(state: AutonomousState) {  // SM-20: страховка от осиротевших таймеров. Сюда можно попасть из таймера,
   // который поставили до остановки или паузы: остановка удаляет состояние из
   // карты, пауза выставляет флаг. Без этой проверки цикл отработал бы на
   // состоянии, которого уже нет в системе.
@@ -4004,78 +4025,70 @@ async function runAutonomousCycle(state: AutonomousState) {
 
         console.log(`[PIPELINE] ✍️ Пост ${i + 1}/${contentPlan.length}: "${topic}" (${contentType})`);
 
-        // SM-20 Phase2 (A): этот item соответствует слоту цикла itemIndex=i;
-        // у него есть preallocated content_id из резервирования. Если слот не
-        // зарезервирован (reserve не прошёл) — пропускаем материалзацию.
+        // SM-20 Phase2 (A): материалзация слота через узкий seam. Весь блок
+        // «модель → campaign_content» живёт В callback; если preallocatedId нет
+        // (проигравший unique-гонку) — seam возвращает lost_reservation и НЕ
+        // вызывает callback, поэтому loser не достигает ни модели, ни создания.
         const preallocatedId = cycleSlots.get(i);
-        if (!preallocatedId) {
+        const slotResult = await materializeCycleSlot(preallocatedId, async (materializeId) => {
+          const cr = await TOOL_IMPLEMENTATIONS.createContent({
+            campaignId: state.campaignId,
+            topic,
+            theme: finalTheme,
+            count: 1,
+            preallocatedId: materializeId,
+            editorGuide: autoSettings.globalPrompt
+              ? substituteSocialNetworks(autoSettings.globalPrompt, state.platforms)
+              : '',
+            useEditorPass: autoSettings.useEditorPass ?? false,
+            humanize: autoSettings.humanize ?? false
+          }, request);
+
+          if (cr.success) {
+            const savedPosts: Array<{ id: string; content: string }> = cr.posts || [];
+
+            for (const savedPost of savedPosts) {
+              const contentId = savedPost.id;
+              const postText = savedPost.content || theme;
+
+              if (contentId && mode !== 'controlled') {
+                try {
+                  const imagePrompt = await buildImagePromptFromText({
+                    postText, topic: planItem.topic, contentId,
+                    userId: state.userId, authToken: request.authToken,
+                  });
+                  if (cycleWithImages) {
+                    await TOOL_IMPLEMENTATIONS.generateImage({
+                      prompt: imagePrompt, contentId, aspectRatio: 'landscape',
+                      style: 'photorealistic', model: 'nano-banana-pro',
+                    }, request);
+                  }
+                } catch (imgErr: any) {
+                  console.warn(`[PIPELINE] ⚠️ Ошибка фазы 6:`, imgErr.message);
+                }
+              }
+
+              createdPosts.push({ contentId, postText, contentType, platform: planItem.platform, topic: planItem.topic });
+              state.postsCreated++;
+
+              // CAS reserved→filled после материалзации.
+              await autonomousCycleLedger.fillItem({
+                campaignId: state.campaignId, userId: state.userId,
+                runId: state.runId!, cycleId: state.cycleId!, itemIndex: i,
+                contentId: materializeId,
+              }, contentId);
+            }
+          }
+          return cr;
+        });
+
+        if (slotResult.tag === 'lost_reservation') {
           log(`[PIPELINE] ⏭ Слот цикла itemIndex=${i} не зарезервирован — пропускаем пост`, 'autonomous');
           continue;
         }
-
-        const contentResult = await TOOL_IMPLEMENTATIONS.createContent({
-          campaignId: state.campaignId,
-          topic,
-          theme: finalTheme,
-          count: 1,
-          preallocatedId,
-          editorGuide: autoSettings.globalPrompt
-            ? substituteSocialNetworks(autoSettings.globalPrompt, state.platforms)
-            : '',
-          useEditorPass: autoSettings.useEditorPass ?? false,
-          humanize: autoSettings.humanize ?? false
-        }, request);
+        const contentResult = slotResult.contentResult;
 
         if (contentResult.success) {
-          const savedPosts: Array<{ id: string; content: string }> = contentResult.posts || [];
-
-          for (const savedPost of savedPosts) {
-            const contentId = savedPost.id;
-            const postText = savedPost.content || theme;
-
-            // ── ФАЗА 6: Промт + картинка (только не в controlled режиме — там отдельная фаза) ──
-            if (contentId && mode !== 'controlled') {
-              try {
-                console.log(`[PIPELINE] 🖼️ Фаза 6: генерация промта для поста ${contentId}...`);
-                const imagePrompt = await buildImagePromptFromText({
-                  postText,
-                  topic: planItem.topic,
-                  contentId,
-                  userId: state.userId,
-                  authToken: request.authToken
-                });
-                if (cycleWithImages) {
-                  await TOOL_IMPLEMENTATIONS.generateImage({
-                    prompt: imagePrompt,
-                    contentId,
-                    aspectRatio: 'landscape',
-                    style: 'photorealistic',
-                    model: 'nano-banana-pro'
-                  }, request);
-                  console.log(`[PIPELINE] ✅ Картинка сгенерирована для ${contentId}`);
-                }
-              } catch (imgErr: any) {
-                console.warn(`[PIPELINE] ⚠️ Ошибка фазы 6:`, imgErr.message);
-              }
-            }
-
-            createdPosts.push({ contentId, postText, contentType, platform: planItem.platform, topic: planItem.topic });
-            state.postsCreated++;
-            console.log(`[PIPELINE] ✅ Пост ${i + 1} сохранён. Итого: ${state.postsCreated}`);
-
-            // SM-20 Phase2 (A): после материалзации — CAS reserved→filled на
-            // слоте цикла. Если пауза уже перевела слот (CAS miss) — ничего не
-            // перезаписываем; содержимое всё равно создано идемпотентно.
-            await autonomousCycleLedger.fillItem({
-              campaignId: state.campaignId,
-              userId: state.userId,
-              runId: state.runId!,
-              cycleId: state.cycleId!,
-              itemIndex: i,
-              contentId: preallocatedId,
-            }, contentId);
-          }
-
           await new Promise(resolve => setTimeout(resolve, 3000));
         } else {
           console.warn(`[PIPELINE] ⚠️ createContent вернул success=false для поста ${i + 1}`);

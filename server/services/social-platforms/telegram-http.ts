@@ -35,6 +35,21 @@ import * as https from 'https';
 import axios, { AxiosInstance } from 'axios';
 import { log } from '../../utils/logger';
 
+/**
+ * Операционализация failover-сигнала: кроме warn-лога, шлём событие в
+ * notification-bus (WebSocket → UI), чтобы сигнал дошёл до оператора в реальном
+ * времени, а не тонул в stdout. Ленивый import — модуль грузится рано, циклическая
+ * зависимость исключена (как в publish-scheduler).
+ */
+function broadcastFailoverSignal(kind: 'not_configured' | 'all_invalid' | 'saved' | 'stale', detail: string): void {
+  import('../../services/notification-bus').then(({ broadcastNotification }) => {
+    broadcastNotification('telegram_failover', { kind, detail, timestamp: new Date().toISOString() });
+  }).catch(() => {
+    // notification-bus недоступен (например, вне полного приложения) —
+    // warn-лог ниже всё равно записан; это не должно ронять соединение.
+  });
+}
+
 const TELEGRAM_HOST = 'api.telegram.org';
 
 let cachedIps: string[] | null = null;
@@ -124,6 +139,7 @@ export function getFallbackIps(): string[] {
         'telegram-transport',
         'warn',
       );
+      broadcastFailoverSignal('not_configured', 'TELEGRAM_API_IPS не задана');
     }
     return [];
   }
@@ -139,6 +155,7 @@ export function getFallbackIps(): string[] {
       'telegram-transport',
       'warn',
     );
+    broadcastFailoverSignal('all_invalid', raw);
   }
   return parsed;
 }
@@ -360,9 +377,11 @@ export function createConnectionFactory(ips: string[], dnsIps: string[] = ips) {
           // «запас спас» значит соврать в том самом логе, по которому ищут причину.
           if (shouldWarn('no_targets_hostname')) {
             log(`[telegram-transport] ни DNS, ни TELEGRAM_API_IPS не дали адресов — соединяюсь по имени ${TELEGRAM_HOST}, перебора не будет`, 'telegram-transport', 'warn');
+            broadcastFailoverSignal('not_configured', `ни DNS, ни TELEGRAM_API_IPS — соединяюсь по имени ${TELEGRAM_HOST}`);
           }
         } else if (!fromDns.has(okTarget) && shouldWarn('fallback_saved:' + okTarget)) {
           log(`[telegram-transport] запас спас: ${okTarget} ответил, когда адреса из DNS не ответили`, 'telegram-transport', 'warn');
+          broadcastFailoverSignal('saved', okTarget);
         }
         // Снимаем ОБА наших обработчика: после рукопожатия запрос уже мог уйти,
         // и любой поздний обрыв обязан достаться вызывающему, а не увести нас
@@ -379,6 +398,7 @@ export function createConnectionFactory(ips: string[], dnsIps: string[] = ips) {
         const target = targets[idx];
         if (!fromDns.has(target) && target !== TELEGRAM_HOST && shouldWarn('fallback_stale:' + target)) {
           log(`[telegram-transport] запас протух: ${target} не ответил на реальной попытке соединения`, 'telegram-transport', 'warn');
+          broadcastFailoverSignal('stale', target);
         }
       }
       function onError() {

@@ -200,6 +200,29 @@ const cleanAiText = (text: string): string => {
   return cleaned.trim();
 };
 
+const getGenerationToastLabels = (data: any, aiModel: string | null): { svcLabel: string; originalLabel: string | null } => {
+  const MODEL_NAMES: Record<string, string> = {
+    'gemini-3.5-flash': 'Gemini 3.5 Flash',
+    'gemini-3.0-pro': 'Gemini 3.0 Pro',
+    'gemini-2.5-pro': 'Gemini 2.5 Pro',
+    'gemini-2.5-flash': 'Gemini 2.5 Flash',
+    'gemini-2.5-flash-lite': 'Gemini 2.5 Flash Lite',
+
+    'gemini-proxy': 'Gemini',
+    'gemini-proxy-fallback': 'Gemini (fallback)',
+    'deepseek-chat': 'DeepSeek',
+    'deepseek': 'DeepSeek',
+    'qwen': 'Qwen',
+  };
+  // Реально ответившая модель — model/service, НЕ originalService (выбранная).
+  const displayModel = data.model || data.service || data.originalService || aiModel || 'Gemini';
+  const svcLabel = MODEL_NAMES[displayModel] ?? displayModel;
+  const originalLabel = data.originalService ? (MODEL_NAMES[data.originalService] ?? data.originalService) : null;
+  return { svcLabel, originalLabel };
+};
+
+export { getGenerationToastLabels };
+
 export default function ContentPage() {
   const { t } = useTranslation();
   const { limits, effectivePlan, isExpired } = usePlan();
@@ -1328,24 +1351,7 @@ export default function ContentPage() {
       // SM-25: промт после генерации НЕ стираем — человек должен найти его на
       // месте, вернувшись в панель. Очистка aiPromptText — на явное действие.
       // (см. место закрытия/нового контента, где стоит setAiPromptText('')).
-      const MODEL_NAMES: Record<string, string> = {
-        'gemini-3.5-flash': 'Gemini 3.5 Flash',
-        'gemini-3.0-pro': 'Gemini 3.0 Pro',
-        'gemini-2.5-pro': 'Gemini 2.5 Pro',
-        'gemini-2.5-flash': 'Gemini 2.5 Flash',
-        'gemini-2.5-flash-lite': 'Gemini 2.5 Flash Lite',
-
-        'gemini-proxy': 'Gemini',
-        'gemini-proxy-fallback': 'Gemini (fallback)',
-        'deepseek-chat': 'DeepSeek',
-        'deepseek': 'DeepSeek',
-        'qwen': 'Qwen',
-      };
-      // Реально ответившая модель — model/service, НЕ originalService (выбранная).
-      // Иначе при фолбэке обе части получали имя выбранной модели.
-      const displayModel = data.model || data.service || data.originalService || aiModel || 'Gemini';
-      const svcLabel = MODEL_NAMES[displayModel] ?? displayModel;
-      const originalLabel = data.originalService ? (MODEL_NAMES[data.originalService] ?? data.originalService) : null;
+      const { svcLabel, originalLabel } = getGenerationToastLabels(data, aiModel);
       if (data.isFallback && originalLabel) {
         toast({ title: 'Модель переключена', description: `${originalLabel} была недоступна. Ответ через ${svcLabel}.` });
       } else {

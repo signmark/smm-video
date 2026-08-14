@@ -99,7 +99,7 @@ describe('AI-110 VK Error Formatting', () => {
         data: { photo: 'data', server: 123, hash: 'abc' },
       });
 
-      // saveWallPhoto fails
+      // saveWallPhoto fails with error_msg
       const vkError = { error_msg: 'Permission denied for group', error_code: 7 };
       mockAxiosPost.mockResolvedValueOnce({
         data: { error: vkError },
@@ -193,6 +193,63 @@ describe('AI-110 VK Error Formatting', () => {
       // With reverted code: message would contain '{"error_code":5}' (raw JSON)
       expect(result.error).toContain('Unknown VK error');
       expect(result.error).not.toContain('{"error_code"');
+    });
+
+    it('mutation red: revert site 2 throw → raw JSON leaks when error_msg absent', async () => {
+      // getWallUploadServer succeeds
+      mockAxiosPost.mockResolvedValueOnce({
+        data: { response: { upload_url: 'http://upload.vk.com' } },
+        status: 200,
+      });
+
+      // Image download
+      mockAxiosGet.mockResolvedValueOnce({
+        data: Buffer.from('fake-image'),
+        headers: { 'content-type': 'image/jpeg' },
+      });
+
+      // Upload server succeeds
+      mockAxiosPost.mockResolvedValueOnce({
+        data: { photo: 'data', server: 123, hash: 'abc' },
+      });
+
+      // saveWallPhoto fails WITHOUT error_msg — old code would JSON.stringify
+      const vkError = { error_code: 7 }; // no error_msg
+      mockAxiosPost.mockResolvedValueOnce({
+        data: { error: vkError },
+        status: 200,
+      });
+
+      const { vkService } = await import('../services/social-platforms/vk-service');
+      const result = await vkService.publishPost(
+        { token: 'test', groupId: '123' },
+        { text: 'test', imageUrl: 'http://example.com/img.jpg' }
+      );
+
+      // With our fix: 'Unknown VK error' (from formatVkErrorMessage fallback)
+      // With reverted code: '{"error_code":7}' (raw JSON)
+      expect(result.error).toContain('Unknown VK error');
+      expect(result.error).not.toContain('{"error_code"');
+    });
+
+    it('axios regression: HTTP 500 from VK preserves wrapped error (not swallowed by guard)', async () => {
+      // Simulate axios HTTP 500 error (not a VK error)
+      const axiosError = new Error('Request failed with status code 500');
+      (axiosError as any).code = 'ERR_BAD_RESPONSE';
+      (axiosError as any).response = { data: { message: 'Internal Server Error' }, status: 500 };
+      mockAxiosPost.mockRejectedValueOnce(axiosError);
+
+      const { vkService } = await import('../services/social-platforms/vk-service');
+      const result = await vkService.publishPost(
+        { token: 'test', groupId: '123' },
+        { text: 'test', imageUrl: 'http://example.com/img.jpg' }
+      );
+
+      // Axios error should be caught by outer catch, NOT by isVkEnrichedError guard
+      // Outer catch wraps it with 'Не удалось загрузить изображение в VK:'
+      expect(result.success).toBe(false);
+      expect(result.error).toContain('Не удалось загрузить изображение в VK');
+      expect(result.error).toContain('500');
     });
   });
 });

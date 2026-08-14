@@ -6,7 +6,7 @@
 import axios from 'axios';
 import FormData from 'form-data';
 import log from '../../utils/logger';
-import { formatVkErrorMessage } from '../../utils/vk-error';
+import { formatVkErrorMessage, createVkApiError, isVkEnrichedError } from '../../utils/vk-error';
 
 export const VK_DEFAULT_APP_ID = '6121396';
 
@@ -201,11 +201,7 @@ class VkService {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
       });
       if (serverRes.data?.error) {
-        const err = serverRes.data.error;
-        const e: any = new Error(formatVkErrorMessage('photos.getWallUploadServer', err));
-        e.code = err.error_code;
-        e.response = { data: serverRes.data, status: serverRes.status };
-        throw e;
+        throw createVkApiError('photos.getWallUploadServer', serverRes.data.error, serverRes.data, serverRes.status);
       }
       const uploadUrl: string = serverRes.data?.response?.upload_url;
       if (!uploadUrl) throw new Error('Не получен upload_url от VK');
@@ -247,11 +243,7 @@ class VkService {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
       });
       if (saveRes.data?.error) {
-        const err = saveRes.data.error;
-        const e: any = new Error(formatVkErrorMessage('photos.saveWallPhoto', err));
-        e.code = err.error_code;
-        e.response = { data: saveRes.data, status: saveRes.status };
-        throw e;
+        throw createVkApiError('photos.saveWallPhoto', saveRes.data.error, saveRes.data, saveRes.status);
       }
       const savedPhoto = saveRes.data?.response?.[0];
       if (!savedPhoto) throw new Error('Не удалось сохранить фото в VK');
@@ -260,7 +252,7 @@ class VkService {
       return `photo${savedPhoto.owner_id}_${savedPhoto.id}`;
     } catch (err: any) {
       // If error was already enriched with typed VK info, preserve the message as-is
-      if (err.code !== undefined && err.response) {
+      if (isVkEnrichedError(err)) {
         log.error(`[${opId}] [VK] Ошибка загрузки фото: ${err.message}`);
         throw err;
       }

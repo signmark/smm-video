@@ -8,7 +8,7 @@
 import axios from 'axios';
 import FormData from 'form-data';
 import { log } from '../../utils/logger';
-import { formatVkErrorMessage } from '../../utils/vk-error';
+import { formatVkErrorMessage, createVkApiError } from '../../utils/vk-error';
 import { directusApi } from '../../directus';
 import { TokenValidationResult } from './base-service';
 import { generateStoriesImageServer } from '../stories-image-generator';
@@ -296,11 +296,7 @@ export class VKStoriesService {
     log(`VK Upload response keys: ${Object.keys(response.data || {}).join(', ')}, error=${response.data?.error ? JSON.stringify(response.data.error) : 'нет'}`, LOG_PREFIX);
     
     if (response.data.error) {
-      const err = response.data.error;
-      const e: any = new Error(formatVkErrorMessage('VK Stories Upload', err));
-      e.code = err.error_code;
-      e.response = { data: response.data, status: response.status };
-      throw e;
+      throw createVkApiError('VK Stories Upload', response.data.error, response.data, response.status);
     }
     
     // VK возвращает upload_result в разных местах в зависимости от типа

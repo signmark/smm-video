@@ -19,6 +19,8 @@ import { autonomousCycleLedger } from '../services/autonomous-cycle-ledger';
 
 function makeUniqueStore() {
   const rows: any[] = [];
+  // campaign_content store, keyed by id — empty by default (content_missing).
+  const contentRows = new Map<string, any>();
   const fn = {
     post: vi.fn(async (url: string, body: any, _cfg?: any) => {
       const existing = rows.find((r) => r.item_key === body.item_key);
@@ -32,6 +34,18 @@ function makeUniqueStore() {
       return { data: { data: row } };
     }),
     get: vi.fn(async (url: string, params: any) => {
+      const u = String(url);
+      // campaign_content read by id
+      const m = u.match(/\/items\/campaign_content\/([^/?]+)/);
+      if (m) {
+        const item = contentRows.get(m[1]);
+        if (!item) {
+          const err: any = new Error('not found');
+          err.response = { data: { errors: [{ extensions: { code: 'RECORD_NOT_FOUND' } }] } };
+          throw err;
+        }
+        return { data: { data: { ...item } } };
+      }
       const q = (params?.params?.filter || {});
       const key = q.item_key?._eq;
       const run = q._and?.find((a: any) => a.run_id)?.run_id?._eq;
@@ -61,6 +75,13 @@ function makeUniqueStore() {
       return { data: { data: rows.slice(0, count).map((r) => ({ item_key: r.item_key })) } };
     }),
     delete: vi.fn(async () => ({ data: {} })),
+    setContent: (id: string, campaignId: string, userId: string) => {
+      contentRows.set(id, {
+        id, campaign_id: campaignId, user_id: userId,
+        run_id: contentRows.get(id)?.run_id, cycle_id: contentRows.get(id)?.cycle_id,
+        item_index: contentRows.get(id)?.item_index, content_id: contentRows.get(id)?.content_id,
+      });
+    },
   };
   return fn;
 }
@@ -102,13 +123,35 @@ describe('SM-20 Phase A ledger: concurrent-loser + crash-gap', () => {
   it('crash-gap: reserved-слот с существующим содержимым после crash → reconcile CAS reserved→filled', async () => {
     // reserve, затем crash ДО обновления реестра (слот остаётся reserved).
     await autonomousCycleLedger.reserveItem(ID);
-    // reconcile подтверждает ownership и делает CAS reserved→filled.
+    // Содержимое campaign_content УЖЕ создано (тот же tenant) — reconcile должен
+    // подтвердить ownership контента и тогда CAS reserved→filled.
+    store.setContent(ID.contentId, ID.campaignId, ID.userId);
     const result = await autonomousCycleLedger.reconcileAndFill(ID);
     expect(result).toBe('filled');
     // Повторный reconcile идемпотентен: уже filled, не integrity/absent.
     const again = await autonomousCycleLedger.reconcileAndFill(ID);
     expect(result).toBe('filled');
     expect(again).toBe('filled');
+  });
+
+  it('crash-gap: reserved-слот БЕЗ созданного контента (crash после reserve/модели) → content_missing, слот остаётся reserved (восстановимый)', async () => {
+    await autonomousCycleLedger.reserveItem(ID);
+    // Контента нет (crash после reserve / после модели ДО создания) — reconcile
+    // НЕ должен пометить filled только по ownership-матчу реестра.
+    const result = await autonomousCycleLedger.reconcileAndFill(ID);
+    expect(result).toBe('content_missing');
+    const items = await autonomousCycleLedger.getCycleItems('run-1', 'cycle-1');
+    expect(items![0].state).toBe('reserved'); // остаётся reserved, восстановимый
+  });
+
+  it('crash-gap: реестр-ownership совпал, но campaign_content принадлежит ДРУГОЙ кампании → integrity_error, не filled', async () => {
+    await autonomousCycleLedger.reserveItem(ID);
+    // campaign_content существует, но принадлежит другому арендатору (campaign-B).
+    store.setContent(ID.contentId, 'camp-B', ID.userId);
+    const result = await autonomousCycleLedger.reconcileAndFill(ID);
+    expect(result).toBe('integrity_error');
+    const items = await autonomousCycleLedger.getCycleItems('run-1', 'cycle-1');
+    expect(items![0].state).toBe('reserved');
   });
 
   it('crash-gap: чужая запись с совпавшим item_key → hard integrity error, не filled', async () => {

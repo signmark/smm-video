@@ -43,6 +43,11 @@ import { isPlatformConnected } from "@/lib/platform-connection";
 import { fetchVkGroupsByManualToken } from "@/lib/vk-groups-request";
 import type { SocialMediaSettings } from "@shared/schema";
 
+// SM-24: единый человеческий текст отказа по полю «ID чата». Сервер отвечает
+// по-английски (Invalid Telegram chat ID…), пользователю показываем это.
+const TELEGRAM_CHAT_ID_ERROR =
+  'Неверный ID чата. Укажите @username канала, ID вида -100…, числовой ID или ссылку t.me';
+
 const socialMediaSettingsSchema = z.object({
   telegram: z.object({
     token: z.string().nullable().optional(),
@@ -1736,14 +1741,24 @@ export function SocialMediaSettings({
         description: "Настройки соцсетей обновлены"
       });
     } catch (error: any) {
-      // SM-24: If server returned a field-level validation error, set it on the form.
-      // Server errors use { error: '...' }, not { message: '...' }.
-      const serverError = error.response?.data?.error || error.response?.data?.message;
-      const description = serverError || error.message || 'Ошибка при обновлении настроек';
+      // SM-24: текст отказа сервер отдаёт в теле ответа, но apiRequest тело не
+      // сохраняет (throwIfResNotOk в lib/queryClient.ts кладёт в error.response
+      // только { status, statusText }), а сам текст остаётся в error.message.
+      // Читаем оба места здесь, чтобы не менять общий транспорт ошибок.
+      const serverError: string | undefined =
+        error.response?.data?.error
+        || error.response?.data?.message
+        || (typeof error?.message === 'string' ? error.message : undefined);
 
-      // Map Telegram validation errors to the form field
-      if (serverError && serverError.includes('Telegram chat ID')) {
-        form.setError('telegram.chatId', { message: serverError });
+      // Отказ по ID чата показываем подписью у самого поля и по-русски:
+      // англоязычный ответ сервера в углу экрана пользователю ничего не объясняет.
+      const chatIdRejected = !!serverError && /Telegram chat ID/i.test(serverError);
+      const description = chatIdRejected
+        ? TELEGRAM_CHAT_ID_ERROR
+        : (serverError || error.message || 'Ошибка при обновлении настроек');
+
+      if (chatIdRejected) {
+        form.setError('telegram.chatId', { message: TELEGRAM_CHAT_ID_ERROR });
       }
 
       toast({

@@ -200,6 +200,49 @@ const cleanAiText = (text: string): string => {
   return cleaned.trim();
 };
 
+// task #100: уведомление о результате генерации. Принимает реальный ответ
+// сервера и зависимость toast (инжектируется в тесте / берётся из хэндлера),
+// эмитит фактический title+description. Единственная точка, где собираются обе
+// подписи — «X была недоступна» и «Ответ через Y».
+const notifyGenerationResult = (
+  data: any,
+  aiModel: string | null,
+  toast: (opts: { title?: string; description?: string }) => void,
+): { title: string; description: string } => {
+  const MODEL_NAMES: Record<string, string> = {
+    'gemini-3.5-flash': 'Gemini 3.5 Flash',
+    'gemini-3.0-pro': 'Gemini 3.0 Pro',
+    'gemini-2.5-pro': 'Gemini 2.5 Pro',
+    'gemini-2.5-flash': 'Gemini 2.5 Flash',
+    'gemini-2.5-flash-lite': 'Gemini 2.5 Flash Lite',
+
+    'gemini-proxy': 'Gemini',
+    'gemini-proxy-fallback': 'Gemini (fallback)',
+    'deepseek-chat': 'DeepSeek',
+    'deepseek': 'DeepSeek',
+    'qwen': 'Qwen',
+  };
+  // Реально ответившая модель — model/service, НЕ originalService (выбранная).
+  const displayModel = data.model || data.service || data.originalService || aiModel || 'Gemini';
+  const svcLabel = MODEL_NAMES[displayModel] ?? displayModel;
+  const originalLabel = data.originalService ? (MODEL_NAMES[data.originalService] ?? data.originalService) : null;
+
+  let title: string;
+  let description: string;
+  if (data.isFallback && originalLabel) {
+    title = 'Модель переключена';
+    description = `${originalLabel} была недоступна. Ответ через ${svcLabel}.`;
+  } else {
+    title = 'Готово';
+    description = `Текст сгенерирован (${svcLabel})`;
+  }
+
+  toast({ title, description });
+  return { title, description };
+};
+
+export { notifyGenerationResult };
+
 export default function ContentPage() {
   const { t } = useTranslation();
   const { limits, effectivePlan, isExpired } = usePlan();
@@ -1328,28 +1371,8 @@ export default function ContentPage() {
       // SM-25: промт после генерации НЕ стираем — человек должен найти его на
       // месте, вернувшись в панель. Очистка aiPromptText — на явное действие.
       // (см. место закрытия/нового контента, где стоит setAiPromptText('')).
-      const MODEL_NAMES: Record<string, string> = {
-        'gemini-3.5-flash': 'Gemini 3.5 Flash',
-        'gemini-3.0-pro': 'Gemini 3.0 Pro',
-        'gemini-2.5-pro': 'Gemini 2.5 Pro',
-        'gemini-2.5-flash': 'Gemini 2.5 Flash',
-        'gemini-2.5-flash-lite': 'Gemini 2.5 Flash Lite',
-
-        'gemini-proxy': 'Gemini',
-        'gemini-proxy-fallback': 'Gemini (fallback)',
-        'deepseek-chat': 'DeepSeek',
-        'deepseek': 'DeepSeek',
-        'qwen': 'Qwen',
-      };
-      // Показываем оригинальную выбранную модель, а не замапленную сервером
-      const displayModel = data.originalService || data.model || data.service || aiModel;
-      const svcLabel = MODEL_NAMES[displayModel] ?? displayModel ?? 'Gemini';
-      const originalLabel = data.originalService ? (MODEL_NAMES[data.originalService] ?? data.originalService) : null;
-      if (data.isFallback && originalLabel) {
-        toast({ title: 'Модель переключена', description: `${originalLabel} была недоступна. Ответ через ${svcLabel}.` });
-      } else {
-        toast({ title: 'Готово', description: `Текст сгенерирован (${svcLabel})` });
-      }
+      // Уведомление о результате — единая точка, где собираются обе подписи.
+      notifyGenerationResult(data, aiModel, toast);
     } catch (err: any) {
       const msg = err.message || '';
       const isQuota = msg.includes('429') || msg.includes('quota') || msg.includes('RESOURCE_EXHAUSTED') || msg.includes('rate limit');

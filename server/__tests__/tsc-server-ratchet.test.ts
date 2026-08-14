@@ -32,7 +32,7 @@ import { join } from 'node:path';
  * (сообщение переносится). Планка, снятая грепом, оказалась бы завышенной, и
  * храповик молча пропускал бы регрессии.
  */
-const BASELINE = 398; // AI-101 Phase 2A: telegram-тесты получают отдельный клиент вместо `mockedAxios as any`, -2 ошибки
+const BASELINE = 397; // AI-111: обработчик голосовых зовёт существующий transcribeAudio вместо несуществующего transcribeAudioFromUrl, -1 ошибка (TS2551)
 
 const ROOT = join(__dirname, '..', '..');
 

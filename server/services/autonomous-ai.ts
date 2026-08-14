@@ -3721,6 +3721,34 @@ export async function materializeCycleSlot(
   return { tag: 'materialized', contentResult };
 }
 
+// SM-20 Phase2 (A) B4: crash-safe resume. Если восстановленная сессия несёт
+// незавершённый цикл (state.cycleId из БД + в ledgere есть строки по нему),
+// reconcile до аллокации НОВОГО cycleId — никакого региненира identity, ничего
+// не теряем и не дублируем (immutable ownership берётся из самих строк).
+async function recoverInterruptedCycle(state: AutonomousState): Promise<void> {
+  if (!state.runId || !state.cycleId) return;
+  const rows = await autonomousCycleLedger.getCycleItems(state.runId, state.cycleId);
+  if (!rows || rows.length === 0) return; // не было незавершённого цикла
+  log(`[AUTONOMOUS-CYCLE] ♻️ B4: найден незавершённый цикл ${state.cycleId} (${rows.length} слотов) — reconcile до нового цикла`, 'autonomous');
+  for (const row of rows) {
+    const ref = {
+      campaignId: state.campaignId,
+      userId: state.userId,
+      runId: state.runId,
+      cycleId: state.cycleId,
+      itemIndex: row.itemIndex,
+    };
+    if (row.state === 'reserved') {
+      // reserved + контент отсутствует = создание не завершилось (crash).
+      // Не материализуем заново (контент не создан), не помечаем filled:
+      // честно остаёмся reserved — слот утрачен, дубликата нет.
+      const outcome = await autonomousCycleLedger.reconcileAndFill(ref);
+      log(`[AUTONOMOUS-CYCLE] ♻️ B4: slot ${row.itemIndex} reserved→${outcome}`, 'autonomous');
+    }
+    // filled/licensed — уже материализовано, ничего не делаем.
+  }
+}
+
 async function runAutonomousCycle(state: AutonomousState) {  // SM-20: страховка от осиротевших таймеров. Сюда можно попасть из таймера,
   // который поставили до остановки или паузы: остановка удаляет состояние из
   // карты, пауза выставляет флаг. Без этой проверки цикл отработал бы на
@@ -3744,7 +3772,6 @@ async function runAutonomousCycle(state: AutonomousState) {  // SM-20: стра�
   // SM-20 Phase2 (A): durable cycle identity. run_id — UUID сессии (однажды
   // и навсегда); cycle_id — UUID этого цикла. Источник истины — БД.
   if (!state.runId) state.runId = randomUUID();
-  state.cycleId = randomUUID();
 
   // B1: awaited ledger health check ПЕРЕД первым использованием — если коллекции/
   // схемы нет, THROW (fail-close), а не тихий ноль слотов.
@@ -3752,6 +3779,15 @@ async function runAutonomousCycle(state: AutonomousState) {  // SM-20: стра�
   if (!healthy) {
     throw new Error('[AUTONOMOUS-CYCLE] ledger autonomous_cycle_items недоступен — цикл прерван (B1 fail-close)');
   }
+
+  // SM-20 Phase2 (A) B4: если восстановленная сессия несёт незавершённый цикл
+  // (state.cycleId из БД уже установлен), reconcile его ledger-строки ДО аллокации
+  // НОВОГО cycleId — никакого регенера identity, нельзя регинерировать признак
+  // «возобновляем прерванный цикл».
+  await recoverInterruptedCycle(state);
+
+  // Только ПОСЛЕ reconcile незавершённого цикла — новый cycle_id для свежего цикла.
+  state.cycleId = randomUUID();
 
   // Резервируем ВСЕ слоты цикла ДО генерации с preallocated content_id.
   // Проигравший unique-race не генерирует (дубль невозможен на уровне БД).

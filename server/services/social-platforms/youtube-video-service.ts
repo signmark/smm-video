@@ -226,7 +226,7 @@ export class YouTubeVideoService {
 
     const videoId = uploadResponse.data?.id;
     if (!videoId) {
-      throw new Error(`YouTube не вернул ID видео. Ответ: ${JSON.stringify(uploadResponse.data)}`);
+      throw new Error('YouTube не вернул ID видео.');
     }
 
     return videoId;

@@ -223,7 +223,7 @@ class VkService {
         throw new Error(`VK upload server: ${uploadData.error}`);
       }
       if (!uploadData?.photo || uploadData.server === undefined || !uploadData?.hash) {
-        throw new Error(`VK upload server returned incomplete data: ${JSON.stringify(uploadData)}`);
+        throw new Error('VK upload server returned incomplete data');
       }
       log.info(`[${opId}] [VK] Загружено: server=${uploadData.server}`);
 
@@ -256,8 +256,8 @@ class VkService {
         log.error(`[${opId}] [VK] Ошибка загрузки фото: ${err.message}`);
         throw err;
       }
-      const responseError = err?.response?.data?.error?.error_msg || err?.response?.data?.error || err?.response?.data;
-      const reason = responseError ? `${err.message}: ${typeof responseError === 'string' ? responseError : JSON.stringify(responseError)}` : err.message;
+      const responseError = err?.response?.data?.error?.error_msg || err?.response?.data?.error?.message || err?.response?.data?.error;
+      const reason = responseError ? `${err.message}: ${responseError}` : err.message;
       log.error(`[${opId}] [VK] Ошибка загрузки фото: ${reason}`);
       throw new Error(`Не удалось загрузить изображение в VK: ${reason}`);
     }

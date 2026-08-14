@@ -636,11 +636,11 @@ ${text}
           console.log(`[NETWORK-DEBUG] - Response headers: ${JSON.stringify(response.headers)}`);
           
           if (response.status === 403) {
-            throw new Error(`Request not allowed (403). Environment: ${process.env.NODE_ENV}. Response: ${JSON.stringify(response.data)}`);
+            throw new Error(`Request not allowed (403). Environment: ${process.env.NODE_ENV}.`);
           } else if (response.status === 401) {
-            throw new Error(`Invalid API key (401). Response: ${JSON.stringify(response.data)}`);
+            throw new Error('Invalid API key (401).');
           } else {
-            throw new Error(`Claude API responded with status code ${response.status}. Response: ${JSON.stringify(response.data)}`);
+            throw new Error(`Claude API responded with status code ${response.status}.`);
           }
         }
         

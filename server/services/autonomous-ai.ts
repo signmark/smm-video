@@ -395,6 +395,13 @@ export function pauseAutonomousExternal(campaignId: string) {
 
   state.paused = true;
   state.pausedAt = new Date();
+  // SM-20 Phase2 (B): пауза посреди ИДУЩЕГО цикла. Раньше пауза снимала только
+  // таймеры, а начатый цикл спокойно досчитывал и ставил посты в расписание —
+  // ровно то, на что жаловались. Теперь идущий цикл получает durable сигнал
+  // 'pausing' и останавливается на ближайшей безопасной границе (между постами),
+  // никогда посреди материализации слота.
+  const cyclePausing = state.cycleRunning === true;
+  state.phase = cyclePausing ? 'pausing' : 'paused';
   saveAutonomousPersistence();
 
   return {
@@ -402,6 +409,8 @@ export function pauseAutonomousExternal(campaignId: string) {
     pausedAt: state.pausedAt.toISOString(),
     cyclesCompleted: state.cyclesCompleted,
     postsCreated: state.postsCreated,
+    /** true — цикл уже шёл: он дорабатывает текущий пост и встаёт сам. */
+    cyclePausing,
   };
 }
 
@@ -419,6 +428,11 @@ export function resumeAutonomousExternal(campaignId: string) {
 
   state.paused = false;
   state.pausedAt = undefined;
+  // SM-20 Phase2 (B): остаток прерванного цикла НЕ запускается немедленно —
+  // снятие паузы не должно неожиданно опубликовать пост (см. комментарий выше).
+  // Незавершённый цикл продолжится ближайшим таймером: runAutonomousCycle сам
+  // увидит незакрытые слоты по сохранённому cycle_id и догенерирует остаток.
+  state.phase = 'running';
   scheduleAutonomousTimers(state);
   saveAutonomousPersistence();
 
@@ -675,6 +689,22 @@ interface AutonomousState {
 
 // Хранилище состояний автономных режимов (in-memory)
 const autonomousStates = new Map<string, AutonomousState>();
+
+/**
+ * SM-20 Phase2 (B): узкий шов для тестов паузы.
+ *
+ * Пауза принимает решение по ЖИВОМУ состоянию из этой карты, а положить туда
+ * состояние снаружи иначе нельзя — стартовать настоящий авторежим в тесте
+ * значит поднять модель, Directus и таймеры. Шов только регистрирует и
+ * снимает запись; никакой логики в нём нет, поэтому подменить им поведение
+ * паузы невозможно.
+ */
+export function __registerAutonomousStateForTests(state: AutonomousState): void {
+  autonomousStates.set(state.campaignId, state);
+}
+export function __clearAutonomousStatesForTests(): void {
+  autonomousStates.clear();
+}
 
 /**
  * Узкий тестовый доступ к автономным состояниям (SM-20 rev). Живая mutable-карта
@@ -3706,7 +3736,7 @@ Respond with ONLY the image prompt, nothing else.`,
  * campaign_content» этого item. Если id отсутствует (проигравший unique-гонку
  * за слот) — возвращает `lost_reservation` и НЕ вызывает callback, поэтому
  * loser не может добраться ни до модели, ни до materialization. Реальный
- * Phase-5 loop зовёт его с `cycleSlots.get(i)`.
+ * Phase-5 loop зовёт его с `slot.contentId` — идентификатором удержанного слота.
  */
 export type MaterializeSlotResult =
   | { tag: 'materialized'; contentResult: any }
@@ -3757,6 +3787,98 @@ export async function recoverInterruptedCycle(state: AutonomousState): Promise<v
   }
 }
 
+/**
+ * SM-20 Phase2 (B): слоты прерванного цикла, которые ещё предстоит наполнить.
+ *
+ * Источник истины — реестр, а не память процесса: после паузы (и после
+ * перезапуска сервера) остаток цикла восстанавливается по строкам
+ * `autonomous_cycle_items` с сохранённым cycle_id. Возвращаем ТОЛЬКО reserved —
+ * filled уже материализованы, consumed/tombstone решены окончательно.
+ */
+/**
+ * SM-20 Phase2 (B): читаем фазу через функцию намеренно.
+ *
+ * Цикл присваивает `phase = 'running'` на старте, а между проверками стоят
+ * await'ы, во время которых пауза выставляет 'pausing' ИЗВНЕ. При прямом
+ * сравнении компилятор сузил бы тип до 'running' и объявил проверку
+ * недостижимой — то есть отчитался бы об отсутствии ровно того сценария,
+ * ради которого всё написано.
+ */
+function isCyclePausing(state: AutonomousState): boolean {
+  return state.phase === 'pausing';
+}
+
+export async function collectResumableSlots(state: AutonomousState): Promise<{
+  pending: Array<{ itemIndex: number; contentId: string }>;
+  alreadyFilled: string[];
+} | null> {
+  if (!state.runId || !state.cycleId) return null;
+  const rows = await autonomousCycleLedger.getCycleItems(state.runId, state.cycleId);
+  if (!rows || rows.length === 0) return null;
+
+  const pending = rows
+    .filter(r => r.state === 'reserved' && r.contentId)
+    .map(r => ({ itemIndex: r.itemIndex, contentId: r.contentId as string }))
+    .sort((a, b) => a.itemIndex - b.itemIndex);
+  const alreadyFilled = rows
+    .filter(r => r.state === 'filled' && r.contentId)
+    .map(r => r.contentId as string);
+
+  if (pending.length === 0) return null;
+  return { pending, alreadyFilled };
+}
+
+/**
+ * SM-20 Phase2 (B): посты прерванного цикла возвращаются из расписания в
+ * черновики, чтобы на паузе ничего не опубликовалось само.
+ *
+ * Возвращает число фактически переведённых записей — по нему и проверяется
+ * поведение, а не по наличию вызова в исходнике.
+ */
+/**
+ * SM-20 Phase2 (B): закрытие цикла, прерванного паузой.
+ *
+ * Три вещи, каждая из которых важна по отдельности:
+ *  1. всё, что этот цикл успел поставить в расписание, возвращается в черновики —
+ *     иначе «пауза» останавливала бы только генерацию, а посты всё равно уезжали
+ *     бы в публикацию сами;
+ *  2. счётчик завершённых циклов НЕ растёт — цикл прерван, а не закончен, иначе
+ *     пользователю показали бы работу, которой не было;
+ *  3. идентификатор цикла сохраняется — по нему продолжение найдёт остаток слотов.
+ */
+export async function finalizePausedCycle(
+  state: AutonomousState,
+  contentIds: string[],
+  remainingSlots: number,
+): Promise<number> {
+  const movedBack = await unscheduleCyclePosts(contentIds);
+  log(`[AUTONOMOUS-CYCLE] ⏸ Цикл ${state.cycleId} приостановлен: снято с расписания ${movedBack}, слотов ждёт продолжения ${Math.max(0, remainingSlots)}`, 'autonomous');
+  state.phase = 'paused';
+  state.cycleRunning = false;
+  saveAutonomousPersistence();
+  return movedBack;
+}
+
+export async function unscheduleCyclePosts(contentIds: string[]): Promise<number> {
+  let moved = 0;
+  for (const contentId of contentIds) {
+    if (!contentId) continue;
+    try {
+      const { directusCrud } = await import('./directus-crud');
+      const item: any = await directusCrud.getById('campaign_content', contentId, { useAdminToken: true });
+      if (!item || item.status !== 'scheduled') continue;
+      await directusCrud.update('campaign_content', contentId, {
+        status: 'draft',
+        scheduled_at: null,
+      }, { useAdminToken: true });
+      moved++;
+    } catch (err: any) {
+      log(`[AUTONOMOUS-CYCLE] ⏸ не удалось снять с расписания ${contentId}: ${err?.message}`, 'autonomous');
+    }
+  }
+  return moved;
+}
+
 async function runAutonomousCycle(state: AutonomousState) {  // SM-20: страховка от осиротевших таймеров. Сюда можно попасть из таймера,
   // который поставили до остановки или паузы: остановка удаляет состояние из
   // карты, пауза выставляет флаг. Без этой проверки цикл отработал бы на
@@ -3768,6 +3890,10 @@ async function runAutonomousCycle(state: AutonomousState) {  // SM-20: стра�
 
   console.log(`[AUTONOMOUS-CYCLE] 🔄 Начало цикла ${state.cyclesCompleted + 1} для кампании ${state.campaignId}`);
   state.cycleRunning = true;
+  // SM-20 Phase2 (B): цикл стартует только в running. Если сюда попали, пауза
+  // уже снята (проверка выше), и остаточная фаза 'pausing' от прошлого прохода
+  // не должна мгновенно остановить новый цикл.
+  state.phase = 'running';
 
   // SM-20 snapshot-on-running: цикл работат со СНИМКОМ конфигурации, снятым на
   // старте. Если во время генерации пользователь поменял настройки, текущий
@@ -3794,28 +3920,42 @@ async function runAutonomousCycle(state: AutonomousState) {  // SM-20: стра�
   // «возобновляем прерванный цикл».
   await recoverInterruptedCycle(state);
 
-  // Только ПОСЛЕ reconcile незавершённого цикла — новый cycle_id для свежего цикла.
-  state.cycleId = randomUUID();
+  // SM-20 Phase2 (B): если прошлый цикл был прерван паузой и его слоты остались
+  // незакрытыми — продолжаем ЕГО, а не начинаем новый. Иначе остаток цикла
+  // потерялся бы, а счётчик «сколько постов за цикл» соврал бы пользователю.
+  const resumable = await collectResumableSlots(state);
+  const slotOrder: Array<{ itemIndex: number; contentId: string }> = [];
+  // Посты этого же цикла, созданные ДО паузы: их надо доставить в расписание
+  // вместе с остатком, иначе они навсегда остались бы черновиками.
+  let carriedOverContentIds: string[] = [];
 
-  // Резервируем ВСЕ слоты цикла ДО генерации с preallocated content_id.
-  // Проигравший unique-race не генерирует (дубль невозможен на уровне БД).
-  const cycleSlots = new Map<number, string>(); // itemIndex -> preallocated content_id
-  for (let itemIndex = 0; itemIndex < cyclePostsPerCycle; itemIndex++) {
-    const contentId = randomUUID();
-    const ok = await autonomousCycleLedger.reserveItem({
-      campaignId: state.campaignId,
-      userId: state.userId,
-      runId: state.runId,
-      cycleId: state.cycleId,
-      itemIndex,
-      contentId,
-    });
-    if (ok) {
-      cycleSlots.set(itemIndex, contentId);
+  if (resumable) {
+    slotOrder.push(...resumable.pending);
+    carriedOverContentIds = resumable.alreadyFilled;
+    log(`[AUTONOMOUS-CYCLE] ▶️ Продолжаем прерванный цикл ${state.cycleId}: осталось слотов ${slotOrder.length}, уже создано ${carriedOverContentIds.length}`, 'autonomous');
+  } else {
+    // Только ПОСЛЕ reconcile незавершённого цикла — новый cycle_id для свежего цикла.
+    state.cycleId = randomUUID();
+
+    // Резервируем ВСЕ слоты цикла ДО генерации с preallocated content_id.
+    // Проигравший unique-race не генерирует (дубль невозможен на уровне БД).
+    for (let itemIndex = 0; itemIndex < cyclePostsPerCycle; itemIndex++) {
+      const contentId = randomUUID();
+      const ok = await autonomousCycleLedger.reserveItem({
+        campaignId: state.campaignId,
+        userId: state.userId,
+        runId: state.runId,
+        cycleId: state.cycleId,
+        itemIndex,
+        contentId,
+      });
+      if (ok) {
+        slotOrder.push({ itemIndex, contentId });
+      }
+      // Проигравший unique-race: слот уже зарезервирован — не генерируем.
     }
-    // Проигравший unique-race: слот уже зарезервирован — не генерируем.
+    log(`[AUTONOMOUS-CYCLE] 🎯 Зарезервировано слотов цикла: ${slotOrder.length}/${cyclePostsPerCycle}`, 'autonomous');
   }
-  log(`[AUTONOMOUS-CYCLE] 🎯 Зарезервировано слотов цикла: ${cycleSlots.size}/${cyclePostsPerCycle}`, 'autonomous');
 
   try {
     // Гарантируем свежий пользовательский JWT (рефреш только если истекает скоро)
@@ -3937,9 +4077,12 @@ async function runAutonomousCycle(state: AutonomousState) {  // SM-20: стра�
     // ──────────────────────────────────────────────────────────────
     // ФАЗА 2: Генерация контент-плана
     // ──────────────────────────────────────────────────────────────
-    console.log(`[PIPELINE] 📋 Фаза 2: генерация контент-плана на ${cyclePostsPerCycle} постов...`);
+    // SM-20 Phase2 (B): план строится на число фактически удержанных слотов.
+    // На продолжении прерванного цикла их меньше, чем postsPerCycle, и просить
+    // модель о полном комплекте значило бы сгенерировать лишнее.
+    console.log(`[PIPELINE] 📋 Фаза 2: генерация контент-плана на ${slotOrder.length} постов...`);
     let contentPlan = await generateContentPlan({
-      count: cyclePostsPerCycle,
+      count: slotOrder.length,
       keywords: topKeywords,
       trends: topTrendPool,
       platforms: state.platforms,
@@ -4053,8 +4196,16 @@ async function runAutonomousCycle(state: AutonomousState) {  // SM-20: стра�
       return;
     }
 
-    for (let i = 0; i < contentPlan.length; i++) {
+    for (let i = 0; i < contentPlan.length && i < slotOrder.length; i++) {
+      // SM-20 Phase2 (B): единственная безопасная граница для паузы — СТЫК между
+      // постами. Внутри материализации слота встать нельзя: там модель, создание
+      // campaign_content и CAS реестра идут одной сделкой.
+      if (isCyclePausing(state)) {
+        log(`[AUTONOMOUS-CYCLE] ⏸ Пауза: останавливаемся на границе постов, осталось слотов ${slotOrder.length - i}`, 'autonomous');
+        break;
+      }
       const planItem = contentPlan[i];
+      const slot = slotOrder[i];
       try {
         request.authToken = await ensureFreshUserToken(state);
 
@@ -4091,7 +4242,7 @@ async function runAutonomousCycle(state: AutonomousState) {  // SM-20: стра�
         // «модель → campaign_content» живёт В callback; если preallocatedId нет
         // (проигравший unique-гонку) — seam возвращает lost_reservation и НЕ
         // вызывает callback, поэтому loser не достигает ни модели, ни создания.
-        const preallocatedId = cycleSlots.get(i);
+        const preallocatedId = slot.contentId;
         const slotResult = await materializeCycleSlot(preallocatedId, async (materializeId) => {
           const cr = await TOOL_IMPLEMENTATIONS.createContent({
             campaignId: state.campaignId,
@@ -4136,7 +4287,7 @@ async function runAutonomousCycle(state: AutonomousState) {  // SM-20: стра�
               // CAS reserved→filled после материалзации.
               await autonomousCycleLedger.fillItem({
                 campaignId: state.campaignId, userId: state.userId,
-                runId: state.runId!, cycleId: state.cycleId!, itemIndex: i,
+                runId: state.runId!, cycleId: state.cycleId!, itemIndex: slot.itemIndex,
                 contentId: materializeId,
               }, contentId);
             }
@@ -4145,7 +4296,7 @@ async function runAutonomousCycle(state: AutonomousState) {  // SM-20: стра�
         });
 
         if (slotResult.tag === 'lost_reservation') {
-          log(`[PIPELINE] ⏭ Слот цикла itemIndex=${i} не зарезервирован — пропускаем пост`, 'autonomous');
+          log(`[PIPELINE] ⏭ Слот цикла itemIndex=${slot.itemIndex} не зарезервирован — пропускаем пост`, 'autonomous');
           continue;
         }
         const contentResult = slotResult.contentResult;
@@ -4245,6 +4396,25 @@ async function runAutonomousCycle(state: AutonomousState) {  // SM-20: стра�
       console.log(`[AUTONOMOUS-CYCLE] 🛑 Режим остановлен во время написания постов — пропускаем публикацию (${createdPosts.length} черновиков остаются в базе)`);
       state.cycleRunning = false;
       return;
+    }
+
+    // SM-20 Phase2 (B): на паузе ничего не планируем. Иначе пауза «останавливала»
+    // генерацию, но посты всё равно уезжали в расписание и публиковались сами.
+    if (isCyclePausing(state)) {
+      const createdIds = createdPosts.map((p: any) => p.contentId).filter(Boolean);
+      await finalizePausedCycle(state, [...carriedOverContentIds, ...createdIds], slotOrder.length - createdPosts.length);
+      return;
+    }
+
+    // SM-20 Phase2 (B): при продолжении прерванного цикла в расписание идут и
+    // посты, созданные ДО паузы, — иначе они навсегда остались бы черновиками.
+    if (carriedOverContentIds.length > 0) {
+      for (const contentId of carriedOverContentIds) {
+        if (!createdPosts.some((p: any) => p.contentId === contentId)) {
+          createdPosts.push({ contentId, postText: '', contentType: '', platform: '', topic: '' } as any);
+        }
+      }
+      log(`[AUTONOMOUS-CYCLE] ▶️ В расписание добавлены ${carriedOverContentIds.length} постов, созданных до паузы`, 'autonomous');
     }
 
     if (cycleAutoSchedule && createdPosts.length > 0) {

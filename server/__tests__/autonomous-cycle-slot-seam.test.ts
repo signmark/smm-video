@@ -47,21 +47,26 @@ describe('SM-20 Phase A: materializeCycleSlot seam', () => {
     expect(seenId).toBe('content-win');
   });
 
-  it('AST guard: реальный Phase-5 loop вызывает seam с cycleSlots.get(i), прямого fallthrough-пути нет', () => {
+  // ЧЕСТНО: это сканер исходника, а не поведение. Он стережёт ОДНО свойство,
+  // которое поведенческим тестом не поймать без всего стека генерации: в цикле
+  // нельзя подставить выдуманный идентификатор вместо удержанного слота.
+  // Всё остальное про выбор слотов проверяется по результату в
+  // sm20-b-pause-behavior.test.ts и sm20-b4-recovery-behavior.test.ts.
+  it('сканер: Phase-5 loop берёт идентификатор ТОЛЬКО из удержанного слота, без запасного варианта', () => {
     const src = readFileSync(join(__dirname, '../services/autonomous-ai.ts'), 'utf-8');
     // Call-site: `materializeCycleSlot(preallocatedId, async (` (не определение функции).
     const callIdx = src.indexOf('materializeCycleSlot(preallocatedId, async');
     expect(callIdx).toBeGreaterThan(0);
-    const preallocIdx = src.lastIndexOf('const preallocatedId = cycleSlots.get(i)', callIdx);
+    const preallocIdx = src.lastIndexOf('const preallocatedId = slot.contentId', callIdx);
     expect(preallocIdx).toBeGreaterThan(0);
     const loopWindow = src.slice(preallocIdx, src.indexOf('// ФАЗА 5.5'));
-    expect(loopWindow).toContain('const preallocatedId = cycleSlots.get(i)');
+    expect(loopWindow).toContain('const preallocatedId = slot.contentId');
     // B3 binding guard: строгое присваивание БЕЗ ?? / || fallback (например
     // `?? randomUUID()` обязан краснеть).
-    const preallocLine = loopWindow.split('\n').find((l) => l.includes('const preallocatedId = cycleSlots.get(i)')) || '';
+    const preallocLine = loopWindow.split('\n').find((l) => l.includes('const preallocatedId = slot.contentId')) || '';
     expect(preallocLine.includes('??')).toBe(false);
     expect(preallocLine.includes('||')).toBe(false);
-    expect(preallocLine.trim()).toContain('cycleSlots.get(i)');
+    expect(preallocLine.trim()).toContain('slot.contentId');
     expect(loopWindow).toContain('materializeCycleSlot(preallocatedId, async');
     // Лосер-ветка: seam возвращает lost_reservation, loop делает continue до createContent.
     expect(loopWindow).toContain("slotResult.tag === 'lost_reservation'");

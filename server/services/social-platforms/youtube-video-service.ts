@@ -208,6 +208,9 @@ export class YouTubeVideoService {
 
     const uploadUri = initResponse.headers['location'];
     if (!uploadUri) {
+      // AI-110: тело ответа убрано из сообщения человеку, но нужно в журнале —
+      // иначе на проде не понять, что именно вернул YouTube.
+      log(`YouTube не вернул upload URI, ответ: ${JSON.stringify(initResponse.data)}`, LOG_PREFIX);
       throw new Error('YouTube не вернул upload URI. Проверьте права токена (scope: youtube.upload).');
     }
 
@@ -226,6 +229,8 @@ export class YouTubeVideoService {
 
     const videoId = uploadResponse.data?.id;
     if (!videoId) {
+      // AI-110: см. выше — человеку стабильная фраза, диагностика в журнал.
+      log(`YouTube не вернул ID видео, ответ: ${JSON.stringify(uploadResponse.data)}`, LOG_PREFIX);
       throw new Error('YouTube не вернул ID видео.');
     }
 

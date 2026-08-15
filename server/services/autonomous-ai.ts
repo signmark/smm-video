@@ -9,6 +9,9 @@ import { log } from '../utils/logger';
 // SM-18: единый помощник подстановки [socialNetworks] — один источник правды.
 import { substituteSocialNetworks } from './social-prompt';
 export { substituteSocialNetworks };
+// SM-20 Phase2 (A): durable reservation ledger for cycle items.
+import { autonomousCycleLedger } from './autonomous-cycle-ledger';
+import { randomUUID } from 'crypto';
 
 const AUTONOMOUS_PERSIST_FILE = join(process.cwd(), 'data', 'autonomous-states.json');
 
@@ -40,6 +43,10 @@ function stateToRecord(state: AutonomousState): Record<string, any> {
     posts_created: state.postsCreated,
     launch_command: state.launchCommand || null,
     last_cycle_at: state.lastCycleAt ? state.lastCycleAt.toISOString() : null,
+    // SM-20 Phase2 (A): durable cycle identity — source of truth is БД.
+    run_id: state.runId || null,
+    cycle_id: state.cycleId || null,
+    phase: state.phase || 'running',
   };
 }
 
@@ -50,6 +57,7 @@ function activateRestoredState(saved: {
   launchCommand?: string; lastCycleAt?: string;
   paused?: boolean; pausedAt?: string;
   cyclesCompleted?: number; postsCreated?: number;
+  runId?: string; cycleId?: string; phase?: 'running' | 'pausing' | 'paused';
 }) {
   if (autonomousStates.has(saved.campaignId)) return;
   const state: AutonomousState = {
@@ -73,6 +81,10 @@ function activateRestoredState(saved: {
     lastCycleAt: saved.lastCycleAt ? new Date(saved.lastCycleAt) : undefined,
     paused: saved.paused === true,
     pausedAt: saved.pausedAt ? new Date(saved.pausedAt) : undefined,
+    // SM-20 Phase2 (A): durable identity; legacy sessions (без полей) безопасны.
+    runId: saved.runId,
+    cycleId: saved.cycleId,
+    phase: saved.phase || 'running',
   } as any;
   autonomousStates.set(saved.campaignId, state);
   // SM-20: раньше здесь стояли свои таймеры — setInterval сразу (сетка от
@@ -224,7 +236,21 @@ export async function restoreAutonomousStates() {
       authToken: token,
     });
     for (const rec of (sessions || [])) {
-      if (autonomousStates.has(rec.campaign_id)) continue;
+      const dbIdentity = {
+        runId: typeof rec.run_id === 'string' && rec.run_id ? rec.run_id : undefined,
+        cycleId: typeof rec.cycle_id === 'string' && rec.cycle_id ? rec.cycle_id : undefined,
+        phase: rec.phase === 'pausing' || rec.phase === 'paused' ? rec.phase : 'running',
+      };
+      const existing = autonomousStates.get(rec.campaign_id);
+      if (existing) {
+        // SM-20 Phase2 (A): DB — источник истины для identity. Если файловый
+        // restore уже поднял сессию, перезаписываем identity из БД (файл не
+        // выигрывает при расхождении).
+        if (dbIdentity.runId) existing.runId = dbIdentity.runId;
+        if (dbIdentity.cycleId) existing.cycleId = dbIdentity.cycleId;
+        if (dbIdentity.phase) existing.phase = dbIdentity.phase;
+        continue;
+      }
       activateRestoredState({
         campaignId: rec.campaign_id,
         userId: rec.user_id,
@@ -239,12 +265,14 @@ export async function restoreAutonomousStates() {
         startedAt: rec.started_at,
         launchCommand: rec.launch_command || undefined,
         lastCycleAt: rec.last_cycle_at || undefined,
-        // SM-20: без этих полей пауза не переживала рестарт — режим молча
-        // возобновлялся при ближайшем деплое, а счётчики обнулялись.
         paused: rec.paused === true,
         pausedAt: rec.paused_at || undefined,
         cyclesCompleted: typeof rec.cycles_completed === "number" ? rec.cycles_completed : 0,
         postsCreated: typeof rec.posts_created === "number" ? rec.posts_created : 0,
+        // SM-20 Phase2 (A): DB identity.
+        runId: dbIdentity.runId,
+        cycleId: dbIdentity.cycleId,
+        phase: dbIdentity.phase,
       });
     }
     console.log(`[AUTONOMOUS] БД: восстановлено ${(sessions || []).length} сессий`);
@@ -623,6 +651,15 @@ interface AutonomousState {
   paused?: boolean;
   /** Когда поставлен на паузу — для отображения и диагностики (SM-20). */
   pausedAt?: Date;
+  /**
+   * SM-20 Phase2 (A): durable cycle identity. run_id — opaque UUID старта
+   * сессии авторежима; cycle_id — UUID конкретного цикла; phase — durable
+   * `running|pausing|paused`. Source of truth = БД (autonomous_sessions);
+   * файловый restore при расхождении не выигрывает.
+   */
+  runId?: string;
+  cycleId?: string;
+  phase?: 'running' | 'pausing' | 'paused';
   /**
    * Промис запущенного цикла (SM-20). Живёт, пока цикл не завершился (включая
    * .finally). Нужен тестам, чтобы дождаться честного завершения цикла под
@@ -2377,17 +2414,47 @@ ${titleInstruction}`;
         const finalTitle = count > 1 ? `${baseTitle} (${i + 1})` : baseTitle;
         console.log(`[CREATE-CONTENT] Заголовок поста ${i + 1}: "${finalTitle}"`);
 
-        // ШАГ 2: Сохраняем контент в базу данных (admin-токен — серверная операция)
-        const savedContent = await directusCrud.create('campaign_content', {
-          campaign_id: params.campaignId,
-          user_id: request.userId,
-          title: finalTitle,
-          content: generatedContent,
-          content_type: 'text',
-          status: 'draft',
-          source: 'ai_generated',
-          date_created: new Date().toISOString()
-        }, { useAdminToken: true });
+        // ШАГ 2: Сохраняем контент в базу (admin-токен — серверная операция).
+        // SM-20 Phase2 (A): если слот цикла предварительно зарезервирован,
+        // создаём с ЯВНЫМ preallocated id. Повтор после падения даёт либо успех,
+        // либо RECORD_NOT_UNIQUE ('уже создано') — идемпотентно.
+        const preallocatedId: string | undefined = params.preallocatedId;
+        let savedContent: any = null;
+        try {
+          savedContent = await directusCrud.create('campaign_content', {
+            ...(preallocatedId ? { id: preallocatedId } : {}),
+            campaign_id: params.campaignId,
+            user_id: request.userId,
+            title: finalTitle,
+            content: generatedContent,
+            content_type: 'text',
+            status: 'draft',
+            source: 'ai_generated',
+            date_created: new Date().toISOString()
+          }, { useAdminToken: true });
+        } catch (err: any) {
+          // Узко: RECORD_NOT_UNIQUE на preallocated id = контент уже материализован
+          // в этот слот (повтор после crash). Тогда берём существующую запись по id
+          // ТОЛЬКО если id/campaign/user совпадают с этой резервацией (B2 replay-ownership).
+          const code = err?.response?.data?.errors?.[0]?.extensions?.code;
+          if (preallocatedId && code === 'RECORD_NOT_UNIQUE') {
+            const existing: any = await directusCrud.getById('campaign_content', preallocatedId, { useAdminToken: true });
+            const exId = existing?.id != null ? String(existing.id) : null;
+            const exCamp = existing?.campaign_id != null ? String(existing.campaign_id) : '';
+            const exUser = existing?.user_id != null ? String(existing.user_id) : '';
+            const ownsHere = exId === preallocatedId &&
+              exCamp === String(params.campaignId) &&
+              exUser === String(request.userId);
+            if (existing && ownsHere) { savedContent = existing; }
+            else if (existing && !ownsHere) {
+              // B2: чужая/чужого владельца запись с тем же id — hard integrity error, не успех.
+              throw new Error('INTEGRITY ERROR: preallocated content_id принадлежит другой кампании/пользователю');
+            }
+            else { throw err; }
+          } else {
+            throw err; // любая иная ошибка — fail-closed, не считаем успехом
+          }
+        }
         
         console.log(`[CREATE-CONTENT] Пост ${i + 1} сохранен в базу с ID:`, (savedContent as any).id);
         
@@ -3632,8 +3699,65 @@ Respond with ONLY the image prompt, nothing else.`,
 }
 
 // Функция выполнения одного цикла автономной работы
-async function runAutonomousCycle(state: AutonomousState) {
-  // SM-20: страховка от осиротевших таймеров. Сюда можно попасть из таймера,
+
+/**
+ * SM-20 Phase2 (A): узкий typed seam для Phase-5 материалзации слота цикла.
+ * Получает preallocated content_id и callback, обёртывающий ВЕСЬ блок «модель →
+ * campaign_content» этого item. Если id отсутствует (проигравший unique-гонку
+ * за слот) — возвращает `lost_reservation` и НЕ вызывает callback, поэтому
+ * loser не может добраться ни до модели, ни до materialization. Реальный
+ * Phase-5 loop зовёт его с `cycleSlots.get(i)`.
+ */
+export type MaterializeSlotResult =
+  | { tag: 'materialized'; contentResult: any }
+  | { tag: 'lost_reservation' };
+
+export async function materializeCycleSlot(
+  preallocatedId: string | undefined,
+  fn: (id: string) => Promise<any>,
+): Promise<MaterializeSlotResult> {
+  if (!preallocatedId) return { tag: 'lost_reservation' };
+  const contentResult = await fn(preallocatedId);
+  return { tag: 'materialized', contentResult };
+}
+
+// SM-20 Phase2 (A) B4: crash-safe resume. Если восстановленная сессия несёт
+// незавершённый цикл (state.cycleId из БД + в ledgere есть строки по нему),
+// reconcile до аллокации НОВОГО cycleId — никакого региненира identity, ничего
+// не теряем и не дублируем (immutable ownership берётся из самих строк).
+// Экспортируется как узкий seam для поведенческого теста восстановления —
+// та же практика, что и materializeCycleSlot выше.
+export async function recoverInterruptedCycle(state: AutonomousState): Promise<void> {
+  if (!state.runId || !state.cycleId) return;
+  const rows = await autonomousCycleLedger.getCycleItems(state.runId, state.cycleId);
+  if (!rows || rows.length === 0) return; // не было незавершённого цикла
+  log(`[AUTONOMOUS-CYCLE] ♻️ B4: найден незавершённый цикл ${state.cycleId} (${rows.length} слотов) — reconcile до нового цикла`, 'autonomous');
+  for (const row of rows) {
+    if (row.state !== 'reserved') continue; // filled/consumed/tombstone — уже решено
+    // B4: preallocated content_id ОБЯЗАН приехать из строки реестра. Сверка
+    // владельца в reconcileAndFill сравнивает его со строкой: без него сверка
+    // заведомо не сходится и живой слот объявляется нарушением целостности.
+    if (!row.contentId) {
+      log(`[AUTONOMOUS-CYCLE] ♻️ B4: slot ${row.itemIndex} без content_id — восстановить нельзя, оставляем reserved`, 'autonomous');
+      continue;
+    }
+    const ref = {
+      campaignId: state.campaignId,
+      userId: state.userId,
+      runId: state.runId,
+      cycleId: state.cycleId,
+      itemIndex: row.itemIndex,
+      contentId: row.contentId,
+    };
+    // reserved + контент отсутствует = создание не завершилось (crash).
+    // Не материализуем заново (контент не создан), не помечаем filled:
+    // честно остаёмся reserved — слот утрачен, дубликата нет.
+    const outcome = await autonomousCycleLedger.reconcileAndFill(ref);
+    log(`[AUTONOMOUS-CYCLE] ♻️ B4: slot ${row.itemIndex} reserved→${outcome}`, 'autonomous');
+  }
+}
+
+async function runAutonomousCycle(state: AutonomousState) {  // SM-20: страховка от осиротевших таймеров. Сюда можно попасть из таймера,
   // который поставили до остановки или паузы: остановка удаляет состояние из
   // карты, пауза выставляет флаг. Без этой проверки цикл отработал бы на
   // состоянии, которого уже нет в системе.
@@ -3652,6 +3776,46 @@ async function runAutonomousCycle(state: AutonomousState) {
   const cyclePostsPerCycle = state.postsPerCycle;
   const cycleWithImages = state.withImages;
   const cycleAutoSchedule = state.autoSchedule;
+
+  // SM-20 Phase2 (A): durable cycle identity. run_id — UUID сессии (однажды
+  // и навсегда); cycle_id — UUID этого цикла. Источник истины — БД.
+  if (!state.runId) state.runId = randomUUID();
+
+  // B1: awaited ledger health check ПЕРЕД первым использованием — если коллекции/
+  // схемы нет, THROW (fail-close), а не тихий ноль слотов.
+  const healthy = await autonomousCycleLedger.probeCollectionHealth();
+  if (!healthy) {
+    throw new Error('[AUTONOMOUS-CYCLE] ledger autonomous_cycle_items недоступен — цикл прерван (B1 fail-close)');
+  }
+
+  // SM-20 Phase2 (A) B4: если восстановленная сессия несёт незавершённый цикл
+  // (state.cycleId из БД уже установлен), reconcile его ledger-строки ДО аллокации
+  // НОВОГО cycleId — никакого регенера identity, нельзя регинерировать признак
+  // «возобновляем прерванный цикл».
+  await recoverInterruptedCycle(state);
+
+  // Только ПОСЛЕ reconcile незавершённого цикла — новый cycle_id для свежего цикла.
+  state.cycleId = randomUUID();
+
+  // Резервируем ВСЕ слоты цикла ДО генерации с preallocated content_id.
+  // Проигравший unique-race не генерирует (дубль невозможен на уровне БД).
+  const cycleSlots = new Map<number, string>(); // itemIndex -> preallocated content_id
+  for (let itemIndex = 0; itemIndex < cyclePostsPerCycle; itemIndex++) {
+    const contentId = randomUUID();
+    const ok = await autonomousCycleLedger.reserveItem({
+      campaignId: state.campaignId,
+      userId: state.userId,
+      runId: state.runId,
+      cycleId: state.cycleId,
+      itemIndex,
+      contentId,
+    });
+    if (ok) {
+      cycleSlots.set(itemIndex, contentId);
+    }
+    // Проигравший unique-race: слот уже зарезервирован — не генерируем.
+  }
+  log(`[AUTONOMOUS-CYCLE] 🎯 Зарезервировано слотов цикла: ${cycleSlots.size}/${cyclePostsPerCycle}`, 'autonomous');
 
   try {
     // Гарантируем свежий пользовательский JWT (рефреш только если истекает скоро)
@@ -3923,56 +4087,70 @@ async function runAutonomousCycle(state: AutonomousState) {
 
         console.log(`[PIPELINE] ✍️ Пост ${i + 1}/${contentPlan.length}: "${topic}" (${contentType})`);
 
-        const contentResult = await TOOL_IMPLEMENTATIONS.createContent({
-          campaignId: state.campaignId,
-          topic,
-          theme: finalTheme,
-          count: 1,
-          editorGuide: autoSettings.globalPrompt
-            ? substituteSocialNetworks(autoSettings.globalPrompt, state.platforms)
-            : '',
-          useEditorPass: autoSettings.useEditorPass ?? false,
-          humanize: autoSettings.humanize ?? false
-        }, request);
+        // SM-20 Phase2 (A): материалзация слота через узкий seam. Весь блок
+        // «модель → campaign_content» живёт В callback; если preallocatedId нет
+        // (проигравший unique-гонку) — seam возвращает lost_reservation и НЕ
+        // вызывает callback, поэтому loser не достигает ни модели, ни создания.
+        const preallocatedId = cycleSlots.get(i);
+        const slotResult = await materializeCycleSlot(preallocatedId, async (materializeId) => {
+          const cr = await TOOL_IMPLEMENTATIONS.createContent({
+            campaignId: state.campaignId,
+            topic,
+            theme: finalTheme,
+            count: 1,
+            preallocatedId: materializeId,
+            editorGuide: autoSettings.globalPrompt
+              ? substituteSocialNetworks(autoSettings.globalPrompt, state.platforms)
+              : '',
+            useEditorPass: autoSettings.useEditorPass ?? false,
+            humanize: autoSettings.humanize ?? false
+          }, request);
+
+          if (cr.success) {
+            const savedPosts: Array<{ id: string; content: string }> = cr.posts || [];
+
+            for (const savedPost of savedPosts) {
+              const contentId = savedPost.id;
+              const postText = savedPost.content || theme;
+
+              if (contentId && mode !== 'controlled') {
+                try {
+                  const imagePrompt = await buildImagePromptFromText({
+                    postText, topic: planItem.topic, contentId,
+                    userId: state.userId, authToken: request.authToken,
+                  });
+                  if (cycleWithImages) {
+                    await TOOL_IMPLEMENTATIONS.generateImage({
+                      prompt: imagePrompt, contentId, aspectRatio: 'landscape',
+                      style: 'photorealistic', model: 'nano-banana-pro',
+                    }, request);
+                  }
+                } catch (imgErr: any) {
+                  console.warn(`[PIPELINE] ⚠️ Ошибка фазы 6:`, imgErr.message);
+                }
+              }
+
+              createdPosts.push({ contentId, postText, contentType, platform: planItem.platform, topic: planItem.topic });
+              state.postsCreated++;
+
+              // CAS reserved→filled после материалзации.
+              await autonomousCycleLedger.fillItem({
+                campaignId: state.campaignId, userId: state.userId,
+                runId: state.runId!, cycleId: state.cycleId!, itemIndex: i,
+                contentId: materializeId,
+              }, contentId);
+            }
+          }
+          return cr;
+        });
+
+        if (slotResult.tag === 'lost_reservation') {
+          log(`[PIPELINE] ⏭ Слот цикла itemIndex=${i} не зарезервирован — пропускаем пост`, 'autonomous');
+          continue;
+        }
+        const contentResult = slotResult.contentResult;
 
         if (contentResult.success) {
-          const savedPosts: Array<{ id: string; content: string }> = contentResult.posts || [];
-
-          for (const savedPost of savedPosts) {
-            const contentId = savedPost.id;
-            const postText = savedPost.content || theme;
-
-            // ── ФАЗА 6: Промт + картинка (только не в controlled режиме — там отдельная фаза) ──
-            if (contentId && mode !== 'controlled') {
-              try {
-                console.log(`[PIPELINE] 🖼️ Фаза 6: генерация промта для поста ${contentId}...`);
-                const imagePrompt = await buildImagePromptFromText({
-                  postText,
-                  topic: planItem.topic,
-                  contentId,
-                  userId: state.userId,
-                  authToken: request.authToken
-                });
-                if (cycleWithImages) {
-                  await TOOL_IMPLEMENTATIONS.generateImage({
-                    prompt: imagePrompt,
-                    contentId,
-                    aspectRatio: 'landscape',
-                    style: 'photorealistic',
-                    model: 'nano-banana-pro'
-                  }, request);
-                  console.log(`[PIPELINE] ✅ Картинка сгенерирована для ${contentId}`);
-                }
-              } catch (imgErr: any) {
-                console.warn(`[PIPELINE] ⚠️ Ошибка фазы 6:`, imgErr.message);
-              }
-            }
-
-            createdPosts.push({ contentId, postText, contentType, platform: planItem.platform, topic: planItem.topic });
-            state.postsCreated++;
-            console.log(`[PIPELINE] ✅ Пост ${i + 1} сохранён. Итого: ${state.postsCreated}`);
-          }
-
           await new Promise(resolve => setTimeout(resolve, 3000));
         } else {
           console.warn(`[PIPELINE] ⚠️ createContent вернул success=false для поста ${i + 1}`);

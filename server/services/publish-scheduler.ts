@@ -8,6 +8,11 @@ import { getN8nUrl } from '../utils/n8n-utils';
 import { aiService } from './ai-service';
 import { getContentAggregateTimes, resolvePublishFinalization } from '@shared/schedule-time';
 import { invalidateContentCache } from '../utils/content-cache';
+import {
+  resolveStuckContent,
+  isPermanentPublishError,
+  getStaleDays,
+} from './publication-terminal-state';
 import { resolvePublishingToken } from './publishing-token';
 import { stripMarkdown, markdownToTelegramHtml } from '../utils/strip-markdown';
 
@@ -305,7 +310,15 @@ export class PublishScheduler {
         // Обрабатываем каждый контент для определения неопубликованных платформ
         for (const content of allContent) {
           processedCount++;
-          
+
+          // Задача 108: запись, у которой не осталось незавершённых площадок,
+          // обязана принять окончательный статус — иначе она висит «в работе»
+          // годами. Второй повод закрыть — время выхода прошло давно: такой пост
+          // отправлять живым подписчикам нельзя.
+          if (await this.finalizeStuckContent(content, currentTime)) {
+            continue;
+          }
+
           // Получаем данные платформ
           const platformsData = content.social_platforms || content.socialPlatforms;
           if (!platformsData) {
@@ -654,6 +667,60 @@ export class PublishScheduler {
   }
 
   /**
+   * Задача 108. Приводит запись к окончательному статусу, если продолжения не будет.
+   *
+   * Возвращает true, когда запись закрыта и разбирать её площадки больше не нужно.
+   * Решение принимает чистая `resolveStuckContent`; здесь только чтение полей,
+   * запись в Directus и журнал.
+   */
+  private async finalizeStuckContent(content: any, now: Date): Promise<boolean> {
+    let platforms: any = content.social_platforms || content.socialPlatforms;
+    if (typeof platforms === 'string') {
+      try {
+        platforms = JSON.parse(platforms);
+      } catch {
+        return false; // разбитый JSON — не наш случай, ниже есть свой разбор
+      }
+    }
+
+    const resolution = resolveStuckContent({
+      platforms,
+      currentStatus: String(content.status),
+      scheduledAt: content.scheduled_at ?? content.scheduledAt ?? null,
+      now,
+      staleDays: getStaleDays(),
+    });
+    if (!resolution) return false;
+
+    const patch: Record<string, any> = { status: resolution.contentStatus };
+    if (resolution.expiredPlatforms.length > 0) {
+      patch.social_platforms = resolution.platforms;
+    }
+
+    try {
+      await directusCrud.update('campaign_content', content.id, patch, { useAdminToken: true });
+    } catch (err: any) {
+      log(`[SCHEDULER] не удалось закрыть зависшую запись ${content.id}: ${err?.message}`, 'scheduler', 'error');
+      return false;
+    }
+
+    if (content.user_id) invalidateContentCache(content.user_id, content.campaign_id);
+
+    if (resolution.reason === 'expired') {
+      log(
+        `[SCHEDULER] ⌛ ${content.id}: время выхода прошло, публикация отменена для ${resolution.expiredPlatforms.join(', ')} → ${resolution.contentStatus}`,
+        'scheduler',
+      );
+    } else {
+      log(
+        `[SCHEDULER] ✔ ${content.id}: продолжения не будет (${resolution.reason}), статус ${content.status} → ${resolution.contentStatus}`,
+        'scheduler',
+      );
+    }
+    return true;
+  }
+
+  /**
    * Возвращает true, если ошибка связана с неверными/просроченными учётными данными —
    * такие ошибки бессмысленно ретраить, токен не починится сам.
    */
@@ -706,12 +773,17 @@ export class PublishScheduler {
     let platformUpdate: Record<string, any>;
     let contentStatus: string;
 
+    // Задача 108: ретраить имеет смысл только временное. «Чат не найден»,
+    // «бот заблокирован», недействительный токен и ненастроенная площадка сами
+    // не пройдут — три попытки по пять минут тратятся впустую, а пользователь
+    // ещё пятнадцать минут видит «публикуется» вместо причины.
+    const permanentError = isPermanentPublishError(errMsg);
     const authError = this.isAuthError(errMsg);
-    if (authError) {
-      log(`[SCHEDULER] ${platform} auth error for ${content.id} — немедленный failed без ретраев: ${errMsg}`, 'scheduler', 'error');
+    if (permanentError) {
+      log(`[SCHEDULER] ${platform} постоянная причина для ${content.id} — немедленный failed без ретраев: ${errMsg}`, 'scheduler', 'error');
     }
 
-    if (!authError && retryCount < MAX_RETRIES) {
+    if (!permanentError && retryCount < MAX_RETRIES) {
       const nextRetry = new Date(now.getTime() + RETRY_DELAY_MIN * 60 * 1000);
       platformUpdate = {
         ...existing,
@@ -731,13 +803,13 @@ export class PublishScheduler {
         ...existing,
         status: 'failed',
         error: errMsg,
-        errorCode: authError ? 'AUTH_ERROR' : 'MAX_RETRIES_EXCEEDED',
+        errorCode: authError ? 'AUTH_ERROR' : permanentError ? 'PERMANENT_ERROR' : 'MAX_RETRIES_EXCEEDED',
         failedAt: now.toISOString(),
         retryCount
       };
       contentStatus = 'scheduled'; // пересчитывается ниже на основе реальных статусов платформ
-      if (authError) {
-        log(`[SCHEDULER] ${platform} немедленный failed (auth error) для ${content.id}: ${errMsg}`, 'scheduler', 'error');
+      if (permanentError) {
+        log(`[SCHEDULER] ${platform} немедленный failed (постоянная причина) для ${content.id}: ${errMsg}`, 'scheduler', 'error');
       } else {
         log(`[SCHEDULER] ${platform} exhausted retries (${MAX_RETRIES}) for ${content.id} — marking failed`, 'scheduler', 'error');
       }
@@ -763,7 +835,9 @@ export class PublishScheduler {
           ? 'partially_published'          // часть опубликована, часть ещё в очереди — шедулер подберёт частичную публикацию
           : hasAnyPending
             ? 'scheduled'                  // ничего не опубликовано, всё ещё ждёт
-            : contentStatus;               // всё failed — оставляем текущий
+            // Задача 108: раньше здесь оставался рабочий статус — запись,
+            // у которой УПАЛИ ВСЕ площадки, навсегда числилась «запланированной».
+            : 'error';                      // всё failed — это окончательный отказ
 
       await directusCrud.update('campaign_content', content.id, {
         status: finalContentStatus,

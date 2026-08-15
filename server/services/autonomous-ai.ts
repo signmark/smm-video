@@ -3725,27 +3725,35 @@ export async function materializeCycleSlot(
 // незавершённый цикл (state.cycleId из БД + в ledgere есть строки по нему),
 // reconcile до аллокации НОВОГО cycleId — никакого региненира identity, ничего
 // не теряем и не дублируем (immutable ownership берётся из самих строк).
-async function recoverInterruptedCycle(state: AutonomousState): Promise<void> {
+// Экспортируется как узкий seam для поведенческого теста восстановления —
+// та же практика, что и materializeCycleSlot выше.
+export async function recoverInterruptedCycle(state: AutonomousState): Promise<void> {
   if (!state.runId || !state.cycleId) return;
   const rows = await autonomousCycleLedger.getCycleItems(state.runId, state.cycleId);
   if (!rows || rows.length === 0) return; // не было незавершённого цикла
   log(`[AUTONOMOUS-CYCLE] ♻️ B4: найден незавершённый цикл ${state.cycleId} (${rows.length} слотов) — reconcile до нового цикла`, 'autonomous');
   for (const row of rows) {
+    if (row.state !== 'reserved') continue; // filled/consumed/tombstone — уже решено
+    // B4: preallocated content_id ОБЯЗАН приехать из строки реестра. Сверка
+    // владельца в reconcileAndFill сравнивает его со строкой: без него сверка
+    // заведомо не сходится и живой слот объявляется нарушением целостности.
+    if (!row.contentId) {
+      log(`[AUTONOMOUS-CYCLE] ♻️ B4: slot ${row.itemIndex} без content_id — восстановить нельзя, оставляем reserved`, 'autonomous');
+      continue;
+    }
     const ref = {
       campaignId: state.campaignId,
       userId: state.userId,
       runId: state.runId,
       cycleId: state.cycleId,
       itemIndex: row.itemIndex,
+      contentId: row.contentId,
     };
-    if (row.state === 'reserved') {
-      // reserved + контент отсутствует = создание не завершилось (crash).
-      // Не материализуем заново (контент не создан), не помечаем filled:
-      // честно остаёмся reserved — слот утрачен, дубликата нет.
-      const outcome = await autonomousCycleLedger.reconcileAndFill(ref);
-      log(`[AUTONOMOUS-CYCLE] ♻️ B4: slot ${row.itemIndex} reserved→${outcome}`, 'autonomous');
-    }
-    // filled/licensed — уже материализовано, ничего не делаем.
+    // reserved + контент отсутствует = создание не завершилось (crash).
+    // Не материализуем заново (контент не создан), не помечаем filled:
+    // честно остаёмся reserved — слот утрачен, дубликата нет.
+    const outcome = await autonomousCycleLedger.reconcileAndFill(ref);
+    log(`[AUTONOMOUS-CYCLE] ♻️ B4: slot ${row.itemIndex} reserved→${outcome}`, 'autonomous');
   }
 }
 

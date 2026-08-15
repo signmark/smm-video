@@ -12,15 +12,23 @@ import { join } from 'node:path';
  * it after the new cycleId MUST red (else we resume a fresh cycle and orphan/lose
  * the interrupted one's reservation rows).
  *
- * These are source-boundary guards matching the reviewer's mandatory mutation
- * set: "снос recovery-вызова" and "реюз нового cycleId при resume".
+ * ВНИМАНИЕ (правило 49). Это ТОЛЬКО сканер исходника: он читает файл и проверяет,
+ * что вызов написан в нужном месте. Он НЕ доказывает, что прерванный цикл
+ * продолжается без потерь и дублей, и был зелёным в тот момент, когда
+ * восстановление не работало ни на одном слоте (ссылка на слот собиралась без
+ * preallocated content_id → сверка владельца не сходилась → каждый живой слот
+ * объявлялся нарушением целостности).
+ *
+ * Поведение проверяется в `sm20-b4-recovery-behavior.test.ts`: там выполняется
+ * настоящий путь восстановления и утверждения идут по счёту слотов.
+ * Этот файл оставлен как дешёвая защита от перестановки вызова, не более.
  */
 
 function src(): string {
   return readFileSync(join(__dirname, '../services/autonomous-ai.ts'), 'utf-8');
 }
 
-describe('SM-20 Phase A B4: crash-safe resume (no identity regeneration)', () => {
+describe('SM-20 Phase A B4: РАСПОЛОЖЕНИЕ вызова восстановления (сканер исходника, не поведение)', () => {
   it('recoverInterruptedCycle вызывается ДО аллокации нового cycleId в runAutonomousCycle', () => {
     const s = src();
     const fnIdx = s.indexOf('async function runAutonomousCycle(state: AutonomousState)');

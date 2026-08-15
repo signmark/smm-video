@@ -26,7 +26,6 @@ import { directusApi } from '../directus';
  */
 
 const LEDGER_COLLECTION = 'autonomous_cycle_items';
-const MAX_WS_RETRIES = 3;
 
 function ledgerAuthHeaders(): Record<string, string> {
   const token = process.env.DIRECTUS_STATIC_TOKEN;
@@ -145,7 +144,15 @@ export class AutonomousCycleLedger {
     }
   }
 
-  /** CAS-перевод одного слота в state. Возвращает true, если переход произошёл. */
+  /**
+   * CAS-перевод одного слота в state. Возвращает true, если переход произошёл.
+   *
+   * SM-20 Phase A: вызывающих пока НЕТ — это переходы reserved/filled→consumed|tombstone,
+   * которыми будет пользоваться пауза (Phase 2 B). Оставлено намеренно: состояния
+   * consumed/tombstone описаны в схеме реестра, и удалять переход к ним значило бы
+   * рассогласовать код с его же схемой. Поведенческого теста на него нет — он появится
+   * вместе с первым вызывающим.
+   */
   async setState(ref: CycleItemRef, from: CycleItemState, to: CycleItemState): Promise<boolean> {
     const key = this.itemKey(ref);
     try {

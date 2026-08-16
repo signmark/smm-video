@@ -92,8 +92,17 @@ function lastAgent(): any {
   return calls[calls.length - 1][0].httpsAgent;
 }
 
-/** Дёрнуть перебор через конкретный агент — то, что реально пойдёт в сеть. */
-function connectVia(agent: any, alive: (ip: string) => boolean) {
+/**
+ * Дёрнуть перебор через конкретный агент — то, что реально пойдёт в сеть.
+ *
+ * Опции соединения передаём настоящие: фасад (AI-112) разрешает адреса внутри
+ * `createConnection` и по этим же опциям проверяет, что его не позвали для чужого
+ * хоста. Пустой объект здесь означал бы «соединение неизвестно куда» — фасад его
+ * отклоняет, и это правильно.
+ *
+ * Await обязателен: фасад резолвит цели асинхронно, до тика ни одной попытки ещё нет.
+ */
+async function connectVia(agent: any, alive: (ip: string) => boolean) {
   const tried: string[] = [];
   mockTlsConnect.mockImplementation((opts: any, onSecure: any) => {
     tried.push(opts.host);
@@ -102,7 +111,8 @@ function connectVia(agent: any, alive: (ip: string) => boolean) {
     else process.nextTick(() => sock.emit('error', new Error('ECONNREFUSED')));
     return sock;
   });
-  agent.createConnection({}, () => {});
+  agent.createConnection({ host: 'api.telegram.org', port: 443, servername: 'api.telegram.org' }, () => {});
+  await tick();
   return { tried };
 }
 
@@ -340,16 +350,21 @@ describe('task #31 Phase 2A: сигнал не должен врать, когд
     expect(w[0]).toContain('перебора не будет');
   });
 
-  it('DNS умер, а его адреса совпадали с запасом — агент обязан пересобраться', async () => {
-    // Список целей в обоих замерах один и тот же, меняется только его
-    // происхождение. Отпечаток по одним целям этого не видит, агент доживает со
-    // старым fromDns, и «запас спас» не печатается ровно тогда, когда запас
-    // единственный, кто держит публикацию.
+  it('DNS умер, а его адреса совпадали с запасом — смена происхождения видна БЕЗ пересборки агента', async () => {
+    // Список целей в обоих замерах один и тот же, меняется только его происхождение.
+    //
+    // Прежде это была ловушка отпечатка: агент пересобирался по составу целей, одни
+    // и те же адреса отпечаток не меняли, агент доживал со старым fromDns, и «запас
+    // спас» не печатался ровно тогда, когда запас единственный держал публикацию.
+    // Отпечаток пришлось расширять составом DNS.
+    //
+    // После AI-112 ловушки нет по устройству: агент один на процесс и ничего не
+    // помнит, происхождение адресов выясняется в момент КАЖДОГО соединения. Поэтому
+    // ниже утверждается более сильное свойство, чем раньше: объект тот же самый, а
+    // сигнал всё равно меняется вслед за DNS.
     process.env.TELEGRAM_API_IPS = '149.154.167.220,149.154.166.110';
 
-    // Время двигаем руками, а кэш НЕ сбрасываем: сброс обнуляет отпечаток и
-    // заставляет агента пересобраться в любом случае — проверка выродилась бы
-    // в проверку сброса. На проде кэш протухает сам, по TTL.
+    // Время двигаем руками, а кэш НЕ сбрасываем: на проде он протухает сам, по TTL.
     const real = Date.now;
     let now = 1_700_000_000_000;
     Date.now = () => now;
@@ -357,8 +372,7 @@ describe('task #31 Phase 2A: сигнал не должен врать, когд
       mockResolve4.mockResolvedValue(['149.154.167.220', '149.154.166.110']);
       await telegramAxios('token');
       const healthy = lastAgent();
-      expect(connectVia(healthy, () => true).tried).toEqual(['149.154.167.220']);
-      await tick();
+      expect((await connectVia(healthy, () => true)).tried).toEqual(['149.154.167.220']);
       expect(saved()).toHaveLength(0); // адрес пришёл из DNS — сигналу неоткуда взяться
 
       now += 6 * 60 * 1000; // больше CACHE_TTL: следующий вызов идёт в резолвер
@@ -367,14 +381,37 @@ describe('task #31 Phase 2A: сигнал не должен врать, когд
 
       await telegramAxios('token');
       const dnsDead = lastAgent();
-      expect(dnsDead).not.toBe(healthy); // список целей тот же, происхождение другое
-      expect(connectVia(dnsDead, () => true).tried).toEqual(['149.154.167.220']);
-      await tick();
+      expect(dnsDead).toBe(healthy); // тот же объект — пересобирать больше нечего
+      expect((await connectVia(dnsDead, () => true)).tried).toEqual(['149.154.167.220']);
 
       expect(saved()).toHaveLength(1);
       expect(saved()[0]).toContain('149.154.167.220');
     } finally {
       Date.now = real;
     }
+  });
+
+  it('фасад отказывается соединяться с чужим хостом, а не молча уводит запрос на адреса Telegram', async () => {
+    // Прямые вызовы после AI-112 наследуют fail-close фасада. Проверка нужна
+    // именно здесь: раньше агент telegramAxios соединялся куда угодно.
+    process.env.TELEGRAM_API_IPS = '149.154.167.220';
+    mockResolve4.mockResolvedValue(['149.154.167.220']);
+    await telegramAxios('token');
+    const agent = lastAgent();
+
+    const tried: string[] = [];
+    mockTlsConnect.mockImplementation((opts: any, onSecure: any) => {
+      tried.push(opts.host);
+      const sock = fakeSocket();
+      process.nextTick(() => onSecure());
+      return sock;
+    });
+
+    let err: any;
+    agent.createConnection({ host: 'example.com', port: 443, servername: 'example.com' }, (e: any) => { err = e; });
+    await tick();
+
+    expect(tried).toEqual([]);
+    expect(String(err?.message)).toContain('соединение отклонено');
   });
 });

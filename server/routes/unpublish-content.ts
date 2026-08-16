@@ -83,7 +83,7 @@ router.post('/content/:id/unpublish', authenticateUser, async (req, res) => {
           } else {
             console.warn(`Cannot delete from ${platform}: campaignId is missing`);
             deletionResults.push({ platform, success: false, error: 'Campaign ID missing' });
-            updatedSocialPlatforms[platform] = platformData;
+            updatedSocialPlatforms[platform] = { ...platformData, unpublishError: 'Campaign ID missing' };
           }
         } catch (error: any) {
           console.error(`Failed to delete from ${platform}:`, error.response?.data || error.message);
@@ -92,8 +92,11 @@ router.post('/content/:id/unpublish', authenticateUser, async (req, res) => {
             success: false, 
             error: error.response?.data?.error?.message || error.message 
           });
-          // Удаление не удалось — сохраняем прежнее состояние, не стираем.
-          updatedSocialPlatforms[platform] = platformData;
+          // Удаление не удалось — сохраняем прежнее состояние + причину.
+          updatedSocialPlatforms[platform] = {
+            ...platformData,
+            unpublishError: error.response?.data?.error?.message || error.message || 'Неизвестная ошибка удаления'
+          };
         }
       } else {
         // Нет postId — удалять нечего, историю не трогаем.
@@ -113,10 +116,16 @@ router.post('/content/:id/unpublish', authenticateUser, async (req, res) => {
       });
     }
 
+    // Материал переводим в черновик ТОЛЬКО когда снялись ВСЕ площадки с postId.
+    // Иначе остаются живые публикации — черновик с живыми постами это та же
+    // рассинхронизация, только с другой стороны (AI-114, пункт 5 ревью).
+    const totalPlatforms = Object.keys(socialPlatforms).length;
+    const deletedCount = deletionResults.filter((r) => r.success).length;
+    const allDeleted = deletedCount === totalPlatforms;
+
     // Подготавливаем данные для обновления контента (snake-ключ).
     const updateData: any = {
-      status: 'draft',
-      published_at: null,
+      ...(allDeleted ? { status: 'draft', published_at: null } : {}),
       social_platforms: updatedSocialPlatforms
     };
 
@@ -134,7 +143,9 @@ router.post('/content/:id/unpublish', authenticateUser, async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Публикация снята и контент возвращен в черновики',
+      message: allDeleted
+        ? 'Публикация снята со всех площадок и контент возвращен в черновики'
+        : 'Публикация частично снята: часть площадок осталась опубликованной',
       deletionResults
     });
 
@@ -200,10 +211,8 @@ async function deleteFromPlatform(platform: string, postId: string, userToken: s
       }
 
       if (!ownerId || !vkPostId) {
-        // Если формат не owner_id_post_id, возможно это просто ID, попробуем использовать его
-        // Но для wall.delete обычно нужны оба. Если это история или клип, методы могут быть другие.
-        console.warn(`[Unpublish] Unknown VK postId format: ${postId}`);
-        return; 
+        // Не owner_id_post_id — удалить через wall.delete нельзя (AI-114).
+        throw new Error(`[Unpublish] Неизвестный формат postId ВК: ${postId} (ожидается owner_id_post_id)`);
       }
       
       await axios.post('https://api.vk.com/method/wall.delete', null, {
@@ -240,6 +249,9 @@ async function deleteFromPlatform(platform: string, postId: string, userToken: s
             chat_id: chatId,
             message_id: postId
           });
+        } else {
+          // Нет chat_id ни в postId, ни в настройках — удалить нельзя (AI-114).
+          throw new Error('[Unpublish] Telegram: не из чего получить chat_id для удаления');
         }
       }
       break;
@@ -256,7 +268,7 @@ async function deleteFromPlatform(platform: string, postId: string, userToken: s
       break;
 
     default:
-      console.warn(`[Unpublish] Platform ${platform} deletion not implemented`);
+      throw new Error(`[Unpublish] Удаление для платформы ${platform} не реализовано`);
   }
 }
 

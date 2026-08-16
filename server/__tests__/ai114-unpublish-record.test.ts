@@ -142,8 +142,54 @@ describe('AI-114: снятие публикации', () => {
     const patchBody = mockAxiosPatch.mock.calls[0][1];
     // telegram удалён -> draft
     expect(patchBody.social_platforms.telegram.status).toBe('draft');
-    // vk НЕ удалён -> сохраняем прежнее published состояние
+    // vk НЕ удалён -> сохраняем прежнее published состояние + причина
     expect(patchBody.social_platforms.vk.status).toBe('published');
     expect(patchBody.social_platforms.vk.postId).toBe('-1_9');
+    expect(patchBody.social_platforms.vk.unpublishError).toContain('vk delete failed');
+
+    // частичное снятие -> материал НЕ в черновик (живые публикации остались)
+    expect(patchBody).not.toHaveProperty('status');
+  });
+
+  it('материал -> черновик только когда снялись ВСЕ площадки', async () => {
+    mockContent({
+      telegram: { status: 'published', postId: '123_456', postUrl: 'https://t.me/x/456', publishedAt: 'x' },
+    });
+
+    const res = await request(appWithRouter())
+      .post('/content/c1/unpublish')
+      .set('Authorization', 'Bearer tok');
+
+    expect(res.status).toBe(200);
+    const patchBody = mockAxiosPatch.mock.calls[0][1];
+    expect(patchBody.status).toBe('draft');
+    expect(patchBody.published_at).toBeNull();
+  });
+
+  it('ВК с неизвестным форматом postId считается неудачей, площадка не стирается', async () => {
+    mockContent({
+      vk: { status: 'published', postId: 'неразрывный формат', postUrl: 'https://vk.com/wall', publishedAt: 'x' },
+    });
+
+    const res = await request(appWithRouter())
+      .post('/content/c1/unpublish')
+      .set('Authorization', 'Bearer tok');
+
+    expect(res.status).toBe(409);
+    expect(res.body.success).toBe(false);
+  });
+
+  it('платформа без реализации удаления считается неудачей', async () => {
+    mockContent({
+      tiktok: { status: 'published', postId: 'abc', postUrl: 'https://tiktok.com/x', publishedAt: 'x' },
+    });
+
+    const res = await request(appWithRouter())
+      .post('/content/c1/unpublish')
+      .set('Authorization', 'Bearer tok');
+
+    expect(res.status).toBe(409);
+    expect(res.body.success).toBe(false);
+    expect(res.body.deletionResults[0].error).toContain('не реализовано');
   });
 });

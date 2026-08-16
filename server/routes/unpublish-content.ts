@@ -121,7 +121,7 @@ router.post('/content/:id/unpublish', authenticateUser, async (req, res) => {
     // Знаменатель тоже считаем только по площадкам с postId: площадки без postId
     // в deletionResults не попадают и удалять с них нечего, поэтому если считать
     // их в знаменателе, материал навсегда останется published при смешанном наборе
-    // (рецензия @Clause_Dev_Hermi, ~40% материалов на проде смешанные).
+    // (~40% материалов на проде смешанные).
     const platformsWithPostId = Object.entries(socialPlatforms)
       .filter(([, d]) => Boolean((d as any)?.postId))
       .map(([k]) => k);

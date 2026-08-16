@@ -40,6 +40,7 @@ import { useToast } from "@/hooks/use-toast";
 import { getPublishedPlatformTimeSummary } from '@shared/schedule-time';
 import { QueryErrorState } from '@/components/QueryErrorState';
 import { CalendarDayDots, buildPostsScreenDayDots, type CalendarDayDot } from '@/components/calendar-day-dots';
+import { CalendarLegend } from '@/components/CalendarLegend';
 
 function markdownToHtml(text: string): string {
   if (!text) return '';
@@ -399,16 +400,9 @@ export default function Posts() {
 
     if (!publicationsForDay.length && !failedAttemptsForDay.length) return null;
 
-    // Получаем цвета для разных типов контента
-    const getColorForType = (type: string): string => {
-      switch (type) {
-        case 'text': return 'bg-blue-500'; // Синий для текста
-        case 'text-image': return 'bg-yellow-500'; // Желтый для картинки с текстом
-        case 'video': 
-        case 'video-text': return 'bg-red-500'; // Красный для видео
-        default: return 'bg-gray-500';
-      }
-    };
+    // AI-116: цвет берётся из фактического содержимого материала, а не из
+    // метки типа. Метка врала примерно у каждого третьего материала, и на
+    // экране пост с картинкой светился синим — «текстовым».
 
     // SM-22: маркеры рисует общий компонент. Раньше этот календарь рисовал их
     // сам, без предела на количество, и день с семнадцатью публикациями
@@ -424,7 +418,6 @@ export default function Posts() {
     const dots: CalendarDayDot[] = buildPostsScreenDayDots({
       publicationsForDay,
       failedAttemptsForDay,
-      getColorForType,
       t,
     });
 
@@ -741,6 +734,8 @@ export default function Posts() {
                   }}
                   initialFocus
                 />
+
+                <CalendarLegend />
 
                 <div className="space-y-4">
                   <div>

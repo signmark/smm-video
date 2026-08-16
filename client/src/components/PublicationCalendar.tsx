@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { detectMediaKind, dotColorForMediaKind, MEDIA_KIND_LABEL, type ContentMediaKind } from '@/lib/calendar-dot-color';
+import { CalendarLegend } from '@/components/CalendarLegend';
 import { DISPLAY_TIME_ZONE, displayToday, displayTodayKey, formatTimeWithTimezone } from '@/lib/date-utils';
 import { Calendar } from '@/components/ui/calendar';
 import { format, addDays, startOfMonth, parseISO } from 'date-fns';
@@ -397,7 +399,8 @@ export default function PublicationCalendar({
     const contentByStatus = postsForDay.reduce((result, post) => {
       // Определяем статус поста
       const status = post.status || 'draft';
-      const type = post.contentType || 'text';
+      // AI-116: группируем по РОДУ СОДЕРЖИМОГО, а не по метке типа.
+      const type = detectMediaKind(post);
       
       // Отладочная информация для первых 5 постов
       if (postsForDay.length <= 5 && day.getDate() === 13) {
@@ -415,16 +418,7 @@ export default function PublicationCalendar({
       return result;
     }, {} as Record<string, Record<string, number>>);
 
-    // Получаем цвета для разных типов контента
-    const getColorForType = (type: string): string => {
-      switch (type) {
-        case 'text': return 'bg-blue-500'; // Синий для текста
-        case 'text-image': return 'bg-yellow-500'; // Желтый для картинки с текстом
-        case 'video': 
-        case 'video-text': return 'bg-red-500'; // Красный для видео
-        default: return 'bg-gray-500';
-      }
-    };
+    // AI-116: цвет по фактическому содержимому, а не по метке типа.
     
     // Получаем стили для разных статусов
     const getStatusStyle = (status: string): { opacity: string, ring?: string } => {
@@ -458,10 +452,10 @@ export default function PublicationCalendar({
         for (let i = 0; i < count; i++) {
           dots.push({
             key: `${status}:${type}:${i}`,
-            color: getColorForType(type),
+            color: dotColorForMediaKind(type as ContentMediaKind),
             ring,
             opacity,
-            title: `${status}: ${type}`,
+            title: `${status}: ${MEDIA_KIND_LABEL[type as ContentMediaKind]}`,
           });
         }
       });
@@ -537,7 +531,9 @@ export default function PublicationCalendar({
               }}
               initialFocus
             />
-            
+
+            <CalendarLegend />
+
             <div className="flex-shrink-0">
               <SocialMediaFilter 
                 onFilterChange={handleFilterChange}

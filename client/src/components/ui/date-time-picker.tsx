@@ -6,46 +6,77 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { CalendarIcon } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import {
+  instantToMoscowWall,
+  moscowWallToInstant,
+  SCHEDULE_DISPLAY_TIME_ZONE_LABEL,
+} from "@/lib/schedule-timezone";
 
 interface DateTimePickerProps {
   value?: Date;
   onChange?: (date: Date | undefined) => void;
 }
 
+/**
+ * Выбор даты и времени публикации.
+ *
+ * AI-113: введённое время трактуется как МОСКОВСКОЕ, а не как время пояса
+ * браузера. Раньше здесь стоял `setHours`, то есть применялся пояс устройства,
+ * — и тот же ввод «10:00» через AI-команду (она всегда понимала время по
+ * Москве) давал другой момент. Теперь оба пути дают один.
+ *
+ * Внутреннее состояние (`selectedDate`) — НЕ момент, а московские «настенные»
+ * части, разложенные по локальным полям: календарю и полю времени нужны именно
+ * локальные поля, а показывать они обязаны московское время. Наружу через
+ * `onChange` уходит настоящий абсолютный момент.
+ */
 export function DateTimePicker({ value, onChange }: DateTimePickerProps) {
-  const [selectedDate, setSelectedDate] = React.useState<Date | undefined>(value);
+  const [selectedDate, setSelectedDate] = React.useState<Date | undefined>(
+    value ? instantToMoscowWall(value) : undefined
+  );
   const [timeValue, setTimeValue] = React.useState(
-    value ? format(value, "HH:mm") : ""
+    value ? format(instantToMoscowWall(value), "HH:mm") : ""
   );
 
   // Sync with external value changes
   React.useEffect(() => {
     if (value) {
-      setSelectedDate(value);
-      setTimeValue(format(value, "HH:mm"));
+      const wall = instantToMoscowWall(value);
+      setSelectedDate(wall);
+      setTimeValue(format(wall, "HH:mm"));
     }
   }, [value]);
+
+  /** Московские части выбранного дня и времени → абсолютный момент. */
+  const emit = (wallDay: Date, time: string) => {
+    const [hours, minutes] = time.split(":").map(Number);
+    onChange?.(
+      moscowWallToInstant(
+        wallDay.getFullYear(),
+        wallDay.getMonth() + 1,
+        wallDay.getDate(),
+        hours,
+        minutes
+      )
+    );
+  };
 
   // Update the combined date and time when either changes
   const handleDateChange = (date: Date | undefined) => {
     setSelectedDate(date);
     if (date && timeValue) {
-      const [hours, minutes] = timeValue.split(":").map(Number);
-      const newDate = new Date(date);
-      newDate.setHours(hours, minutes, 0, 0);
-      onChange?.(newDate);
+      emit(date, timeValue);
     } else if (date) {
-      onChange?.(date);
+      // Времени ещё нет: день выбран, момент считаем от полуночи по Москве —
+      // иначе наружу ушёл бы день в поясе устройства.
+      emit(date, "00:00");
     }
   };
 
   const handleTimeChange = (time: string) => {
     setTimeValue(time);
     if (selectedDate && time) {
-      const [hours, minutes] = time.split(":").map(Number);
-      const newDate = new Date(selectedDate);
-      newDate.setHours(hours, minutes, 0, 0);
-      onChange?.(newDate);
+      emit(selectedDate, time);
     }
   };
 
@@ -77,12 +108,18 @@ export function DateTimePicker({ value, onChange }: DateTimePickerProps) {
           />
         </PopoverContent>
       </Popover>
-      <Input
-        type="time"
-        value={timeValue}
-        onChange={(e) => handleTimeChange(e.target.value)}
-        className="w-[120px] bg-background dark:bg-background border-input dark:border-input"
-      />
+      <div className="flex items-center gap-1">
+        <Input
+          type="time"
+          value={timeValue}
+          onChange={(e) => handleTimeChange(e.target.value)}
+          className="w-[120px] bg-background dark:bg-background border-input dark:border-input"
+          data-testid="input-schedule-time"
+        />
+        <span className="text-xs text-muted-foreground" data-testid="label-schedule-zone">
+          {SCHEDULE_DISPLAY_TIME_ZONE_LABEL}
+        </span>
+      </div>
     </div>
   );
 }

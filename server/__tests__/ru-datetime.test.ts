@@ -11,6 +11,38 @@ import { parseRussianSchedule, formatMskLabel } from '../utils/ru-datetime';
 /** 27 июля 2026, 12:00 UTC = 15:00 МСК. Понедельник. */
 const NOW = new Date('2026-07-27T12:00:00.000Z');
 
+/**
+ * AI-113: оба пути планирования дают один и тот же абсолютный момент.
+ *
+ * Календарь и AI-команда — разные слои и разные прогоны vitest, поэтому связать
+ * их можно только общим зафиксированным литералом. Тот же самый литерал стоит в
+ * client/src/components/__tests__/date-time-picker-msk.test.tsx и в
+ * client/src/lib/__tests__/schedule-timezone.test.ts. Если одна из сторон
+ * поменяет трактовку пояса, разъедется ровно эта проверка, а не поведение
+ * у пользователя.
+ */
+describe('AI-113: трактовка ввода совпадает с календарём', () => {
+  /** «16 июля 2026, 10:00» по Москве. Тот же литерал — в клиентских тестах. */
+  const SHARED_10_00_MSK = '2026-07-16T07:00:00.000Z';
+  /** 15 июля 2026, 12:00 UTC — чтобы «завтра» указывало на 16 июля. */
+  const DAY_BEFORE = new Date('2026-07-15T12:00:00.000Z');
+
+  it('«завтра в 10:00» даёт тот же момент, что и календарь для 16.07.2026 10:00', () => {
+    const parsed = parseRussianSchedule('запланируй на завтра в 10:00', DAY_BEFORE);
+    expect(parsed?.iso).toBe(SHARED_10_00_MSK);
+  });
+
+  it('«16 июля в 10:00» даёт тот же момент', () => {
+    const parsed = parseRussianSchedule('запланируй на 16 июля в 10:00', DAY_BEFORE);
+    expect(parsed?.iso).toBe(SHARED_10_00_MSK);
+  });
+
+  it('полночь по Москве уходит на предыдущий день по UTC — как и в календаре', () => {
+    const parsed = parseRussianSchedule('запланируй на завтра в 00:00', DAY_BEFORE);
+    expect(parsed?.iso).toBe('2026-07-15T21:00:00.000Z');
+  });
+});
+
 describe('parseRussianSchedule — дата и время', () => {
   it('«завтра в 10:00» → 28 июля 07:00 UTC (10:00 МСК)', () => {
     const parsed = parseRussianSchedule('запланируй пост о новинке на завтра в 10:00', NOW);

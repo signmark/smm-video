@@ -1,16 +1,23 @@
 /**
- * Подпись часового пояса при планировании публикации (SM-28).
+ * Часовой пояс планирования публикации (SM-28 — подпись, AI-113 — трактовка).
  *
- * Календарь «Запланировать» ставит время через `setHours` в ЛОКАЛЬНОМ поясе
- * браузера, затем `toISOString()` превращает его в UTC-момент (абсолютную
- * величину). Значит применяемый пояс — это пояс браузера/устройства, а не
- * фиксированная Москва. Остальной продукт при этом говорит по-московски
- * (`DISPLAY_TIME_ZONE = Europe/Moscow`), поэтому пользователю из другого пояса
- * надо показать ОБЕ величины — иначе он сравнивает несравнимое.
+ * ИСТОРИЯ. Изначально календарь «Запланировать» ставил время через `setHours`
+ * в поясе браузера, а команда на естественном языке (`server/utils/ru-datetime`)
+ * всегда понимала названное время как московское. Один и тот же ввод «10:00»
+ * давал два разных момента — для москвича они совпадали, поэтому расхождение
+ * было незаметным. SM-28 сделал его видимым (подпись под выбором даты),
+ * AI-113 его устраняет.
  *
- * Этот модуль только ВЫЧИСЛЯЕТ подпись; логику времени не меняет.
+ * РЕШЕНИЕ AI-113: единый пояс ввода — московский, на обоих путях. Причина не
+ * техническая, а продуктовая: публикация, аналитика и ответы ассистента уже
+ * ведутся по Москве, а пояса пользователя мы нигде не храним — для команды,
+ * пришедшей из телеграм-бота, его просто неоткуда взять.
+ *
+ * ЧТО ЭТО НЕ МЕНЯЕТ: в базе лежат абсолютные моменты, поэтому уже
+ * запланированные публикации новая трактовка не сдвигает. Проверено замером на
+ * боевой записи, а не рассуждением.
  */
-import { formatInTimeZone } from 'date-fns-tz';
+import { formatInTimeZone, fromZonedTime, toZonedTime } from 'date-fns-tz';
 
 /** Пояс, в котором ведётся остальной интерфейс и который подписывается «МСК». */
 export const SCHEDULE_DISPLAY_TIME_ZONE = 'Europe/Moscow';
@@ -83,6 +90,11 @@ export function browserDiffersFromMoscow(zone: string = browserTimeZone()): bool
   return zone !== SCHEDULE_DISPLAY_TIME_ZONE;
 }
 
+/** Тот же абсолютный момент в произвольном поясе, в виде «29.07.2026, 10:00». */
+export function formatInZone(date: Date | string, zone: string): string {
+  return formatInTimeZone(date, zone, 'dd.MM.yyyy, HH:mm', { locale: undefined });
+}
+
 /** Тот же абсолютный момент в МСК, в виде «10:00 29.07.2026». */
 export function formatInMoscow(date: Date | string): string {
   return formatInTimeZone(
@@ -93,27 +105,69 @@ export function formatInMoscow(date: Date | string): string {
   );
 }
 
-/** Полная подпись применяемого пояса: «время в вашем поясе Europe/Moscow (UTC+3)». */
+/**
+ * Полная подпись применяемого пояса: «время указывается по Москве (МСК, UTC+3)».
+ *
+ * AI-113: раньше здесь называли пояс браузера, потому что применялся он.
+ * Теперь применяется московский — подпись обязана говорить именно это, иначе
+ * она врёт ровно в том месте, ради которого её и добавляли.
+ */
 export function scheduleTimezoneLabel(now: Date = new Date()): string {
-  const zone = browserTimeZone();
-  const offset = browserUtcOffsetLabel(now);
-  return `время в вашем поясе ${zone} (${offset})`;
+  const offset = browserUtcOffsetLabel(now, SCHEDULE_DISPLAY_TIME_ZONE);
+  return `время указывается по Москве (${SCHEDULE_DISPLAY_TIME_ZONE_LABEL}, ${offset})`;
+}
+
+/**
+ * Московское «настенное» время → абсолютный момент.
+ *
+ * Принимает части так, как их видит человек в поле ввода: год, месяц (1-12),
+ * день, часы, минуты. Возвращает момент, который и уходит на сервер.
+ * Не зависит от пояса машины: пересчёт делает `fromZonedTime` по явному поясу.
+ */
+export function moscowWallToInstant(
+  year: number,
+  month: number,
+  day: number,
+  hours: number,
+  minutes: number,
+): Date {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const wall = `${year}-${pad(month)}-${pad(day)}T${pad(hours)}:${pad(minutes)}:00`;
+  return fromZonedTime(wall, SCHEDULE_DISPLAY_TIME_ZONE);
+}
+
+/**
+ * Абсолютный момент → дата, у которой ЛОКАЛЬНЫЕ поля равны московским
+ * «настенным». Нужна интерфейсу: календарь и поле времени работают с
+ * локальными полями, а показывать обязаны московское время.
+ *
+ * Полученную дату нельзя отправлять на сервер — это не момент, а способ
+ * показать московские части. Для отправки есть `moscowWallToInstant`.
+ */
+export function instantToMoscowWall(date: Date): Date {
+  return toZonedTime(date, SCHEDULE_DISPLAY_TIME_ZONE);
 }
 
 export interface ScheduleTimezoneHint {
-  /** Подпись применяемого пояса (пояс браузера + смещение). */
+  /** Подпись применяемого пояса (московский + смещение). */
   label: string;
-  /** Тот же момент в МСК, если пояс браузера отличается от Москвы. */
-  msk: string | null;
+  /**
+   * Тот же момент в поясе пользователя, если он отличается от московского.
+   * AI-113: направление пересчёта развернулось. Раньше применялся пояс
+   * браузера и досчитывали Москву; теперь применяется Москва и досчитывают
+   * пояс браузера — иначе пользователь из другого пояса не понимает, когда
+   * пост выйдет по его часам.
+   */
+  local: string | null;
   /** Пояс браузера отличается от Москвы? */
   differs: boolean;
 }
 
 /**
- * Собирает подпись и (при необходимости) пересчёт в МСК для выбранного
- * момента. `date` — то, что выбрал пользователь (уже в локальном поясе через
- * setHours); `now` инжектируется для тестируемости смещения; `zone` — пояс
- * браузера (по умолчанию берётся из Intl, инжектируется в тестах).
+ * Собирает подпись и (при необходимости) пересчёт в пояс пользователя.
+ * `date` — уже абсолютный момент, собранный из московского ввода;
+ * `now` инжектируется для тестируемости смещения; `zone` — пояс браузера
+ * (по умолчанию берётся из Intl, инжектируется в тестах).
  */
 export function buildScheduleTimezoneHint(
   date: Date,
@@ -121,10 +175,10 @@ export function buildScheduleTimezoneHint(
   zone: string = browserTimeZone(),
 ): ScheduleTimezoneHint {
   const differs = browserDiffersFromMoscow(zone);
-  const offset = browserUtcOffsetLabel(now, zone);
+  const mskOffset = browserUtcOffsetLabel(now, SCHEDULE_DISPLAY_TIME_ZONE);
   return {
-    label: `время в вашем поясе ${zone} (${offset})`,
-    msk: differs ? formatInMoscow(date) : null,
+    label: `время указывается по Москве (${SCHEDULE_DISPLAY_TIME_ZONE_LABEL}, ${mskOffset})`,
+    local: differs ? formatInZone(date, zone) : null,
     differs,
   };
 }

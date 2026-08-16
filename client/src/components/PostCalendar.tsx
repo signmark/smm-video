@@ -11,6 +11,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { apiRequest } from "@/lib/queryClient";
 
 import { serverDate } from '@/lib/date-utils';
+import { dotColorForContent } from '@/lib/calendar-dot-color';
+import { CalendarLegend } from '@/components/CalendarLegend';
 interface Post {
   id: string;
   campaignId: string;
@@ -143,21 +145,9 @@ export function PostCalendar({ campaignId }: { campaignId: string }) {
     return `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
   });
 
-  // Helper function to get dot color based on post type
-  const getDotColor = (type: string) => {
-    switch (type) {
-      case 'text':
-        return 'bg-blue-500';
-      case 'text-image':
-      case 'image':
-        return 'bg-yellow-500';
-      case 'video':
-      case 'video-text':
-        return 'bg-red-500';
-      default:
-        return 'bg-gray-500';
-    }
-  };
+  // AI-116: цвет по фактическому содержимому поста, а не по метке типа.
+  // Метка расходилась с содержимым примерно у каждого третьего материала.
+  const getDotColor = (post: Post) => dotColorForContent(post);
 
   // Generate calendar day content
   const getDayContent = (day: Date) => {
@@ -183,7 +173,7 @@ export function PostCalendar({ campaignId }: { campaignId: string }) {
             {chunk.map((post: Post) => (
               <div
                 key={post.id}
-                className={`w-2 h-2 rounded-full ${getDotColor(post.contentType)}`}
+                className={`w-2 h-2 rounded-full ${getDotColor(post)}`}
                 title={`${formatTime(post.scheduledAt)} - ${post.content.substring(0, 20)}...`}
               />
             ))}
@@ -228,13 +218,15 @@ export function PostCalendar({ campaignId }: { campaignId: string }) {
             initialFocus
           />
 
+          <CalendarLegend withFailed={false} />
+
           {selectedDate && (
             <div className="mt-4">
               <h4 className="text-sm font-medium mb-2">Посты на {selectedDate.toLocaleDateString()}:</h4>
               {getSelectedDatePosts().map((post: Post) => (
                 <div key={post.id} className="p-2 bg-secondary dark:bg-secondary/50 rounded-md mb-2">
                   <div className="flex items-center gap-2">
-                    <div className={`w-3 h-3 rounded-full ${getDotColor(post.contentType)}`} />
+                    <div className={`w-3 h-3 rounded-full ${getDotColor(post)}`} />
                     <p className="text-sm font-medium">
                       {formatTime(post.scheduledAt)}
                     </p>

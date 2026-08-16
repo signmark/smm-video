@@ -31,9 +31,9 @@ import {
 describe('SM-22 follow-up: failed first в экране постов', () => {
   it('buildPostsScreenDayDots: failed первыми в выходном массиве', () => {
     const publications = [
-      { key: 'p1', contentType: 'text' },
-      { key: 'p2', contentType: 'text' },
-      { key: 'p3', contentType: 'text' },
+      { key: 'p1', mediaKind: 'text' as const },
+      { key: 'p2', mediaKind: 'text' as const },
+      { key: 'p3', mediaKind: 'text' as const },
     ];
     const failed = [
       { id: 'f1' },
@@ -42,7 +42,6 @@ describe('SM-22 follow-up: failed first в экране постов', () => {
     const dots = buildPostsScreenDayDots({
       publicationsForDay: publications,
       failedAttemptsForDay: failed,
-      getColorForType: () => 'bg-blue-500',
       t: () => 't-error',
     });
     expect(dots).toHaveLength(5);
@@ -57,9 +56,9 @@ describe('SM-22 follow-up: failed first в экране постов', () => {
 
   it('buildPostsScreenDayDots: стабильный порядок ВНУТРИ групп (входной порядок)', () => {
     const publications = [
-      { key: 'a', contentType: 'text' },
-      { key: 'b', contentType: 'text' },
-      { key: 'c', contentType: 'text' },
+      { key: 'a', mediaKind: 'text' as const },
+      { key: 'b', mediaKind: 'text' as const },
+      { key: 'c', mediaKind: 'text' as const },
     ];
     const failed = [
       { id: 'x' },
@@ -68,7 +67,6 @@ describe('SM-22 follow-up: failed first в экране постов', () => {
     const dots = buildPostsScreenDayDots({
       publicationsForDay: publications,
       failedAttemptsForDay: failed,
-      getColorForType: () => 'bg-blue-500',
       t: () => '',
     });
     // Внутри failed-блока порядок входной: x, y.
@@ -84,7 +82,6 @@ describe('SM-22 follow-up: failed first в экране постов', () => {
     const emptyDots = buildPostsScreenDayDots({
       publicationsForDay: [],
       failedAttemptsForDay: [],
-      getColorForType: () => 'bg-blue-500',
       t: () => '',
     });
     expect(emptyDots).toEqual([]);
@@ -92,16 +89,14 @@ describe('SM-22 follow-up: failed first в экране постов', () => {
     const onlyFailed = buildPostsScreenDayDots({
       publicationsForDay: [],
       failedAttemptsForDay: [{ id: 'f1' }, { id: 'f2' }, { id: 'f3' }, { id: 'f4' }, { id: 'f5' }],
-      getColorForType: () => 'bg-blue-500',
       t: () => '',
     });
     expect(onlyFailed).toHaveLength(5);
     expect(onlyFailed.every((d) => d.color === 'bg-red-500')).toBe(true);
 
     const onlyPublished = buildPostsScreenDayDots({
-      publicationsForDay: [{ key: 'a' }, { key: 'b' }],
+      publicationsForDay: [{ key: 'a', mediaKind: 'text' as const }, { key: 'b', mediaKind: 'text' as const }],
       failedAttemptsForDay: [],
-      getColorForType: () => 'bg-blue-500',
       t: () => '',
     });
     expect(onlyPublished.every((d) => d.color === 'bg-blue-500')).toBe(true);

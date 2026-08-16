@@ -8,6 +8,8 @@
  * маркеры дня рисует ОДНА функция, а календари передают ей только данные.
  */
 
+import { dotColorForMediaKind, FAILED_PUBLICATION_DOT_COLOR, type ContentMediaKind } from '@/lib/calendar-dot-color';
+
 export const MAX_VISIBLE_DOTS = 4;
 
 export interface CalendarDayDot {
@@ -51,26 +53,28 @@ export function splitDayDots(dots: CalendarDayDot[]): {
  * маркеров фиксируется этой функцией и проверяется в
  * `calendar-markers-failed-first.test.tsx`.
  *
- * `getColorForType` — функция цвета, которая зависит от локали и
- * передаётся с call-site.
+ * AI-116: цвет больше не приходит с call-site функцией по метке типа.
+ * Публикация несёт `mediaKind` — род содержимого, посчитанный по фактическим
+ * медиа материала. Метка типа расходилась с содержимым примерно у каждого
+ * третьего материала, и три календаря повторяли одну и ту же ошибку каждый у
+ * себя.
  *
- * `t` — функция перевода, передаётся с call-site по той же причине.
+ * `t` — функция перевода, передаётся с call-site.
  */
-export function buildPostsScreenDayDots<TKey extends string, TPublication extends { key: TKey; contentType?: string | null }, TFailed extends { id: TKey }>(params: {
+export function buildPostsScreenDayDots<TKey extends string, TPublication extends { key: TKey; mediaKind: ContentMediaKind }, TFailed extends { id: TKey }>(params: {
   publicationsForDay: TPublication[];
   failedAttemptsForDay: TFailed[];
-  getColorForType: (type: string) => string;
   t: (key: string) => string;
 }): CalendarDayDot[] {
   return [
     ...params.failedAttemptsForDay.map((content) => ({
       key: `${content.id}:failed`,
-      color: 'bg-red-500',
+      color: FAILED_PUBLICATION_DOT_COLOR,
       title: params.t('publishing.published.publicationError'),
     })),
     ...params.publicationsForDay.map((publication) => ({
       key: publication.key,
-      color: params.getColorForType(publication.contentType || 'text'),
+      color: dotColorForMediaKind(publication.mediaKind),
     })),
   ];
 }

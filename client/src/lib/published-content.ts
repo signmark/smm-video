@@ -1,4 +1,5 @@
 import type { CampaignContent, PlatformPublishInfo, SocialPlatform } from '@/types';
+import { detectMediaKind, type ContentMediaKind } from '@/lib/calendar-dot-color';
 import { isConfirmedPublishedPlatform } from '@shared/schedule-time';
 import { normalizeTimestamp } from '@/lib/date-utils';
 
@@ -14,6 +15,13 @@ export interface ConfirmedPublicationEvent {
   platform: SocialPlatform | null;
   date: Date;
   contentType: CampaignContent['contentType'];
+  /**
+   * AI-116: род содержимого, посчитанный по фактическим медиа материала.
+   * `contentType` рядом оставлен намеренно — он всё ещё нужен там, где важна
+   * именно метка (например, разбор по типам в аналитике), но цвет маркера
+   * берётся отсюда.
+   */
+  mediaKind: ContentMediaKind;
 }
 
 function validDate(value: string | Date | null | undefined): Date | null {
@@ -181,6 +189,7 @@ export function getConfirmedPublicationEvents(content: CampaignContent): Confirm
       platform: platform as SocialPlatform,
       date,
       contentType: content.contentType,
+      mediaKind: detectMediaKind(content),
     });
   });
 
@@ -192,6 +201,7 @@ export function getConfirmedPublicationEvents(content: CampaignContent): Confirm
       platform: null,
       date: legacyDate,
       contentType: content.contentType,
+      mediaKind: detectMediaKind(content),
     });
   }
 

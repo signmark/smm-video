@@ -41,7 +41,14 @@ router.post('/content/:id/unpublish', authenticateUser, async (req, res) => {
 
     const content = contentResponse.data.data;
     const campaignId = content.campaign_id;
-    const socialPlatforms = content.socialPlatforms || {};
+    // AI-114: читаем канончный snake-ключ (и camel как fallback для
+    // совместимости), иначе список площадок всегда пуст и ниже нечему
+    // удаляться/сбрасываться. Directus может отдавать поле и объектом, и
+    // JSON-строкой — нормализуем.
+    let socialPlatforms = content.social_platforms || content.socialPlatforms || {};
+    if (typeof socialPlatforms === 'string') {
+      try { socialPlatforms = JSON.parse(socialPlatforms); } catch { socialPlatforms = {}; }
+    }
     const deletionResults: { platform: string; success: boolean; error?: string }[] = [];
 
     if (!campaignId) {
@@ -49,8 +56,11 @@ router.post('/content/:id/unpublish', authenticateUser, async (req, res) => {
       // В некоторых схемах это может быть просто campaign
     }
 
-    // Подготавливаем обновленные данные для socialPlatforms
-    const updatedSocialPlatforms = { ...socialPlatforms };
+    // Подготавливаем обновленные данные. Важно: сбрасываем площадку в черновик
+    // ТОЛЬКО если удаление на платформе реально состоялось — иначе сотрём
+    // историю опубликованного поста (регрессия AI-87, которую сдерживал баг с
+    // именем поля).
+    const updatedSocialPlatforms: Record<string, any> = {};
     
     for (const [platform, data] of Object.entries(socialPlatforms)) {
       const platformData = data as any;
@@ -58,13 +68,22 @@ router.post('/content/:id/unpublish', authenticateUser, async (req, res) => {
       // Если есть postId, пробуем удалить через API
       if (platformData.postId) {
         try {
-          // Если есть campaignId, пробуем удалить
           if (campaignId) {
             await deleteFromPlatform(platform, platformData.postId, userToken, campaignId);
             deletionResults.push({ platform, success: true });
+            // Только после УСПЕШНОГО удаления сбрасываем площадку.
+            updatedSocialPlatforms[platform] = {
+              ...platformData,
+              status: 'draft',
+              postId: null,
+              postUrl: null,
+              publishedAt: null,
+              error: null
+            };
           } else {
             console.warn(`Cannot delete from ${platform}: campaignId is missing`);
             deletionResults.push({ platform, success: false, error: 'Campaign ID missing' });
+            updatedSocialPlatforms[platform] = platformData;
           }
         } catch (error: any) {
           console.error(`Failed to delete from ${platform}:`, error.response?.data || error.message);
@@ -73,25 +92,32 @@ router.post('/content/:id/unpublish', authenticateUser, async (req, res) => {
             success: false, 
             error: error.response?.data?.error?.message || error.message 
           });
+          // Удаление не удалось — сохраняем прежнее состояние, не стираем.
+          updatedSocialPlatforms[platform] = platformData;
         }
+      } else {
+        // Нет postId — удалять нечего, историю не трогаем.
+        updatedSocialPlatforms[platform] = platformData;
       }
-
-      // В любом случае сбрасываем статус платформы в черновик
-      updatedSocialPlatforms[platform] = {
-        ...platformData,
-        status: 'draft',
-        postId: null,
-        postUrl: null,
-        publishedAt: null,
-        error: null
-      };
     }
 
-    // Подготавливаем данные для обновления контента
+    const anyDeleted = deletionResults.some((r) => r.success);
+
+    // AI-114: честный ответ. Если ни одна площадка не была реально снята —
+    // не говорим пользователю «снята».
+    if (!anyDeleted) {
+      return res.status(409).json({
+        success: false,
+        error: 'Не удалось снять публикацию ни с одной площадки',
+        deletionResults
+      });
+    }
+
+    // Подготавливаем данные для обновления контента (snake-ключ).
     const updateData: any = {
       status: 'draft',
       published_at: null,
-      socialPlatforms: updatedSocialPlatforms
+      social_platforms: updatedSocialPlatforms
     };
 
     // Обновляем в Directus

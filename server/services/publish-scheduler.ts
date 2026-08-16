@@ -13,6 +13,7 @@ import {
   isPermanentPublishError,
   getStaleDays,
 } from './publication-terminal-state';
+import { recordPublished, wasPublished, forget, readJournal } from './publish-fallback-journal';
 import { resolvePublishingToken } from './publishing-token';
 import { stripMarkdown, markdownToTelegramHtml } from '../utils/strip-markdown';
 
@@ -302,6 +303,10 @@ export class PublishScheduler {
         for (const c of allContent) {
           log(`📋 Content ${c.id}: status=${c.status}, scheduled_at=${c.scheduled_at || 'NULL'}`, 'scheduler', 'debug');
         }
+
+        // AI-85: сначала догоняем записи публикаций, которые не сохранились
+        // из-за недоступности базы, иначе этот же цикл сочтёт их неопубликованными.
+        await this.reconcilePublishJournal();
 
         let processedCount = 0;
         let publishedCount = 0;
@@ -910,7 +915,7 @@ export class PublishScheduler {
       console.error(`[THREADS-DIRECT] publishPost result: success=${result.success}, error=${result.error}`);
 
       if (result.success) {
-        await save('threads', { status: 'published', postId: result.postId, postUrl: result.postUrl, publishedAt: new Date().toISOString() });
+        await this.savePublishedRecord(save, 'threads', { status: 'published', postId: result.postId, postUrl: result.postUrl, publishedAt: new Date().toISOString() }, content.id);
         // Кеш сбрасывает сам mergeAndSavePlatformStatus — отдельный вызов здесь больше не нужен.
 
         log(`Threads публикация успешна для ${content.id}: ${result.postUrl}`, 'scheduler');
@@ -976,7 +981,7 @@ export class PublishScheduler {
       console.error(`[FB-DIRECT] publishPost result: success=${result.success}, error=${result.error}`);
 
       if (result.success) {
-        await save('facebook', { status: 'published', postId: result.postId, postUrl: result.postUrl, publishedAt: new Date().toISOString() });
+        await this.savePublishedRecord(save, 'facebook', { status: 'published', postId: result.postId, postUrl: result.postUrl, publishedAt: new Date().toISOString() }, content.id);
         log(`Facebook публикация успешна для ${content.id}: ${result.postUrl}`, 'scheduler');
         console.error(`[FB-DIRECT] SUCCESS: ${result.postUrl}`);
         try {
@@ -1045,7 +1050,7 @@ export class PublishScheduler {
       });
 
       if (result.success) {
-        await save('telegram', { status: 'published', postId: String(result.messageId || ''), postUrl: result.postUrl, publishedAt: new Date().toISOString() });
+        await this.savePublishedRecord(save, 'telegram', { status: 'published', postId: String(result.messageId || ''), postUrl: result.postUrl, publishedAt: new Date().toISOString() }, content.id);
         log(`Telegram успешно: ${result.postUrl}`, 'scheduler');
         try { const { broadcastNotification } = await import('./notification-bus'); broadcastNotification('content_published', { contentId: content.id, platform: 'telegram' }); } catch {}
         return { platform: 'telegram', success: true };
@@ -1156,7 +1161,7 @@ export class PublishScheduler {
       }
 
       if (result.success) {
-        await save('vk', { status: 'published', postId: String(result.postId || ''), postUrl: result.postUrl, publishedAt: new Date().toISOString() });
+        await this.savePublishedRecord(save, 'vk', { status: 'published', postId: String(result.postId || ''), postUrl: result.postUrl, publishedAt: new Date().toISOString() }, content.id);
         log(`VK успешно: ${result.postUrl}`, 'scheduler');
         try { const { broadcastNotification } = await import('./notification-bus'); broadcastNotification('content_published', { contentId: content.id, platform: 'vk' }); } catch {}
         return { platform: 'vk', success: true };
@@ -1198,7 +1203,7 @@ export class PublishScheduler {
       const result = await instagramService.publishPost(settings, { text, imageUrl: content.image_url, videoUrl: content.video_url }, content.id, process.env.DIRECTUS_STATIC_TOKEN);
 
       if (result.success) {
-        await save('instagram', { status: 'published', postId: result.postId, postUrl: result.postUrl, publishedAt: new Date().toISOString() });
+        await this.savePublishedRecord(save, 'instagram', { status: 'published', postId: result.postId, postUrl: result.postUrl, publishedAt: new Date().toISOString() }, content.id);
         log(`Instagram успешно: ${result.postUrl}`, 'scheduler');
         try { const { broadcastNotification } = await import('./notification-bus'); broadcastNotification('content_published', { contentId: content.id, platform: 'instagram' }); } catch {}
         return { platform: 'instagram', success: true };
@@ -1346,7 +1351,7 @@ export class PublishScheduler {
       console.error(`[TIKTOK-DIRECT] publishAndWait result: success=${result.success}, publishId=${result.publishId}, postUrl=${result.postUrl}`);
 
       if (result.success) {
-        await save('tiktok', { status: 'published', publishId: result.publishId, postUrl: result.postUrl || 'https://www.tiktok.com', publishedAt: new Date().toISOString() });
+        await this.savePublishedRecord(save, 'tiktok', { status: 'published', publishId: result.publishId, postUrl: result.postUrl || 'https://www.tiktok.com', publishedAt: new Date().toISOString() }, content.id);
         log(`TikTok публикация успешна для ${content.id}: publishId=${result.publishId}`, 'scheduler');
         try {
           const { broadcastNotification } = await import('./notification-bus');
@@ -1388,7 +1393,7 @@ export class PublishScheduler {
       const { vkStoriesService } = await import('./social-platforms/vk-stories-service');
       const result = await vkStoriesService.publishStory(content.id, adminToken, content);
       if (result.success) {
-        await save('vk', { status: 'published', postUrl: result.storyUrl, publishedAt: new Date().toISOString() });
+        await this.savePublishedRecord(save, 'vk', { status: 'published', postUrl: result.storyUrl, publishedAt: new Date().toISOString() }, content.id);
         log(`VK Story опубликована успешно: ${result.storyUrl}`, 'scheduler');
         try { const { broadcastNotification } = await import('./notification-bus'); broadcastNotification('content_published', { contentId: content.id, platform: 'vk', type: 'story' }); } catch {}
         return { platform: 'vk', success: true };
@@ -1413,7 +1418,7 @@ export class PublishScheduler {
       const { vkClipsService } = await import('./social-platforms/vk-clips-service');
       const result = await vkClipsService.publishClip(content.id, adminToken);
       if (result.success) {
-        await save('vk', { status: 'published', postUrl: result.videoUrl, publishedAt: new Date().toISOString() });
+        await this.savePublishedRecord(save, 'vk', { status: 'published', postUrl: result.videoUrl, publishedAt: new Date().toISOString() }, content.id);
         log(`VK Clip опубликован успешно: ${result.videoUrl}`, 'scheduler');
         try { const { broadcastNotification } = await import('./notification-bus'); broadcastNotification('content_published', { contentId: content.id, platform: 'vk', type: 'clip' }); } catch {}
         return { platform: 'vk', success: true };
@@ -1438,7 +1443,7 @@ export class PublishScheduler {
       const { instagramReelsService } = await import('./social-platforms/instagram-reels-service');
       const result = await instagramReelsService.publishReels(content.id, adminToken);
       if (result.success) {
-        await save('instagram', { status: 'published', postUrl: result.postUrl, publishedAt: new Date().toISOString() });
+        await this.savePublishedRecord(save, 'instagram', { status: 'published', postUrl: result.postUrl, publishedAt: new Date().toISOString() }, content.id);
         log(`Instagram Reels опубликован успешно: ${result.postUrl}`, 'scheduler');
         try { const { broadcastNotification } = await import('./notification-bus'); broadcastNotification('content_published', { contentId: content.id, platform: 'instagram', type: 'reels' }); } catch {}
         return { platform: 'instagram', success: true };
@@ -1508,6 +1513,93 @@ ${text}
       log(`[PLATFORM-ADAPT] ⚠️ ${platform}: ошибка адаптации (${err.message?.slice(0, 80)}), используем оригинал`, 'scheduler');
       return platform === 'telegram' ? markdownToTelegramHtml(text) : stripMarkdown(text);
     }
+  }
+
+  /**
+   * Записывает результат СОСТОЯВШЕЙСЯ публикации (AI-85).
+   *
+   * До этой обёртки запись результата стояла внутри того же try, что и сама
+   * отправка, поэтому сбой базы попадал в общий catch и обрабатывался как сбой
+   * публикации: планировщик назначал повтор и отправлял пост второй раз.
+   * Пост при этом уже был у подписчиков.
+   *
+   * Здесь эти два события разведены. Отправка состоялась — значит она состоялась,
+   * и повтора быть не должно ни при каких ошибках записи. Если базу дописать не
+   * удалось, факт уходит в файловый журнал, который переживёт недоступность базы
+   * и не даст опубликовать то же самое ещё раз.
+   *
+   * Метод не бросает исключений — это его главное свойство.
+   */
+  private async savePublishedRecord(
+    save: (p: string, d: Record<string, any>) => Promise<void>,
+    platform: string,
+    fields: Record<string, any>,
+    contentId: string
+  ): Promise<boolean> {
+    try {
+      await save(platform, fields);
+      return true;
+    } catch (recordErr: any) {
+      const recordError = recordErr?.message || String(recordErr);
+      await recordPublished({
+        contentId,
+        platform,
+        fields,
+        publishedAt: String(fields.publishedAt || new Date().toISOString()),
+        recordError,
+      });
+      // Пометка нужна интерфейсу и планировщику: пост ушёл, запись не сохранилась.
+      // Она пишется той же базой, что только что отказала, поэтому попытка
+      // best-effort — её провал уже не может ничего испортить.
+      try {
+        await save(platform, { ...fields, status: 'publish_succeeded_record_failed', error: recordError });
+      } catch {
+        // база всё ещё недоступна — факт уже сохранён в журнале
+      }
+      return false;
+    }
+  }
+
+  /**
+   * Догоняет записи, которые не удалось сохранить в момент публикации (AI-85).
+   * Вызывается в начале каждого цикла: как только база отвечает, журнал пустеет.
+   */
+  private async reconcilePublishJournal(): Promise<number> {
+    let healed = 0;
+    let entries: Awaited<ReturnType<typeof readJournal>> = [];
+    try {
+      entries = await readJournal();
+    } catch {
+      return 0;
+    }
+    for (const entry of entries) {
+      try {
+        const freshList = await directusCrud.list('campaign_content', {
+          filter: { id: { _eq: entry.contentId } },
+          limit: 1,
+          useAdminToken: true
+        });
+        const fresh: any = freshList?.[0];
+        if (!fresh) {
+          // материал удалён — держать строку больше незачем
+          await forget(entry.contentId, entry.platform);
+          continue;
+        }
+        const currentPlatforms = fresh.social_platforms || {};
+        await directusCrud.update('campaign_content', entry.contentId, {
+          social_platforms: {
+            ...currentPlatforms,
+            [entry.platform]: { ...(currentPlatforms[entry.platform] || {}), ...entry.fields, status: 'published' }
+          }
+        }, { useAdminToken: true });
+        await forget(entry.contentId, entry.platform);
+        healed++;
+        log(`[AI-85] Догнал запись публикации ${entry.platform} для ${entry.contentId}`, 'scheduler');
+      } catch (err: any) {
+        log(`[AI-85] Догнать запись ${entry.platform} для ${entry.contentId} пока не удалось: ${err?.message || err}`, 'scheduler', 'warn');
+      }
+    }
+    return healed;
   }
 
   private async publishContentToPlatforms(content: any, platforms: string[]) {
@@ -1626,6 +1718,18 @@ ${text}
           log(`⚠️ Pre-publish error ${content.id}:${platform}: ${prePublishErr.message}`, 'scheduler', 'warn');
         }
 
+        // AI-85: проверка выше опирается на базу, а именно её недоступность и
+        // порождает дубли — при сбое ветка выше только предупреждает и пускает
+        // публикацию дальше. Журнал переживает недоступность базы и отвечает на
+        // тот же вопрос: этот материал на эту площадку уже уходил?
+        if (!shouldAbort) {
+          const already = await wasPublished(content.id, platform);
+          if (already) {
+            log(`\u26d4 Pre-publish: ${content.id}:${platform} уже опубликован ${already.publishedAt} (журнал AI-85) — не публикуем повторно`, 'scheduler');
+            shouldAbort = true;
+          }
+        }
+
         if (shouldAbort) {
           await publicationLockManager.releaseLock(content.id, platform);
           return;
@@ -1703,7 +1807,7 @@ ${text}
       if (result.status === 'published') {
         log(`YouTube публикация успешна для контента ${content.id}: ${result.postUrl}`, 'scheduler');
         try {
-          await save('youtube', { status: 'published', postUrl: result.postUrl, platform: 'youtube', publishedAt: result.publishedAt || new Date().toISOString(), videoId: result.videoId || null });
+          await this.savePublishedRecord(save, 'youtube', { status: 'published', postUrl: result.postUrl, platform: 'youtube', publishedAt: result.publishedAt || new Date().toISOString(), videoId: result.videoId || null }, content.id);
           log(`YouTube результат сохранен для контента ${content.id}`, 'scheduler');
         } catch (saveError: any) {
           log(`Ошибка сохранения YouTube результата: ${saveError.message}`, 'scheduler');

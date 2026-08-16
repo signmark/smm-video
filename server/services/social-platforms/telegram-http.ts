@@ -27,7 +27,7 @@
  *   - HTTP safety (listener removal after handshake): see tls.connect callback
  *   - Silent-address timeout (incident 11.08): CONNECT_TIMEOUT_MS + onTimeout
  *   - SNI servername: :248
- *   - Общий agent: :45-46 (_agent/_agentBuiltFor), :205 (buildTelegramAgent)
+ *   - Общий agent: getTelegramAgent (один фасад на процесс, AI-112)
  */
 import * as dns from 'dns/promises';
 import * as tls from 'tls';
@@ -56,9 +56,6 @@ let cachedIps: string[] | null = null;
 let cachedAt = 0;
 const CACHE_TTL = 5 * 60 * 1000;
 
-// Shared keepAlive agent — one per process (AI-101 review fix)
-let _agent: https.Agent | null = null;
-let _agentBuiltFor: string | null = null;
 
 /**
  * Максимум попыток соединения (DNS + fallback, после дедупликации).
@@ -200,24 +197,19 @@ export async function getTargets(): Promise<string[]> {
   return capped;
 }
 
-/** Create an axios instance with Telegram DNS failover on the given token. */
+/**
+ * Create an axios instance with Telegram DNS failover on the given token.
+ *
+ * Агент — общий фасад `getTelegramAgent()`. Раньше здесь жил свой агент,
+ * пересобираемый по отпечатку состава DNS: объект хранил список адресов, и при
+ * смене ответа DNS его надо было строить заново. Фасад разрешает адреса не при
+ * постройке, а в момент КАЖДОГО нового соединения, поэтому ни отпечатка, ни
+ * пересборки, ни хранимого состояния ему не нужно — при том же поведении (AI-112).
+ */
 export async function telegramAxios(token: string): Promise<AxiosInstance> {
-  const targets = await getTargets();
-  const dnsIps = await getDnsIps();
-  // Отпечаток включает СОСТАВ DNS, а не только список целей. Иначе смерть DNS,
-  // чьи адреса совпадали с TELEGRAM_API_IPS, оставляет список целей прежним, агент
-  // не пересобирается и доживает со старым представлением о том, какие адреса
-  // «из DNS». Молчание получается ровно в том случае, ради которого запас и вводился.
-  const fingerprint = targets.join(',') + '|dns:' + dnsIps.join(',');
-
-  if (!_agent || _agentBuiltFor !== fingerprint) {
-    _agent = buildTelegramAgent(targets, dnsIps);
-    _agentBuiltFor = fingerprint;
-  }
-
   return axios.create({
     baseURL: `https://${TELEGRAM_HOST}/bot${token}`,
-    httpsAgent: _agent,
+    httpsAgent: getTelegramAgent(),
     timeout: 30_000,
   });
 }
@@ -229,16 +221,7 @@ export async function telegramAxios(token: string): Promise<AxiosInstance> {
  * оборвать длинную загрузку, которая раньше доходила.
  */
 export async function telegramHttp(): Promise<AxiosInstance> {
-  const targets = await getTargets();
-  const dnsIps = await getDnsIps();
-  const fingerprint = targets.join(',') + '|dns:' + dnsIps.join(',');
-
-  if (!_agent || _agentBuiltFor !== fingerprint) {
-    _agent = buildTelegramAgent(targets, dnsIps);
-    _agentBuiltFor = fingerprint;
-  }
-
-  return axios.create({ httpsAgent: _agent });
+  return axios.create({ httpsAgent: getTelegramAgent() });
 }
 
 /**
@@ -250,15 +233,21 @@ const TELEGRAM_PORT = 443;
 let _facadeAgent: https.Agent | null = null;
 
 /**
- * Стабильный агент для Telegraf: один объект на процесс, адреса разрешаются
- * в момент соединения.
+ * Единственный агент соединений с Telegram: один объект на процесс, адреса
+ * разрешаются в момент соединения. Через него ходят и библиотека бота, и все
+ * прямые вызовы (`telegramAxios`, `telegramHttp`).
  *
- * Telegraf читает `options.agent` на КАЖДЫЙ вызов
+ * Требование пришло от Telegraf: он читает `options.agent` на КАЖДЫЙ вызов
  * (`node_modules/telegraf/lib/core/network/client.js:300`), но сам объект
- * получает один раз — при `new Telegraf`. Отдать сюда `_agent` из
- * `telegramAxios` нельзя: тот пересобирается по отпечатку, а захваченный
- * объект застынет со списком адресов на весь процесс — ровно та беда, ради
- * которой транспорт и делался.
+ * получает один раз — при `new Telegraf`. Агент, который помнит список адресов,
+ * застыл бы здесь на весь процесс — ровно та беда, ради которой транспорт и
+ * делался. Отсюда и устройство: ничего не помнить.
+ *
+ * Оказалось, что так лучше и прямым вызовам. Раньше у них был свой агент,
+ * пересобираемый по отпечатку состава DNS; отпечаток приходилось расширять,
+ * потому что одни и те же адреса из разных источников он не различал. Агенту,
+ * который резолвит цели на каждое соединение, различать нечего — состояния нет
+ * (AI-112).
  *
  * Поэтому цели резолвятся не при постройке, а внутри `createConnection`, на
  * каждое НОВОЕ соединение; callback-форма это позволяет. Уже открытые сокеты
@@ -317,7 +306,14 @@ export function _resetTelegramAgentForTests(): void {
   _facadeAgent = null;
 }
 
-/** Export for tests — the same factory used by telegramAxios in production. */
+/**
+ * Агент с ЗАФИКСИРОВАННЫМ списком целей.
+ *
+ * В проде не используется: там один `getTelegramAgent()`, который резолвит цели
+ * сам (AI-112). Здесь список задаётся снаружи — это нужно проверкам перебора,
+ * которым требуется предсказуемый набор адресов без подмены DNS.
+ * Новый код должен брать `getTelegramAgent()`.
+ */
 export function buildTelegramAgent(ips: string[], dnsIps: string[] = ips): https.Agent {
   const agent = new https.Agent({ keepAlive: true });
   // Assign after construction — passing createConnection as an option
@@ -427,6 +423,5 @@ export function createConnectionFactory(ips: string[], dnsIps: string[] = ips) {
 export function clearTelegramIpsCache(): void {
   cachedIps = null;
   cachedAt = 0;
-  _agentBuiltFor = null;
   _warnThrottle.clear();
 }

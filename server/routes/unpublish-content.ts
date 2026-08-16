@@ -78,7 +78,8 @@ router.post('/content/:id/unpublish', authenticateUser, async (req, res) => {
               postId: null,
               postUrl: null,
               publishedAt: null,
-              error: null
+              error: null,
+              unpublishError: null
             };
           } else {
             console.warn(`Cannot delete from ${platform}: campaignId is missing`);
@@ -117,9 +118,14 @@ router.post('/content/:id/unpublish', authenticateUser, async (req, res) => {
     }
 
     // Материал переводим в черновик ТОЛЬКО когда снялись ВСЕ площадки с postId.
-    // Иначе остаются живые публикации — черновик с живыми постами это та же
-    // рассинхронизация, только с другой стороны (AI-114, пункт 5 ревью).
-    const totalPlatforms = Object.keys(socialPlatforms).length;
+    // Знаменатель тоже считаем только по площадкам с postId: площадки без postId
+    // в deletionResults не попадают и удалять с них нечего, поэтому если считать
+    // их в знаменателе, материал навсегда останется published при смешанном наборе
+    // (рецензия @Clause_Dev_Hermi, ~40% материалов на проде смешанные).
+    const platformsWithPostId = Object.entries(socialPlatforms)
+      .filter(([, d]) => Boolean((d as any)?.postId))
+      .map(([k]) => k);
+    const totalPlatforms = platformsWithPostId.length;
     const deletedCount = deletionResults.filter((r) => r.success).length;
     const allDeleted = deletedCount === totalPlatforms;
 

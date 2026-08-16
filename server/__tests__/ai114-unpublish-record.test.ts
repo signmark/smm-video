@@ -166,6 +166,25 @@ describe('AI-114: снятие публикации', () => {
     expect(patchBody.published_at).toBeNull();
   });
 
+  it('смешанный набор (часть площадок без postId) не мешает переводу в черновик', async () => {
+    mockContent({
+      telegram: { status: 'published', postId: '123_456', postUrl: 'https://t.me/x/456', publishedAt: 'x' },
+      instagram: { status: 'draft' }, // без postId — удалять нечего, в знаменатель не входит
+    });
+
+    const res = await request(appWithRouter())
+      .post('/content/c1/unpublish')
+      .set('Authorization', 'Bearer tok');
+
+    expect(res.status).toBe(200);
+    const patchBody = mockAxiosPatch.mock.calls[0][1];
+    // telegram с postId снят -> материал должен уйти в черновик
+    expect(patchBody.status).toBe('draft');
+    expect(patchBody.published_at).toBeNull();
+    // instagram без postId остаётся нетронутой
+    expect(patchBody.social_platforms.instagram.status).toBe('draft');
+  });
+
   it('ВК с неизвестным форматом postId считается неудачей, площадка не стирается', async () => {
     mockContent({
       vk: { status: 'published', postId: 'неразрывный формат', postUrl: 'https://vk.com/wall', publishedAt: 'x' },

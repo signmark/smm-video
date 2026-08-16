@@ -996,7 +996,10 @@ export default function ContentPage() {
           const successCount = results.filter((r: any) => r.success).length;
           const failCount = results.filter((r: any) => !r.success).length;
 
-          let message = 'Публикация снята и перенесена в черновики';
+          // База сообщения — честный текст от сервера (полное vs частичное снятие).
+          // При частичном снятии материал в черновики НЕ уходит, поэтому жёсткая
+          // строка «перенесена в черновики» здесь была неверной (AI-114).
+          let message = data.message || 'Публикация снята и перенесена в черновики';
           if (successCount > 0) {
             message += `. Удалено из ${successCount} соцсет${successCount === 1 ? 'и' : 'ей'}`;
           }

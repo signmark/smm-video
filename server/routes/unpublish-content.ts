@@ -41,7 +41,14 @@ router.post('/content/:id/unpublish', authenticateUser, async (req, res) => {
 
     const content = contentResponse.data.data;
     const campaignId = content.campaign_id;
-    const socialPlatforms = content.socialPlatforms || {};
+    // AI-114: читаем канончный snake-ключ (и camel как fallback для
+    // совместимости), иначе список площадок всегда пуст и ниже нечему
+    // удаляться/сбрасываться. Directus может отдавать поле и объектом, и
+    // JSON-строкой — нормализуем.
+    let socialPlatforms = content.social_platforms || content.socialPlatforms || {};
+    if (typeof socialPlatforms === 'string') {
+      try { socialPlatforms = JSON.parse(socialPlatforms); } catch { socialPlatforms = {}; }
+    }
     const deletionResults: { platform: string; success: boolean; error?: string }[] = [];
 
     if (!campaignId) {
@@ -49,8 +56,11 @@ router.post('/content/:id/unpublish', authenticateUser, async (req, res) => {
       // В некоторых схемах это может быть просто campaign
     }
 
-    // Подготавливаем обновленные данные для socialPlatforms
-    const updatedSocialPlatforms = { ...socialPlatforms };
+    // Подготавливаем обновленные данные. Важно: сбрасываем площадку в черновик
+    // ТОЛЬКО если удаление на платформе реально состоялось — иначе сотрём
+    // историю опубликованного поста (регрессия AI-87, которую сдерживал баг с
+    // именем поля).
+    const updatedSocialPlatforms: Record<string, any> = {};
     
     for (const [platform, data] of Object.entries(socialPlatforms)) {
       const platformData = data as any;
@@ -58,13 +68,23 @@ router.post('/content/:id/unpublish', authenticateUser, async (req, res) => {
       // Если есть postId, пробуем удалить через API
       if (platformData.postId) {
         try {
-          // Если есть campaignId, пробуем удалить
           if (campaignId) {
             await deleteFromPlatform(platform, platformData.postId, userToken, campaignId);
             deletionResults.push({ platform, success: true });
+            // Только после УСПЕШНОГО удаления сбрасываем площадку.
+            updatedSocialPlatforms[platform] = {
+              ...platformData,
+              status: 'draft',
+              postId: null,
+              postUrl: null,
+              publishedAt: null,
+              error: null,
+              unpublishError: null
+            };
           } else {
             console.warn(`Cannot delete from ${platform}: campaignId is missing`);
             deletionResults.push({ platform, success: false, error: 'Campaign ID missing' });
+            updatedSocialPlatforms[platform] = { ...platformData, unpublishError: 'Campaign ID missing' };
           }
         } catch (error: any) {
           console.error(`Failed to delete from ${platform}:`, error.response?.data || error.message);
@@ -73,25 +93,46 @@ router.post('/content/:id/unpublish', authenticateUser, async (req, res) => {
             success: false, 
             error: error.response?.data?.error?.message || error.message 
           });
+          // Удаление не удалось — сохраняем прежнее состояние + причину.
+          updatedSocialPlatforms[platform] = {
+            ...platformData,
+            unpublishError: error.response?.data?.error?.message || error.message || 'Неизвестная ошибка удаления'
+          };
         }
+      } else {
+        // Нет postId — удалять нечего, историю не трогаем.
+        updatedSocialPlatforms[platform] = platformData;
       }
-
-      // В любом случае сбрасываем статус платформы в черновик
-      updatedSocialPlatforms[platform] = {
-        ...platformData,
-        status: 'draft',
-        postId: null,
-        postUrl: null,
-        publishedAt: null,
-        error: null
-      };
     }
 
-    // Подготавливаем данные для обновления контента
+    const anyDeleted = deletionResults.some((r) => r.success);
+
+    // AI-114: честный ответ. Если ни одна площадка не была реально снята —
+    // не говорим пользователю «снята».
+    if (!anyDeleted) {
+      return res.status(409).json({
+        success: false,
+        error: 'Не удалось снять публикацию ни с одной площадки',
+        deletionResults
+      });
+    }
+
+    // Материал переводим в черновик ТОЛЬКО когда снялись ВСЕ площадки с postId.
+    // Знаменатель тоже считаем только по площадкам с postId: площадки без postId
+    // в deletionResults не попадают и удалять с них нечего, поэтому если считать
+    // их в знаменателе, материал навсегда останется published при смешанном наборе
+    // (~40% материалов на проде смешанные).
+    const platformsWithPostId = Object.entries(socialPlatforms)
+      .filter(([, d]) => Boolean((d as any)?.postId))
+      .map(([k]) => k);
+    const totalPlatforms = platformsWithPostId.length;
+    const deletedCount = deletionResults.filter((r) => r.success).length;
+    const allDeleted = deletedCount === totalPlatforms;
+
+    // Подготавливаем данные для обновления контента (snake-ключ).
     const updateData: any = {
-      status: 'draft',
-      published_at: null,
-      socialPlatforms: updatedSocialPlatforms
+      ...(allDeleted ? { status: 'draft', published_at: null } : {}),
+      social_platforms: updatedSocialPlatforms
     };
 
     // Обновляем в Directus
@@ -108,7 +149,9 @@ router.post('/content/:id/unpublish', authenticateUser, async (req, res) => {
 
     res.json({
       success: true,
-      message: 'Публикация снята и контент возвращен в черновики',
+      message: allDeleted
+        ? 'Публикация снята со всех площадок и контент возвращен в черновики'
+        : 'Публикация частично снята: часть площадок осталась опубликованной',
       deletionResults
     });
 
@@ -174,10 +217,8 @@ async function deleteFromPlatform(platform: string, postId: string, userToken: s
       }
 
       if (!ownerId || !vkPostId) {
-        // Если формат не owner_id_post_id, возможно это просто ID, попробуем использовать его
-        // Но для wall.delete обычно нужны оба. Если это история или клип, методы могут быть другие.
-        console.warn(`[Unpublish] Unknown VK postId format: ${postId}`);
-        return; 
+        // Не owner_id_post_id — удалить через wall.delete нельзя (AI-114).
+        throw new Error(`[Unpublish] Неизвестный формат postId ВК: ${postId} (ожидается owner_id_post_id)`);
       }
       
       await axios.post('https://api.vk.com/method/wall.delete', null, {
@@ -214,6 +255,9 @@ async function deleteFromPlatform(platform: string, postId: string, userToken: s
             chat_id: chatId,
             message_id: postId
           });
+        } else {
+          // Нет chat_id ни в postId, ни в настройках — удалить нельзя (AI-114).
+          throw new Error('[Unpublish] Telegram: не из чего получить chat_id для удаления');
         }
       }
       break;
@@ -230,7 +274,7 @@ async function deleteFromPlatform(platform: string, postId: string, userToken: s
       break;
 
     default:
-      console.warn(`[Unpublish] Platform ${platform} deletion not implemented`);
+      throw new Error(`[Unpublish] Удаление для платформы ${platform} не реализовано`);
   }
 }
 

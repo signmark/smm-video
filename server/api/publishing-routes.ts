@@ -6,7 +6,7 @@ import { authenticateUser, requireSmmAdmin } from '../middleware/user-auth';
 
 // Не используем старый сервис, заменив его на новый модульный
 import { getPublishScheduler } from '../services/publish-scheduler';
-import { getCanonicalScheduledAt } from '@shared/schedule-time';
+import { getCanonicalScheduledAt, parseStoredInstant } from '@shared/schedule-time';
 // Определяем тип SocialPlatform локально
 type SocialPlatform = 'instagram' | 'facebook' | 'telegram' | 'vk' | 'youtube';
 import { log } from '../utils/logger';
@@ -1342,7 +1342,7 @@ export function registerPublishingRoutes(app: Express): void {
               imageUrl: contentData.image_url,
               additionalImages: contentData.additional_images,
               status: contentData.status || 'draft',
-              scheduledAt: contentData.scheduled_at ? new Date(contentData.scheduled_at) : null,
+              scheduledAt: parseStoredInstant(contentData.scheduled_at),
               socialPlatforms: contentData.social_platforms || {},
               tags: contentData.tags || [],
               sourceId: contentData.source_id,

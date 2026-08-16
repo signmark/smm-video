@@ -6,7 +6,7 @@ import { publicationLockManager } from './publication-lock-manager';
 import { publicationTracker } from './publication-tracking';
 import { getN8nUrl } from '../utils/n8n-utils';
 import { aiService } from './ai-service';
-import { getContentAggregateTimes, resolvePublishFinalization } from '@shared/schedule-time';
+import { getContentAggregateTimes, isSameStoredInstant, parseStoredInstant, resolvePublishFinalization } from '@shared/schedule-time';
 import { invalidateContentCache } from '../utils/content-cache';
 import {
   resolveStuckContent,
@@ -553,7 +553,7 @@ export class PublishScheduler {
 
             // Проверяем индивидуальное время платформы (приоритет)
             if (data.scheduledAt || data.scheduled_at) {
-              const platformTime = new Date(data.scheduledAt || data.scheduled_at);
+              const platformTime = parseStoredInstant(data.scheduledAt || data.scheduled_at) ?? new Date(NaN);
               if (platformTime <= currentTime) {
                 shouldPublish = true;
                 console.log(`[SCHEDULER] ✅ READY ${content.id}:${platformName} — time ${platformTime.toISOString()} <= now ${currentTime.toISOString()}`);
@@ -563,7 +563,7 @@ export class PublishScheduler {
             } 
             // Проверяем общее время контента (если нет индивидуального)
             else if (content.scheduled_at) {
-              const contentTime = new Date(content.scheduled_at);
+              const contentTime = parseStoredInstant(content.scheduled_at) ?? new Date(NaN);
               if (contentTime <= currentTime) {
                 shouldPublish = true;
                 console.log(`[SCHEDULER] ✅ READY ${content.id}:${platformName} — content time ${contentTime.toISOString()} <= now ${currentTime.toISOString()}`);
@@ -2040,13 +2040,11 @@ ${text}
       const updateData: any = {};
       if (newStatus !== freshContent.status) updateData.status = newStatus;
 
-      const sameInstant = (left: unknown, right: unknown) => {
-        if (!left && !right) return true;
-        if (!left || !right) return false;
-        const leftTime = new Date(left as any).getTime();
-        const rightTime = new Date(right as any).getTime();
-        return Number.isFinite(leftTime) && Number.isFinite(rightTime) && leftTime === rightTime;
-      };
+      // Сравниваем моменты, а не строки: слева ISO с 'Z', справа голая метка из базы.
+      // При непустом TZ процесса наивное new Date() читало правую как местное время,
+      // расхождение казалось настоящим, и планировщик переписывал scheduled_at каждый
+      // цикл, сдвигая его (AI-115).
+      const sameInstant = isSameStoredInstant;
 
       if (!sameInstant(resolvedPublishedAt, freshContent.published_at)) {
         updateData.published_at = resolvedPublishedAt;

@@ -10,6 +10,7 @@ import { log } from '../utils/logger';
 import { aiService } from '../services/ai-service';
 import { toSafeErrorDetails } from '../utils/safe-error';
 import { substituteSocialNetworks } from '../services/social-prompt';
+import { ensureIsoWithTimezone } from '@shared/schedule-time';
 import axios from 'axios';
 
 import { buildCacheKey, getFromCache, setToCache, invalidateContentCache } from '../utils/content-cache';
@@ -22,20 +23,6 @@ const IMMUTABLE_CONTENT_FIELDS = new Set([
   'created_at',
   'date_created',
 ]);
-
-/**
- * Гарантирует, что в ответе клиенту строка содержит явный TZ-маркер (Z или ±HH:MM).
- * Directus иногда отдаёт naive-UTC (например, '2026-07-26T10:00:00' без 'Z');
- * в браузере такая строка читается как локальное время и даёт сдвиг в карточке
- * «Недавний контент» (SM-14). Пустое/null остаются как есть.
- */
-function ensureIsoWithTimezone(value: string | null | undefined): string | null | undefined {
-  if (value === null || value === undefined) return value;
-  if (typeof value !== 'string') return value;
-  if (value === '') return value;
-  if (value.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(value)) return value;
-  return value + 'Z';
-}
 
 /**
  * Проверяет владение записью campaign_content перед мутацией.
@@ -231,9 +218,9 @@ export function mapContentItemFromDirectus(item: any) {
     keywords: parseArrayField(item.keywords, item.id),
     hashtags: parseArrayField(item.hashtags, item.id),
     links: parseArrayField(item.links, item.id),
-    createdAt: item.created_at,
-    scheduledAt: item.scheduled_at,
-    publishedAt: item.published_at,
+    createdAt: ensureIsoWithTimezone(item.created_at),
+    scheduledAt: ensureIsoWithTimezone(item.scheduled_at),
+    publishedAt: ensureIsoWithTimezone(item.published_at),
     status: item.status,
     socialPlatforms: item.social_platforms || {},
     metadata: item.metadata || {},
@@ -335,9 +322,9 @@ export function registerContentRoutes(app: Express) {
               campaignId: item.campaign_id,
               title: item.title,
               status: item.status,
-              createdAt: item.created_at,
-              scheduledAt: item.scheduled_at,
-              publishedAt: item.published_at,
+              createdAt: ensureIsoWithTimezone(item.created_at),
+              scheduledAt: ensureIsoWithTimezone(item.scheduled_at),
+              publishedAt: ensureIsoWithTimezone(item.published_at),
             }))
           : responseData.map((item: any) => {
           try {

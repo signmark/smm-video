@@ -81,6 +81,7 @@ import {
 import { Calendar as CalendarComponent } from "@/components/ui/calendar";
 import { getConnectedPlatformsMap } from "@/lib/platform-connection";
 import { DateTimePicker } from "@/components/ui/date-time-picker";
+import { instantToMoscowWall, moscowWallToInstant } from "@/lib/schedule-timezone";
 
 // Создаем формат даты
 const formatDate = (date: string | Date) => {
@@ -488,13 +489,24 @@ export default function ContentPage() {
   };
 
   // Дефолтное время планирования: сегодня + 1 час, округленное до часа
+  /**
+   * Значение по умолчанию — ближайший «круглый» час.
+   *
+   * AI-113: округляем по МОСКОВСКИМ часам, а не по часам устройства. Календарь
+   * теперь показывает и принимает московское время, и если округлить в поясе
+   * браузера, пользователь из получасового пояса увидел бы в поле «10:30»
+   * вместо «10:00» — подставленное нами же значение выглядело бы кривым.
+   */
   const getDefaultScheduleDate = () => {
-    const now = new Date();
-    now.setHours(now.getHours() + 1);
-    now.setMinutes(0);
-    now.setSeconds(0);
-    now.setMilliseconds(0);
-    return now;
+    const inAnHour = new Date(Date.now() + 60 * 60 * 1000);
+    const mskWall = instantToMoscowWall(inAnHour);
+    return moscowWallToInstant(
+      mskWall.getFullYear(),
+      mskWall.getMonth() + 1,
+      mskWall.getDate(),
+      mskWall.getHours(),
+      0,
+    );
   };
 
   const [scheduleDate, setScheduleDate] = useState<Date | undefined>(getDefaultScheduleDate());

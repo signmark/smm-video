@@ -12,10 +12,62 @@ export interface ScheduledPlatformTime {
 
 const UPCOMING_PLATFORM_STATUSES = new Set(['pending', 'scheduled', 'publishing']);
 
+/**
+ * Пояс, в котором хранятся "голые" метки времени публикации.
+ *
+ * Колонки campaign_content.scheduled_at / published_at объявлены как timestamp
+ * БЕЗ часового пояса, и Directus отдаёт их строкой без маркера ('2026-08-16 09:00:00').
+ * Договорённость: такая строка — момент в UTC. Раньше она нигде не была записана,
+ * и код просто скармливал строку в new Date(): результат совпадал с договорённостью
+ * только потому, что у контейнера приложения переменная TZ пустая (AI-115).
+ * Достаточно было выставить контейнеру московский пояс ради читаемых логов, чтобы
+ * все запланированные публикации разом уехали на три часа — молча, без единой ошибки.
+ */
+export const STORED_TIME_ZONE = 'UTC';
+
+const HAS_EXPLICIT_ZONE = /(?:Z|[+-]\d{2}:?\d{2})$/;
+// Дата без времени ('2026-08-16') по спецификации ES и так читается как UTC —
+// дописывать ей маркер нельзя, получится неразбираемая строка.
+const HAS_TIME_PART = /\d{2}:\d{2}/;
+
+/**
+ * Дописывает маркер UTC к "голой" метке времени из базы. Строку с уже указанным
+ * поясом, пустое значение и null возвращает как есть.
+ */
+export function ensureIsoWithTimezone<T extends string | null | undefined>(value: T): T {
+  if (typeof value !== 'string') return value;
+  if (value === '') return value;
+  if (HAS_EXPLICIT_ZONE.test(value)) return value;
+  if (!HAS_TIME_PART.test(value)) return value;
+  return (value.replace(' ', 'T') + 'Z') as T;
+}
+
+/**
+ * Разбирает метку времени из базы в момент времени НЕ ЗАВИСЯЩИЙ от пояса процесса.
+ * Возвращает null для пустого и неразбираемого значения.
+ */
+export function parseStoredInstant(value: string | Date | null | undefined): Date | null {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = value instanceof Date ? value : new Date(ensureIsoWithTimezone(value));
+  return Number.isFinite(parsed.getTime()) ? parsed : null;
+}
+
+/**
+ * Сравнивает две метки времени как моменты, а не как строки: голая метка из базы
+ * и её же ISO-представление с 'Z' — один и тот же момент.
+ */
+export function isSameStoredInstant(left: unknown, right: unknown): boolean {
+  if (!left && !right) return true;
+  if (!left || !right) return false;
+  const leftInstant = parseStoredInstant(left as any);
+  const rightInstant = parseStoredInstant(right as any);
+  if (!leftInstant || !rightInstant) return false;
+  return leftInstant.getTime() === rightInstant.getTime();
+}
+
 function validTimestamp(value: string | Date | null | undefined): number | null {
-  if (!value) return null;
-  const timestamp = new Date(value).getTime();
-  return Number.isFinite(timestamp) ? timestamp : null;
+  const parsed = parseStoredInstant(value);
+  return parsed === null ? null : parsed.getTime();
 }
 
 function hasValue(value: unknown): boolean {

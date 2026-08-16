@@ -1,3 +1,4 @@
+import { parseStoredInstant } from '@shared/schedule-time';
 import { directusCrud } from './directus-crud';
 import { directusAuthManager } from './directus-auth-manager';
 import { directusApi } from '../directus';
@@ -342,8 +343,8 @@ export class DirectusStorageAdapter {
             imageUrl: item.image_url,
             prompt: item.prompt || "",
             videoUrl: item.video_url,
-            scheduledAt: item.scheduled_at ? new Date(item.scheduled_at) : null,
-            createdAt: new Date(item.created_at),
+            scheduledAt: parseStoredInstant(item.scheduled_at),
+            createdAt: parseStoredInstant(item.created_at) ?? new Date(NaN),
             socialPlatforms: item.social_platforms
           }));
         } catch (fallbackError) {

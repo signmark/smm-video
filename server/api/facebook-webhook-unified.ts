@@ -12,6 +12,7 @@ import { authorizeCampaignAccess } from '../services/campaign-access';
 import { assertContentBelongsToRequester } from '../services/content-access';
 import { resolvePlatformToken } from '../services/campaign-token-resolver';
 import { requireWebhookSecret } from '../middleware/webhook-auth';
+import { parseStoredInstant } from '@shared/schedule-time';
 
 const router = Router();
 
@@ -151,7 +152,7 @@ router.post('/', authenticateUser, async (req, res) => {
       videoUrl: content.video_url || null,
       additionalMedia: content.additional_media || [],
       status: content.status || 'draft',
-      scheduledAt: content.scheduled_at ? new Date(content.scheduled_at) : null,
+      scheduledAt: parseStoredInstant(content.scheduled_at),
       tags: content.tags || [],
       author: content.author || null,
       metadata: content.metadata || {},

@@ -49,7 +49,8 @@ vi.mock('../load-env', () => ({ loadEnv: vi.fn() }));
 vi.mock('../utils/logger', () => {
   const logFn: any = vi.fn();
   logFn.info = vi.fn(); logFn.warn = vi.fn(); logFn.error = vi.fn(); logFn.debug = vi.fn();
-  return { log: logFn, default: logFn };
+  // AI-121: путь сохранения промта теперь отчитывается событием, а не молча.
+  return { log: logFn, logEvent: vi.fn(), default: logFn };
 });
 
 import { buildImagePromptFromText } from '../services/autonomous-ai';

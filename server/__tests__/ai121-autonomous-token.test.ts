@@ -119,9 +119,28 @@ describe('AI-121: сканер исходника — три места, где 
       // От события до конца обработчика цикл обязан прекратиться. Если снова
       // оставить только предупреждение, пост уйдёт на умолчаниях — ровно то,
       // из-за чего задача и заведена.
-      const tail = body.slice(idx, idx + 700);
+      const tail = body.slice(idx, idx + 900);
       expect(tail).toContain('state.cycleRunning = false;');
       expect(tail).toContain('return;');
+    }
+  });
+
+  it('каждое прерывание проставляет время цикла — иначе цикл каждые пять секунд', () => {
+    // Найдено на живом проде уже ПОСЛЕ выкатки прерываний. Следующая попытка
+    // планируется от времени последнего цикла, а прерывание его не проставляло:
+    // планировщик считал, что цикла ещё не было, выдерживал минимальную задержку
+    // в пять секунд и запускал снова. За семь минут 95 прерываний вместо одного.
+    const s = src();
+    const fnIdx = s.indexOf('async function runAutonomousCycle(state: AutonomousState)');
+    const body = s.slice(fnIdx);
+
+    for (const reason of ['token_refresh_failed', 'campaign_settings_unreadable', 'campaign_keywords_unreadable']) {
+      const idx = body.indexOf("reason: '" + reason + "'");
+      expect(idx).toBeGreaterThan(0);
+      const tail = body.slice(idx, idx + 900);
+      expect(tail).toContain('state.lastCycleAt = new Date();');
+      // Время обязано проставиться ДО выхода, иначе в нём нет смысла.
+      expect(tail.indexOf('state.lastCycleAt = new Date();')).toBeLessThan(tail.indexOf('return;'));
     }
   });
 

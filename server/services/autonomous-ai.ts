@@ -4017,6 +4017,13 @@ async function runAutonomousCycle(state: AutonomousState) {  // SM-20: стра�
         'Цикл не запущен: доступа к данным кампании нет, генерация на умолчаниях запрещена',
       );
       state.errors.push(`Цикл ${state.cyclesCompleted + 1}: доступ к данным кампании потерян (токен не обновился)`);
+      // AI-121. Прерванный цикл — тоже состоявшаяся попытка, и время последнего
+      // цикла обязано проставиться. Следующая попытка планируется именно от него:
+      // если оставить прежнее значение, планировщик решит, что цикла ещё не было,
+      // выдержит минимальную задержку в пять секунд и запустит снова. Прерывание
+      // длится миллисекунды, поэтому получается цикл каждые пять секунд — на
+      // проде это было 95 прерываний за семь минут вместо одного.
+      state.lastCycleAt = new Date();
       state.cycleRunning = false;
       return;
     }
@@ -4088,6 +4095,9 @@ async function runAutonomousCycle(state: AutonomousState) {  // SM-20: стра�
       );
       console.warn(`[AUTONOMOUS-CYCLE] ⚠️ Не удалось прочитать autonomous_settings: ${settErr.message}`);
       state.errors.push(`Цикл ${state.cyclesCompleted + 1}: настройки кампании не прочитались`);
+      // AI-121: прерванная попытка тоже проставляет время цикла (см. подробное
+      // объяснение выше, у прерывания по токену) — иначе цикл каждые пять секунд.
+      state.lastCycleAt = new Date();
       state.cycleRunning = false;
       return;
     }
@@ -4131,6 +4141,9 @@ async function runAutonomousCycle(state: AutonomousState) {  // SM-20: стра�
       );
       console.warn(`[AUTONOMOUS-CYCLE] ⚠️ Ключи недоступны: ${kwErr.message}`);
       state.errors.push(`Цикл ${state.cyclesCompleted + 1}: ключевые слова не прочитались`);
+      // AI-121: прерванная попытка тоже проставляет время цикла (см. подробное
+      // объяснение выше, у прерывания по токену) — иначе цикл каждые пять секунд.
+      state.lastCycleAt = new Date();
       state.cycleRunning = false;
       return;
     }

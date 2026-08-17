@@ -9,6 +9,60 @@
 import axios, { AxiosRequestConfig } from 'axios';
 import { DirectusAuthResult, DirectusRequestOptions } from './directus-types';
 import { adminTokenManager } from './admin-token-manager';
+import { logEvent } from '../utils/logger';
+
+/**
+ * AI-65, этап 3. Граница с Directus — то место, через которое ходит почти всё,
+ * и до сих пор она молчала: неуспешный ответ просто бросался дальше и умирал в
+ * ближайшем catch. Именно так остались невидимыми AI-39 и AI-64 — половина
+ * тогдашних 403 не оставила в логе ни одной строки.
+ *
+ * Пишем ровно то, по чему потом строится оповещение: коллекция, код состояния и
+ * стабильная машинная причина. Ни тела запроса, ни ответа Directus, ни URL с
+ * параметрами — в них уезжают и токены, и пользовательские данные.
+ */
+
+/** Коллекция из адреса: `/items/campaign_content/123` -> `campaign_content`. */
+export function collectionFromUrl(url: string): string {
+  const items = url.match(/\/items\/([A-Za-z0-9_]+)/);
+  if (items) return items[1];
+
+  // Служебные разделы Directus: /users/me, /files, /auth/refresh.
+  const first = url.replace(/^\//, '').split(/[/?]/)[0];
+  return first || 'unknown';
+}
+
+/**
+ * Стабильная причина отказа. Сначала код самого Directus (FORBIDDEN,
+ * RECORD_NOT_UNIQUE, INVALID_CREDENTIALS) — он машинный и не меняется от
+ * правки формулировок. Текст сообщения не берём: в нём бывают и данные
+ * пользователя, и подставленные значения.
+ */
+/**
+ * Уровень записи об отказе.
+ *
+ * RECORD_NOT_UNIQUE — не авария, а штатный исход состязания за блокировку
+ * публикации: два цикла одновременно пытаются создать одну и ту же запись, и
+ * проигравший получает отказ. Писать это предупреждением значит вернуть в
+ * журнал ровно тот фон, от которого избавила AI-120.
+ */
+export function levelForDirectusFailure(
+  status: number | undefined,
+  reason: string,
+): 'debug' | 'warn' | 'error' {
+  if (reason === 'RECORD_NOT_UNIQUE') return 'debug';
+  if (status === undefined || status >= 500) return 'error';
+  return 'warn';
+}
+
+export function directusErrorCode(err: any): string {
+  const code = err?.response?.data?.errors?.[0]?.extensions?.code;
+  if (typeof code === 'string' && code) return code;
+  if (err?.code === 'ECONNABORTED' || err?.code === 'ETIMEDOUT') return 'timeout';
+  if (typeof err?.code === 'string' && err.code) return err.code;
+  if (err?.response?.status) return `http_${err.response.status}`;
+  return 'unknown';
+}
 
 export class RefreshTokenExpiredError extends Error {
   constructor(message: string = 'Refresh token истёк или недействителен') {
@@ -98,8 +152,33 @@ export class DirectusCrud {
       };
     }
 
-    const response = await axios(axiosConfig);
-    return response.data.data;
+    const startedAt = Date.now();
+
+    try {
+      const response = await axios(axiosConfig);
+      return response.data.data;
+    } catch (error: any) {
+      const status = error?.response?.status;
+
+      logEvent(
+        'directus.request_failed',
+        {
+          system: 'directus',
+          operation: config.method,
+          collection: collectionFromUrl(config.url),
+          status,
+          reason: directusErrorCode(error),
+          durationMs: Date.now() - startedAt,
+        },
+        // Нет ответа вовсе (сеть, таймаут) или 5xx — это наша беда;
+        // 4xx чаще означает отказ в доступе и разбирается вызывающим кодом.
+        levelForDirectusFailure(status, directusErrorCode(error)),
+        'directus',
+      );
+
+      // Поведение не меняем: ошибка уходит вызывающему коду ровно как раньше.
+      throw error;
+    }
   }
 
   /**
@@ -116,7 +195,7 @@ export class DirectusCrud {
     // на 24 часа — из-за чего протухший токен ронял все админские операции разом.
     const token = await adminTokenManager.getAdminToken();
     if (!token) {
-      console.error(`[directus-crud] ❌ Не удалось получить admin-токен (ни статический, ни email/password)`);
+      logEvent('directus.admin_token_missing', { system: 'directus', reason: 'no_credentials' }, 'error', 'directus');
       throw new Error('Admin credentials not configured');
     }
 
@@ -150,10 +229,16 @@ export class DirectusCrud {
       return this.getAdminToken();
     }
     if (!options.authToken && !options.allowAnonymous) {
-      console.error(
-        `[${this.logPrefix}] ${operation} ${collection}: запрос без токена — ` +
-        `не передан ни authToken, ни useAdminToken. Directus ответит 403. ` +
-        `Если анонимность намеренная, передайте allowAnonymous: true.`
+      logEvent(
+        'directus.request_anonymous',
+        { system: 'directus', operation, collection, reason: 'token_missing' },
+        // Именно error, а не warn: этот запрос гарантированно получит 403, то
+        // есть какая-то возможность продукта уже сломана. Так и было до перевода
+        // на события — понижать уровень заодно с переносом было бы подменой.
+        'error',
+        'directus',
+        `${operation} ${collection}: запрос без токена. Directus ответит 403. ` +
+          `Если анонимность намеренная, передайте allowAnonymous: true.`,
       );
     }
     return options.authToken;
@@ -194,21 +279,22 @@ export class DirectusCrud {
         const isRetryable = statusCode && retryableStatuses.includes(statusCode);
         const isLastAttempt = attempt === maxRetries;
 
-        const isHttpError = error.response != null;
-        const errCode = error.response?.data?.errors?.[0]?.extensions?.code;
-        const isDuplicate = errCode === 'RECORD_NOT_UNIQUE';
-
-        if (!isDuplicate) {
-          const logFn = (isRetryable || !isHttpError) ? console.error : console.warn;
-          logFn(`[${this.logPrefix}] ${operation} ${collection} failed (attempt ${attempt + 1}/${maxRetries + 1}):`, error.message);
-          if (isHttpError) {
-            logFn(`[${this.logPrefix}] Response body [${error.response.status}]:`, JSON.stringify(error.response.data ?? '(empty)'));
-          }
-        }
+        // AI-65. Здесь было два console.*: текст ошибки axios (в нём полный URL
+        // запроса вместе с параметрами) и ЦЕЛИКОМ тело ответа Directus. Второе
+        // прямо запрещено: в теле уезжают и данные пользователя, и содержимое
+        // записи. Сам отказ уже записан событием directus.request_failed в
+        // executeRequest — с коллекцией, кодом состояния и машинной причиной,
+        // то есть со всем, по чему потом строится оповещение. Дублировать его
+        // здесь незачем.
 
         if (isRetryable && !isLastAttempt) {
           const delay = Math.pow(2, attempt) * 1000;
-          console.log(`[${this.logPrefix}] Retrying in ${delay}ms...`);
+          logEvent(
+            'directus.request_retry',
+            { system: 'directus', operation, collection, status: statusCode, attempt: attempt + 1, durationMs: delay },
+            'debug',
+            'directus',
+          );
           await new Promise(resolve => setTimeout(resolve, delay));
           continue;
         }

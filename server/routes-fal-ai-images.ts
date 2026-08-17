@@ -3,6 +3,7 @@ import { falAiUniversalService, FalAiGenerateOptions } from './services/fal-ai-u
 import { falAiJuggernautService } from './services/fal-ai-juggernaut';
 import { directusApi } from './lib/directus';
 import { getUsage, incrementUsage, canGenerate } from './services/image-gen-tracker';
+import { quotaExceededMessage, quotaInfo } from './services/image-gen-quota';
 import { getEffectivePlan } from './services/plan-limits';
 
 const BASIC_PLAN_LIMIT = 30;
@@ -147,10 +148,14 @@ export function registerFalAiImageRoutes(app: Express) {
         const planLimit = plan === 'trial' ? TRIAL_PLAN_LIMIT : BASIC_PLAN_LIMIT;
         if (!(await canGenerate(planUserId, planLimit))) {
           const usage = await getUsage(planUserId);
+          const now = new Date();
+          // AI-122. Раньше здесь было «оформите подписку» — призыв без действия.
+          // Теперь названы дата обновления счётчика и путь к заявке на повышение.
           return res.status(429).json({
             success: false,
-            error: `Лимит генераций исчерпан (${usage.count}/${planLimit} в месяц). Оформите подписку для продолжения.`,
+            error: quotaExceededMessage(usage.count, planLimit, now),
             limitExceeded: true,
+            quota: quotaInfo(usage.count, planLimit, now),
           });
         }
       }

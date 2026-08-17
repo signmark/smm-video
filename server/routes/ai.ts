@@ -19,6 +19,7 @@ import * as crypto from 'crypto';
 import { cleanupText } from '../utils/text';
 import { cleanGeneratedSocialContent, getGeneratedSocialContentRules } from '../utils/generated-social-content';
 import { getUsage, incrementUsage, canGenerate } from '../services/image-gen-tracker';
+import { quotaExceededMessage, quotaInfo } from '../services/image-gen-quota';
 import { getEffectivePlan } from '../services/plan-limits';
 import { 
   getCachedResults, 
@@ -194,10 +195,14 @@ export function registerAiRoutes(app: Express) {
         const activeLimit = plan === 'trial' ? TRIAL_PLAN_LIMIT : plan === 'basic' ? BASIC_PLAN_LIMIT : null;
         if (activeLimit !== null && !(await canGenerate(userId, activeLimit))) {
           const usage = await getUsage(userId);
+          const now = new Date();
+          // AI-122: тот же текст, что и во втором маршруте генерации. Раньше их
+          // было два, написанных порознь, и они уже начали расходиться.
           return res.status(429).json({
             success: false,
-            error: `Лимит генераций исчерпан (${usage.count}/${activeLimit} в месяц). Оформите подписку для продолжения.`,
+            error: quotaExceededMessage(usage.count, activeLimit, now),
             limitExceeded: true,
+            quota: quotaInfo(usage.count, activeLimit, now),
           });
         }
       }

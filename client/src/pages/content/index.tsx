@@ -3,6 +3,7 @@ import { formatDateWithTimezone, serverDate, serverDateOrNull, toDisplayDateKey 
 import { ScheduleTimezoneHint } from '@/components/ScheduleTimezoneHint';
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
+import { ToastAction } from "@/components/ui/toast";
 import { useTranslation } from "react-i18next";
 import { Card, CardContent, CardHeader, CardDescription, CardFooter } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -585,11 +586,21 @@ export default function ContentPage() {
       });
       return;
     }
-    if (effectivePlan === 'basic' && imageGenUsage && imageGenUsage.remaining !== null && imageGenUsage.remaining <= 0) {
+    // AI-122. Раньше проверка стояла ТОЛЬКО для тарифа basic, а пробный тариф
+    // (лимит 10 в месяц) её не проходил: диалог открывался, человек писал запрос,
+    // ждал генерации — и упирался в отказ уже в конце. Именно так это и выглядело
+    // у тестировщика. Условие теперь по самому лимиту, а не по названию тарифа:
+    // новый тариф с лимитом не придётся вписывать сюда руками.
+    if (imageGenUsage && imageGenUsage.limit !== null && (imageGenUsage.remaining ?? 0) <= 0) {
       toast({
         variant: 'destructive',
         title: 'Лимит генераций исчерпан',
-        description: `Использовано ${imageGenUsage.count}/${imageGenUsage.limit} генераций в этом месяце. Обновите тариф до Pro.`,
+        description: `Использовано ${imageGenUsage.count} из ${imageGenUsage.limit} в этом месяце. Если нужно больше сейчас — запросите повышение тарифа, заявку рассматривает администратор.`,
+        action: (
+          <ToastAction altText="Перейти к тарифам" onClick={() => navigate('/pricing')}>
+            Запросить повышение
+          </ToastAction>
+        ),
       });
       return;
     }

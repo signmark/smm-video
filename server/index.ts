@@ -367,6 +367,7 @@ app.use('/api', invalidateContentCacheOnMutation);
 // Обработчик вынесен в модуль: поле revision — часть проверки выкатки (AI-50)
 // и покрыто тестом, а импортировать ради этого весь index.ts нельзя.
 import { rootHealthHandler } from './routes/root-health';
+import { readyHandler } from './routes/live-ready';
 import {
   REQUEST_ID_HEADER,
   generateRequestId,
@@ -376,6 +377,25 @@ import {
 } from './utils/request-context';
 import { startPublicationLocks } from './services/publication-lock-manager';
 app.get('/health', rootHealthHandler);
+
+// AI-41: «жив» и «готов» — разные вопросы.
+//
+// `/live` — тот же обработчик, что и `/health`, намеренно: два ответа о живости
+// не должны разъехаться со временем. Выкатка спрашивает именно это и не должна
+// зависеть от чужих сервисов.
+//
+// `/ready` — доступны ли обязательные зависимости. Отдельная ручка нужна была
+// потому, что проверка зависимостей висела на `/api/health`, за общей проверкой
+// доступа, и снаружи отвечала 401 — мониторингу недоступна. А имена `/live` и
+// `/ready` не были заняты вовсе и попадали в отдачу одностраничного приложения,
+// то есть монитор, настроенный на них, получал 200 и HTML-страницу вместо
+// приговора. Молчаливое «всё хорошо» при лежащем сервисе хуже, чем отсутствие
+// проверки: именно на нём теряют время в разборе сбоя.
+//
+// Обе ручки монтируются здесь же, ДО авторизации и до отдачи фронта, иначе
+// повторится ровно та беда, которую эта правка чинит.
+app.get('/live', rootHealthHandler);
+app.get('/ready', readyHandler);
 
 // Trends Collection API (регистрируем максимально рано для избежания 404)
 import { registerTrendsRoutes } from './api/trends-routes';

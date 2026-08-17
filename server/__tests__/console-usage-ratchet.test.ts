@@ -33,8 +33,10 @@ import { join } from 'node:path';
  *
  * Число обязано только уменьшаться.
  * AI-118 (2026-08-17): планка опущена 1962->1960 снятием двух отладочных console.log про distPath (NOT FOUND / FOUND) в server/index.ts.
+ * AI-120 (2026-08-17): планка опущена 1960->1959 — три ветки console.log про время
+ *   публикации в publish-scheduler.ts свелись к двум после выноса решения о времени.
  */
-const BASELINE = 1960;
+const BASELINE = 1959;
 
 const CONSOLE_CALL = /\bconsole\.(log|error|warn|info|debug)\s*\(/g;
 

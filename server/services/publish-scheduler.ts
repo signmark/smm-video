@@ -77,6 +77,55 @@ const PLATFORM_STYLE: Record<string, string> = {
 };
 
 /**
+ * AI-120: решение «пора ли публиковать» — чистая функция, без сети и блокировок.
+ *
+ * Раньше эта проверка стояла ПОСЛЕ захвата блокировки (уровень 4), поэтому на
+ * каждом цикле планировщик брал и тут же отпускал блокировку для каждого
+ * будущего поста: три обращения к Directus на платформу на цикл впустую.
+ * Дублей это не давало, но создавало постоянный фон запросов и шума в логе и
+ * прятало настоящие конфликты блокировок среди служебных.
+ *
+ * Порядок сравнения сохранён прежний: приоритет у времени платформы, иначе
+ * общее время контента, иначе публикуем немедленно. Неразбираемое время даёт
+ * due=false — как и раньше, когда сравнение с Invalid Date всегда ложно.
+ */
+export type PublishTimeSource = 'platform' | 'content' | 'immediate';
+
+export interface PublishTimeDecision {
+  due: boolean;
+  source: PublishTimeSource;
+  at: Date | null;
+}
+
+export function decidePublishTime(
+  platformData: { scheduledAt?: string | null; scheduled_at?: string | null } | null | undefined,
+  contentScheduledAt: string | null | undefined,
+  now: Date,
+): PublishTimeDecision {
+  const rawPlatform = platformData?.scheduledAt || platformData?.scheduled_at;
+  if (rawPlatform) {
+    const at = parseStoredInstant(rawPlatform) ?? new Date(NaN);
+    return { due: at.getTime() <= now.getTime(), source: 'platform', at };
+  }
+
+  if (contentScheduledAt) {
+    const at = parseStoredInstant(contentScheduledAt) ?? new Date(NaN);
+    return { due: at.getTime() <= now.getTime(), source: 'content', at };
+  }
+
+  return { due: true, source: 'immediate', at: null };
+}
+
+/**
+ * Безопасный текст времени для лога: toISOString() на Invalid Date бросает
+ * RangeError, а ронять цикл планировщика из-за строки лога недопустимо.
+ */
+export function formatPublishInstant(at: Date | null): string {
+  if (!at) return 'не задано';
+  return Number.isNaN(at.getTime()) ? 'не разобрано' : at.toISOString();
+}
+
+/**
  * Исправленный класс для планирования и выполнения автоматической публикации контента
  * с поддержкой индивидуального времени публикации для каждой платформы через N8N
  */
@@ -476,6 +525,16 @@ export class PublishScheduler {
               continue; // Молча пропускаем конфигурационные ошибки
             }
 
+            // ⏰ AI-120: время проверяем ДО уровней защиты и до блокировки.
+            // Пост, чьё время ещё не наступило, не должен занимать блокировку:
+            // раньше он захватывал её и тут же отпускал на каждом цикле.
+            const timeDecision = decidePublishTime(data, content.scheduled_at, currentTime);
+            if (!timeDecision.due) {
+              const waitFor = timeDecision.source === 'platform' ? 'своего времени' : 'общего времени контента';
+              log(`Планировщик: Платформа ${platformName} ждет ${waitFor} - ${formatPublishInstant(timeDecision.at)} > ${currentTime.toISOString()}`, 'scheduler', 'debug');
+              continue;
+            }
+
             // 📊 ДЕТАЛЬНАЯ ПРОВЕРКА ЗАЩИТЫ
             log(`  📊 ${content.id}:${platformName} - checking protection levels`, 'scheduler', 'debug');
             
@@ -538,55 +597,33 @@ export class PublishScheduler {
                   'достигнут дневной лимит загрузок видео' : 'превышена квота API';
                 
                 log(`Планировщик: Пропускаем YouTube ${content.id} - ${errorType} (квоты еще не обновились)`, 'scheduler');
+                // AI-120: блокировка уже взята уровнем 4 — отпускаем, иначе она
+                // висит до истечения срока и мешает следующему циклу.
+                await publicationLockManager.releaseLock(content.id, platformName);
                 continue;
               } else {
                 if (data.postUrl) {
                   log(`🛡️ КРИТИЧЕСКАЯ ЗАЩИТА: YouTube контент ${content.id} УЖЕ ОПУБЛИКОВАН (${data.postUrl}), НЕ СБРАСЫВАЕМ quota_exceeded!`, 'scheduler');
+                  await publicationLockManager.releaseLock(content.id, platformName);
                   continue;
                 }
                 log(`Планировщик: Сбрасываем quota_exceeded статус для YouTube контента ${content.id}`, 'scheduler');
               }
             }
 
-            // Проверяем время публикации для платформы
-            let shouldPublish = false;
-
-            // Проверяем индивидуальное время платформы (приоритет)
-            if (data.scheduledAt || data.scheduled_at) {
-              const platformTime = parseStoredInstant(data.scheduledAt || data.scheduled_at) ?? new Date(NaN);
-              if (platformTime <= currentTime) {
-                shouldPublish = true;
-                console.log(`[SCHEDULER] ✅ READY ${content.id}:${platformName} — time ${platformTime.toISOString()} <= now ${currentTime.toISOString()}`);
-              } else {
-                log(`Планировщик: Платформа ${platformName} ждет своего времени - ${platformTime.toISOString()} > ${currentTime.toISOString()}`, 'scheduler', 'debug');
-              }
-            } 
-            // Проверяем общее время контента (если нет индивидуального)
-            else if (content.scheduled_at) {
-              const contentTime = parseStoredInstant(content.scheduled_at) ?? new Date(NaN);
-              if (contentTime <= currentTime) {
-                shouldPublish = true;
-                console.log(`[SCHEDULER] ✅ READY ${content.id}:${platformName} — content time ${contentTime.toISOString()} <= now ${currentTime.toISOString()}`);
-              } else {
-                log(`Планировщик: Платформа ${platformName} ждет общего времени контента - ${contentTime.toISOString()} > ${currentTime.toISOString()}`, 'scheduler', 'debug');
-              }
-            }
-            // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: Если время не указано - публикуем НЕМЕДЛЕННО
-            else {
-              shouldPublish = true;
+            // Время уже проверено выше (AI-120), сюда доходит только то, что пора публиковать.
+            if (timeDecision.source === 'immediate') {
               console.log(`[SCHEDULER] 🚀 IMMEDIATE ${content.id}:${platformName} — no scheduled time set`);
-            } 
-
-            if (shouldPublish) {
-              // 🛡️ УРОВЕНЬ 5 и 6: Отмечаем в кэше планировщика и Publication Tracker
-              this.markAsProcessed(content.id, platformName);
-              publicationTracker.markAsProcessed(content.id, platformName);
-              readyPlatforms.push(platformName);
-              log(`🛡️ Планировщик: Платформа ${platformName} защищена от дублирования и добавлена в очередь для ${content.id}`, 'scheduler', 'debug');
             } else {
-              // Освобождаем блокировку если не публикуем
-              await publicationLockManager.releaseLock(content.id, platformName);
+              const label = timeDecision.source === 'platform' ? 'time' : 'content time';
+              console.log(`[SCHEDULER] ✅ READY ${content.id}:${platformName} — ${label} ${formatPublishInstant(timeDecision.at)} <= now ${currentTime.toISOString()}`);
             }
+
+            // 🛡️ УРОВЕНЬ 5 и 6: Отмечаем в кэше планировщика и Publication Tracker
+            this.markAsProcessed(content.id, platformName);
+            publicationTracker.markAsProcessed(content.id, platformName);
+            readyPlatforms.push(platformName);
+            log(`🛡️ Планировщик: Платформа ${platformName} защищена от дублирования и добавлена в очередь для ${content.id}`, 'scheduler', 'debug');
           }
 
           if (readyPlatforms.length > 0) {

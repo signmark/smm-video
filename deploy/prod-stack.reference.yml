@@ -154,7 +154,10 @@ services:
       - CORS_CREDENTIALS=true
       - CORS_MAX_AGE=18000
       - ACCESS_TOKEN_TTL=1d
-      - REFRESH_TOKEN_TTL=7d
+      # AI-71/сессии (17.08.2026): срок жизни токена обновления снижен с 7 суток до 1.
+      # Решение владельца: выкидывать из сессии раз в сутки, как принято в зрелых проектах.
+      # Практический смысл — украденный или забытый токен живёт максимум сутки, а не неделю.
+      - REFRESH_TOKEN_TTL=1d
       - AUTH_TOKEN_TTL=1d
     volumes:
       - ./directus_data:/directus/uploads

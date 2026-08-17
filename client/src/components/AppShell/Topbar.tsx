@@ -77,6 +77,11 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
   // отсутствие трактуем как «работает», а не как «на паузе».
   const isAutonomousPaused = isAutonomousActive && autonomousStatus?.status === 'paused';
   const hasQuotaError = !isAutonomousActive && !!autonomousStatus?.quotaError;
+  // AI-123. Режим мог остановиться сам не только из-за исчерпанной квоты AI:
+  // например, потеряно подключение к аккаунту. Раньше всё, кроме квоты,
+  // выглядело как «режим просто выключен» — хотя выключил его не человек, и
+  // человек об этом не знал, пока не замечал отсутствие постов.
+  const hasStopReason = !isAutonomousActive && !hasQuotaError && !!autonomousStatus?.stopReason;
 
   // Настройки автономного режима из кампании.
   // Раньше здесь был useQuery без queryFn с ключом ['/api/campaigns', id]:
@@ -444,6 +449,12 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
                       </p>
                     )}
                     <p className="text-xs text-muted-foreground">{t('topbar.autonomous.activeHint')}</p>
+                  </div>
+                ) : hasStopReason ? (
+                  <div className="space-y-0.5">
+                    <p className="font-medium text-yellow-600 dark:text-yellow-400">Режим остановлен</p>
+                    <p className="text-xs text-yellow-700 dark:text-yellow-300">{autonomousStatus.stopReason.message}</p>
+                    <p className="text-xs text-muted-foreground">Включите автономный режим снова после входа.</p>
                   </div>
                 ) : hasQuotaError ? (
                   <div className="space-y-0.5">

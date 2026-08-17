@@ -119,7 +119,7 @@ describe('AI-121: сканер исходника — три места, где 
       // От события до конца обработчика цикл обязан прекратиться. Если снова
       // оставить только предупреждение, пост уйдёт на умолчаниях — ровно то,
       // из-за чего задача и заведена.
-      const tail = body.slice(idx, idx + 900);
+      const tail = body.slice(idx, idx + 1400);
       expect(tail).toContain('state.cycleRunning = false;');
       expect(tail).toContain('return;');
     }
@@ -137,7 +137,7 @@ describe('AI-121: сканер исходника — три места, где 
     for (const reason of ['token_refresh_failed', 'campaign_settings_unreadable', 'campaign_keywords_unreadable']) {
       const idx = body.indexOf("reason: '" + reason + "'");
       expect(idx).toBeGreaterThan(0);
-      const tail = body.slice(idx, idx + 900);
+      const tail = body.slice(idx, idx + 1400);
       expect(tail).toContain('state.lastCycleAt = new Date();');
       // Время обязано проставиться ДО выхода, иначе в нём нет смысла.
       expect(tail.indexOf('state.lastCycleAt = new Date();')).toBeLessThan(tail.indexOf('return;'));

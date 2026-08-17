@@ -334,6 +334,9 @@ export async function startAutonomousExternal(params: {
 
   // Сбрасываем ошибку квоты при новом старте агента
   quotaErrorMap.delete(params.campaignId);
+  // AI-123: и причину прошлой самостоятельной остановки — человек уже пришёл
+  // и включил режим заново, старое объяснение только запутает.
+  stopReasonMap.delete(params.campaignId);
 
   if (autonomousStates.has(params.campaignId)) {
     // Уже активен — запускаем цикл немедленно вместо ошибки
@@ -463,11 +466,13 @@ export function stopAutonomousExternal(campaignId: string) {
 
 export function getAutonomousStatusExternal(campaignId: string) {
   const quotaError = quotaErrorMap.get(campaignId) || null;
+  // AI-123: режим мог остановиться сам не только из-за квоты.
+  const stopReason = stopReasonMap.get(campaignId) || null;
   const state = autonomousStates.get(campaignId);
   // SM-20: три состояния вместо двух. isActive оставлен для обратной
   // совместимости с существующими потребителями и означает «режим заведён»,
   // а фактическую работу показывает status.
-  if (!state) return { isActive: false, status: 'stopped' as const, quotaError };
+  if (!state) return { isActive: false, status: 'stopped' as const, quotaError, stopReason };
   const runtimeMin = Math.round((Date.now() - state.startedAt.getTime()) / 60000);
   // SM-20: на паузе обратный отсчёт врёт — таймеров нет, а число продолжало
   // бы уменьшаться. Отдаём null: «неизвестно, пока не возобновят».
@@ -651,6 +656,12 @@ interface AutonomousState {
   cyclesCompleted: number;
   postsCreated: number;
   cycleRunning: boolean;
+  /**
+   * AI-123. Сколько циклов подряд прервалось, не сделав работы. Считается
+   * именно ПОДРЯД: одиночный сбой Directus не должен выключать режим, который
+   * человек включил, а вот три подряд означают, что дело не в сбое.
+   */
+  consecutiveAbortedCycles?: number;
   errors: string[];
   timer?: NodeJS.Timeout;
   /**
@@ -748,6 +759,66 @@ export function resetAutonomousStatesForTest(): void {
 
 // Ошибки квоты AI — хранятся даже после остановки агента, пока пользователь не запустит снова
 const quotaErrorMap = new Map<string, { message: string; retryAfterSec?: number; stoppedAt: string }>();
+
+/**
+ * AI-123. Почему режим остановился сам. Раньше такая причина была только у
+ * исчерпанной квоты AI, и только её человек и видел. Всё остальное выглядело
+ * как «режим просто выключен», хотя выключил его не человек.
+ */
+const stopReasonMap = new Map<string, { kind: string; message: string; stoppedAt: string }>();
+
+/** Три прерывания подряд — это уже не сбой, а состояние. */
+const MAX_CONSECUTIVE_ABORTED_CYCLES = 3;
+
+/**
+ * Человеческий текст по причине прерывания. Без слов «токен», «сессия» и кодов
+ * состояния: человек не может ничего с ними сделать, а испугаться может.
+ */
+function stopMessageForAbortReason(reason: string): string {
+  if (reason === 'token_refresh_failed') {
+    return 'Подключение к вашему аккаунту потеряно — войдите в систему заново и включите автономный режим снова.';
+  }
+  if (reason === 'campaign_settings_unreadable' || reason === 'campaign_keywords_unreadable') {
+    return 'Не удаётся прочитать настройки кампании — войдите в систему заново и включите автономный режим снова.';
+  }
+  return 'Автономный режим остановлен: несколько попыток подряд не удались.';
+}
+
+/**
+ * Полная остановка режима с сохранением причины для интерфейса. Повторяет то,
+ * что делает остановка по исчерпанной квоте: снимает таймеры, убирает состояние
+ * и его сохранённую копию — иначе после перезапуска процесса режим воскреснет
+ * и продолжит биться в ту же стену.
+ */
+function stopAutonomousWithReason(state: AutonomousState, kind: string, message: string): void {
+  stopReasonMap.set(state.campaignId, { kind, message, stoppedAt: new Date().toISOString() });
+  if (state.timer) clearInterval(state.timer);
+  if (state.firstCycleTimer) clearTimeout(state.firstCycleTimer);
+  state.timer = undefined;
+  state.firstCycleTimer = undefined;
+  autonomousStates.delete(state.campaignId);
+  deleteAutonomousPersistence(state.campaignId);
+  logEvent(
+    'autonomous.stopped',
+    { operation: 'autonomous-cycle', campaignId: state.campaignId, userId: state.userId, reason: kind },
+    'error',
+    'autonomous',
+    'Автономный режим остановлен сам, причина сохранена для интерфейса',
+  );
+}
+
+/**
+ * AI-123. Отмечает прерванный цикл и останавливает режим, если прерывания идут
+ * подряд. Без этого кампания с отозванной сессией пробует раз в интервал
+ * бесконечно: сама по себе отозванная сессия не восстановится, а в интерфейсе
+ * режим всё это время показан включённым.
+ */
+function noteAbortedCycle(state: AutonomousState, reason: string): void {
+  state.consecutiveAbortedCycles = (state.consecutiveAbortedCycles || 0) + 1;
+  if (state.consecutiveAbortedCycles >= MAX_CONSECUTIVE_ABORTED_CYCLES) {
+    stopAutonomousWithReason(state, reason, stopMessageForAbortReason(reason));
+  }
+}
 
 // Определяет является ли ошибка превышением квоты/rate-limit AI
 function extractQuotaError(err: any): { message: string; retryAfterSec?: number } | null {
@@ -4017,6 +4088,7 @@ async function runAutonomousCycle(state: AutonomousState) {  // SM-20: стра�
         'Цикл не запущен: доступа к данным кампании нет, генерация на умолчаниях запрещена',
       );
       state.errors.push(`Цикл ${state.cyclesCompleted + 1}: доступ к данным кампании потерян (токен не обновился)`);
+      noteAbortedCycle(state, 'token_refresh_failed');
       // AI-121. Прерванный цикл — тоже состоявшаяся попытка, и время последнего
       // цикла обязано проставиться. Следующая попытка планируется именно от него:
       // если оставить прежнее значение, планировщик решит, что цикла ещё не было,
@@ -4095,6 +4167,7 @@ async function runAutonomousCycle(state: AutonomousState) {  // SM-20: стра�
       );
       console.warn(`[AUTONOMOUS-CYCLE] ⚠️ Не удалось прочитать autonomous_settings: ${settErr.message}`);
       state.errors.push(`Цикл ${state.cyclesCompleted + 1}: настройки кампании не прочитались`);
+      noteAbortedCycle(state, 'campaign_settings_unreadable');
       // AI-121: прерванная попытка тоже проставляет время цикла (см. подробное
       // объяснение выше, у прерывания по токену) — иначе цикл каждые пять секунд.
       state.lastCycleAt = new Date();
@@ -4141,6 +4214,7 @@ async function runAutonomousCycle(state: AutonomousState) {  // SM-20: стра�
       );
       console.warn(`[AUTONOMOUS-CYCLE] ⚠️ Ключи недоступны: ${kwErr.message}`);
       state.errors.push(`Цикл ${state.cyclesCompleted + 1}: ключевые слова не прочитались`);
+      noteAbortedCycle(state, 'campaign_keywords_unreadable');
       // AI-121: прерванная попытка тоже проставляет время цикла (см. подробное
       // объяснение выше, у прерывания по токену) — иначе цикл каждые пять секунд.
       state.lastCycleAt = new Date();
@@ -4648,6 +4722,10 @@ ${criteriaLines}
       }
     }
     
+    // AI-123. Счётчик прерываний считается ПОДРЯД: дошли до конца — значит
+    // предыдущие неудачи были сбоем, а не состоянием.
+    state.consecutiveAbortedCycles = 0;
+
     // Обновляем статус цикла
     state.cyclesCompleted++;
     state.lastCycleAt = new Date();

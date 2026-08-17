@@ -1,0 +1,340 @@
+version: '3'
+
+services:
+  traefik:
+    image: traefik:v2.11
+    restart: always
+    command:
+      - "--providers.docker.network=proxy"
+      - "--api=true"
+      - "--api.insecure=true"
+      - "--api.dashboard=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.mytlschallenge.acme.tlschallenge=true"
+      - "--certificatesresolvers.mytlschallenge.acme.email=${SSL_EMAIL}"
+      - "--certificatesresolvers.mytlschallenge.acme.storage=/letsencrypt/acme.json"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./traefik_data:/letsencrypt
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - proxy
+
+  n8n:
+    image: n8nio/n8n:latest
+    restart: always
+    depends_on:
+      - postgres
+    ports:
+      - "127.0.0.1:5678:5678"
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.n8n.rule=Host(`${SUBDOMAIN}.${DOMAIN_NAME}`)
+      - traefik.http.routers.n8n.tls=true
+      - traefik.http.routers.n8n.entrypoints=web,websecure
+      - traefik.http.routers.n8n.tls.certresolver=mytlschallenge
+      - traefik.http.middlewares.n8n.headers.SSLRedirect=true
+      - traefik.http.middlewares.n8n.headers.STSSeconds=315360000
+      - traefik.http.middlewares.n8n.headers.browserXSSFilter=true
+      - traefik.http.middlewares.n8n.headers.contentTypeNosniff=true
+      - traefik.http.middlewares.n8n.headers.forceSTSHeader=true
+      - traefik.http.middlewares.n8n.headers.SSLHost=${DOMAIN_NAME}
+      - traefik.http.middlewares.n8n.headers.STSIncludeSubdomains=true
+      - traefik.http.middlewares.n8n.headers.STSPreload=true
+      - traefik.http.routers.n8n.middlewares=n8n@docker
+      - traefik.http.services.n8n.loadbalancer.server.port=5678
+      - traefik.docker.network=proxy
+    environment:
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - N8N_HOST=${SUBDOMAIN}.${DOMAIN_NAME}
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=https
+      - NODE_ENV=production
+      - WEBHOOK_URL=https://${SUBDOMAIN}.${DOMAIN_NAME}/
+      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE}
+      - DB_TYPE=postgresdb
+      - DB_TABLE_PREFIX=n8n_
+      - DB_POSTGRESDB_DATABASE=n8n
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_USER=postgres
+      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD}
+      - EXECUTIONS_DATA_MAX_AGE=168
+      - EXECUTIONS_DATA_PRUNE_MAX_COUNT=10000
+      - N8N_DEFAULT_BINARY_DATA_MODE=filesystem
+      - NODE_PATH=/home/node/.n8n/node_modules
+      - NODE_FUNCTION_ALLOW_EXTERNAL=*
+    volumes:
+      - ./n8n_data:/home/node/.n8n
+      - ./local-files:/files
+    networks:
+      - proxy
+
+  postgres:
+    image: postgres:16
+    restart: always
+    shm_size: 128mb
+    environment:
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - ./postgres:/var/lib/postgresql/data
+    networks:
+      - proxy
+
+  pgadmin:
+    image: dpage/pgadmin4
+    restart: always
+    depends_on:
+      - postgres
+    volumes:
+      - ./pgadmin_data:/var/lib/pgadmin
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=${SSL_EMAIL}
+      - PGADMIN_DEFAULT_PASSWORD=${PASSWORD_PGADMIN}
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.pgadmin.entrypoints=web,websecure
+      - traefik.http.routers.pgadmin.tls=true
+      - traefik.http.routers.pgadmin.rule=Host(`pgadmin.nplanner.ru`)
+      - traefik.http.routers.pgadmin.tls.certresolver=mytlschallenge
+      - traefik.http.services.pgadmin.loadbalancer.server.port=80
+      - traefik.docker.network=proxy
+    networks:
+      - proxy
+
+  # AI-68: каталог загрузок Directus монтируется биндом, а bind docker не
+  # чаунит — владельцем становится root, тогда как контейнер Directus работает
+  # под uid 1000. Отсюда EACCES и /server/health 503 (AI-63). Тот баг снят
+  # руками 04.08, но ручной chown не переживёт пересоздания каталога.
+  # Этот сервис выравнивает владельца перед каждым стартом Directus и на этом
+  # закрывает дефект насовсем. Отрабатывает за доли секунды и идемпотентен.
+  directus-uploads-init:
+    image: busybox:1.36
+    command: chown -R 1000:1000 /uploads
+    volumes:
+      - ./directus_data:/uploads
+    restart: "no"
+    # Сети не нужны вообще: контейнер только меняет владельца каталога.
+    # Без этой строки compose кладёт сервис в неявную сеть по умолчанию и
+    # создаёт root_default, хотя весь остальной файл живёт во внешней proxy.
+    network_mode: "none"
+
+  directus:
+    image: directus/directus:11.2.2
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_started
+      directus-uploads-init:
+        condition: service_completed_successfully
+    environment:
+      - PUBLIC_URL=https://directus.roboflow.space
+      - DB_CLIENT=pg
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      # Обычное значение — directus. Переключается через DIRECTUS_DB в /root/.env
+      # (напр. directus_old — копия старого прода) для сравнительного тестирования.
+      # Откат: убрать DIRECTUS_DB из .env и docker compose up -d directus
+      - DB_DATABASE=${DIRECTUS_DB:-directus}
+      - DB_USER=postgres
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
+      - ADMIN_EMAIL=${DIRECTUS_ADMIN_EMAIL}
+      - ADMIN_PASSWORD=${DIRECTUS_ADMIN_PASSWORD}
+      - CORS_ENABLED=true
+      - CORS_ORIGIN=true
+      - CORS_METHODS=GET,POST,PATCH,DELETE
+      - CORS_ALLOWED_HEADERS=Content-Type,Authorization
+      - CORS_EXPOSED_HEADERS=Content-Range
+      - CORS_CREDENTIALS=true
+      - CORS_MAX_AGE=18000
+      - ACCESS_TOKEN_TTL=1d
+      - REFRESH_TOKEN_TTL=7d
+      - AUTH_TOKEN_TTL=1d
+    volumes:
+      - ./directus_data:/directus/uploads
+    labels:
+      - traefik.enable=true
+      # Два хоста → один сервис directus. Отдельные роутеры (а не один с "||"),
+      # чтобы каждый заказывал свой сертификат независимо — см. пояснение у smm.
+      # Хосты задаются в .env: DIRECTUS_HOST / DIRECTUS_HOST_ALT.
+      - traefik.http.routers.directus.rule=Host(`${DIRECTUS_HOST:-directus.roboflow.space}`)
+      - traefik.http.routers.directus.tls=true
+      - traefik.http.routers.directus.entrypoints=web,websecure
+      - traefik.http.routers.directus.tls.certresolver=mytlschallenge
+      - traefik.http.routers.directus.service=directus
+      - traefik.http.routers.directus-alt.rule=Host(`${DIRECTUS_HOST_ALT:-directus.nplanner.ru}`)
+      - traefik.http.routers.directus-alt.tls=true
+      - traefik.http.routers.directus-alt.entrypoints=web,websecure
+      - traefik.http.routers.directus-alt.tls.certresolver=mytlschallenge
+      - traefik.http.routers.directus-alt.service=directus
+      - traefik.http.services.directus.loadbalancer.server.port=8055
+      - traefik.docker.network=proxy
+    networks:
+      - proxy
+
+  smm:
+    # Образ собирает ТОЛЬКО scripts/deploy-smm.sh (AI-50). Секции build: здесь
+    # намеренно нет: docker берёт контекст из рабочего дерева, а не из HEAD, и
+    # `docker compose build smm` собрал бы прод из общего /root/smm вместе с
+    # чужим незакоммиченным WIP. Канон блока — smm/docs/deploy/compose-smm.fragment.yml
+    #
+    # root-smm:deployed — подвижный алиас на текущий выкаченный образ. Его
+    # переставляет только deploy-скрипт под локом, после повторной сверки
+    # origin/main. Конкретные сборки остаются как root-smm:<full-sha> и служат
+    # точками отката: scripts/deploy-smm.sh --rollback <sha>
+    image: root-smm:deployed
+    container_name: smm
+    restart: always
+    # 11.08 здесь стоял пин api.telegram.org на 149.154.167.220: клиент ходил
+    # одной A-записью, упирался в мёртвый 149.154.166.110, и публикация во все
+    # Telegram-каналы встала разом. AI-101 фаза 2C перевела клиент на перебор
+    # всех адресов с запасным списком в TELEGRAM_API_IPS; 13.08 это проверено
+    # на боевом трафике — публикация прошла именно переходом на запасной адрес.
+    # Пин снят: он больше ничего не чинит, а лишь прячет отказ перебора.
+    # Возвращать его имеет смысл только как аварийную меру, и тогда он же
+    # скроет причину — сначала смотрите логи выбора адреса в telegram-http.
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+      # Пояс процесса задан ЯВНО. Метки времени публикации лежат в колонках без
+      # часового пояса и по договорённости кода означают UTC (AI-115,
+      # shared/schedule-time.ts). Код больше не зависит от этой переменной, но
+      # пустое значение раньше было единственным, что удерживало расписание от
+      # сдвига на три часа. Менять только вместе с разбором хранения времени.
+      - TZ=UTC
+      - DIRECTUS_URL=http://directus:8055
+      - VIDEO_APP_HOST=video-app
+    command: npm run start
+    labels:
+      - traefik.enable=true
+      # Домены задаются в .env (SMM_HOST / SMM_HOST_ALT), в compose их нет.
+      #
+      # Два ОТДЕЛЬНЫХ роутера, а не один с "||": Traefik заказывает ОДИН
+      # SAN-сертификат на все домены роутера, и провал валидации любого из них
+      # оставляет без сертификата все остальные. Пока у smm.omemo.tech DNS
+      # смотрит на мёртвый 45.130.212.62, его ACME-заказ обязан быть отдельным —
+      # иначе он утаскивает за собой рабочий smm.nplanner.ru.
+      #
+      # Нужен один домен — поставьте SMM_HOST_ALT равным SMM_HOST.
+      - traefik.http.routers.smm.rule=Host(`${SMM_HOST:-smm.nplanner.ru}`)
+      - traefik.http.routers.smm.tls=true
+      - traefik.http.routers.smm.entrypoints=web,websecure
+      - traefik.http.routers.smm.tls.certresolver=mytlschallenge
+      - traefik.http.routers.smm.service=smm
+      - traefik.http.routers.smm-alt.rule=Host(`${SMM_HOST_ALT:-smm.omemo.tech}`)
+      - traefik.http.routers.smm-alt.tls=true
+      - traefik.http.routers.smm-alt.entrypoints=web,websecure
+      - traefik.http.routers.smm-alt.tls.certresolver=mytlschallenge
+      - traefik.http.routers.smm-alt.service=smm
+      # Третий алиас (staging/roboflow). Пустой SMM_HOST_ALT2 — роутер не создаётся.
+      - traefik.http.routers.smm-rf.rule=Host(`${SMM_HOST_ALT2:-smm.roboflow.space}`)
+      - traefik.http.routers.smm-rf.tls=true
+      - traefik.http.routers.smm-rf.entrypoints=web,websecure
+      - traefik.http.routers.smm-rf.tls.certresolver=mytlschallenge
+      - traefik.http.routers.smm-rf.service=smm
+      - traefik.http.services.smm.loadbalancer.server.port=5000
+      - traefik.docker.network=proxy
+    networks:
+      - proxy
+
+  video-app:
+    build:
+      context: ./smm/video-app
+      dockerfile: Dockerfile
+    container_name: video_app
+    restart: always
+    depends_on:
+      - postgres
+      - directus
+    environment:
+      - NODE_ENV=production
+      - VIDEO_APP_PORT=3001
+      - DIRECTUS_URL=http://directus:8055
+      - DIRECTUS_ADMIN_EMAIL=${DIRECTUS_ADMIN_EMAIL}
+      - DIRECTUS_ADMIN_PASSWORD=${DIRECTUS_ADMIN_PASSWORD}
+      # Единственное имя служебного токена. DIRECTUS_ADMIN_TOKEN и
+      # DIRECTUS_PROD_TOKEN удалены: то же назначение под разными именами.
+      - DIRECTUS_STATIC_TOKEN=${DIRECTUS_STATIC_TOKEN}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - HUGGINGFACE_API_KEY=${HUGGINGFACE_API_KEY}
+      - FAL_AI_API_KEY=${FAL_AI_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_PROXY_URL=${GEMINI_PROXY_URL}
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/postgres
+    volumes:
+      - ./video_data:/app/video-app/data
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.video.rule=Host(`video.omemo.tech`)
+      - traefik.http.routers.video.tls=true
+      - traefik.http.routers.video.entrypoints=web,websecure
+      - traefik.http.routers.video.tls.certresolver=mytlschallenge
+      - traefik.http.services.video.loadbalancer.server.port=3001
+      - traefik.docker.network=proxy
+    networks:
+      - proxy
+
+  smmniap:
+    image: nginx:alpine
+    restart: always
+    volumes:
+      - ./smm/smmniap_static:/usr/share/nginx/html:ro
+    labels:
+      - traefik.enable=true
+      # Домен лендинга — из .env (LANDING_HOST)
+      - traefik.http.routers.smmniap.rule=Host(`${LANDING_HOST:-omemo.tech}`)
+      - traefik.http.routers.smmniap.tls=true
+      - traefik.http.routers.smmniap.entrypoints=web,websecure
+      - traefik.http.routers.smmniap.tls.certresolver=mytlschallenge
+      - traefik.http.services.smmniap.loadbalancer.server.port=80
+      - traefik.docker.network=proxy
+    networks:
+      - proxy
+
+  videoapp:
+    build:
+      context: ./video-app
+      dockerfile: Dockerfile
+    container_name: video-app
+    restart: always
+    depends_on:
+      - postgres
+    environment:
+      - PIXABAY_API_KEY=${PIXABAY_API_KEY}
+      - FAL_KEY=${FAL_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - PEXELS_API_KEY=${PEXELS_API_KEY}
+      - QWEN_API_KEY=${QWEN_API_KEY}
+      - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
+      - STATIC_DIR=/app/public
+    volumes:
+      - ./video_data:/tmp/reelforge
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.videoapp.rule=Host(`video.nplanner.ru`)
+      - traefik.http.routers.videoapp.tls=true
+      - traefik.http.routers.videoapp.entrypoints=web,websecure
+      - traefik.http.routers.videoapp.tls.certresolver=mytlschallenge
+      - traefik.http.routers.videoapp.service=videoapp
+      - traefik.http.routers.videoapp-rf.rule=Host(`video.roboflow.space`)
+      - traefik.http.routers.videoapp-rf.tls=true
+      - traefik.http.routers.videoapp-rf.entrypoints=web,websecure
+      - traefik.http.routers.videoapp-rf.tls.certresolver=mytlschallenge
+      - traefik.http.routers.videoapp-rf.service=videoapp
+      - traefik.http.services.videoapp.loadbalancer.server.port=3002
+      - traefik.docker.network=proxy
+    networks:
+      - proxy    
+
+networks:
+  proxy:
+    external: true

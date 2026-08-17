@@ -5,7 +5,7 @@ import { aiService } from './ai-service';
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'fs';
 import { join } from 'path';
 import { toSafeErrorDetails } from '../utils/safe-error';
-import { log } from '../utils/logger';
+import { log, logEvent } from '../utils/logger';
 // SM-18: единый помощник подстановки [socialNetworks] — один источник правды.
 import { substituteSocialNetworks } from './social-prompt';
 export { substituteSocialNetworks };
@@ -1167,6 +1167,26 @@ function directusAuth(authToken?: string): { authToken?: string; useAdminToken?:
 }
 
 /**
+ * AI-121. Род токена, с которым фоновый цикл собирается идти в Directus.
+ *
+ * ЗАЧЕМ ОТДЕЛЬНОЙ ФУНКЦИЕЙ. Раньше выбор способа авторизации делался по виду
+ * строки: есть точка — значит JWT, шлём как Bearer. Точка есть и у мёртвого
+ * токена, поэтому истёкший JWT продолжал уходить в Directus, получать 403 и
+ * умирать в ближайшем catch. Живость строки по её виду не определяется.
+ */
+export type AuthTokenKind = 'live_jwt' | 'expired_jwt' | 'opaque' | 'none';
+
+export function classifyAuthToken(token?: string, nowMs: number = Date.now()): AuthTokenKind {
+  if (!token) return 'none';
+  if (!token.includes('.')) return 'opaque';
+  const exp = getJwtExp(token);
+  // Разобрать не удалось — считаем мёртвым: молча сходить с истёкшим токеном
+  // дороже, чем лишний раз отказаться от сомнительного.
+  if (exp === null) return 'expired_jwt';
+  return exp * 1000 > nowMs ? 'live_jwt' : 'expired_jwt';
+}
+
+/**
  * Декодирует exp из JWT payload без верификации подписи.
  * Возвращает unix timestamp в секундах или null если декодирование не удалось.
  */
@@ -1325,7 +1345,12 @@ function pickOptimalScheduleTimeMsk(opts: {
  * Обновляет state и persistence. Возвращает актуальный токен (или пустую строку, если рефреш не удался).
  */
 async function ensureFreshUserToken(state: AutonomousState): Promise<string> {
-  const adminFallback = process.env.DIRECTUS_STATIC_TOKEN || state.authToken || '';
+  // AI-121. Раньше здесь стоял `|| state.authToken`, то есть «откат» возвращал
+  // ровно тот истёкший токен, из-за которого рефреш и запускался. Дальше по
+  // строке была точка, токен уходил как Bearer, Directus отвечал 403, и цикл
+  // продолжал работать на пустых данных. Пустая строка честнее: по ней вызывающий
+  // код видит, что пользовательского доступа нет, и принимает решение явно.
+  const adminFallback = process.env.DIRECTUS_STATIC_TOKEN || '';
   const exp = getJwtExp(state.authToken);
   const nowSec = Math.floor(Date.now() / 1000);
   
@@ -1394,7 +1419,14 @@ async function ensureFreshUserToken(state: AutonomousState): Promise<string> {
     }
   }
 
-  console.warn(`[AUTONOMOUS-AUTH] ⚠️ Все методы рефреша не удались — откат на admin static token`);
+  logEvent(
+    'autonomous.token_refresh_failed',
+    { operation: 'autonomous-cycle', userId: state.userId, campaignId: state.campaignId,
+      reason: adminFallback ? 'fallback_static' : 'no_fallback' },
+    'error',
+    'autonomous',
+    'Обновить пользовательский токен не удалось ни одним способом',
+  );
   return adminFallback;
 }
 
@@ -3719,9 +3751,18 @@ Respond with ONLY the image prompt, nothing else.`,
   try {
     await directusCrud.updateItem('campaign_content', contentId, {
       prompt: imagePrompt
-    }, authToken ? { authToken } : { useAdminToken: true });
+    }, directusAuth(authToken));
     console.log(`[IMAGE-PROMPT] ✅ Промт сохранён для ${contentId}: "${imagePrompt.substring(0, 80)}..."`);
   } catch (saveErr: any) {
+    // AI-121. Сам пост от этого не страдает, поэтому цикл не прерываем. Но и
+    // молчать нельзя: в редакторе промта просто нет, и понять почему — неоткуда.
+    logEvent(
+      'autonomous.image_prompt_unsaved',
+      { operation: 'autonomous-cycle', contentId, status: saveErr?.response?.status },
+      'warn',
+      'autonomous',
+      'Промт изображения сгенерирован, но не сохранён — в редакторе его не будет',
+    );
     console.error(`[IMAGE-PROMPT] ❌ Не удалось сохранить промт в Directus: ${saveErr.message}`);
   }
 
@@ -3961,6 +4002,25 @@ async function runAutonomousCycle(state: AutonomousState) {  // SM-20: стра�
     // Гарантируем свежий пользовательский JWT (рефреш только если истекает скоро)
     const activeToken = await ensureFreshUserToken(state);
 
+    // AI-121. Если доступа нет, цикл дальше не идёт. Это не перестраховка:
+    // с мёртвым токеном он не прочитает ни настройки кампании, ни ключевые
+    // слова, но контент всё равно СОЗДАСТ — на умолчаниях и не по теме. Пост,
+    // ушедший к живым людям мимо темы, хуже ненаписанного поста.
+    const tokenKind = classifyAuthToken(activeToken);
+    if (tokenKind !== 'live_jwt' && tokenKind !== 'opaque') {
+      logEvent(
+        'autonomous.cycle_aborted',
+        { operation: 'autonomous-cycle', campaignId: state.campaignId, userId: state.userId,
+          reason: 'token_refresh_failed' },
+        'error',
+        'autonomous',
+        'Цикл не запущен: доступа к данным кампании нет, генерация на умолчаниях запрещена',
+      );
+      state.errors.push(`Цикл ${state.cyclesCompleted + 1}: доступ к данным кампании потерян (токен не обновился)`);
+      state.cycleRunning = false;
+      return;
+    }
+
     const request: AIToolRequest = {
       userId: state.userId,
       campaignId: state.campaignId,
@@ -4015,7 +4075,21 @@ async function runAutonomousCycle(state: AutonomousState) {  // SM-20: стра�
       const has = !!(autoSettings.globalPrompt || autoSettings.alwaysInclude || autoSettings.signature);
       console.log(`[AUTONOMOUS-CYCLE] ⚙️ Пользовательские настройки: ${has ? 'есть' : 'нет'}`);
     } catch (settErr: any) {
+      // AI-121. «Настроек нет» и «настройки не прочитались» — разные вещи, а
+      // выглядели одинаково: и там и там пустой объект. Дальше цикл писал пост
+      // на умолчаниях, как будто пользователь ничего не настраивал.
+      logEvent(
+        'autonomous.cycle_aborted',
+        { operation: 'autonomous-cycle', campaignId: state.campaignId, userId: state.userId,
+          reason: 'campaign_settings_unreadable', status: settErr?.response?.status },
+        'error',
+        'autonomous',
+        'Цикл прерван: настройки кампании не прочитались, писать на умолчаниях нельзя',
+      );
       console.warn(`[AUTONOMOUS-CYCLE] ⚠️ Не удалось прочитать autonomous_settings: ${settErr.message}`);
+      state.errors.push(`Цикл ${state.cyclesCompleted + 1}: настройки кампании не прочитались`);
+      state.cycleRunning = false;
+      return;
     }
 
     // launchCommand — главная инструкция пользователя (из state или из autonomous_settings)
@@ -4043,7 +4117,22 @@ async function runAutonomousCycle(state: AutonomousState) {  // SM-20: стра�
       }
       console.log(`[AUTONOMOUS-CYCLE] 🔑 Ключевых слов в контексте: ${topKeywords.length}`);
     } catch (kwErr: any) {
+      // AI-121. Раньше в журнале оставалось «Ключевых слов в контексте: 0» —
+      // ровно то же, что и у кампании без ключевых слов. Отличить отказ чтения
+      // от честного нуля было нельзя, и пост уходил не про то, ради чего
+      // кампанию заводили.
+      logEvent(
+        'autonomous.cycle_aborted',
+        { operation: 'autonomous-cycle', campaignId: state.campaignId, userId: state.userId,
+          reason: 'campaign_keywords_unreadable', status: kwErr?.response?.status },
+        'error',
+        'autonomous',
+        'Цикл прерван: ключевые слова кампании не прочитались',
+      );
       console.warn(`[AUTONOMOUS-CYCLE] ⚠️ Ключи недоступны: ${kwErr.message}`);
+      state.errors.push(`Цикл ${state.cyclesCompleted + 1}: ключевые слова не прочитались`);
+      state.cycleRunning = false;
+      return;
     }
 
     // ──────────────────────────────────────────────────────────────

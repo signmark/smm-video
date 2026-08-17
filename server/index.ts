@@ -32,6 +32,7 @@ import autonomousRouter from "./routes/autonomous";
 import { restoreAutonomousStates, getActiveAutonomousCampaignIds } from './services/autonomous-ai';
 // daily-trend-scheduler импорт удалён — планировщик отключён, сбор трендов только вручную
 import { log, logEnvironmentInfo, logMessage, logEvent, flushLogs } from "./utils/logger";
+import { classifyVkCampaigns } from "./utils/vk-token-status";
 
 /**
  * Сколько ждать слива вывода перед выходом по аварии (AI-65).
@@ -1314,25 +1315,39 @@ async function checkVkTokensStatus() {
     });
 
     const campaigns: any[] = resp.data?.data || [];
-    let active = 0, expired = 0, noToken = 0;
+    const status = classifyVkCampaigns(campaigns, Date.now());
 
-    for (const campaign of campaigns) {
-      const vk = campaign.social_media_settings?.vk;
-      if (!vk?.accessToken && !vk?.token) { noToken++; continue; }
-      if (vk.authExpired) {
-        expired++;
-        log(`[VK-CHECK] Кампания ${campaign.id} (${campaign.name || ''}): authExpired=true, требует переподключения`, 'vk-cron', 'warn');
-        continue;
-      }
-      const expiresAt = vk.tokenExpiresAt ? new Date(vk.tokenExpiresAt).getTime() : 0;
-      const minsLeft = expiresAt ? Math.round((expiresAt - Date.now()) / 60000) : null;
-      if (minsLeft !== null && minsLeft < 30) {
-        log(`[VK-CHECK] Кампания ${campaign.id}: токен истекает через ${minsLeft} мин`, 'vk-cron', 'warn');
-      }
-      active++;
+    // AI-65. Было предупреждение НА КАЖДУЮ кампанию с разорванной связью,
+    // каждые полчаса: на проде это 17 строк за прогон и 34 в час, бесконечно,
+    // про кампании, которые никто не собирается переподключать. От такого
+    // потока уровень «предупреждение» перестаёт что-либо значить — настоящую
+    // проблему в нём не видно. Подробности остаются, но на уровне отладки.
+    for (const id of status.expired) {
+      log(`[VK-CHECK] Кампания ${id}: связь с VK разорвана, нужно переподключение`, 'vk-cron', 'debug');
     }
 
-    log(`[VK-CHECK] Статус: активных=${active}, истёкших=${expired}, без токена=${noToken}`, 'vk-cron');
+    // Наверх поднимается одна строка с числом — её видно и по ней понятно,
+    // растёт проблема или стоит на месте.
+    if (status.expired.length > 0) {
+      logEvent(
+        'vk.tokens_expired',
+        { provider: 'vk', count: status.expired.length, reason: 'reconnect_required' },
+        'warn',
+        'vk-cron',
+        `[VK-CHECK] Требуют переподключения: ${status.expired.length} кампаний`,
+      );
+    }
+
+    // Истекающий токен — редкое и срочное: его обновляет отдельный крон, и если
+    // строка появилась, значит обновление не сработало. Оставляем поимённо.
+    for (const soon of status.expiringSoon) {
+      log(`[VK-CHECK] Кампания ${soon.id}: токен истекает через ${soon.minutesLeft} мин`, 'vk-cron', 'warn');
+    }
+
+    log(
+      `[VK-CHECK] Статус: активных=${status.active}, истёкших=${status.expired.length}, без токена=${status.noToken}`,
+      'vk-cron',
+    );
   } catch (e: any) {
     log(`[VK-CHECK] Ошибка: ${e.message}`, 'vk-cron', 'error');
   }

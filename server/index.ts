@@ -9,6 +9,7 @@ import swaggerUi from 'swagger-ui-express';
 import swaggerSpecs from './config/swagger';
 import { readFileSync, existsSync } from 'fs';
 import { resolve, dirname } from 'path';
+import { resolveFrontendStaticStrategy } from './services/frontend-static-strategy';
 import { fileURLToPath } from 'url';
 import { createServer, request as httpRequest } from 'http';
 import { WebSocketServer } from 'ws';
@@ -992,16 +993,17 @@ app.use('/video-app', (req, res, next) => {
         const distPath = pathModule.resolve(process.cwd(), "dist", "public");
         console.log(`DEBUG: Attempting to serve static from: ${distPath}`);
 
-        if (!fsModule.existsSync(distPath)) {
-          console.log(`DEBUG: distPath NOT FOUND: ${distPath}, falling back to Vite dev server`);
-          log("Dist not found, starting Vite dev server...");
-          const { setupVite } = await import('./vite.js');
-          await setupVite(app, server);
-          log("✅ Vite dev server started (fallback)");
-        } else {
-          console.log(`DEBUG: distPath FOUND: ${distPath}`);
-          // Статические файлы с агрессивным кешированием (навсегда)
-          app.use(express.static(distPath, {
+        // AI-118 (2026-08-17): выбор стратегии один раз на старте ДО server.listen().
+        // В production отсутствие dist/public => resolveFrontendStaticStrategy THROW'ит
+        // (fail-closed), /health не поднимется, выкатка увидит «не встал» и откатит.
+        // Vite-fallback остаётся только в dev-ветке ниже.
+        const distExists = fsModule.existsSync(distPath);
+        const strategy = resolveFrontendStaticStrategy(isProduction, distPath, distExists);
+        if (strategy.kind !== 'serve_static') {
+          throw new Error('[AI-118] production: стратегия фронта не serve_static — невозможно');
+        }
+        // serve_static: статические файлы с агрессивным кешированием (навсегда)
+        app.use(express.static(distPath, {
             maxAge: '31536000000', // 1 год в миллисекундах
             immutable: true,
             setHeaders: (res, filePath) => {
@@ -1034,7 +1036,6 @@ app.use('/video-app', (req, res, next) => {
             res.sendFile(pathModule.resolve(distPath, "index.html"));
           });
           log(`Static files served from: ${distPath} with PWA caching`);
-        }
       } catch (staticError) {
         log(`Error serving static files: ${staticError instanceof Error ? staticError.message : 'Unknown error'}`);
         throw staticError; // В production это критическая ошибка

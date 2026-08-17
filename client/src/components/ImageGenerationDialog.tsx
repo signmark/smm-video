@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useLocation } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
 import { DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -6,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { ToastAction } from "@/components/ui/toast";
 import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useTranslation } from "react-i18next";
@@ -145,6 +147,7 @@ export function ImageGenerationDialog({
   onClose
 }: ImageGenerationDialogProps) {
   const { t } = useTranslation();
+  const [, navigate] = useLocation();
   const [activeTab, setActiveTab] = useState<string>("prompt");
 
   const { data: imageGenUsage } = useQuery<{
@@ -691,10 +694,25 @@ export function ImageGenerationDialog({
       } else {
         errorMessage = error instanceof Error ? error.message : t('errors.generationFailed', 'Произошла ошибка при генерации изображения');
       }
+      // AI-122. Отказ по лимиту — единственный случай, когда у человека есть
+      // действие прямо сейчас: заявка на повышение тарифа. Раньше об этом
+      // говорилось только текстом, а идти за ним надо было самому.
+      const limitExceeded = Boolean(axiosError?.response?.data?.limitExceeded);
       toast({
         variant: "destructive",
-        title: t('errors.generationError', 'Ошибка генерации'),
-        description: errorMessage
+        title: limitExceeded
+          ? t('errors.quotaExceeded', 'Лимит генераций исчерпан')
+          : t('errors.generationError', 'Ошибка генерации'),
+        description: errorMessage,
+        ...(limitExceeded
+          ? {
+              action: (
+                <ToastAction altText="Перейти к тарифам" onClick={() => navigate('/pricing')}>
+                  Запросить повышение
+                </ToastAction>
+              ),
+            }
+          : {}),
       });
     }
   });

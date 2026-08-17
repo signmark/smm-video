@@ -24,7 +24,7 @@ export async function isUserAdmin(req: Request, directusToken?: string): Promise
     // Быстрая проверка из сессии — не идём в Directus если уже знаем ответ
     const sessionUser = (req as any).user;
     if (sessionUser?.is_smm_admin === true || sessionUser?.is_smm_admin === 1 || sessionUser?.is_smm_admin === '1' || sessionUser?.is_smm_admin === 'true') {
-      log(`Пользователь ${sessionUser.email || sessionUser.id} признан администратором (из сессии)`, 'admin');
+      log(`Пользователь ${sessionUser.id} признан администратором (из сессии)`, 'admin');
       return true;
     }
 
@@ -65,7 +65,7 @@ export async function isUserAdmin(req: Request, directusToken?: string): Promise
         const isAdmin = currentUser.is_smm_admin === true || currentUser.is_smm_admin === 1 || currentUser.is_smm_admin === '1' || currentUser.is_smm_admin === 'true';
         const isRoleAdmin = currentUser.role === 'admin' || (typeof currentUser.role === 'object' && (currentUser.role?.name === 'Administrator' || currentUser.role?.admin_access === true));
         if (isAdmin || isRoleAdmin) {
-          log(`Пользователь ${currentUser.email} признан администратором`, 'admin');
+          log(`Пользователь ${currentUser.id} признан администратором`, 'admin');
           return true;
         }
         // is_smm_admin — привилегированное поле, юзерский токен его НЕ видит
@@ -99,7 +99,7 @@ export async function isUserAdmin(req: Request, directusToken?: string): Promise
       const data = await resp.json() as any;
       const val = data?.data?.is_smm_admin;
       const isAdmin = val === true || val === 1 || val === '1' || val === 'true';
-      if (isAdmin) log(`Пользователь ${data?.data?.email || userId} признан администратором (via admin-token)`, 'admin');
+      if (isAdmin) log(`Пользователь ${userId} признан администратором (via admin-token)`, 'admin');
       return isAdmin;
     } catch {
       return false;

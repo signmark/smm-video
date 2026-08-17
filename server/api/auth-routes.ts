@@ -310,11 +310,11 @@ export function registerAuthRoutes(app: Express): void {
       });
 
       const userData = userResponse.data.data;
-      log(`Успешная авторизация пользователя: ${userData.email} (${userData.id})`, 'auth');
+      log(`Успешная авторизация пользователя ${userData.id}`, 'auth');
 
       // Проверяем, является ли пользователь администратором
       const isAdmin = await isUserAdmin(req, token);
-      log(`Пользователь ${userData.email}: статус администратора = ${isAdmin}`, 'auth');
+      log(`Пользователь ${userData.id}: статус администратора = ${isAdmin}`, 'auth');
 
       // Без крона: при входе не-админа сбрасываем истёкший тариф на free.
       if (!isAdmin) {
@@ -551,7 +551,7 @@ export function registerAuthRoutes(app: Express): void {
       
       // Проверяем, является ли пользователь администратором
       const isAdmin = await isUserAdmin(req, token);
-      log(`Пользователь ${userData.email}: статус администратора = ${isAdmin}`, 'auth');
+      log(`Пользователь ${userData.id}: статус администратора = ${isAdmin}`, 'auth');
 
       // Возвращаем данные пользователя
       res.status(200).json({

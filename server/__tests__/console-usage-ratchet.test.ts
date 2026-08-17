@@ -32,8 +32,9 @@ import { join } from 'node:path';
  * console.log тест не ронял.
  *
  * Число обязано только уменьшаться.
+ * AI-118 (2026-08-17): планка опущена 1962->1960 снятием двух отладочных console.log про distPath (NOT FOUND / FOUND) в server/index.ts.
  */
-const BASELINE = 1962;
+const BASELINE = 1960;
 
 const CONSOLE_CALL = /\bconsole\.(log|error|warn|info|debug)\s*\(/g;
 

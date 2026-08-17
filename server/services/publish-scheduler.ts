@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { log } from '../utils/logger';
+import { log, logEvent } from '../utils/logger';
 import { storage } from '../storage';
 import { directusCrud } from './directus-crud';
 import { publicationLockManager } from './publication-lock-manager';
@@ -123,6 +123,58 @@ export function decidePublishTime(
 export function formatPublishInstant(at: Date | null): string {
   if (!at) return 'не задано';
   return Number.isNaN(at.getTime()) ? 'не разобрано' : at.toISOString();
+}
+
+/**
+ * AI-65, этап 4: доменные события публикации.
+ *
+ * ЗАЧЕМ. По этим именам потом строятся оповещения: «публикация упала чаще N раз
+ * за четверть часа», «крон замолчал». Искать по тексту сообщения нельзя — текст
+ * переписывают при первой правке формулировки, и все сохранённые запросы молча
+ * перестают находить.
+ *
+ * ГДЕ. Событие ставится в единственной точке записи статуса площадки
+ * (mergeAndSavePlatformStatus), а не в каждом из десятка методов публикации.
+ * Иначе новая площадка появится без события, и никто этого не заметит.
+ */
+export type PublishEvent = 'publish.succeeded' | 'publish.failed' | 'publish.record_failed';
+
+/**
+ * Событие по итоговому статусу площадки. Промежуточные статусы события не дают:
+ * `publishing` и `pending` — это состояние в процессе, а не исход.
+ */
+export function publishOutcomeEvent(status: unknown): PublishEvent | null {
+  if (status === 'published') return 'publish.succeeded';
+  if (status === 'failed') return 'publish.failed';
+  // Пост ушёл на площадку, но записать это в базу не удалось: самый опасный
+  // исход из всех, потому что снаружи выглядит как неопубликованный.
+  if (status === 'publish_succeeded_record_failed') return 'publish.record_failed';
+  return null;
+}
+
+/**
+ * Стабильная машинная причина отказа из текста ошибки площадки.
+ *
+ * Сам текст в событие не кладём: он приходит от внешней системы и содержит и
+ * идентификаторы, и куски запроса. Но по нему можно один раз определить род
+ * неприятности — а род как раз и нужен для оповещений.
+ */
+export function classifyPublishFailure(error: unknown): string {
+  const text = typeof error === 'string' ? error.toLowerCase() : '';
+  if (!text) return 'unknown';
+
+  if (text.includes('invalid access token') || text.includes('token expired') ||
+      text.includes('authexpired') || text.includes('срок действия')) return 'token_expired';
+  if (text.includes('does not have permission') || text.includes('forbidden') ||
+      text.includes('нет прав')) return 'forbidden';
+  if (text.includes('not found') || text.includes('chat not found') ||
+      text.includes('не найден')) return 'not_found';
+  if (text.includes('quota') || text.includes('rate limit') ||
+      text.includes('too many requests') || text.includes('лимит')) return 'rate_limit';
+  if (text.includes('временно отключ') || text.includes('не поддерживает')) return 'platform_disabled';
+  if (text.includes('timeout') || text.includes('etimedout') ||
+      text.includes('econnaborted')) return 'timeout';
+  return 'platform_error';
 }
 
 /**
@@ -295,6 +347,7 @@ export class PublishScheduler {
       
       this.isProcessing = true;
       this.tickCount++;
+      const cycleStartedAt = Date.now();
       
       // Heartbeat каждые ~10 минут — видно в production-логах
       if (this.tickCount % this.heartbeatEveryNTicks === 1) {
@@ -342,6 +395,17 @@ export class PublishScheduler {
         
         if (allContent.length === 0) {
           log(`📭 No content found - check if content has status scheduled/partial/pending`, 'scheduler', 'debug');
+          // AI-65. Прогон, не нашедший работы, — тоже завершённый прогон. Если
+          // молчать здесь, оповещение «крон замолчал» будет срабатывать каждый
+          // раз, когда на доске просто нет запланированного контента, и его
+          // очень быстро отключат — а вместе с ним и настоящий сигнал.
+          logEvent(
+            'cron.finished',
+            { operation: 'publish-scheduler', count: 0, durationMs: Date.now() - cycleStartedAt },
+            'info',
+            'scheduler',
+            'Цикл планировщика: запланированного контента нет',
+          );
           this.isProcessing = false;
           return;
         }
@@ -668,6 +732,17 @@ export class PublishScheduler {
           )
         );
 
+        // AI-65. Итог цикла нужен не ради статистики: отсутствие этой строки
+        // дольше ожидаемого интервала — единственный признак тихо умершего
+        // крона. Ровно так когда-то незаметно умер VK-мониторинг.
+        logEvent(
+          'cron.finished',
+          { operation: 'publish-scheduler', count: publishedCount, durationMs: Date.now() - cycleStartedAt },
+          'info',
+          'scheduler',
+          `Цикл планировщика: обработано ${processedCount}, отправлено на публикацию ${publishedCount}`,
+        );
+
         if (publishedCount > 0) {
           try {
             const { broadcastNotification } = await import('./notification-bus');
@@ -702,6 +777,12 @@ export class PublishScheduler {
       }
       
     } catch (error: any) {
+      logEvent(
+        'cron.failed',
+        { operation: 'publish-scheduler', reason: error?.code || error?.name || 'unhandled' },
+        'error',
+        'scheduler',
+      );
       log(`Ошибка при проверке запланированных публикаций: ${error.message}`, 'scheduler', 'error');
     } finally {
       this.isProcessing = false;
@@ -1667,6 +1748,24 @@ ${text}
         // вызовов save() инвалидация стояла у двух: остальные оставляли морде
         // устаревшую карточку на всю CONTENT_CACHE_TTL после успешной публикации.
         if (content.user_id) invalidateContentCache(content.user_id, content.campaign_id);
+
+        // AI-65. Событие ставится здесь, потому что это единственная точка, через
+        // которую проходит итог любой площадки. В каждом из методов публикации
+        // ставить нельзя: новая площадка появится без события, и никто не заметит.
+        const event = publishOutcomeEvent(data.status);
+        if (event) {
+          logEvent(
+            event,
+            {
+              platform,
+              contentId: content.id,
+              campaignId: content.campaign_id,
+              ...(event === 'publish.succeeded' ? {} : { reason: classifyPublishFailure(data.error) }),
+            },
+            event === 'publish.succeeded' ? 'info' : 'error',
+            'scheduler',
+          );
+        }
       });
     };
 

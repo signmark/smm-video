@@ -32,6 +32,47 @@ export interface PlatformLists {
   pendingPlatforms: string[];
 }
 
+/**
+ * Одна строка о состоянии платформ контента — или ничего, если сказать нечего.
+ *
+ * Замер боевых логов 17.08.2026 за шесть часов: 6113 строк, из них 5003 —
+ * от status-checker, то есть 82 процента. Четыре самых частых сообщения
+ * встречались по тысяче раз каждое и звучали так: «Выбрано: 0 платформ»,
+ * «Опубликовано: 0 платформ», «В ожидании: 0 платформ», «С ошибками: 0 платформ».
+ * Пять строк на каждый контент, у которого не выбрано ни одной площадки, —
+ * то есть пять строк ни о чём.
+ *
+ * Это не безобидно. Полезные записи тонут, а окно `docker logs` расходуется на
+ * мусор: при разборе сбоя нужный час может уже вытесниться. Ради этой же задачи
+ * (AI-65) вводится корреляция запросов — она бесполезна, если след приходится
+ * искать среди тысяч пустых строк.
+ *
+ * Что осталось. Контент без выбранных площадок молчит: обсуждать нечего, статус
+ * по нему всё равно не меняется. Всё остальное укладывается в ОДНУ строку вместо
+ * пяти. Имена площадок печатаются только для незавершённых и упавших — именно
+ * они нужны при разборе; для успешных достаточно счётчика.
+ */
+export function formatPlatformStatusLine(
+  contentId: string,
+  title: string | null | undefined,
+  lists: PlatformLists,
+): string | null {
+  const { selectedPlatforms, publishedPlatforms, pendingPlatforms, failedPlatforms } = lists;
+  if (selectedPlatforms.length === 0) return null;
+
+  const parts = [
+    `выбрано ${selectedPlatforms.length}`,
+    `опубликовано ${publishedPlatforms.length}`,
+  ];
+  if (pendingPlatforms.length > 0) {
+    parts.push(`в ожидании ${pendingPlatforms.length} (${pendingPlatforms.join(', ')})`);
+  }
+  if (failedPlatforms.length > 0) {
+    parts.push(`с ошибками ${failedPlatforms.length} (${failedPlatforms.join(', ')})`);
+  }
+  return `Контент ${contentId} "${title ?? ''}": ${parts.join(', ')}`;
+}
+
 export function buildPlatformLists(platformsData: Record<string, any>): PlatformLists {
   const selectedPlatforms = Object.entries(platformsData)
     .filter(([_, platformData]: [string, any]) => platformData?.selected)
@@ -397,12 +438,11 @@ class PublicationStatusChecker {
         const failedPlatforms = lists.failedPlatforms;
         const pendingPlatforms = lists.pendingPlatforms;
         
-        // Всегда логируем состояние платформ, особенно для проблемных контентов
-        log(`Контент ${item.id}: "${item.title}" - статусы платформ:`, 'status-checker');
-        log(`  - Выбрано: ${selectedPlatforms.length} платформ: ${selectedPlatforms.join(', ')}`, 'status-checker');
-        log(`  - Опубликовано: ${publishedPlatforms.length} платформ: ${publishedPlatforms.join(', ')}`, 'status-checker');
-        log(`  - В ожидании: ${pendingPlatforms.length} платформ: ${pendingPlatforms.join(', ')}`, 'status-checker');
-        log(`  - С ошибками: ${failedPlatforms.length} платформ: ${failedPlatforms.join(', ')}`, 'status-checker');
+        // Состояние платформ — одной строкой и только когда есть что сказать.
+        // Раньше здесь было пять строк на каждый контент, включая контент без
+        // единой выбранной площадки; см. formatPlatformStatusLine.
+        const statusLine = formatPlatformStatusLine(item.id, item.title, lists);
+        if (statusLine) log(statusLine, 'status-checker');
         
         // Убираем хардкод проверки конкретного контента
         

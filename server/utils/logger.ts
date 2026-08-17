@@ -261,7 +261,13 @@ function safeStringify(payload: Record<string, any>): string {
 
 // --- Ядро ----------------------------------------------------------------
 
-function emit(level: LogLevel, message: string, source: string, err?: any): void {
+function emit(
+  level: LogLevel,
+  message: string,
+  source: string,
+  err?: any,
+  extra?: Record<string, string | number | boolean>,
+): void {
   if (LEVEL_ORDER[level] < threshold()) return;
 
   // Редакция до сборки строки — иначе секрет попадёт и в вывод, и в кольцевой
@@ -280,13 +286,15 @@ function emit(level: LogLevel, message: string, source: string, err?: any): void
       level,
       source,
       ...(reqId !== undefined ? { reqId } : {}),
+      ...(extra ?? {}),
       msg: text,
       ...(details !== undefined ? { err: details } : {}),
     });
   } else {
     const time = new Date().toLocaleTimeString();
     const reqId = currentRequestId();
-    line = `${time} [DEV] [${source}]${reqId ? ` [${reqId}]` : ''} ${text}`;
+    const tail = extra && Object.keys(extra).length ? ` ${JSON.stringify(extra)}` : '';
+    line = `${time} [DEV] [${source}]${reqId ? ` [${reqId}]` : ''} ${text}${tail}`;
   }
 
   recordLog(line);
@@ -301,6 +309,123 @@ function emit(level: LogLevel, message: string, source: string, err?: any): void
   } else {
     console.log(line);
   }
+}
+
+/**
+ * AI-65: события со стабильными машинными именами.
+ *
+ * ЗАЧЕМ ИМЕНА. По тексту сообщения нельзя ни искать, ни строить оповещения:
+ * текст меняют при первой же правке формулировки, и все сохранённые запросы
+ * молча перестают находить. `event` — это ключ, который менять нельзя.
+ *
+ * ЗАЧЕМ СПИСОК РАЗРЕШЁННЫХ ПОЛЕЙ. Лог уходит в stdout и хранится дольше, чем
+ * живёт инцидент. Запрет «не кладите тело запроса» на словах не работает: рано
+ * или поздно кто-то положит объект целиком, потому что «так удобнее отлаживать».
+ * Поэтому разрешено перечисленное ниже, а всё остальное молча отбрасывается —
+ * отбрасывать безопаснее, чем падать в момент разбора аварии.
+ *
+ * Здесь НЕТ и не должно появиться: body, query, cookies, заголовков, токенов,
+ * почты, полного URL, сырого ответа Directus, текста промпта.
+ */
+export const EVENT_FIELD_ALLOWLIST = [
+  'reason',      // стабильная машинная причина: 'timeout', 'forbidden', 'quota'
+  'route',       // шаблон маршрута, не подставленный id
+  'method',
+  'status',
+  'durationMs',
+  'system',      // внешняя система: 'directus', 'telegram', 'openrouter'
+  'operation',
+  'provider',
+  'platform',
+  'collection',
+  'entityType',
+  'entityId',
+  'contentId',
+  'campaignId',
+  'userId',
+  'count',
+  'attempt',
+] as const;
+
+export type EventField = (typeof EVENT_FIELD_ALLOWLIST)[number];
+
+const ALLOWED = new Set<string>(EVENT_FIELD_ALLOWLIST);
+
+/** Длина значения в логе. Дальше начинается не идентификатор, а содержимое. */
+const MAX_FIELD_LENGTH = 120;
+
+/**
+ * Оставляет только разрешённые поля и приводит значения к безопасному виду.
+ * Экспортируется ради теста: правило про запрещённые поля должно проверяться
+ * напрямую, а не через наблюдение за выводом.
+ */
+export function filterEventFields(
+  fields: Record<string, unknown> = {},
+): Record<string, string | number | boolean> {
+  const out: Record<string, string | number | boolean> = {};
+
+  for (const [key, value] of Object.entries(fields)) {
+    if (!ALLOWED.has(key)) continue;
+    if (value === undefined || value === null) continue;
+
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      out[key] = value;
+    } else if (typeof value === 'boolean') {
+      out[key] = value;
+    } else if (typeof value === 'string') {
+      // Редакция всё равно применяется: идентификатор кампании безобиден, но
+      // в `reason` легко занести текст ошибки внешней системы с токеном внутри.
+      out[key] = redactText(value).slice(0, MAX_FIELD_LENGTH);
+    }
+    // объекты и массивы не пропускаем вовсе: это путь, которым в лог попадает
+    // тело запроса целиком.
+  }
+
+  return out;
+}
+
+/**
+ * Записывает событие: стабильное имя плюс разрешённые поля.
+ * `message` остаётся человекочитаемым, машинный разбор идёт по `event`.
+ */
+export function logEvent(
+  event: string,
+  fields: Record<string, unknown> = {},
+  level: LogLevel = 'info',
+  source = 'event',
+  message?: string,
+): void {
+  const safe = filterEventFields(fields);
+  const text = message ?? event;
+  emit(level, text, source, undefined, { event, ...safe });
+}
+
+/**
+ * Ограниченный по времени сброс вывода перед завершением процесса.
+ *
+ * ЗАЧЕМ. Когда stdout уходит в конвейер (docker json-file — именно такой
+ * случай), запись асинхронна. `process.exit(1)` сразу после записи об аварии
+ * теряет ровно ту строку, ради которой всё и делалось. Ждём слива, но не
+ * бесконечно: зависший сброс не должен превращать падение в вечно живой
+ * процесс, который мониторинг считает здоровым.
+ */
+export function flushLogs(timeoutMs = 250): Promise<void> {
+  const drain = (stream: NodeJS.WriteStream): Promise<void> =>
+    new Promise((resolve) => {
+      try {
+        if (!stream || typeof stream.write !== 'function') return resolve();
+        stream.write('', () => resolve());
+      } catch {
+        resolve();
+      }
+    });
+
+  return Promise.race([
+    Promise.all([drain(process.stdout), drain(process.stderr)]).then(() => undefined),
+    new Promise<void>((resolve) => {
+      setTimeout(resolve, timeoutMs);
+    }),
+  ]);
 }
 
 /**

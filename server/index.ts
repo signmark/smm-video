@@ -31,7 +31,14 @@ import supportRoutes from "./routes/support-routes";
 import autonomousRouter from "./routes/autonomous";
 import { restoreAutonomousStates, getActiveAutonomousCampaignIds } from './services/autonomous-ai';
 // daily-trend-scheduler импорт удалён — планировщик отключён, сбор трендов только вручную
-import { log, logEnvironmentInfo, logMessage } from "./utils/logger";
+import { log, logEnvironmentInfo, logMessage, logEvent, flushLogs } from "./utils/logger";
+
+/**
+ * Сколько ждать слива вывода перед выходом по аварии (AI-65).
+ * Ограничение намеренное: зависший сброс не должен превращать падение в вечно
+ * живой процесс, который мониторинг считает здоровым.
+ */
+const FATAL_FLUSH_MS = 250;
 import { directusApiManager } from './directus';
 import { falAiUniversalService } from './services/fal-ai-universal';
 import { initializeHeavyServices } from './optimize-startup';
@@ -973,8 +980,23 @@ app.use('/video-app', (req, res, next) => {
       const status = err.status || err.statusCode || 500;
       const message = err.message || "Internal Server Error";
 
-      console.error(`🚨 [GLOBAL-ERROR] ${req.method} ${req.path} -> ${status}: ${message}`);
-      if (err.stack) console.error(err.stack);
+      // AI-65. Было: два console.error мимо логгера — то есть мимо редактирования
+      // секретов (axios кладёт в message полный URL с access_token) и без reqId,
+      // по которому эту ошибку можно связать с остальными строками запроса.
+      // Стек не теряется: его сериализует и редактирует сам логгер.
+      logEvent(
+        'http.error',
+        {
+          method: req.method,
+          route: routePattern(req.path),
+          status,
+          reason: err.code || err.name || 'unhandled',
+        },
+        status >= 500 ? 'error' : 'warn',
+        'http',
+        `${req.method} ${routePattern(req.path)} -> ${status}`,
+      );
+      if (status >= 500) log(message, 'http', 'error');
 
       if (req.path.startsWith('/api')) {
         return res.status(status).json({
@@ -989,8 +1011,16 @@ app.use('/video-app', (req, res, next) => {
 
     // 404 handler для API (чтобы не отдавать HTML)
     app.use('/api/*', (req, res) => {
-      console.warn(`🔍 [404] API route not found: ${req.method} ${req.originalUrl}`);
-      res.status(404).json({ error: 'API route not found', path: req.originalUrl });
+      // AI-65. Было: console.warn с req.originalUrl — то есть с query целиком,
+      // мимо редактирования. Ссылки со сбросом пароля и токенами приходят
+      // именно так, и один промах ставит секрет в лог навсегда.
+      logEvent(
+        'http.not_found',
+        { method: req.method, route: routePattern(req.path), status: 404 },
+        'warn',
+        'http',
+      );
+      res.status(404).json({ error: 'API route not found', path: req.path });
     });
 
     // Настраиваем Vite или статические файлы в зависимости от окружения
@@ -1212,21 +1242,30 @@ app.use('/video-app', (req, res, next) => {
         }
       }, (m) => log(m, 'background-jobs')); // Запускаем через 5 секунд (бот не зависит от тяжелых сервисов)
     }).on('error', (err: NodeJS.ErrnoException) => {
-      console.log(`=== SERVER START ERROR: ${err.message} ===`);
-      if (err.code === 'EADDRINUSE') {
-        log(`Fatal error: Port ${PORT} is already in use. Please ensure no other process is using this port.`);
-      } else {
-        log(`Fatal error starting server: ${err.message}`);
-      }
-      process.exit(1);
+      // AI-65: причина невзлёта — самая нужная строка в логе и самая легко
+      // теряемая, потому что процесс умирает сразу за ней.
+      logEvent('server.start_failed', { reason: err.code || 'listen_error' }, 'fatal', 'system');
+      log(
+        err.code === 'EADDRINUSE'
+          ? `Не удалось запуститься: порт ${PORT} уже занят`
+          : `Не удалось запуститься: ${err.message}`,
+        'system',
+        'fatal',
+      );
+      void flushLogs(FATAL_FLUSH_MS).then(() => process.exit(1));
     });
 
   } catch (error) {
-    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-    const errorStack = error instanceof Error ? error.stack : '';
-    console.error(`FATAL ERROR DURING SERVER STARTUP: ${errorMsg}`);
-    if (errorStack) console.error(errorStack);
-    log(`Fatal error during server startup: ${errorMsg}`, 'system', 'error');
+    // Стек больше не печатаем отдельным console.error: логгер сериализует и
+    // редактирует его сам, а два разных канала вывода на одно падение — верный
+    // способ получить в проде половину сообщения.
+    logEvent('server.start_failed', { reason: 'startup_exception' }, 'fatal', 'system');
+    log(
+      `Не удалось запуститься: ${error instanceof Error ? error.message : 'неизвестная ошибка'}`,
+      'system',
+      'fatal',
+    );
+    await flushLogs(FATAL_FLUSH_MS);
     process.exit(1);
   }
 })();
@@ -1383,18 +1422,33 @@ function gracefulShutdown(signal: string) {
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
-// Глобальный обработчик необработанных исключений
-process.on('uncaughtException', (error) => {
-  console.error('FATAL: Uncaught Exception:', error);
-  log(`CRITICAL ERROR: Uncaught Exception: ${error.message}`, 'system', 'fatal');
-  performGlobalMemoryCleanup(); // Очистка памяти при критических ошибках
-  process.exit(1);
-});
+// Падение процесса (AI-65).
+//
+// Было две беды. Первая: `console.error('FATAL:', error)` печатал объект ошибки
+// мимо логгера — мимо редактирования секретов и без reqId. Вторая, более
+// неприятная: `process.exit(1)` вызывался сразу после записи, а запись в stdout,
+// уходящий в докеровский json-file, асинхронна. Ровно та строка, ради которой
+// всё и затевалось, терялась чаще всего — процесс успевал умереть раньше.
+//
+// Теперь: событие со стабильным именем, затем ограниченный по времени сброс, и
+// только потом выход. Сброс ограничен намеренно: зависший flush не должен
+// превращать падение в вечно живой процесс, который мониторинг считает здоровым.
+function exitAfterFatal(reason: string, err: unknown): void {
+  logEvent('process.fatal', { reason }, 'fatal', 'system');
+  log(
+    `Аварийное завершение (${reason}): ${err instanceof Error ? err.message : String(err)}`,
+    'system',
+    'fatal',
+  );
 
-// Глобальный обработчик необработанных отклонений промисов
-process.on('unhandledRejection', (reason) => {
-  console.error('FATAL: Unhandled Promise Rejection:', reason);
-  log(`CRITICAL ERROR: Unhandled Promise Rejection: ${reason instanceof Error ? reason.message : 'Unknown reason'}`, 'system', 'fatal');
-  performGlobalMemoryCleanup(); // Очистка памяти при отклонении промисов
-  process.exit(1);
-});
+  try {
+    performGlobalMemoryCleanup();
+  } catch {
+    // Уборка памяти не должна помешать записать причину падения.
+  }
+
+  void flushLogs(FATAL_FLUSH_MS).then(() => process.exit(1));
+}
+
+process.on('uncaughtException', (error) => exitAfterFatal('uncaught_exception', error));
+process.on('unhandledRejection', (reason) => exitAfterFatal('unhandled_rejection', reason));

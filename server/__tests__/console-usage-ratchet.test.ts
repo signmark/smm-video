@@ -35,8 +35,11 @@ import { join } from 'node:path';
  * AI-118 (2026-08-17): планка опущена 1962->1960 снятием двух отладочных console.log про distPath (NOT FOUND / FOUND) в server/index.ts.
  * AI-120 (2026-08-17): планка опущена 1960->1959 — три ветки console.log про время
  *   публикации в publish-scheduler.ts свелись к двум после выноса решения о времени.
+ * AI-65 (2026-08-17): планка опущена 1959->1952 — критические ветки (падение
+ *   процесса, падение на старте, 5xx, 404) переведены с console.* на события
+ *   логгера: они шли мимо редактирования секретов и без reqId.
  */
-const BASELINE = 1959;
+const BASELINE = 1952;
 
 const CONSOLE_CALL = /\bconsole\.(log|error|warn|info|debug)\s*\(/g;
 

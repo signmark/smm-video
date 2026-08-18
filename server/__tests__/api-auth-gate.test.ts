@@ -132,6 +132,57 @@ describe('гейт на реальном Express', () => {
     expect(authenticate).not.toHaveBeenCalled();
   });
 
+  it('коллбэк трендов с токеном в пути проходит: секрет проверяет он сам', async () => {
+    // Скрейпер POSTит ровно на тот callback_url, который выдали ему мы, и нашей
+    // сессии у него нет. Гейт отвечал 401 РАНЬШЕ проверки секрета — значит
+    // верный секрет не помогал и результаты сбора не доезжали (AI-124).
+    const { app, authenticate } = makeApp();
+
+    const res = await request(app)
+      .post('/api/trends/tg-webhook/0123456789abcdef0123456789abcdef')
+      .send({ posts: [] });
+
+    expect(res.status).toBe(200);
+    expect(authenticate).not.toHaveBeenCalled();
+  });
+
+  it('коллбэк трендов без токена в пути тоже проходит: секрет может быть заголовком', async () => {
+    const { app, authenticate } = makeApp();
+
+    const res = await request(app).post('/api/trends/collect-trends-callback').send({});
+
+    expect(res.status).toBe(200);
+    expect(authenticate).not.toHaveBeenCalled();
+  });
+
+  it('чтение по адресу коллбэка по-прежнему требует сессию: правило открывает только POST', async () => {
+    const { app } = makeApp();
+
+    const res = await request(app).get('/api/trends/tg-webhook/0123456789abcdef0123456789abcdef');
+
+    expect(res.status).toBe(401);
+  });
+
+  it('соседние ручки трендов правилом не открылись', async () => {
+    // Правило узкое намеренно: открыт не раздел /api/trends, а два адреса.
+    const { app } = makeApp();
+
+    for (const path of ['/api/trends/sources', '/api/trends/collect', '/api/trends']) {
+      const res = await request(app).post(path).send({});
+      expect(res.status, path).toBe(401);
+    }
+  });
+
+  it('произвольный хвост у адреса коллбэка не открывает путь', async () => {
+    // В пути мы вшиваем hex-токен. Всё, что на него не похоже, — не наш URL,
+    // и открывать его гейт не обязан.
+    const { app } = makeApp();
+
+    const res = await request(app).post('/api/trends/tg-webhook/../campaigns').send({});
+
+    expect(res.status).toBe(401);
+  });
+
   it('наследство n8n закрыто: вебхук тем трендов требует сессию', async () => {
     // Ручка писала темы в ЛЮБУЮ кампанию служебным токеном без проверок.
     // В список исключений внесена сознательно НЕ была.

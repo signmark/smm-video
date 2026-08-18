@@ -59,7 +59,7 @@ import { getPublishScheduler } from './services/publish-scheduler';
 import { startTelegramBot, getWebhookCallback } from './telegram-bot/bot-launcher';
 // Выключатель фоновых задач: второй экземпляр приложения на том же окружении
 // даёт второй планировщик и второго бота на одной базе (AI-36).
-import { scheduleBackgroundJob, backgroundJobsDisabled } from './services/background-jobs';
+import { scheduleBackgroundJob, backgroundJobsDisabled, runBackgroundJob } from './services/background-jobs';
 import { loadEnvFromDirectus } from './services/load-env-from-directus';
 
 import ffmpeg from 'fluent-ffmpeg';
@@ -1340,8 +1340,19 @@ async function checkVkTokensStatus() {
 
     // Истекающий токен — редкое и срочное: его обновляет отдельный крон, и если
     // строка появилась, значит обновление не сработало. Оставляем поимённо.
+    //
+    // AI-65. Раньше это была строка текста: её видно глазами, но по ней нельзя
+    // ни посчитать, ни отследить рост. Теперь событие с кампанией и провайдером
+    // — истекающий токен площадки это ровно тот случай, когда человек теряет
+    // возможность публиковать, ничего об этом не зная.
     for (const soon of status.expiringSoon) {
-      log(`[VK-CHECK] Кампания ${soon.id}: токен истекает через ${soon.minutesLeft} мин`, 'vk-cron', 'warn');
+      logEvent(
+        'platform.token_expiring',
+        { provider: 'vk', platform: 'vk', campaignId: soon.id, count: soon.minutesLeft },
+        'warn',
+        'vk-cron',
+        `[VK-CHECK] Кампания ${soon.id}: токен истекает через ${soon.minutesLeft} мин`,
+      );
     }
 
     log(
@@ -1356,8 +1367,8 @@ async function checkVkTokensStatus() {
 // Первая проверка через 5 минут после старта, затем каждые 30 минут.
 // Через выключатель: пропущен внешний таймер — внутренний setInterval не заводится.
 scheduleBackgroundJob('vk-tokens-status', 5 * 60 * 1000, () => {
-  checkVkTokensStatus();
-  setInterval(checkVkTokensStatus, 30 * 60 * 1000);
+  void runBackgroundJob('vk-tokens-status', checkVkTokensStatus);
+  setInterval(() => void runBackgroundJob('vk-tokens-status', checkVkTokensStatus), 30 * 60 * 1000);
 }, (m) => log(m, 'background-jobs'));
 
 // Фоновое обновление истекающих VK токенов — каждые 6 часов.
@@ -1367,20 +1378,19 @@ scheduleBackgroundJob('vk-tokens-status', 5 * 60 * 1000, () => {
 // начнут наперегонки ротировать VK-токены, и проигравший останется с
 // недействительным.
 scheduleBackgroundJob('vk-tokens-refresh', 3 * 60 * 1000, async () => {
-  try {
+  // AI-65. Свой try/catch здесь больше не нужен: отказ записывает `job.failed`
+  // с причиной и не выпускает исключение в таймер. Раньше причина уходила
+  // строкой текста, по которой нельзя ни посчитать, ни отличить один прогон
+  // от другого.
+  await runBackgroundJob('vk-tokens-refresh', async () => {
     const { refreshAllExpiringVkTokens } = await import('./services/vk-token-refresh');
-    log('[VK-CRON] Первый запуск фонового обновления VK токенов', 'vk-cron');
     await refreshAllExpiringVkTokens();
-  } catch (e: any) {
-    log(`[VK-CRON] Ошибка первого запуска: ${e.message}`, 'vk-cron', 'error');
-  }
-  setInterval(async () => {
-    try {
+  });
+  setInterval(() => {
+    void runBackgroundJob('vk-tokens-refresh', async () => {
       const { refreshAllExpiringVkTokens } = await import('./services/vk-token-refresh');
       await refreshAllExpiringVkTokens();
-    } catch (e: any) {
-      log(`[VK-CRON] Ошибка: ${e.message}`, 'vk-cron', 'error');
-    }
+    });
   }, 30 * 60 * 1000); // каждые 30 минут
 }, (m) => log(m, 'background-jobs'));
 

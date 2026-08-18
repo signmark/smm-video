@@ -6,6 +6,7 @@
 
 import axios from 'axios';
 import { apiKeyService } from './api-keys';
+import { resolveSizeParams } from './fal-size-params';
 
 interface JuggernautGenerateOptions {
   prompt: string;
@@ -270,7 +271,8 @@ export class FalAiJuggernautService {
       // Если указан строковый формат размера (landscape_4_3, portrait_16_9 и т.д.), используем его
       let width, height;
       if (options.imageSize) {
-        // Для Juggernaut моделей можем использовать прямой параметр image_size
+        // Juggernaut-модели принимают image_size как enum-строку (например
+        // landscape_4_3). Оставляем как есть — это поле fal понимает.
         console.log(`[fal-ai-juggernaut] Используем строковый формат размера: ${options.imageSize}`);
         
         requestBody = {
@@ -284,14 +286,15 @@ export class FalAiJuggernautService {
           enable_safety_checker: true
         };
       } else {
-        // Если используются числовые размеры, преобразуем в width/height
-        const dimensions = this.parseImageSize(`${options.width || 1024}x${options.height || 1024}`);
+        // AI-125: числовые размеры шли в image_width/image_height — таких полей
+        // у fal НЕт, он их молча отбрасывал и брал свой дефолт. Перевод на общий
+        // маппинг: real size -> image_size:{width,height}.
+        const sizeParams = resolveSizeParams(options.model, options.width, options.height);
         requestBody = {
           model_name: options.model,
           prompt: options.prompt,
           negative_prompt: options.negativePrompt || "",
-          image_width: dimensions.width,
-          image_height: dimensions.height,
+          ...sizeParams,
           num_images: numImages, // Используем нормализованное значение
           guidance_scale: options.guidanceScale || 7.5,
           steps: options.steps || 30,
@@ -330,12 +333,12 @@ export class FalAiJuggernautService {
             }
           };
         } else {
-          // Для других моделей используем обычные параметры width/height
+          // AI-125: top-level width/height у fal нет — переводим на image_size.
+          const sizeParams = resolveSizeParams(options.model, options.width, options.height);
           requestBody = {
             prompt: options.prompt,
             negative_prompt: options.negativePrompt || "",
-            width: dimensions.width,
-            height: dimensions.height,
+            ...sizeParams,
             num_images: this.normalizeNumImages(options.numImages),
             enable_safety_checker: true
           };
@@ -358,11 +361,11 @@ export class FalAiJuggernautService {
             }
           };
         } else {
+          const sizeParams = resolveSizeParams(options.model, options.width, options.height);
           requestBody = {
             prompt: options.prompt,
             negative_prompt: options.negativePrompt || "",
-            width: options.width || 1024,
-            height: options.height || 1024,
+            ...sizeParams,
             num_images: this.normalizeNumImages(options.numImages),
             enable_safety_checker: true
           };

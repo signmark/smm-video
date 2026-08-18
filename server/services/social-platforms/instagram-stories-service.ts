@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { log } from '../../utils/logger';
+import { log, logEvent } from '../../utils/logger';
 
 export interface InstagramStoryResult {
   success: boolean;
@@ -89,7 +89,21 @@ export async function publishInstagramStory(
     const campaign = campaignResp.data?.data;
     let socialSettings = campaign?.social_media_settings || {};
     if (typeof socialSettings === 'string') {
-      try { socialSettings = JSON.parse(socialSettings); } catch {}
+      try {
+        socialSettings = JSON.parse(socialSettings);
+      } catch (e: any) {
+        // AI-65. Настройки в кампании есть, но прочитать их нечем. Дальше
+        // igSettings окажется пустым, и человек получит «Instagram не настроен» —
+        // ответ, который отправляет его переподключать исправный аккаунт.
+        // Настоящая причина до сих пор нигде не появлялась.
+        logEvent(
+          'campaign.settings_unparsable',
+          { campaignId: content.campaign_id, platform: 'instagram', reason: e?.message ? String(e.message) : 'unknown' },
+          'warn',
+          'instagram-stories',
+          'Настройки соцсетей кампании не читаются — площадка будет выглядеть неподключённой',
+        );
+      }
     }
     igSettings = socialSettings.instagram || {};
   } catch (e: any) {
@@ -127,7 +141,17 @@ export async function publishInstagramStory(
             }
           }
         }
-      } catch {}
+      } catch (e: any) {
+        // AI-65. Список дополнительных медиа не читается. Дальше человек получит
+        // «нет медиафайла для Stories», хотя файл есть.
+        logEvent(
+          'publish.media_list_unparsable',
+          { contentId, platform: 'instagram', collection: 'additional_media', reason: e?.message ? String(e.message) : 'unknown' },
+          'warn',
+          'instagram-stories',
+          'Список медиа не читается — публикация выглядит как «нет файла»',
+        );
+      }
     }
 
     if (!imageUrl && !videoUrl && content.additional_images) {
@@ -139,7 +163,15 @@ export async function publishInstagramStory(
           const first = imgs[0];
           imageUrl = (typeof first === 'object' ? first?.url : first) || '';
         }
-      } catch {}
+      } catch (e: any) {
+        logEvent(
+          'publish.media_list_unparsable',
+          { contentId, platform: 'instagram', collection: 'additional_images', reason: e?.message ? String(e.message) : 'unknown' },
+          'warn',
+          'instagram-stories',
+          'Список изображений не читается — публикация выглядит как «нет файла»',
+        );
+      }
     }
   }
 
@@ -158,7 +190,10 @@ export async function publishInstagramStory(
       timeout: 10000
     });
     username = userResp.data?.username || 'instagram';
-  } catch {}
+  } catch {
+    // AI-65. Молчание намеренное: имя аккаунта нужно только для подписи, запасное
+    // значение уже стоит выше, и на публикацию отказ никак не влияет.
+  }
 
   // 5. Создаём медиа-контейнер
   log(`[IGStories] Creating ${isVideo ? 'video' : 'image'} Stories container for content ${contentId}`, 'info');

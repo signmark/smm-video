@@ -7,7 +7,7 @@
 import axios from 'axios';
 import FormData from 'form-data';
 import { randomUUID } from 'crypto';
-import log from '../../utils/logger';
+import log, { logEvent } from '../../utils/logger';
 import { storeTempVideo } from '../../utils/temp-video-store';
 
 /**
@@ -278,7 +278,20 @@ class InstagramService {
             log.warn(`[${opId}] [Instagram] Уже опубликовано параллельным запросом (postUrl=${igStatus.postUrl}), отменяем media_publish`);
             return { success: true, postId: igStatus.postId, postUrl: igStatus.postUrl };
           }
-        } catch {}
+        } catch (e: any) {
+          // AI-65. Это единственная защита от повторной публикации. Если проверку
+          // не удалось довести до ответа, публикация всё равно пойдёт — иначе
+          // человек потеряет пост из-за недоступного Directus. Но пойдёт вслепую,
+          // и на выходе может получиться два одинаковых поста у живой аудитории.
+          // Молча такое обнаруживалось только в комментариях подписчиков.
+          logEvent(
+            'publish.duplicate_check_failed',
+            { contentId, platform: 'instagram', reason: e?.message ? String(e.message) : 'unknown' },
+            'warn',
+            'instagram',
+            'Проверка на повторную публикацию не удалась — публикуем вслепую',
+          );
+        }
       }
 
       // Публикуем container
@@ -297,7 +310,19 @@ class InstagramService {
           params: { fields: 'permalink', access_token: token }
         });
         if (permalinkRes.data?.permalink) postUrl = permalinkRes.data.permalink;
-      } catch {}
+      } catch (e: any) {
+        // AI-65. Пост опубликован, это главное. Не удалось получить постоянную
+        // ссылку — человеку показывается собранная из postId, и она может не
+        // открыться. Уровень отладки: не поломка, но объяснение жалобы
+        // «ссылка на мой пост не работает».
+        logEvent(
+          'publish.permalink_unresolved',
+          { contentId, platform: 'instagram', reason: e?.message ? String(e.message) : 'unknown' },
+          'debug',
+          'instagram',
+          'Пост опубликован, но постоянную ссылку получить не удалось',
+        );
+      }
 
       log.info(`[${opId}] [Instagram] Успешно: postId=${postId}, url=${postUrl}`);
       return { success: true, postId, postUrl };

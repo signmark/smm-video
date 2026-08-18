@@ -13,6 +13,7 @@ import {
   isPermanentPublishError,
   getStaleDays,
 } from './publication-terminal-state';
+import { notifyPublished } from './notification-bus';
 import { recordPublished, wasPublished, forget, readJournal } from './publish-fallback-journal';
 import { resolvePublishingToken } from './publishing-token';
 import { stripMarkdown, markdownToTelegramHtml } from '../utils/strip-markdown';
@@ -765,7 +766,20 @@ export class PublishScheduler {
           try {
             const { adminTokenManager } = await import('./admin-token-manager');
             adminTokenManager.clearToken();
-          } catch {}
+          } catch (clearError: any) {
+            // AI-65. Здесь молчать нельзя. Мы пришли сюда из 401, и весь смысл
+            // ветки — сбросить протухший токен, чтобы следующий запрос взял
+            // новый. Если сброс не удался, планировщик будет получать 401 в
+            // каждом цикле, и снаружи это выглядит как «публикации просто не
+            // идут», без единой строки о причине.
+            logEvent(
+              'scheduler.token_reset_failed',
+              { operation: 'publish-cycle', reason: clearError?.message ? String(clearError.message) : 'unknown' },
+              'error',
+              'scheduler',
+              'Не удалось сбросить протухший админский токен после 401',
+            );
+          }
           return;
         }
         
@@ -1039,14 +1053,7 @@ export class PublishScheduler {
         log(`Threads публикация успешна для ${content.id}: ${result.postUrl}`, 'scheduler');
         console.error(`[THREADS-DIRECT] SUCCESS: ${result.postUrl}`);
 
-        try {
-          const { broadcastNotification } = await import('./notification-bus');
-          broadcastNotification('content_published', {
-            contentId: content.id,
-            platform: 'threads',
-            message: 'Успешно опубликовано в Threads'
-          });
-        } catch {}
+        notifyPublished({ contentId: content.id, platform: 'threads', message: 'Успешно опубликовано в Threads' });
 
         return { platform: 'threads', success: true };
       } else {
@@ -1102,10 +1109,7 @@ export class PublishScheduler {
         await this.savePublishedRecord(save, 'facebook', { status: 'published', postId: result.postId, postUrl: result.postUrl, publishedAt: new Date().toISOString() }, content.id);
         log(`Facebook публикация успешна для ${content.id}: ${result.postUrl}`, 'scheduler');
         console.error(`[FB-DIRECT] SUCCESS: ${result.postUrl}`);
-        try {
-          const { broadcastNotification } = await import('./notification-bus');
-          broadcastNotification('content_published', { contentId: content.id, platform: 'facebook', message: 'Успешно опубликовано в Facebook' });
-        } catch {}
+        notifyPublished({ contentId: content.id, platform: 'facebook', message: 'Успешно опубликовано в Facebook' });
         return { platform: 'facebook', success: true };
       } else {
         throw new Error(result.error || 'Ошибка API Facebook');
@@ -1170,7 +1174,7 @@ export class PublishScheduler {
       if (result.success) {
         await this.savePublishedRecord(save, 'telegram', { status: 'published', postId: String(result.messageId || ''), postUrl: result.postUrl, publishedAt: new Date().toISOString() }, content.id);
         log(`Telegram успешно: ${result.postUrl}`, 'scheduler');
-        try { const { broadcastNotification } = await import('./notification-bus'); broadcastNotification('content_published', { contentId: content.id, platform: 'telegram' }); } catch {}
+        notifyPublished({ contentId: content.id, platform: 'telegram' });
         return { platform: 'telegram', success: true };
       } else {
         throw new Error(result.error || 'Ошибка Telegram API');
@@ -1281,7 +1285,7 @@ export class PublishScheduler {
       if (result.success) {
         await this.savePublishedRecord(save, 'vk', { status: 'published', postId: String(result.postId || ''), postUrl: result.postUrl, publishedAt: new Date().toISOString() }, content.id);
         log(`VK успешно: ${result.postUrl}`, 'scheduler');
-        try { const { broadcastNotification } = await import('./notification-bus'); broadcastNotification('content_published', { contentId: content.id, platform: 'vk' }); } catch {}
+        notifyPublished({ contentId: content.id, platform: 'vk' });
         return { platform: 'vk', success: true };
       } else {
         throw new Error(result.error || 'Ошибка VK API');
@@ -1323,7 +1327,7 @@ export class PublishScheduler {
       if (result.success) {
         await this.savePublishedRecord(save, 'instagram', { status: 'published', postId: result.postId, postUrl: result.postUrl, publishedAt: new Date().toISOString() }, content.id);
         log(`Instagram успешно: ${result.postUrl}`, 'scheduler');
-        try { const { broadcastNotification } = await import('./notification-bus'); broadcastNotification('content_published', { contentId: content.id, platform: 'instagram' }); } catch {}
+        notifyPublished({ contentId: content.id, platform: 'instagram' });
         return { platform: 'instagram', success: true };
       } else {
         throw new Error(result.error || 'Ошибка Instagram API');
@@ -1437,7 +1441,21 @@ export class PublishScheduler {
                 if (ak?.client_id && ak?.client_secret) {
                   tiktokOAuth = new TikTokOAuth({ clientKey: ak.client_id, clientSecret: ak.client_secret, redirectUri: '' });
                 }
-              } catch {}
+              } catch (keysError: any) {
+                // AI-65. Молча оставить `tiktokOAuth` пустым — значит потерять
+                // возможность обновить токен и не сказать об этом никому.
+                logEvent(
+                  'scheduler.platform_keys_unreadable',
+                  {
+                    operation: 'publish-cycle',
+                    platform: 'tiktok',
+                    reason: keysError?.message ? String(keysError.message) : 'unknown',
+                  },
+                  'warn',
+                  'scheduler',
+                  'Не удалось прочитать ключи приложения TikTok — обновление токена невозможно',
+                );
+              }
             }
             if (tiktokOAuth && account.refresh_token) {
               const newTokens = await tiktokOAuth.refreshAccessToken(account.refresh_token);
@@ -1471,10 +1489,7 @@ export class PublishScheduler {
       if (result.success) {
         await this.savePublishedRecord(save, 'tiktok', { status: 'published', publishId: result.publishId, postUrl: result.postUrl || 'https://www.tiktok.com', publishedAt: new Date().toISOString() }, content.id);
         log(`TikTok публикация успешна для ${content.id}: publishId=${result.publishId}`, 'scheduler');
-        try {
-          const { broadcastNotification } = await import('./notification-bus');
-          broadcastNotification('content_published', { contentId: content.id, platform: 'tiktok', message: 'Успешно опубликовано в TikTok' });
-        } catch {}
+        notifyPublished({ contentId: content.id, platform: 'tiktok', message: 'Успешно опубликовано в TikTok' });
         return { platform: 'tiktok', success: true };
       } else {
         throw new Error(result.error || 'Ошибка API TikTok');
@@ -1513,7 +1528,7 @@ export class PublishScheduler {
       if (result.success) {
         await this.savePublishedRecord(save, 'vk', { status: 'published', postUrl: result.storyUrl, publishedAt: new Date().toISOString() }, content.id);
         log(`VK Story опубликована успешно: ${result.storyUrl}`, 'scheduler');
-        try { const { broadcastNotification } = await import('./notification-bus'); broadcastNotification('content_published', { contentId: content.id, platform: 'vk', type: 'story' }); } catch {}
+        notifyPublished({ contentId: content.id, platform: 'vk', type: 'story' });
         return { platform: 'vk', success: true };
       }
       throw new Error(result.error || 'Ошибка VK Stories API');
@@ -1538,7 +1553,7 @@ export class PublishScheduler {
       if (result.success) {
         await this.savePublishedRecord(save, 'vk', { status: 'published', postUrl: result.videoUrl, publishedAt: new Date().toISOString() }, content.id);
         log(`VK Clip опубликован успешно: ${result.videoUrl}`, 'scheduler');
-        try { const { broadcastNotification } = await import('./notification-bus'); broadcastNotification('content_published', { contentId: content.id, platform: 'vk', type: 'clip' }); } catch {}
+        notifyPublished({ contentId: content.id, platform: 'vk', type: 'clip' });
         return { platform: 'vk', success: true };
       }
       throw new Error(result.error || 'Ошибка VK Clips API');
@@ -1563,7 +1578,7 @@ export class PublishScheduler {
       if (result.success) {
         await this.savePublishedRecord(save, 'instagram', { status: 'published', postUrl: result.postUrl, publishedAt: new Date().toISOString() }, content.id);
         log(`Instagram Reels опубликован успешно: ${result.postUrl}`, 'scheduler');
-        try { const { broadcastNotification } = await import('./notification-bus'); broadcastNotification('content_published', { contentId: content.id, platform: 'instagram', type: 'reels' }); } catch {}
+        notifyPublished({ contentId: content.id, platform: 'instagram', type: 'reels' });
         return { platform: 'instagram', success: true };
       }
       throw new Error(result.error || 'Ошибка Instagram Reels API');
@@ -1948,10 +1963,7 @@ ${text}
         } catch (saveError: any) {
           log(`Ошибка сохранения YouTube результата: ${saveError.message}`, 'scheduler');
         }
-        try {
-          const { broadcastNotification } = await import('./notification-bus');
-          broadcastNotification('content_published', { contentId: content.id, platform: 'youtube', message: 'Успешно опубликовано в YouTube' });
-        } catch {}
+        notifyPublished({ contentId: content.id, platform: 'youtube', message: 'Успешно опубликовано в YouTube' });
         return { platform: 'youtube', success: true };
       } else {
         if (result.quotaExceeded || (result.error && result.error.includes('quota'))) {
@@ -2092,25 +2104,20 @@ ${text}
 
     // Контент успешно отправлен в N8N
     
-    // Отправляем уведомление в UI
-    try {
-      const { broadcastNotification } = await import('./notification-bus');
-      const platformNames: Record<string, string> = {
-        'instagram': 'Instagram',
-        'facebook': 'Facebook', 
-        'vk': 'ВКонтакте',
-        'telegram': 'Telegram'
-      };
-      const platformName = platformNames[platform.toLowerCase()] || platform;
-      
-      broadcastNotification('content_published', {
-        contentId: content.id,
-        platform: platform,
-        message: `Отправлено в N8N для публикации в ${platformName}`
-      });
-    } catch (error) {
-      // Игнорируем ошибки уведомлений
-    }
+    // Отправляем уведомление в UI. AI-65: молчание здесь верное — контент уже
+    // ушёл в n8n, — но принимается оно теперь один раз, в notifyPublished.
+    const platformNames: Record<string, string> = {
+      'instagram': 'Instagram',
+      'facebook': 'Facebook',
+      'vk': 'ВКонтакте',
+      'telegram': 'Telegram'
+    };
+    const platformName = platformNames[platform.toLowerCase()] || platform;
+    notifyPublished({
+      contentId: content.id,
+      platform,
+      message: `Отправлено в N8N для публикации в ${platformName}`,
+    });
     
     return { platform, success: true };
   }

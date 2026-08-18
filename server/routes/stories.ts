@@ -21,6 +21,34 @@ import { resolveRequestOrigin } from '../utils/public-url';
 
 const router = express.Router();
 
+/**
+ * AI-126 (2026-08-18): результат публикации Stories по площадкам — чистая функция для
+ * решения о ОТВЕТЕ человеку (раньше ответ был всегда success:true). Принимает исходы
+ * Promise.allSettled и разкладывает на успешные/неудачные. Тестируется напрямую.
+ * Дефект происходил из-за того, что разбор исходов существовал, но результат выбрасывали,
+ * и статус публикации человеку не отражал реальный исход (см. AI-65 комментарии ниже).
+ */
+export interface StoriesPlatformOutcome { type: string; success: boolean; error?: unknown }
+
+export function resolveStoriesPublishOutcome(
+  results: Array<PromiseSettledResult<{ type: string; success: boolean; error?: unknown }>>,
+): { successful: StoriesPlatformOutcome[]; failed: StoriesPlatformOutcome[] } {
+  const successful: StoriesPlatformOutcome[] = [];
+  const failed: StoriesPlatformOutcome[] = [];
+  for (const r of results) {
+    if (r.status === 'fulfilled') {
+      if (r.value.success) {
+        successful.push({ type: r.value.type, success: true });
+      } else {
+        failed.push({ type: r.value.type, success: false, error: r.value.error });
+      }
+    } else {
+      failed.push({ type: 'unknown', success: false, error: r.reason?.message });
+    }
+  }
+  return { successful, failed };
+}
+
 // Upload image to Cloudinary (Meta-accessible CDN for Instagram/Facebook)
 async function uploadToExternalHost(imageBuffer: Buffer, filename: string): Promise<{ url: string; host: 'cloudinary' }> {
   const base64Image = imageBuffer.toString('base64');
@@ -504,6 +532,12 @@ router.post('/story/:id/publish', authenticateUser, async (req, res) => {
     const updatedStory = updateResponse.data.data;
 
     // Публикация Stories по платформам
+    // AI-126: аккумуляторы исхода объявлены в области видимости обработчика (до try),
+    // чтобы были доступны и в catch, и при построении ответа ПОСЛЕ try/catch.
+    let storyOutcome: { successful: StoriesPlatformOutcome[]; failed: StoriesPlatformOutcome[] } =
+      { successful: [], failed: [] };
+    let dispatchFailed = false;
+
     try {
       const userToken = req.headers.authorization?.replace('Bearer ', '');
 
@@ -629,39 +663,25 @@ router.post('/story/:id/publish', authenticateUser, async (req, res) => {
         console.log(`[STORIES] Платформы ${otherPlatforms.join(', ')} не поддерживают Stories через прямой API`);
       }
 
-      // Ждем все вызовы
+      // Ждем все вызовы — результат публикации по каждой площадке. AI-126: раньше
+      // разбор исходов существовал, но ответ человеку был всегда success:true.
       const results = await Promise.allSettled(webhookPromises);
+      storyOutcome = resolveStoriesPublishOutcome(results);
 
-      results.forEach((result) => {
-        // AI-65. Раньше здесь стоял разбор исходов с пустыми ветками: результат
-        // публикации по каждой площадке получали и выбрасывали. Ответ человеку
-        // при этом всегда «Story published successfully».
-        if (result.status === 'fulfilled') {
-          const { type, success, error } = result.value as { type: string; success: boolean; error?: unknown };
-          if (!success) {
-            logEvent(
-              'publish.platform_failed',
-              { contentId: updatedStory.id, platform: type, reason: error ? String(error) : 'unknown' },
-              'warn',
-              'stories',
-              'Публикация Stories на площадку не удалась',
-            );
-          }
-        } else {
-          logEvent(
-            'publish.platform_failed',
-            { contentId: updatedStory.id, reason: result.reason?.message ? String(result.reason.message) : 'unknown' },
-            'warn',
-            'stories',
-            'Публикация Stories прервалась до ответа площадки',
-          );
-        }
+      // Логируем неудачи (AI-65 already added logging; сохраняем его и уточняем).
+      storyOutcome.failed.forEach((f) => {
+        logEvent(
+          'publish.platform_failed',
+          { contentId: updatedStory.id, platform: f.type, reason: f.error ? String(f.error) : 'unknown' },
+          'warn',
+          'stories',
+          'Публикация Stories на площадку не удалась',
+        );
       });
 
     } catch (webhookError: any) {
-      // AI-65. Сюда попадает поломка самой рассылки по площадкам — то есть не
-      // опубликовалось нигде. Ответ человеку остаётся прежним (успех), и это
-      // отдельный разговор; но в журнале теперь есть чему возразить.
+      // AI-65/126. Поломка самой рассылки (не опубликовано нигде) — теперь НЕ успех.
+      dispatchFailed = true;
       logEvent(
         'publish.story_dispatch_failed',
         { contentId: updatedStory.id, reason: webhookError?.message ? String(webhookError.message) : 'unknown' },
@@ -671,11 +691,25 @@ router.post('/story/:id/publish', authenticateUser, async (req, res) => {
       );
     }
 
-    res.json({
-      success: true,
-      data: updatedStory,
-      message: scheduledAt ? 'Story scheduled for publication' : 'Story published successfully'
-    });
+    // AI-126: ответ отражает РЕАЛЬНЫЙ исход. Успех — только если хоть одна площадка
+    // опубликовала и нет поломки рассылки. Если не опубликовано никуда — HTTP-ошибка.
+    const anySucceeded = storyOutcome.successful.length > 0 && !dispatchFailed;
+    if (anySucceeded) {
+      res.json({
+        success: true,
+        data: updatedStory,
+        results: { successful: storyOutcome.successful, failed: storyOutcome.failed },
+        message: scheduledAt ? 'Story scheduled for publication' : 'Story published successfully',
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        data: updatedStory,
+        results: { successful: storyOutcome.successful, failed: storyOutcome.failed },
+        error: 'Stories не опубликован ни на одну площадку',
+        message: scheduledAt ? 'Story scheduled for publication' : 'Story published successfully',
+      });
+    }
   } catch (error) {
     console.error('Error publishing story:', error);
     res.status(500).json({ error: 'Failed to publish story' });

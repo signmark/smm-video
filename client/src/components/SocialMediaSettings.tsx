@@ -39,7 +39,7 @@ import { YouTubeSetupWizard } from "./YouTubeSetupWizard";
 import InstagramSetupWizardSimple from "./InstagramSetupWizardSimple";
 import VkSetupWizard from "./VkSetupWizard";
 import FacebookSetupWizard from "./FacebookSetupWizard";
-import { isPlatformConnected } from "@/lib/platform-connection";
+import { isPlatformConnected, parseSocialSettings } from "@/lib/platform-connection";
 import { fetchVkGroupsByManualToken } from "@/lib/vk-groups-request";
 import type { SocialMediaSettings } from "@shared/schema";
 
@@ -258,7 +258,12 @@ export function SocialMediaSettings({
   // хелпером пользуется панель публикации. Здесь поверх них только серверное
   // состояние, которого нет в форме (instagramSettings, vkSettings).
   const isConfigured = (platform: 'instagram' | 'youtube' | 'facebook' | 'vk' | 'telegram' | 'threads' | 'tiktok') => {
-    const settings = form.getValues();
+    // SM-24: состояние берём из СОХРАНЁННЫХ настроек, а не из формы. Раньше
+    // здесь стоял form.getValues(), и метка загоралась от одного набранного
+    // символа — до сохранения, до какой-либо проверки. Человек видел
+    // «Настроено» там, где публикация не пройдёт, и это же вводило в
+    // заблуждение при обратной операции: стёр значения, а метка на месте.
+    const settings = parseSocialSettings(initialSettings) || {};
 
     switch (platform) {
       case 'instagram': {
@@ -1771,6 +1776,46 @@ export function SocialMediaSettings({
     }
   };
 
+  /**
+   * SM-24: явное снятие Bot Token.
+   *
+   * Пустое поле токена сервер трактует как «не трогать сохранённое»
+   * (mergeOAuthSettings) — иначе браузер, которому секреты не отдаются,
+   * затирал бы токен при каждом сохранении настроек. Оборотная сторона:
+   * убрать токен было нечем, он жил в кампании навсегда.
+   *
+   * Намерение выражаем флагом наличия, выставленным в false: значение
+   * секрета для этого не нужно, а перепутать с обычным сохранением нельзя.
+   */
+  const removeTelegramToken = async () => {
+    if (isLoading) return;
+    try {
+      setIsLoading(true);
+      await apiRequest(`/api/campaigns/${campaignId}`, {
+        method: 'PATCH',
+        data: { social_media_settings: { telegram: { hasToken: false } } },
+      });
+      form.setValue('telegram.token', '');
+      setTelegramShowTokenInput(false);
+      setTelegramStatus({ isLoading: false });
+      // Метку рисует сохранённое состояние — перечитываем его с сервера.
+      onSettingsUpdated?.();
+      toast({
+        title: 'Токен удалён',
+        description: 'Telegram отключён: публикация в него больше не пойдёт.',
+      });
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Ошибка!',
+        description: (typeof error?.message === 'string' && error.message)
+          || 'Не удалось удалить токен',
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Считаем подключённые соцсети (после объявления формы)
   const ALL_PLATFORMS = ['instagram', 'youtube', 'facebook', 'vk', 'telegram', 'threads'] as const;
   const connectedCount = ALL_PLATFORMS.filter(p => isConfigured(p)).length;
@@ -1868,11 +1913,11 @@ export function SocialMediaSettings({
                       Хранится на сервере и в браузер не передаётся.
                     </div>
                   </div>
+                  <div className="flex items-center gap-2 shrink-0">
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="shrink-0"
                     onClick={() => {
                       setTelegramShowTokenInput(true);
                       setTelegramStatus({ isLoading: false });
@@ -1881,6 +1926,21 @@ export function SocialMediaSettings({
                   >
                     🔄 Заменить токен
                   </Button>
+                  {/* SM-24: снять настройку было нечем. Пустое поле означает
+                      «оставить как есть», поэтому стёртый токен не сохранялся,
+                      и отключить Telegram из интерфейса было невозможно. */}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-red-600 hover:text-red-700 dark:text-red-400"
+                    disabled={isLoading}
+                    onClick={removeTelegramToken}
+                    data-testid="button-telegram-remove-token"
+                  >
+                    Удалить токен
+                  </Button>
+                  </div>
                 </div>
               ) : (
               <FormField
@@ -1894,6 +1954,13 @@ export function SocialMediaSettings({
                         <Input
                           type="password"
                           placeholder="Введите токен бота"
+                          // SM-24: без new-password браузер считает пару
+                          // «текстовое поле + пароль» формой входа и
+                          // подставляет в соседнее поле сохранённую почту —
+                          // тестировщик получал её в «ID чата».
+                          autoComplete="new-password"
+                          data-1p-ignore
+                          data-lpignore="true"
                           {...field}
                           value={field.value || ''}
                         />
@@ -1949,6 +2016,8 @@ export function SocialMediaSettings({
                       <Input 
                         placeholder="Например: -1001234567890 или @channel_name" 
                         autoComplete="off"
+                        data-1p-ignore
+                        data-lpignore="true"
                         {...field} 
                         value={field.value || ''}
                         className={field.value?.startsWith('@') ? "border-green-500" : ""}

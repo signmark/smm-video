@@ -77,10 +77,16 @@ export function sanitizeOAuthSecrets<T>(value: T): T {
   return result as T;
 }
 
+/** `hasBotToken` → `bottoken`. Обратная операция к presenceFlag. */
+function secretKeyForFlag(flagKey: string): string {
+  return normalizedKey(flagKey).replace(/^has/, '');
+}
+
 /** Merges editable settings while retaining server-side secrets omitted by sanitized clients. */
 export function mergeOAuthSettings(existing: any, incoming: any): any {
   if (!incoming || typeof incoming !== 'object' || Array.isArray(incoming)) return incoming;
   const result: Record<string, unknown> = { ...(existing && typeof existing === 'object' ? existing : {}) };
+  const removals: string[] = [];
   for (const [key, value] of Object.entries(incoming)) {
     const normalized = normalizedKey(key);
     if (SERVER_MANAGED_SECRET_KEYS.has(normalized)) {
@@ -89,6 +95,14 @@ export function mergeOAuthSettings(existing: any, incoming: any): any {
     if (SECRET_KEYS.has(normalized)) {
       if (value !== '' && value !== null && value !== undefined) result[key] = value;
     } else if (isPresenceFlag(key)) {
+      // SM-24: флаг наличия, выставленный в FALSE, — единственный способ снять
+      // секрет. Пустое поле означает «не трогать сохранённое» (иначе клиент,
+      // который секретов не получает, затирал бы токен каждым сохранением) —
+      // и из-за этого удалить токен из интерфейса было нельзя вообще: он
+      // оставался на сервере, а метка «Настроено» продолжала гореть.
+      // Случайно false прийти не может: санитайзер либо ставит флаг в true,
+      // либо не пишет его вовсе.
+      if (value === false) removals.push(key);
       continue;
     } else if (value && typeof value === 'object' && !Array.isArray(value)) {
       result[key] = mergeOAuthSettings(result[key], value);
@@ -96,6 +110,22 @@ export function mergeOAuthSettings(existing: any, incoming: any): any {
       result[key] = value;
     }
   }
+  // SM-24: снятие секретов — после основного прохода, чтобы порядок ключей во
+  // входящем объекте ни на что не влиял.
+  for (const flagKey of removals) {
+    const target = secretKeyForFlag(flagKey);
+    // Ключи, которые заводит и меняет только сервер, клиентским флагом не сносим.
+    if (SERVER_MANAGED_SECRET_KEYS.has(target)) continue;
+    // Если тем же сохранением пришёл новый секрет — побеждает он: «заменить» и
+    // «удалить» одновременно человек нажать не мог, значит это мусор во входе.
+    const replaced = Object.entries(incoming).some(([k, v]) =>
+      normalizedKey(k) === target && typeof v === 'string' && v !== '');
+    if (replaced) continue;
+    for (const key of Object.keys(result)) {
+      if (normalizedKey(key) === target) delete result[key];
+    }
+  }
+
   // Флаги наличия вычисляются на чтении и в базе не живут: сохранённый флаг рано или
   // поздно разойдётся с реальным секретом и снова начнёт врать пользователю.
   for (const key of Object.keys(result)) {

@@ -13,6 +13,7 @@ import { describe, it, expect } from 'vitest';
 import {
   CONNECTABLE_PLATFORMS,
   getConnectedPlatformsMap,
+  hasAnyPlatformConnected,
   isPlatformConnected,
   parseSocialSettings,
 } from '../platform-connection';
@@ -175,5 +176,30 @@ describe('parseSocialSettings', () => {
 
   it('на битом JSON возвращает null, а не бросает', () => {
     expect(parseSocialSettings('{битый')).toBeNull();
+  });
+});
+
+describe('SM-24: «настроено» на уровне кампании', () => {
+  it('пустые настройки — не настроено', () => {
+    expect(hasAnyPlatformConnected({})).toBe(false);
+    expect(hasAnyPlatformConnected(null)).toBe(false);
+  });
+
+  it('одной подключённой площадки достаточно', () => {
+    expect(hasAnyPlatformConnected({ telegram: { chatId: '@c', hasToken: true } })).toBe(true);
+  });
+
+  it('остатки настроек за подключение не считаются', () => {
+    // Ровно то, на чём держалась ложная подпись «Соцсети настроены»: человек
+    // стёр значения, а в объекте остались производный флаг и название группы.
+    expect(hasAnyPlatformConnected({
+      telegram: { chatId: '', hasToken: true },
+      vk: { groupId: '', groupName: 'Старое название' },
+    })).toBe(false);
+  });
+
+  it('строку с JSON тоже понимает: Directus отдаёт настройки и так', () => {
+    expect(hasAnyPlatformConnected('{"vk":{"groupId":"-1"}}')).toBe(true);
+    expect(hasAnyPlatformConnected('не json')).toBe(false);
   });
 });

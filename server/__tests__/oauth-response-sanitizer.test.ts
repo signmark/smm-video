@@ -84,6 +84,66 @@ describe('OAuth response sanitizer', () => {
     expect(merged).toEqual({ telegram: { token: 'server-secret', chatId: 'new' } });
   });
 
+  it('снимает секрет по явному намерению: флаг наличия, выставленный в false', () => {
+    // SM-24. Пустое поле означает «не трогать сохранённое», поэтому удалить
+    // токен из интерфейса было нечем: он оставался в кампании навсегда, а
+    // метка «Настроено» продолжала гореть над неработающей публикацией.
+    const merged = mergeOAuthSettings(
+      { telegram: { token: 'server-secret', chatId: 'old' } },
+      { telegram: { hasToken: false } },
+    );
+    expect(merged).toEqual({ telegram: { chatId: 'old' } });
+  });
+
+  it('снятие не зависит от порядка ключей во входящем объекте', () => {
+    const before = mergeOAuthSettings(
+      { telegram: { token: 'server-secret', chatId: 'old' } },
+      { telegram: { hasToken: false, chatId: 'new' } },
+    );
+    const after = mergeOAuthSettings(
+      { telegram: { token: 'server-secret', chatId: 'old' } },
+      { telegram: { chatId: 'new', hasToken: false } },
+    );
+    expect(before).toEqual({ telegram: { chatId: 'new' } });
+    expect(after).toEqual(before);
+  });
+
+  it('замена побеждает снятие: пришёл новый секрет — остаётся он', () => {
+    // Нажать «удалить» и «сохранить новый токен» одновременно человек не мог,
+    // так что такой вход — мусор, и терять на нём секрет незачем.
+    const merged = mergeOAuthSettings(
+      { telegram: { token: 'old-secret' } },
+      { telegram: { hasToken: false, token: 'new-secret' } },
+    );
+    expect(merged).toEqual({ telegram: { token: 'new-secret' } });
+  });
+
+  it('снимает секрет и в snake_case-написании', () => {
+    const merged = mergeOAuthSettings(
+      { telegram: { bot_token: 'server-secret', chatId: 'x' } },
+      { telegram: { hasBotToken: false } },
+    );
+    expect(merged).toEqual({ telegram: { chatId: 'x' } });
+  });
+
+  it('серверный секрет клиентским флагом не снимается', () => {
+    // Секрет VK token-webhook заводит и меняет только сервер: снятие его
+    // клиентом означало бы, что чужой запрос может разорвать приём токенов.
+    const merged = mergeOAuthSettings(
+      { vk: { webhookSecret: 'server-generated', groupId: 'g' } },
+      { vk: { hasWebhookSecret: false } },
+    );
+    expect(merged).toEqual({ vk: { webhookSecret: 'server-generated', groupId: 'g' } });
+  });
+
+  it('флаг наличия в true остаётся эхом и ничего не удаляет', () => {
+    const merged = mergeOAuthSettings(
+      { telegram: { token: 'server-secret', chatId: 'old' } },
+      { telegram: { hasToken: true, chatId: 'new' } },
+    );
+    expect(merged).toEqual({ telegram: { token: 'server-secret', chatId: 'new' } });
+  });
+
   it('does not let a client replace the server-managed VK webhook secret', () => {
     const merged = mergeOAuthSettings(
       { vk: { webhookSecret: 'server-generated', groupId: 'old' } },

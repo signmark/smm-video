@@ -14,9 +14,9 @@ import { resolveStoriesPublishOutcome } from '../routes/stories';
 
 describe('AI-126: resolveStoriesPublishOutcome — реальный исход публикации Stories', () => {
   it('все площадки упали => 0 успешных, все в failed (= ответ человеку НЕ успех)', () => {
-    const results = [
+    const results: Array<PromiseSettledResult<{ type: string; success: boolean; error?: unknown }>> = [
       { status: 'fulfilled', value: { type: 'vk', success: false, error: 'token expired' } },
-      { status: 'rejected', reason: new Error('gate down') } as PromiseSettledResult<{ type: string; success: boolean; error?: unknown }>,
+      { status: 'rejected', reason: new Error('gate down') },
       { status: 'fulfilled', value: { type: 'instagram', success: false, error: 'graph api 400' } },
     ];
     const out = resolveStoriesPublishOutcome(results);
@@ -28,8 +28,8 @@ describe('AI-126: resolveStoriesPublishOutcome — реальный исход �
   });
 
   it('часть площадок успешна => они в successful (успех только для реально опубликованных)', () => {
-    const results = [
-      { status: 'fulfilled', value: { type: 'vk', success: true, data: { storyId: 's1' } } },
+    const results: Array<PromiseSettledResult<{ type: string; success: boolean; error?: unknown }>> = [
+      { status: 'fulfilled', value: { type: 'vk', success: true } },
       { status: 'fulfilled', value: { type: 'instagram', success: false, error: 'graph api 400' } },
     ];
     const out = resolveStoriesPublishOutcome(results);

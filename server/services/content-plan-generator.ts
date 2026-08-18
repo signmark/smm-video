@@ -172,7 +172,11 @@ function parseGeminiResponse(text: string): any[] | null {
       const vals = Object.values(p);
       const arr = vals.find(v => Array.isArray(v));
       if (arr) return arr as any[];
-    } catch {}
+    } catch {
+      // AI-65. Молчание намеренное: это одна из нескольких попыток разобрать
+      // ответ модели, и неудача здесь — обычный ход. Значение имеет исход всех
+      // попыток, его разбирает вызывающий по null.
+    }
     return null;
   };
 

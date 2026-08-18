@@ -1,5 +1,5 @@
 import { directusApi } from '../directus';
-import { log } from '../utils/logger';
+import { log, logEvent } from '../utils/logger';
 import axios from 'axios';
 import {
   aggregateCampaignChannelPosts,
@@ -485,7 +485,20 @@ export class AnalyticsService {
 
       let socialSettings = campaign.social_media_settings || {};
       if (typeof socialSettings === 'string') {
-        try { socialSettings = JSON.parse(socialSettings); } catch {}
+        try {
+          socialSettings = JSON.parse(socialSettings);
+        } catch (e: any) {
+          // AI-65. То же место, что и в публикации Stories, только здесь итогом
+          // будет пустая статистика: человек решит, что у него нет охватов, а на
+          // деле их не у кого спросить.
+          logEvent(
+            'campaign.settings_unparsable',
+            { campaignId, reason: e?.message ? String(e.message) : 'unknown' },
+            'warn',
+            'analytics',
+            'Настройки соцсетей кампании не читаются — статистика выйдет пустой',
+          );
+        }
       }
 
       const {

@@ -2,7 +2,7 @@ import axios from 'axios';
 import { globalApiKeysService } from './global-api-keys';
 import { apiKeyService, ApiServiceName } from './api-keys';
 import * as logger from '../utils/logger';
-import { log } from '../utils/logger';
+import { log, logEvent } from '../utils/logger';
 import { geminiDirect } from './gemini-direct';
 import { QwenService } from './qwen';
 import { geminiProxyService } from './gemini-proxy';
@@ -615,7 +615,19 @@ ${websiteContent.substring(0, 6000)}
           const { adminTokenManager } = await import('../services/admin-token-manager');
           const adminToken = await adminTokenManager.getAdminToken();
           if (adminToken) saveToken = adminToken;
-        } catch {}
+        } catch (e: any) {
+          // AI-65. Останется пользовательский токен, а он мог истечь за время
+          // вызова модели — ради этого админский здесь и брали. Тогда разобранные
+          // ключевые слова просто не сохранятся, и человек увидит пустой список
+          // после долгого ожидания.
+          logEvent(
+            'auth.admin_token_unavailable',
+            { operation: 'save-keywords', campaignId, reason: e?.message ? String(e.message) : 'unknown' },
+            'warn',
+            'ai-service',
+            'Админский токен недоступен — ключевые слова сохраняются истекающим пользовательским',
+          );
+        }
         if (!saveToken) {
           log(`[KEYWORDS_ANALYZE] No token available for saving keywords`, 'warn');
         } else {

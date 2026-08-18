@@ -6,7 +6,7 @@
 
 import express from 'express';
 import axios from 'axios';
-import { log } from '../utils/logger';
+import { log, logEvent } from '../utils/logger';
 import { authMiddleware } from '../middleware/auth';
 import { publicationLockManager } from '../services/publication-lock-manager';
 import * as instagramCarouselHandler from './instagram-carousel-webhook';
@@ -112,6 +112,16 @@ async function uploadImageForInstagram(imageUrl: string): Promise<{ url: string;
       return { url, host: 'imgbb' };
     }
   } catch (imgbbError: any) {
+    // AI-65. Дальше пробуется Cloudinary, поэтому падать нельзя. Но если не
+    // сработают оба, человек получит «не удалось загрузить на ImgBB или
+    // Cloudinary» — без единого слова о том, что случилось у каждого.
+    logEvent(
+      'media.upload_failed',
+      { provider: 'imgbb', reason: imgbbError?.message ? String(imgbbError.message) : 'unknown' },
+      'warn',
+      'social-publishing',
+      'Загрузка картинки на ImgBB не удалась — пробуем запасное хранилище',
+    );
   }
 
   // Fallback to Cloudinary
@@ -135,6 +145,15 @@ async function uploadImageForInstagram(imageUrl: string): Promise<{ url: string;
       return { url, host: 'cloudinary' };
     }
   } catch (cloudinaryError: any) {
+    // AI-65. Это последняя попытка: сразу за ней человеку уходит отказ. Причину
+    // отказа он не увидит и без неё, а мы теперь увидим.
+    logEvent(
+      'media.upload_failed',
+      { provider: 'cloudinary', reason: cloudinaryError?.message ? String(cloudinaryError.message) : 'unknown' },
+      'warn',
+      'social-publishing',
+      'Запасное хранилище картинок тоже не приняло файл',
+    );
   }
 
   throw new Error('Не удалось загрузить на ImgBB или Cloudinary');
@@ -609,6 +628,17 @@ router.post('/stories/publish', authMiddleware, async (req, res) => {
                 });
 
               } catch (saveError: any) {
+                // AI-65. Картинка загружена, но ссылка на неё не записана в
+                // материал. Следующая публикация будет готовить её заново, а при
+                // разборе жалобы «почему картинка другая» связать одно с другим
+                // было нечем.
+                logEvent(
+                  'publish.media_writeback_failed',
+                  { contentId, platform: 'instagram', reason: saveError?.message ? String(saveError.message) : 'unknown' },
+                  'warn',
+                  'social-publishing',
+                  'Подготовленная картинка загружена, но ссылка на неё не сохранена',
+                );
               }
             } catch (uploadError: any) {
               webhookPromises.push(Promise.resolve({
@@ -1333,7 +1363,19 @@ router.post('/publish/now', authMiddleware, async (req, res) => {
                 await axios.patch(`${process.env.DIRECTUS_URL}/items/campaign_content/${contentId}`, {
                   social_platforms: { ...freshPlatforms, youtube: { ...(freshPlatforms.youtube || {}), status: 'failed', error: ytErr.message, failedAt: new Date().toISOString() } }
                 }, { headers: { Authorization: `Bearer ${adminToken}` } });
-              } catch {}
+              } catch (e: any) {
+                // AI-65. Публикация не удалась, и записать это человеку тоже не
+                // удалось. Пост остаётся в состоянии «публикуется» навсегда:
+                // человек ждёт, повторной попытки не будет, а отказ уже известен —
+                // просто до него никак не добраться.
+                logEvent(
+                  'publish.status_writeback_failed',
+                  { contentId, platform: 'youtube', reason: e?.message ? String(e.message) : 'unknown' },
+                  'error',
+                  'social-publishing',
+                  'Публикация не удалась, и отметка об этом не записана — человек останется в неведении',
+                );
+              }
               publishResults.push({ platform, success: false, error: ytErr.message });
             }
             await publicationLockManager.releaseLock(contentId, platform);
@@ -2631,7 +2673,18 @@ router.post('/retry-platform', authMiddleware, async (req, res) => {
       await axios.patch(`${directusUrl}/items/campaign_content/${contentId}`, {
         social_platforms: { ...(contentItem.social_platforms || {}), [platform]: { status: 'failed', error: err.message, failedAt: new Date().toISOString() } }
       }, { headers: { Authorization: `Bearer ${adminToken}` } });
-    } catch (_) {}
+    } catch (e: any) {
+      // AI-65. Откат статуса на failed не прошёл. Человеку в ответе отказ уйдёт,
+      // но в списке контента пост так и останется «публикуется», и кнопку
+      // повтора он не увидит.
+      logEvent(
+        'publish.status_writeback_failed',
+        { contentId, platform, reason: e?.message ? String(e.message) : 'unknown' },
+        'error',
+        'social-publishing',
+        'Статус не откачен на «не удалось» — пост останется в состоянии публикации',
+      );
+    }
     return res.status(500).json({ success: false, error: err.message });
   }
 });

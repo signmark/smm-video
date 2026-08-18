@@ -1,4 +1,5 @@
 import { globalApiKeysService } from './global-api-keys';
+import { logEvent } from '../utils/logger';
 
 /**
  * Единый источник «фактической» цены тарифа.
@@ -25,7 +26,18 @@ async function getNum(key: string, fallback: number): Promise<number> {
   try {
     const val = await globalApiKeysService.getGlobalApiKey(key);
     if (val) return Number(val);
-  } catch {}
+  } catch (e: any) {
+    // AI-65. Дальше подставится значение из окружения или зашитое в код. Человеку
+    // покажут цену, и он по ней заплатит — а настроенная владельцем цена при этом
+    // молча не применилась. Расхождение обнаруживалось только при сверке.
+    logEvent(
+      'plan.price_source_unavailable',
+      { operation: 'resolve-price', reason: e?.message ? String(e.message) : 'unknown' },
+      'warn',
+      'plan-pricing',
+      'Настроенная цена не прочитана — показывается запасная',
+    );
+  }
   return Number(process.env[key] ?? process.env[`VITE_${key}`] ?? fallback);
 }
 

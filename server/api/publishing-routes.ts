@@ -9,7 +9,7 @@ import { getPublishScheduler } from '../services/publish-scheduler';
 import { getCanonicalScheduledAt, parseStoredInstant } from '@shared/schedule-time';
 // Определяем тип SocialPlatform локально
 type SocialPlatform = 'instagram' | 'facebook' | 'telegram' | 'vk' | 'youtube';
-import { log } from '../utils/logger';
+import { log, logEvent } from '../utils/logger';
 import { invalidateContentCache } from '../utils/content-cache';
 import { resolvePublishingToken } from '../services/publishing-token';
 import { assertContentBelongsToRequester } from '../services/content-access';
@@ -1254,7 +1254,18 @@ export function registerPublishingRoutes(app: Express): void {
         if (scheduler && typeof (scheduler as any).runNow === 'function') {
           (scheduler as any).runNow();
         }
-      } catch {}
+      } catch (e: any) {
+        // AI-65. Ускорение, а не необходимость: планировщик всё равно возьмёт
+        // запись в очередной проход. Поэтому отладка — человек получит публикацию
+        // позже, но получит.
+        logEvent(
+          'scheduler.run_now_failed',
+          { contentId, reason: e?.message ? String(e.message) : 'unknown' },
+          'debug',
+          'publishing',
+          'Не удалось запустить планировщик немедленно — публикация уйдёт в обычный проход',
+        );
+      }
 
       log(`[retry-failed] Сброшено ${failedPlatforms.length} платформ для ${contentId}`, 'api');
       res.json({ success: true, retried: failedPlatforms.map(([n]) => n) });

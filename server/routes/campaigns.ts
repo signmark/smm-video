@@ -1,7 +1,7 @@
 import { Express, Request, Response } from 'express';
 import { authenticateUser } from '../middleware/user-auth';
 import { directusApi } from '../directus';
-import { log } from '../utils/logger';
+import { log, logEvent } from '../utils/logger';
 import { cleanupText } from '../utils/text';
 import { isUserAdmin } from '../routes-global-api-keys';
 import { webCrawlerAgent } from '../services/web-crawler-agent';
@@ -170,7 +170,18 @@ export function registerCampaignRoutes(app: Express) {
             authToken: token,
           });
           (sessionsResp ?? []).forEach(s => s.campaign_id && activeSessionIds.add(s.campaign_id));
-        } catch (_) {}
+        } catch (e: any) {
+          // AI-65. Список кампаний отдаём в любом случае — без него не откроется
+          // ни один экран. Но с пустым множеством включённый автономный режим
+          // покажется человеку выключенным, и он полезет включать уже включённое.
+          logEvent(
+            'campaign.active_sessions_unreadable',
+            { operation: 'list-campaigns', reason: e?.message ? String(e.message) : 'unknown' },
+            'warn',
+            'campaigns',
+            'Активные автономные сессии не прочитаны — режим покажется выключенным',
+          );
+        }
 
         const campaigns = responseData.map((item: any) => ({
           id: item.id,
@@ -1100,7 +1111,10 @@ ${sampledPosts}
       const rawContent = (result.content || '').trim();
       let styleData: Record<string, string>;
 
-      // Try multiple extraction strategies for JSON from AI response
+      // Try multiple extraction strategies for JSON from AI response.
+      // AI-65. Пустые catch ниже намеренные: это лестница из трёх попыток разбора,
+      // и неудача каждой — обычный ход, а не отказ. Значение имеет только исход
+      // всей лестницы, его разбирает вызывающий по null.
       const extractJson = (text: string): Record<string, string> | null => {
         // Strategy 1: direct parse
         try { return JSON.parse(text); } catch {}

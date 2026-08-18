@@ -6,7 +6,7 @@ import { getPublishScheduler } from '../services/publish-scheduler';
 import { cleanupText } from '../utils/text';
 import { directusCrud } from '../services/directus-crud';
 import { storage } from '../storage';
-import { log } from '../utils/logger';
+import { log, logEvent } from '../utils/logger';
 import { aiService } from '../services/ai-service';
 import { toSafeErrorDetails } from '../utils/safe-error';
 import { substituteSocialNetworks } from '../services/social-prompt';
@@ -804,7 +804,18 @@ export function registerContentRoutes(app: Express) {
             });
           }
         }
-      } catch (_) {}
+      } catch (e: any) {
+        // AI-65. Генерация продолжится на значениях по умолчанию: без общего
+        // указания кампании и без списка подключённых площадок. Человек получит
+        // текст, не похожий на то, что он настраивал, и объяснения этому не было.
+        logEvent(
+          'campaign.settings_unreadable',
+          { operation: 'generate-content', reason: e?.message ? String(e.message) : 'unknown' },
+          'warn',
+          'content',
+          'Настройки кампании не прочитаны — генерация пойдёт на значениях по умолчанию',
+        );
+      }
 
       const resolvedGlobalPrompt = autoSettings.globalPrompt
         ? substituteSocialNetworks(autoSettings.globalPrompt, connectedPlatforms)

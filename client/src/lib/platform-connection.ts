@@ -87,6 +87,21 @@ export function isPlatformConnected(
 }
 
 /**
+ * Подключена ли у кампании хоть одна площадка.
+ *
+ * SM-24: подпись «Соцсети настроены» на странице кампании считалась иначе —
+ * «есть хотя бы одно непустое значение в объекте настроек». Под это правило
+ * попадали и производный флаг hasToken, и остатки вроде groupName, поэтому
+ * после того, как человек стирал настройки, подпись продолжала утверждать
+ * обратное. Правило подключения должно быть одно на всё приложение.
+ */
+export function hasAnyPlatformConnected(rawSettings: unknown): boolean {
+  const settings = parseSocialSettings(rawSettings);
+  if (!settings) return false;
+  return CONNECTABLE_PLATFORMS.some(platform => isPlatformConnected(settings, platform));
+}
+
+/**
  * Карта «платформа → подключена» для панели выбора платформ.
  * `null` означает «настройки ещё не загружены» — вызывающий не должен в этом
  * случае показывать платформы отключёнными, иначе морда соврёт на полсекунды

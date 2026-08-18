@@ -31,6 +31,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { SocialMediaSettings } from "@/components/SocialMediaSettings";
+import { hasAnyPlatformConnected } from "@/lib/platform-connection";
 import AutonomousSettings from "@/components/AutonomousSettings";
 import { TrendAnalysisSettings } from "@/components/TrendAnalysisSettings";
 import { ContentPlanDialog } from "@/components/ContentPlanApproval";
@@ -785,29 +786,19 @@ export default function CampaignDetails() {
           return "Советы настроены";
         })(),
       },
-      socialMedia: {
-        completed: Boolean(
-          campaign?.social_media_settings &&
-          typeof campaign.social_media_settings === "object" &&
-          Object.values(campaign.social_media_settings).some((s: any) => {
-            if (!s || typeof s !== "object") return false;
-            // Считаем настроенным, если есть хотя бы одно непустое значение (токен, ID и т.д.)
-            return Object.values(s).some(
-              (val) => val !== null && val !== "" && val !== undefined,
-            );
-          }),
-        ),
-        label:
-          campaign?.social_media_settings &&
-            Object.values(campaign.social_media_settings).some(
-              (s: any) =>
-                s &&
-                typeof s === "object" &&
-                Object.values(s).some((v) => !!v),
-            )
-            ? "Соцсети настроены"
-            : "Соцсети не настроены",
-      },
+      socialMedia: (() => {
+        // SM-24: «настроено» — это хотя бы одна реально подключённая площадка,
+        // а не любое непустое значение в объекте настроек. По старому правилу
+        // подпись держалась за производный флаг hasToken и за остатки вроде
+        // groupName, поэтому после стирания настроек продолжала утверждать
+        // «Соцсети настроены». Правило подключения — общее с бейджами и с
+        // панелью публикации (lib/platform-connection).
+        const connected = hasAnyPlatformConnected(campaign?.social_media_settings);
+        return {
+          completed: connected,
+          label: connected ? "Соцсети настроены" : "Соцсети не настроены",
+        };
+      })(),
       content: {
         completed: Boolean(campaignContent && campaignContent.length > 0),
         label:

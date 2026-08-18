@@ -4,7 +4,6 @@ import { storage } from '../storage';
 import { directusCrud } from './directus-crud';
 import { publicationLockManager } from './publication-lock-manager';
 import { publicationTracker } from './publication-tracking';
-import { getN8nUrl } from '../utils/n8n-utils';
 import { aiService } from './ai-service';
 import { getContentAggregateTimes, isSameStoredInstant, parseStoredInstant, resolvePublishFinalization } from '@shared/schedule-time';
 import { invalidateContentCache } from '../utils/content-cache';
@@ -988,7 +987,7 @@ export class PublishScheduler {
   }
 
   /**
-   * Публикует контент в Threads напрямую через API (без N8N)
+   * Публикует контент в Threads напрямую через API
    */
   private async publishToThreadsDirect(content: any, save: (p: string, d: Record<string, any>) => Promise<void> = async () => {}): Promise<{ platform: string; success: boolean; error?: string }> {
     try {
@@ -1070,7 +1069,7 @@ export class PublishScheduler {
   }
 
   /**
-   * Публикует контент в Facebook напрямую через API (без N8N)
+   * Публикует контент в Facebook напрямую через API
    */
   private async publishToFacebookDirect(content: any, save: (p: string, d: Record<string, any>) => Promise<void> = async () => {}): Promise<{ platform: string; success: boolean; error?: string }> {
     try {
@@ -1143,7 +1142,7 @@ export class PublishScheduler {
   }
 
   /**
-   * Публикует контент в Telegram напрямую через Bot API (без N8N)
+   * Публикует контент в Telegram напрямую через Bot API
    */
   private async publishToTelegramDirect(content: any, save: (p: string, d: Record<string, any>) => Promise<void> = async () => {}): Promise<{ platform: string; success: boolean; error?: string }> {
     try {
@@ -1188,7 +1187,7 @@ export class PublishScheduler {
   }
 
   /**
-   * Публикует контент ВКонтакте напрямую через VK API (без N8N)
+   * Публикует контент ВКонтакте напрямую через VK API
    */
   private async publishToVkDirect(content: any, save: (p: string, d: Record<string, any>) => Promise<void> = async () => {}): Promise<{ platform: string; success: boolean; error?: string }> {
     try {
@@ -1299,7 +1298,7 @@ export class PublishScheduler {
   }
 
   /**
-   * Публикует контент в Instagram напрямую через Graph API (без N8N)
+   * Публикует контент в Instagram напрямую через Graph API
    */
   private async publishToInstagramDirect(content: any, save: (p: string, d: Record<string, any>) => Promise<void> = async () => {}): Promise<{ platform: string; success: boolean; error?: string }> {
     try {
@@ -1605,7 +1604,7 @@ export class PublishScheduler {
   }
 
   /**
-   * Публикует контент в указанные платформы напрямую (без N8N)
+   * Публикует контент в указанные платформы напрямую
    */
   private async adaptContentForPlatform(text: string, platform: string): Promise<string> {
     const styleGuide = PLATFORM_STYLE[platform];
@@ -1991,135 +1990,6 @@ ${text}
       }
       return { platform: 'youtube', success: false, error: error.message };
     }
-  }
-
-  /**
-   * Публикует контент через N8N webhook
-   */
-  private async publishThroughN8nWebhook(content: any, platform: string) {
-    // Проверяем тип контента для Instagram Stories
-    const isStory = content.content_type === 'story' || 
-                   (content.metadata && (
-                     (typeof content.metadata === 'string' && content.metadata.includes('storyType')) ||
-                     (typeof content.metadata === 'object' && content.metadata.storyType)
-                   ));
-
-    // Маппинг платформ на N8N webhook endpoints
-    const webhookMap: Record<string, string> = {
-      'telegram': 'publish-telegram',
-      'vk': 'publish-vk',
-      'instagram': isStory ? 'publish-stories' : 'publish-instagram', 
-      'facebook': 'publish-facebook',
-      'youtube': 'publish-youtube'
-    };
-
-    const platformString = platform.toLowerCase();
-    const webhookName = webhookMap[platformString] || `publish-${platformString}`;
-    
-    log(`🎬 Планировщик: Контент ${content.id} - тип: ${content.content_type}, является Stories: ${isStory}, webhook: ${webhookName}`, 'scheduler');
-
-    // Формируем URL для N8N webhook (используем центральную функцию)
-    const n8nBaseUrl = getN8nUrl();
-    const isProduction = process.env.NODE_ENV === 'production';
-    log(`${isProduction ? '🏭' : '🔧'} [N8N] ${isProduction ? 'Production' : 'Development'} mode - using: ${n8nBaseUrl}`, 'scheduler', 'debug');
-
-    const baseUrl = n8nBaseUrl.endsWith('/') ? n8nBaseUrl.slice(0, -1) : n8nBaseUrl;
-    const webhookUrl = baseUrl.includes('/webhook') 
-      ? `${baseUrl}/${webhookName}`
-      : `${baseUrl}/webhook/${webhookName}`;
-
-    // Отправляем запрос в N8N для публикации
-    log(`🚀 Sending request to: ${webhookUrl} for content ${content.id}`, 'scheduler', 'debug');
-
-    // Вспомогательная функция: получаем свежие данные и обновляем только нашу платформу
-    const updatePlatformStatus = async (fields: Record<string, any>) => {
-      try {
-        const freshList = await directusCrud.list('campaign_content', {
-          filter: { id: { _eq: content.id } },
-          limit: 1,
-          useAdminToken: true
-        });
-        const freshContent = freshList?.[0];
-        const currentPlatforms = freshContent?.social_platforms || content.social_platforms || {};
-        const existingPlatformData = currentPlatforms[platform] || {};
-
-        // Не перезаписываем если N8N уже успел записать финальный статус
-        if (existingPlatformData.status === 'published') {
-          log(`⏭️ [N8N-SCHEDULER] ${platform} уже published, пропускаем обновление`, 'scheduler', 'debug');
-          return;
-        }
-
-        await directusCrud.update('campaign_content', content.id, {
-          social_platforms: {
-            ...currentPlatforms,
-            [platform]: {
-              ...existingPlatformData,
-              ...fields
-            }
-          }
-        }, { useAdminToken: true });
-      } catch (updateErr: any) {
-        console.error(`[N8N-SCHEDULER] Failed to update ${platform} status for ${content.id}: ${updateErr.message}`);
-      }
-    };
-    
-    // Очищаем Markdown из текста перед тем как n8n прочитает запись из Directus
-    try {
-      const rawText = content.text_content || content.content || '';
-      if (rawText && typeof rawText === 'string') {
-        const cleanText = stripMarkdown(rawText);
-        if (cleanText !== rawText) {
-          await directusCrud.update('campaign_content', content.id, {
-            text_content: cleanText,
-            content: cleanText
-          }, { useAdminToken: true });
-          log(`[MARKDOWN-STRIP] Cleaned markdown for ${content.id} before ${platform} n8n publish`, 'scheduler', 'debug');
-        }
-      }
-    } catch (stripErr: any) {
-      log(`[MARKDOWN-STRIP] Warning: failed to strip markdown for ${content.id}: ${stripErr.message}`, 'scheduler', 'warn');
-    }
-
-    try {
-      const response = await axios.post(webhookUrl, {
-        contentId: content.id
-      }, {
-        timeout: 30000,
-        headers: {
-          'Content-Type': 'application/json'
-        }
-      });
-      log(`✅ Request sent successfully to ${webhookUrl}, status: ${response.status}`, 'scheduler', 'debug');
-
-      // Помечаем платформу как "в процессе публикации через N8N" с меткой времени для таймаута
-      await updatePlatformStatus({ status: 'publishing', updatedAt: new Date().toISOString() });
-    } catch (axiosError: any) {
-      console.error(`[N8N-SCHEDULER] ❌ Request failed to ${webhookUrl} for ${platform} (${content.id}): ${axiosError.message}`);
-      log(`❌ Request failed to ${webhookUrl}: ${axiosError.message}`, 'scheduler', 'error');
-
-      // Сохраняем ошибку в статус платформы
-      await updatePlatformStatus({ status: 'failed', error: axiosError.message });
-      throw axiosError;
-    }
-
-    // Контент успешно отправлен в N8N
-    
-    // Отправляем уведомление в UI. AI-65: молчание здесь верное — контент уже
-    // ушёл в n8n, — но принимается оно теперь один раз, в notifyPublished.
-    const platformNames: Record<string, string> = {
-      'instagram': 'Instagram',
-      'facebook': 'Facebook',
-      'vk': 'ВКонтакте',
-      'telegram': 'Telegram'
-    };
-    const platformName = platformNames[platform.toLowerCase()] || platform;
-    notifyPublished({
-      contentId: content.id,
-      platform,
-      message: `Отправлено в N8N для публикации в ${platformName}`,
-    });
-    
-    return { platform, success: true };
   }
 
   /**

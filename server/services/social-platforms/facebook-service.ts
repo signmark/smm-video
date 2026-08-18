@@ -693,7 +693,7 @@ class FacebookService {
 
   /**
    * Унифицированный метод публикации — аналог threadsService.publishPost.
-   * Используется планировщиком и /api/publish/now для прямой публикации без N8N.
+   * Используется планировщиком и /api/publish/now для прямой публикации.
    */
   async publishPost(
     settings: { token: string; pageId: string; username?: string },

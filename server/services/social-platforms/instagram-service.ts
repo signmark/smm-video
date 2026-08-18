@@ -1,6 +1,6 @@
 /**
  * Instagram Direct Publishing Service
- * Публикует фото/текст через Instagram Graph API без N8N
+ * Публикует фото/текст через Instagram Graph API
  * Требует: accessToken (Meta user token), businessAccountId (IG Business Account ID)
  */
 

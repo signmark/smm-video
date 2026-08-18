@@ -5,7 +5,6 @@
  * - ThreadsService: sanitizeThreadsText, publishPost (text/image/video), validateToken
  * - AiService: generateContent (Gemini/DeepSeek/Qwen), fallback при неизвестном сервисе
  * - PublishScheduler.publishToThreadsDirect: campaign_id как объект vs строка, ошибки HTTP, отсутствие настроек
- * - PublishScheduler.publishThroughN8nWebhook: VK, Instagram (post vs story), Facebook, Telegram, YouTube
  * - PublishScheduler.publishContentToPlatforms: параллельная публикация в несколько платформ
  */
 
@@ -72,10 +71,6 @@ vi.mock('../services/api-keys', () => ({
   }
 }));
 
-vi.mock('../utils/n8n-utils', () => ({
-  getN8nUrl: vi.fn().mockReturnValue('https://n8n.example.com')
-}));
-
 vi.mock('../services/gemini-proxy', () => ({
   geminiProxyService: {
     setApiKey: vi.fn(),
@@ -119,7 +114,6 @@ import { globalApiKeysService } from '../services/global-api-keys';
 import { apiKeyService } from '../services/api-keys';
 import { directusCrud } from '../services/directus-crud';
 import { getPublishScheduler } from '../services/publish-scheduler';
-import { getN8nUrl } from '../utils/n8n-utils';
 import { publicationTracker } from '../services/publication-tracking';
 import { publicationLockManager } from '../services/publication-lock-manager';
 
@@ -129,7 +123,6 @@ beforeEach(() => {
   vi.resetAllMocks();
   // Восстанавливаем дефолты, которые нужны в большинстве тестов
   vi.mocked(directusCrud.update).mockResolvedValue({} as any);
-  vi.mocked(getN8nUrl).mockReturnValue('https://n8n.example.com');
   // publicationTracker и publicationLockManager должны разрешать публикацию по умолчанию
   vi.mocked(publicationTracker.canPublish).mockResolvedValue(true);
   vi.mocked(publicationTracker.markAsProcessed).mockResolvedValue(true as any);
@@ -839,114 +832,6 @@ describe('PublishScheduler — publishToThreadsDirect', () => {
 });
 
 // ══════════════════════════════════════════════════════════════════════════════
-// 4. PublishScheduler — publishThroughN8nWebhook
-// ══════════════════════════════════════════════════════════════════════════════
-describe('PublishScheduler — publishThroughN8nWebhook', () => {
-  const scheduler = getPublishScheduler();
-
-  const baseContent = {
-    id: 'content-n8n-1',
-    content_type: 'post',
-    metadata: null
-  };
-
-  beforeEach(() => {
-    process.env.NODE_ENV = 'development';
-    vi.mocked(getN8nUrl).mockReturnValue('https://n8n.example.com');
-  });
-
-  const platforms = [
-    { platform: 'vk', webhook: 'publish-vk' },
-    { platform: 'telegram', webhook: 'publish-telegram' },
-    { platform: 'facebook', webhook: 'publish-facebook' },
-    { platform: 'instagram', webhook: 'publish-instagram' },
-  ];
-
-  platforms.forEach(({ platform, webhook }) => {
-    it(`отправляет POST на webhook ${webhook} для платформы ${platform}`, async () => {
-      vi.mocked(axios.post).mockResolvedValueOnce({ status: 200, data: {} });
-
-      // @ts-ignore
-      const result = await scheduler.publishThroughN8nWebhook(baseContent, platform);
-
-      expect(result.success).toBe(true);
-      expect(result.platform).toBe(platform);
-
-      const [url, body] = vi.mocked(axios.post).mock.calls[0];
-      expect(url as string).toContain(webhook);
-      expect((body as any).contentId).toBe('content-n8n-1');
-    });
-  });
-
-  it('Instagram Story с content_type=story → webhook publish-stories', async () => {
-    vi.mocked(axios.post).mockResolvedValueOnce({ status: 200, data: {} });
-
-    // @ts-ignore
-    await scheduler.publishThroughN8nWebhook({ ...baseContent, content_type: 'story' }, 'instagram');
-
-    const [url] = vi.mocked(axios.post).mock.calls[0];
-    expect(url as string).toContain('publish-stories');
-  });
-
-  it('Instagram Story через metadata.storyType → webhook publish-stories', async () => {
-    vi.mocked(axios.post).mockResolvedValueOnce({ status: 200, data: {} });
-
-    // @ts-ignore
-    await scheduler.publishThroughN8nWebhook(
-      { ...baseContent, content_type: 'post', metadata: { storyType: 'image' } },
-      'instagram'
-    );
-
-    const [url] = vi.mocked(axios.post).mock.calls[0];
-    expect(url as string).toContain('publish-stories');
-  });
-
-  it('URL формируется корректно для N8N без /webhook в base URL', async () => {
-    vi.mocked(getN8nUrl).mockReturnValue('https://custom-n8n.example.com');
-    vi.mocked(axios.post).mockResolvedValueOnce({ status: 200, data: {} });
-
-    // @ts-ignore
-    await scheduler.publishThroughN8nWebhook(baseContent, 'vk');
-
-    const [url] = vi.mocked(axios.post).mock.calls[0];
-    expect(url as string).toBe('https://custom-n8n.example.com/webhook/publish-vk');
-  });
-
-  it('URL формируется корректно когда N8N base уже содержит /webhook', async () => {
-    vi.mocked(getN8nUrl).mockReturnValue('https://n8n.example.com/webhook');
-    vi.mocked(axios.post).mockResolvedValueOnce({ status: 200, data: {} });
-
-    // @ts-ignore
-    await scheduler.publishThroughN8nWebhook(baseContent, 'telegram');
-
-    const [url] = vi.mocked(axios.post).mock.calls[0];
-    expect(url as string).toBe('https://n8n.example.com/webhook/publish-telegram');
-  });
-
-  it('бросает ошибку при HTTP 500 от N8N', async () => {
-    vi.mocked(axios.post).mockRejectedValueOnce(
-      Object.assign(new Error('Internal Server Error'), {
-        response: { status: 500, data: {} }
-      })
-    );
-
-    // @ts-ignore
-    await expect(scheduler.publishThroughN8nWebhook(baseContent, 'vk'))
-      .rejects.toThrow('Internal Server Error');
-  });
-
-  it('передаёт timeout 30000ms в запрос к N8N', async () => {
-    vi.mocked(axios.post).mockResolvedValueOnce({ status: 200, data: {} });
-
-    // @ts-ignore
-    await scheduler.publishThroughN8nWebhook(baseContent, 'vk');
-
-    const [, , config] = vi.mocked(axios.post).mock.calls[0];
-    expect((config as any).timeout).toBe(30000);
-  });
-});
-
-// ══════════════════════════════════════════════════════════════════════════════
 // 5. PublishScheduler — publishContentToPlatforms (параллельная публикация)
 // Метод возвращает void — тестируем через spy на внутренние методы
 // ══════════════════════════════════════════════════════════════════════════════
@@ -970,7 +855,6 @@ describe('PublishScheduler — publishContentToPlatforms', () => {
     process.env.DIRECTUS_URL = 'http://directus.test';
     process.env.DIRECTUS_TOKEN = 'admin-token';
     process.env.NODE_ENV = 'development';
-    vi.mocked(getN8nUrl).mockReturnValue('https://n8n.example.com');
   });
 
   it('Threads вызывается через publishToThreadsDirect, VK — через publishToVkDirect', async () => {
@@ -1031,7 +915,7 @@ describe('PublishScheduler — publishContentToPlatforms', () => {
 
   it('после публикации вызывается updateContentStatus', async () => {
     // @ts-ignore
-    vi.spyOn(scheduler, 'publishThroughN8nWebhook')
+    vi.spyOn(scheduler, 'publishToVkDirect')
       .mockResolvedValue({ platform: 'vk', success: true });
     // @ts-ignore
     const spyUpdate = vi.spyOn(scheduler, 'updateContentStatus').mockResolvedValue(undefined);
@@ -1049,7 +933,7 @@ describe('PublishScheduler — publishContentToPlatforms', () => {
     vi.spyOn(scheduler, 'publishToThreadsDirect')
       .mockResolvedValue({ platform: 'threads', success: true });
     // @ts-ignore
-    vi.spyOn(scheduler, 'publishThroughN8nWebhook')
+    vi.spyOn(scheduler, 'publishToVkDirect')
       .mockResolvedValue({ platform: 'vk', success: true });
     // @ts-ignore
     vi.spyOn(scheduler, 'updateContentStatus').mockResolvedValue(undefined);

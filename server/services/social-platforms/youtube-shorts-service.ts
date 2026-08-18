@@ -2,7 +2,7 @@
  * YouTube Shorts Direct Publishing Service
  *
  * Прямая загрузка коротких видео как YouTube Shorts через YouTube Data API v3
- * без N8N, с поддержкой refresh token.
+ *, с поддержкой refresh token.
  */
 
 import axios from 'axios';

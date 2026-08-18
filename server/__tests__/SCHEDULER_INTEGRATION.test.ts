@@ -76,14 +76,14 @@ describe('Integration: PublishScheduler Protection & Workflow', () => {
 
     await scheduler.checkScheduledContent();
 
-    // Axios should NOT be called for n8n webhook
+    // Наружу не должно уйти ни одного запроса
     expect(axios.post).not.toHaveBeenCalled();
   });
 
   /**
    * INTEGRATION: "Scheduler direct publish flow"
    * Проверяем, что планировщик правильно определяет прошедшее время и вызывает
-   * publishToTelegramDirect (все платформы теперь публикуются напрямую, без N8N).
+   * publishToTelegramDirect — все площадки публикуются напрямую.
    */
   it('should trigger direct publish if scheduled time has passed', async () => {
     const pastDate = new Date(Date.now() - 10000).toISOString();
@@ -99,7 +99,7 @@ describe('Integration: PublishScheduler Protection & Workflow', () => {
       .mockResolvedValueOnce(mockContent)  // checkScheduledContent list
       .mockResolvedValueOnce(mockContent); // updateContentStatus list
 
-    // Мокируем publishToTelegramDirect — Telegram теперь публикуется напрямую без N8N
+    // Мокируем publishToTelegramDirect — Telegram публикуется напрямую
     // @ts-ignore
     const spyTelegram = vi.spyOn(scheduler, 'publishToTelegramDirect')
       .mockResolvedValue({ platform: 'telegram', success: true });

@@ -225,8 +225,8 @@ describe('Instagram: публикация → проверка → удален�
 
 // ─── YouTube ──────────────────────────────────────────────────────────────────
 
-describe('YouTube: публикация через N8N', () => {
-  it('отправляет запрос в N8N (fire-and-forget) и возвращает success=true', { timeout: TIMEOUT_MS }, async () => {
+describe('YouTube: публикация', () => {
+  it('запрос уходит и возвращает success=true', { timeout: TIMEOUT_MS }, async () => {
     const { YouTubeService } = await import('../services/social-platforms/youtube-service');
     const youtubeService = new YouTubeService();
 
@@ -236,7 +236,7 @@ describe('YouTube: публикация через N8N', () => {
       return;
     }
 
-    // YouTube публикация — fire-and-forget через N8N, возвращает success сразу
+    // YouTube публикация — fire-and-forget, возвращает success сразу
     const result = await youtubeService.publishContent(
       {
         id: 'test-content-id',
@@ -250,9 +250,9 @@ describe('YouTube: публикация через N8N', () => {
       'test-user-id'
     );
 
-    // N8N может быть недоступен, но success=true означает что запрос отправлен
+    // Площадка может быть недоступна, но success=true означает что запрос отправлен
     expect(result).toHaveProperty('success');
-    console.log(`  ✅ YouTube N8N запрос отправлен: success=${result.success}`);
+    console.log(`  ✅ YouTube: запрос отправлен: success=${result.success}`);
     // Удаление видео через API требует отдельного OAuth flow — вне scope этих тестов
     console.log(`  ℹ️  YouTube: удаление через API не реализовано (требует OAuth)`);
   });

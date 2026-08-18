@@ -2286,7 +2286,7 @@ export const TOOL_IMPLEMENTATIONS = {
   async collectTrends(params: any, request: AIToolRequest) {
     try {
       const { collectTrendsForCampaign } = await import('./trend-collector');
-      console.log('[COLLECT-TRENDS] 🚀 Прямой сбор трендов без n8n для кампании:', params.campaignId);
+      console.log('[COLLECT-TRENDS] 🚀 Прямой сбор трендов для кампании:', params.campaignId);
 
       const result = await collectTrendsForCampaign({
         campaignId: params.campaignId,

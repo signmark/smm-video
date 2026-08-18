@@ -27,7 +27,6 @@ describe('Health Route', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     process.env.BEGET_S3_BUCKET = process.env.BEGET_S3_BUCKET || 'test-bucket';
-    process.env.N8N_URL = process.env.N8N_URL || 'https://n8n.test.example';
   });
 
   it('должен возвращать 200 и status ok когда все сервисы healthy', async () => {
@@ -42,7 +41,6 @@ describe('Health Route', () => {
     expect(response.body.timestamp).toBeDefined();
     expect(response.body.services.directus).toEqual({ status: 'healthy' });
     expect(response.body.services.s3).toEqual({ status: 'healthy' });
-    expect(response.body.services.n8n).toEqual({ status: 'removed' });
     expect(response.body.duration_ms).toBeGreaterThanOrEqual(0);
   });
 
@@ -79,13 +77,15 @@ describe('Health Route', () => {
     expect(response.body.services.s3).toEqual({ status: 'unreachable' });
   });
 
-  it('не должен проверять удалённый n8n-сервис', async () => {
+  it('не ходит наружу за n8n и не упоминает его в ответе', async () => {
+    // Раньше проверка отвечала полем n8n со статусом «removed» — то есть всё ещё
+    // рассказывала про сервис, которого в продукте нет. Теперь его нет и в ответе.
     vi.mocked(directusCrud.list).mockResolvedValue([]);
     vi.mocked(axios.head).mockResolvedValue({ status: 200 });
 
     const response = await request(app).get('/api/health');
 
-    expect(response.body.services.n8n).toEqual({ status: 'removed' });
+    expect(response.body.services).not.toHaveProperty('n8n');
     expect(axios.get).not.toHaveBeenCalled();
   });
 

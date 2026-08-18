@@ -627,7 +627,7 @@ export function registerPublishingRoutes(app: Express): void {
                 }
               }
             } else {
-              // Обычная публикация через N8N для остальных платформ
+              // Остальные платформы — прямая публикация через сервис площадки
               result = await socialPublishingService.publishToPlatform(content, platform, campaign, updateToken || activeToken || undefined);
             }
             

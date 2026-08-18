@@ -297,7 +297,7 @@ router.post('/stories/publish', authMiddleware, async (req, res) => {
       const webhookPromises: Promise<any>[] = [];
 
       for (const platform of selectedPlatforms) {
-        // VK Stories - прямая публикация через сервис (без n8n)
+        // VK Stories - прямая публикация через сервис
         if (platform === 'vk') {
 
           webhookPromises.push(
@@ -356,367 +356,6 @@ router.post('/stories/publish', authMiddleware, async (req, res) => {
         webhookPromises.push(Promise.resolve({ platform, success: false, error: `Платформа ${platform} не поддерживает Stories` }));
         continue;
 
-        // Устаревший код (недостижим после continue выше)
-        const n8nUrl = '';
-        let webhookUrl = '';
-
-        if (platform === 'instagram') {
-          webhookUrl = `${n8nUrl}/webhook/publish-stories`;
-
-          log('[PUBLISH] Определяем тип медиа для Instagram:', {
-            useGeneratedVideo,
-            generatedVideoUrl: generatedVideoUrl ? 'есть' : 'нет',
-            generatedImageUrl: generatedImageUrl ? 'есть' : 'нет',
-            storyMediaType: storyContent.mediaType,
-            storyVideoUrl: storyContent.video_url ? 'есть' : 'нет',
-            storyBackgroundVideoUrl: storyContent.backgroundVideoUrl ? 'есть' : 'нет',
-            storyImageUrl: storyContent.image_url ? 'есть' : 'нет'
-          });
-
-          // Определяем тип медиа: видео или изображение
-          // Проверяем generatedVideoUrl из запроса (приоритет)
-          // Затем проверяем поля storyContent
-          // Также проверяем additional_media для сгенерированного видео
-          let videoUrl = generatedVideoUrl;
-          let imageUrl = generatedImageUrl || storyContent.image_url;
-
-          // Если нет generatedVideoUrl, ищем в storyContent
-          // ВАЖНО: video_url в storyContent - это главный признак видео!
-          if (!videoUrl) {
-            // Приоритет: video_url из storyContent (главный признак)
-            videoUrl = storyContent.video_url ||
-              storyContent.backgroundVideoUrl ||
-              (storyContent.content && typeof storyContent.content === 'object' && storyContent.content.videoUrl);
-
-            // Проверяем additional_media для сгенерированного видео
-            if (!videoUrl && storyContent.additional_media) {
-              try {
-                const additionalMedia = typeof storyContent.additional_media === 'string'
-                  ? JSON.parse(storyContent.additional_media)
-                  : storyContent.additional_media;
-
-                if (Array.isArray(additionalMedia)) {
-                  const generatedVideo = additionalMedia.find((item: any) =>
-                    item.type === 'generated_video' || item.type === 'instagram_ready_video'
-                  );
-                  if (generatedVideo?.url) {
-                    videoUrl = generatedVideo.url;
-                    log('[PUBLISH] Найдено видео в additional_media:', generatedVideo.url);
-                  }
-                }
-              } catch (e) {
-                log.warn('[PUBLISH] Ошибка парсинга additional_media:', e);
-              }
-            }
-          }
-
-          // ВАЖНО: Если video_url заполнено в storyContent, но videoUrl еще не установлен - устанавливаем его
-          if (storyContent.video_url && !videoUrl) {
-            videoUrl = storyContent.video_url;
-            log('[PUBLISH] Устанавливаем videoUrl из storyContent.video_url:', videoUrl);
-          }
-
-          // Определяем тип медиа
-          // ВАЖНО: video_url и image_url взаимоисключающие!
-          // Если video_url заполнено - это видео
-          // Если image_url заполнено - это изображение
-          const hasVideoUrl = !!storyContent.video_url;
-          const hasImageUrl = !!storyContent.image_url;
-
-          // Простая логика: если есть video_url - это видео, иначе проверяем другие признаки
-          const isVideo = hasVideoUrl ||  // Главный признак - наличие video_url
-            (useGeneratedVideo && !hasImageUrl) ||
-            (!!generatedVideoUrl && !hasImageUrl) ||
-            (videoUrl && !hasImageUrl && (
-              storyContent.mediaType === 'video' ||
-              (storyContent.content && typeof storyContent.content === 'object' && storyContent.content.mediaType === 'video') ||
-              storyContent.backgroundVideoUrl
-            ));
-
-          log('[PUBLISH] Проверка полей контента:', {
-            hasVideoUrl,
-            hasImageUrl,
-            isVideo,
-            videoUrl: videoUrl ? 'есть' : 'нет',
-            imageUrl: imageUrl ? 'есть' : 'нет'
-          });
-
-          // Обработка видео
-          // ВАЖНО: Если есть generatedVideoUrl или useGeneratedVideo - это точно видео
-          // Приоритет: useGeneratedVideo/generatedVideoUrl > isVideo проверка
-          const shouldPublishVideo = (useGeneratedVideo || generatedVideoUrl) || (isVideo && videoUrl);
-
-          // Если есть useGeneratedVideo или generatedVideoUrl - обязательно публикуем как видео
-          if (shouldPublishVideo) {
-            // ШАГ 1: Определяем videoUrl для сохранения и публикации
-            // Если generatedVideoUrl не передан, но есть useGeneratedVideo, ищем в additional_media
-            let videoUrlToSave = generatedVideoUrl;
-            if (!videoUrlToSave && useGeneratedVideo && storyContent.additional_media) {
-              try {
-                const additionalMedia = typeof storyContent.additional_media === 'string'
-                  ? JSON.parse(storyContent.additional_media)
-                  : storyContent.additional_media;
-
-                if (Array.isArray(additionalMedia)) {
-                  const generatedVideo = additionalMedia.find((item: any) =>
-                    item.type === 'generated_video' || item.type === 'instagram_ready_video'
-                  );
-                  if (generatedVideo?.url) {
-                    videoUrlToSave = generatedVideo.url;
-                    log('[PUBLISH] Найден generatedVideoUrl в additional_media:', videoUrlToSave);
-                  }
-                }
-              } catch (e) {
-                log.warn('[PUBLISH] Ошибка поиска видео в additional_media:', e);
-              }
-            }
-
-            // Если videoUrlToSave не найден, используем videoUrl из других источников
-            if (!videoUrlToSave) {
-              videoUrlToSave = videoUrl;
-            }
-
-            log('[PUBLISH] Публикуем видео Stories в Instagram:', {
-              useGeneratedVideo,
-              generatedVideoUrl: generatedVideoUrl || 'нет',
-              videoUrl: videoUrl || 'нет',
-              videoUrlToSave: videoUrlToSave || 'нет',
-              reason: useGeneratedVideo || generatedVideoUrl ? 'useGeneratedVideo/generatedVideoUrl' : 'isVideo check'
-            });
-
-            // ШАГ 2: Сохраняем generatedVideoUrl в additional_media перед публикацией
-            if (videoUrlToSave) {
-              try {
-                // Получаем текущий additional_media
-                let currentAdditionalMedia: any[] = [];
-                if (storyContent.additional_media) {
-                  try {
-                    currentAdditionalMedia = typeof storyContent.additional_media === 'string'
-                      ? JSON.parse(storyContent.additional_media)
-                      : storyContent.additional_media;
-                    if (!Array.isArray(currentAdditionalMedia)) {
-                      currentAdditionalMedia = [];
-                    }
-                  } catch (e) {
-                    currentAdditionalMedia = [];
-                  }
-                }
-
-                // Проверяем, нет ли уже этого видео в additional_media
-                const existingVideo = currentAdditionalMedia.find((item: any) =>
-                  item.type === 'generated_video' && item.url === videoUrlToSave
-                );
-
-                // Если видео еще не сохранено, добавляем его
-                if (!existingVideo) {
-                  currentAdditionalMedia.push({
-                    type: 'generated_video',
-                    url: videoUrlToSave,
-                    generated_at: new Date().toISOString(),
-                    purpose: 'stories_publication',
-                    platform: 'instagram'
-                  });
-
-                  // Сохраняем в Directus
-                  await axios.patch(`${directusUrl}/items/campaign_content/${contentId}`, {
-                    additional_media: JSON.stringify(currentAdditionalMedia),
-                    updated_at: new Date().toISOString()
-                  }, {
-                    headers: { 'Authorization': `Bearer ${userToken}` }
-                  });
-
-                  log('[PUBLISH] generatedVideoUrl сохранен в additional_media:', videoUrlToSave);
-
-                  // Обновляем videoUrl из сохраненных данных
-                  videoUrl = videoUrlToSave;
-                } else {
-                  log('[PUBLISH] generatedVideoUrl уже есть в additional_media');
-                  // Используем существующий URL
-                  videoUrl = existingVideo.url;
-                }
-              } catch (saveError: any) {
-                log.warn(`[PUBLISH] Не удалось сохранить generatedVideoUrl в additional_media: ${saveError?.message}`, 'publish');
-                // Продолжаем публикацию даже если не удалось сохранить
-              }
-            }
-
-            // ШАГ 3: Используем videoUrlToSave для публикации
-            const finalVideoUrl = videoUrlToSave;
-
-            log('[PUBLISH] Финальный videoUrl для публикации:', finalVideoUrl ? 'есть' : 'нет', finalVideoUrl);
-
-            if (!finalVideoUrl) {
-              log.warn('[PUBLISH] URL видео не найден для публикации, пропускаем');
-              webhookPromises.push(Promise.resolve({
-                platform: 'instagram',
-                success: false,
-                error: 'URL видео не найден для публикации'
-              }));
-              continue;
-            }
-
-            log('[PUBLISH] Видео сохранено в additional_media, отправляем contentId в workflow:', contentId);
-
-            // ШАГ 4: Отправляем только contentId в workflow
-            // Workflow сам получит данные контента из Directus
-            // ВАЖНО: Workflow должен запрашивать поле 'additional_media' при получении контента из Directus
-            // для доступа к сгенерированному видео (type: 'generated_video')
-            const videoPayload = {
-              contentId: contentId
-            };
-
-            webhookPromises.push(
-              axios.post(webhookUrl.replace(/([^:]\/)\/+/g, "$1"), videoPayload, {
-                timeout: 60000, // Увеличиваем таймаут для видео
-                headers: { 'Content-Type': 'application/json' }
-              }).then(response => {
-                return {
-                  platform: 'instagram',
-                  success: true,
-                  status: response.status,
-                  data: response.data || { status: 'accepted' }
-                };
-              }).catch(error => {
-                return {
-                  platform: 'instagram',
-                  success: false,
-                  error: error.message,
-                  details: error.response?.data
-                };
-              })
-            );
-            continue;
-          }
-
-          // Обработка изображения (существующая логика)
-          let imageUrlForInstagram = imageUrl;
-
-          if (!imageUrlForInstagram) {
-            webhookPromises.push(Promise.resolve({
-              platform: 'instagram',
-              success: false,
-              error: 'Нет медиа для публикации (ни видео, ни изображения)'
-            }));
-            continue;
-          }
-
-          // Если изображение уже на ImgBB (generatedImageUrl), используем его напрямую
-          // Иначе загружаем на ImgBB/Cloudinary
-          let finalImageUrl = imageUrlForInstagram;
-
-          if (!generatedImageUrl) {
-            // Загружаем на ImgBB/Cloudinary только если нет готового URL
-            try {
-              const uploadResult = await uploadImageForInstagram(imageUrlForInstagram);
-              finalImageUrl = uploadResult.url;
-
-              // Сохраняем URL в additional_media контента
-              try {
-                const additionalMedia = [{
-                  type: 'instagram_ready_image',
-                  url: uploadResult.url,
-                  host: uploadResult.host,
-                  generated_at: new Date().toISOString(),
-                  purpose: 'instagram_stories'
-                }];
-
-                await axios.patch(`${directusUrl}/items/campaign_content/${contentId}`, {
-                  additional_media: JSON.stringify(additionalMedia),
-                  updated_at: new Date().toISOString()
-                }, {
-                  headers: { 'Authorization': `Bearer ${userToken}` }
-                });
-
-              } catch (saveError: any) {
-                // AI-65. Картинка загружена, но ссылка на неё не записана в
-                // материал. Следующая публикация будет готовить её заново, а при
-                // разборе жалобы «почему картинка другая» связать одно с другим
-                // было нечем.
-                logEvent(
-                  'publish.media_writeback_failed',
-                  { contentId, platform: 'instagram', reason: saveError?.message ? String(saveError.message) : 'unknown' },
-                  'warn',
-                  'social-publishing',
-                  'Подготовленная картинка загружена, но ссылка на неё не сохранена',
-                );
-              }
-            } catch (uploadError: any) {
-              webhookPromises.push(Promise.resolve({
-                platform: 'instagram',
-                success: false,
-                error: `Ошибка загрузки изображения: ${uploadError?.message}`
-              }));
-              continue;
-            }
-          }
-
-          // Для изображений тоже отправляем только contentId
-          // Workflow сам получит данные контента из Directus, включая additional_media
-          webhookPromises.push(
-            axios.post(webhookUrl.replace(/([^:]\/)\/+/g, "$1"), {
-              contentId: contentId
-            }, {
-              timeout: 30000,
-              headers: { 'Content-Type': 'application/json' }
-            }).then(response => {
-              return {
-                platform: 'instagram',
-                success: true,
-                status: response.status,
-                data: response.data || { status: 'accepted' }
-              };
-            }).catch(error => {
-              return {
-                platform: 'instagram',
-                success: false,
-                error: error.message
-              };
-            })
-          );
-          continue;
-
-        } else if (platform === 'telegram') {
-          webhookUrl = `${n8nUrl}/webhook/publish-telegram-stories`;
-        }
-
-        // Убираем двойные слеши из URL
-        webhookUrl = webhookUrl.replace(/([^:]\/)\/+/g, "$1");
-
-        if (webhookUrl) {
-
-          webhookPromises.push(
-            axios.post(webhookUrl, {
-              contentId: contentId
-            }, {
-              timeout: 30000,
-              headers: {
-                'Content-Type': 'application/json'
-              }
-            }).then(response => {
-
-              let responseData = null;
-              try {
-                responseData = response.data || { status: 'accepted' };
-              } catch (parseError) {
-                responseData = { status: 'accepted' };
-              }
-
-              return {
-                platform,
-                success: true,
-                status: response.status,
-                data: responseData
-              };
-            }).catch(error => {
-              return {
-                platform,
-                success: false,
-                error: error.message,
-                status: error.response?.status
-              };
-            })
-          );
-        }
       }
 
       const results = await Promise.all(webhookPromises);
@@ -957,7 +596,7 @@ router.post('/publish/now', authMiddleware, async (req, res) => {
 
           log(`[Social Publishing] Запускаем публикацию контента ${contentId} в ${platform}`);
 
-          // Threads публикуется напрямую через API (без N8N)
+          // Threads публикуется напрямую через API
           if (platform === 'threads') {
             log(`[Social Publishing] Threads — прямая публикация через API`);
             try {
@@ -1060,7 +699,7 @@ router.post('/publish/now', authMiddleware, async (req, res) => {
             continue;
           }
 
-          // Facebook публикуется напрямую через API (без N8N)
+          // Facebook публикуется напрямую через API
           if (platform === 'facebook') {
             log(`[Social Publishing] Facebook — прямая публикация через API`);
             try {
@@ -1146,7 +785,7 @@ router.post('/publish/now', authMiddleware, async (req, res) => {
             continue;
           }
 
-          // Telegram публикуется напрямую (без N8N)
+          // Telegram публикуется напрямую
           if (platform === 'telegram') {
             log(`[Social Publishing] Telegram — прямая публикация через Bot API`);
             try {
@@ -1196,7 +835,7 @@ router.post('/publish/now', authMiddleware, async (req, res) => {
             continue;
           }
 
-          // VK публикуется напрямую (без N8N)
+          // VK публикуется напрямую
           if (platform === 'vk') {
             log(`[Social Publishing] VK — прямая публикация через VK API`);
             try {
@@ -1273,7 +912,7 @@ router.post('/publish/now', authMiddleware, async (req, res) => {
             continue;
           }
 
-          // Instagram публикуется напрямую (без N8N)
+          // Instagram публикуется напрямую
           if (platform === 'instagram') {
             log(`[Social Publishing] Instagram — прямая публикация через Graph API`);
             try {
@@ -1328,7 +967,7 @@ router.post('/publish/now', authMiddleware, async (req, res) => {
             continue;
           }
 
-          // YouTube публикуется напрямую (без N8N)
+          // YouTube публикуется напрямую
           if (platform === 'youtube') {
             log(`[Social Publishing] YouTube — прямая публикация через YouTube Data API v3`);
             try {
@@ -1639,276 +1278,6 @@ router.post('/publish', authMiddleware, async (req, res) => {
     });
   }
 });
-
-/**
- * Публикует контент через n8n вебхук
- * @param contentId ID контента для публикации
- * @param platform Платформа для публикации
- * @param req Исходный запрос
- * @param res Исходный ответ
- */
-async function publishViaN8n(contentId: string, platform: string, req: express.Request, res: express.Response) {
-  try {
-    log(`[Social Publishing] Публикация контента ${contentId} в ${platform} через n8n вебхук`);
-
-    // Маппинг платформ на соответствующие n8n вебхуки
-    // YouTube убран — публикуется напрямую через YouTube Data API v3
-    const webhookMap: Record<string, string> = {
-      'telegram': 'publish-telegram',
-      'vk': 'publish-vk',
-      'instagram': 'publish-instagram',
-      'facebook': 'publish-facebook'
-    };
-
-    const webhookName = webhookMap[platform];
-    if (!webhookName) {
-      return res.status(400).json({
-        success: false,
-        error: `Платформа ${platform} не имеет настроенного вебхука`
-      });
-    }
-
-    // Формируем URL вебхука
-    // ИСПРАВЛЕНО: Используем централизованную функцию getN8nUrl()
-    const { getN8nUrl } = await import('../utils/n8n-utils');
-    let baseUrl = getN8nUrl();
-
-    // Логируем какой URL используется
-    log(`[Social Publishing] Используемый N8N URL: ${baseUrl}`);
-    log(`[Social Publishing] Используемый базовый URL для n8n: ${baseUrl}`);
-    log(`[Social Publishing] Реальный contentId отправляемый в n8n: ${contentId}`);
-
-    // Всегда добавляем /webhook если его нет
-    if (!baseUrl.includes("/webhook")) {
-      // Если baseUrl заканчивается на /, убираем его перед добавлением /webhook
-      if (baseUrl.endsWith("/")) {
-        baseUrl = baseUrl.slice(0, -1);
-      }
-      baseUrl = `${baseUrl}/webhook`;
-    }
-    // Убираем возможный слеш в конце базового URL
-    const baseUrlWithoutTrailingSlash = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
-    const webhookUrl = `${baseUrlWithoutTrailingSlash}/${webhookName}`;
-
-    // Логируем URL для отладки
-    log(`[Social Publishing] Сформирован URL для n8n webhook: ${webhookUrl}`);
-    const webhookPayload = {
-      contentId
-    };
-
-    const response = await axios.post(webhookUrl, webhookPayload);
-
-    log(`[Social Publishing] Отправлены данные в n8n вебхук: contentId=${contentId}, platform=${platform}`);
-    log(`[Social Publishing] Данные извлекаются из Directus по contentId`);
-
-    log(`[Social Publishing] Ответ от n8n вебхука: ${JSON.stringify(response.data)}`);
-
-    // Обновляем статус платформы после успешной публикации
-    try {
-      log(`[Social Publishing] Обновление статуса платформы ${platform} для контента ${contentId} на "published"`);
-
-      // Получаем токен администратора
-      const directusAuthManager = await import('../services/directus-auth-manager').then(m => m.directusAuthManager);
-      let adminToken = process.env.DIRECTUS_STATIC_TOKEN || process.env.DIRECTUS_SERVICE_TOKEN || process.env.DIRECTUS_STATIC_TOKEN;
-      const sessions = directusAuthManager.getAllActiveSessions();
-
-      if (sessions.length > 0) {
-        adminToken = sessions[0].token;
-      }
-
-      // Получаем текущий контент. Фоновая задача, сессии пользователя нет —
-      // служебное чтение названо явно.
-      const content = await storage.getCampaignContentByIdPrivileged(contentId);
-
-      if (!content || !content.socialPlatforms) {
-        log(`[Social Publishing] Не удалось получить контент ${contentId} или нет настроек платформ`);
-        return;
-      }
-
-      // Обновляем статус конкретной платформы
-      const updatedPlatforms = { ...content.socialPlatforms };
-
-      // Проверяем, есть ли данная платформа в настройках
-      if (updatedPlatforms[platform]) {
-        log(`[Social Publishing] Обновление статуса платформы ${platform} на published`);
-
-        // Обновляем статус платформы на published
-        updatedPlatforms[platform] = {
-          ...updatedPlatforms[platform],
-          status: 'published',
-          publishedAt: new Date()
-        };
-
-        // Сохраняем обновленные настройки платформ
-        await storage.updateCampaignContent(
-          contentId,
-          { socialPlatforms: updatedPlatforms },
-          adminToken
-        );
-
-        log(`[Social Publishing] Статус платформы ${platform} успешно обновлен на "published"`);
-
-        // Проверяем, все ли выбранные платформы опубликованы
-        const selectedPlatforms = Object.entries(updatedPlatforms)
-          .filter(([_, data]) => data.selected === true)
-          .map(([platform]) => platform);
-
-        const publishedSelectedPlatforms = Object.entries(updatedPlatforms)
-          .filter(([_, data]) => data.selected === true && data.status === 'published')
-          .map(([platform]) => platform);
-
-        log(`[Social Publishing] Статусы выбранных платформ: опубликовано ${publishedSelectedPlatforms.length}/${selectedPlatforms.length}`);
-
-        // Обновляем общий статус, если все выбранные платформы опубликованы
-        if (selectedPlatforms.length > 0 && publishedSelectedPlatforms.length === selectedPlatforms.length) {
-          log(`[Social Publishing] Все выбранные платформы опубликованы, обновляем общий статус на published`);
-
-          await storage.updateCampaignContent(
-            contentId,
-            { status: 'published', publishedAt: new Date() },
-            adminToken
-          );
-
-          log(`[Social Publishing] Общий статус контента обновлен на "published"`);
-        } else if (content.status === 'draft') {
-          // Если контент в статусе draft, обновляем его до scheduled
-          log(`[Social Publishing] Контент в статусе draft, обновляем до scheduled для отслеживания прогресса`);
-
-          await storage.updateCampaignContent(
-            contentId,
-            { status: 'scheduled' },
-            adminToken
-          );
-        }
-      } else {
-        log(`[Social Publishing] Платформа ${platform} не найдена в настройках контента ${contentId}`);
-      }
-
-      // Дополнительно вызываем маршрут обновления статуса после публикации
-      try {
-        const appBaseUrl = process.env.APP_URL || `http://localhost:${process.env.PORT || 5000}`;
-        log(`[Social Publishing] Автоматический вызов обновления статуса после публикации в ${platform}`);
-
-        await axios.post(
-          `${appBaseUrl}/api/publish/update-status`,
-          { contentId },
-          {
-            headers: {
-              'Authorization': `Bearer ${adminToken}`,
-              'Content-Type': 'application/json'
-            }
-          }
-        );
-
-        log(`[Social Publishing] Успешный вызов обновления статуса после публикации в ${platform}`);
-      } catch (updateStatusError: any) {
-        log(`[Social Publishing] Ошибка при вызове обновления статуса: ${updateStatusError.message}`);
-        // Продолжаем даже при ошибке обновления статуса
-      }
-    } catch (statusError: any) {
-      log(`[Social Publishing] Ошибка при обновлении статуса платформы: ${statusError.message}`);
-      // Продолжаем даже при ошибке обновления статуса
-    }
-
-    return res.status(200).json({
-      success: true,
-      message: `Контент успешно отправлен на публикацию в ${platform}`,
-      result: response.data
-    });
-  } catch (error: any) {
-    log(`[Social Publishing] Ошибка при публикации через n8n: ${error.message}`);
-    if (error.response) {
-      log(`[Social Publishing] Детали ошибки: ${JSON.stringify(error.response.data)}`);
-    }
-
-    return res.status(500).json({
-      success: false,
-      error: `Ошибка при публикации через n8n: ${error.message}`
-    });
-  }
-}
-
-/**
- * Асинхронно публикует контент через n8n вебхук и возвращает результат (для использования с Promise)
- * @param contentId ID контента для публикации
- * @param platform Платформа для публикации
- * @returns Результат публикации
- */
-async function publishViaN8nAsync(contentId: string, platform: string): Promise<any> {
-  try {
-    // ВСЕ платформы идут через N8N вебхуки - никаких исключений!
-
-    // Стандартная логика для других платформ через n8n
-    log(`[Social Publishing] Асинхронная публикация контента ${contentId} в ${platform} через n8n вебхук`);
-
-    // Маппинг платформ на соответствующие n8n вебхуки
-    // YouTube убран — публикуется напрямую через YouTube Data API v3
-    const webhookMap: Record<string, string> = {
-      'telegram': 'publish-telegram',
-      'vk': 'publish-vk',
-      'instagram': 'publish-instagram',
-      'facebook': 'publish-facebook'
-    };
-
-    const webhookName = webhookMap[platform];
-
-    if (!webhookName) {
-      throw new Error(`Платформа ${platform} не имеет настроенного вебхука`);
-    }
-
-    // Формируем URL вебхука
-    // ИСПРАВЛЕНО: Используем централизованную функцию getN8nUrl() для правильного URL
-    const { getN8nUrl } = await import('../utils/n8n-utils');
-    const n8nUrl = getN8nUrl();
-    const baseUrl = `${n8nUrl}/webhook`;
-    // Убираем возможный слеш в конце базового URL
-    const baseUrlWithoutTrailingSlash = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
-    const webhookUrl = `${baseUrlWithoutTrailingSlash}/${webhookName}`;
-
-    log(`🚀 [PUBLISH-NOW-N8N] Calling: ${webhookUrl} for content ${contentId}, platform: ${platform}`);
-
-    // Логируем URL для отладки
-    log(`[Social Publishing] Сформирован URL для n8n webhook: ${webhookUrl}`);
-    const webhookPayload = {
-      contentId
-    };
-
-    let response;
-    try {
-      response = await axios.post(webhookUrl, webhookPayload, { timeout: 30000 });
-      log(`✅ [PUBLISH-NOW-N8N] Request successful to ${webhookUrl}, status: ${response.status}`);
-    } catch (axiosError: any) {
-      log(`❌ [PUBLISH-NOW-N8N] Request failed to ${webhookUrl}: ${axiosError.message}`);
-      if (axiosError.response) {
-        log(`❌ [PUBLISH-NOW-N8N] Response status: ${axiosError.response.status}, data: ${JSON.stringify(axiosError.response.data)}`);
-      }
-      throw axiosError;
-    }
-
-    log(`[Social Publishing] Отправлены данные в n8n вебхук: contentId=${contentId}, platform=${platform}`);
-    log(`[Social Publishing] Данные извлекаются из Directus по contentId`);
-
-    log(`[Social Publishing] Вебхук n8n принял запрос для ${platform}`);
-
-    return {
-      success: true,
-      message: `Контент успешно отправлен на публикацию в ${platform}`
-    };
-  } catch (error: any) {
-    const rawMessage = error.message || '';
-    const responseData = error.response?.data;
-    const isHtml = typeof responseData === 'string' && responseData.includes('<');
-    log(`[Social Publishing] Ошибка при публикации через n8n: ${rawMessage}`);
-    if (error.response) {
-      log(`[Social Publishing] Статус: ${error.response.status}, HTML-ответ: ${isHtml}`);
-    }
-
-    const cleanMessage = isHtml
-      ? `N8N вернул ошибку (статус ${error.response?.status || 'неизвестен'})`
-      : rawMessage;
-    throw new Error(`Ошибка при публикации: ${cleanMessage}`);
-  }
-}
 
 /**
  * Публикует карусель в Instagram через прямую интеграцию с API
@@ -2315,11 +1684,9 @@ router.post('/publish/update-status', authMiddleware, async (req, res) => {
 
 /**
  * @api {get} /api/publish/diagnose Диагностика системы публикации
- * Проверяет переменные окружения, доступность N8N и токены
+ * Проверяет переменные окружения и наличие токенов
  */
 router.get('/publish/diagnose', devOnly, authMiddleware, async (req, res) => {
-  const { getN8nUrl } = await import('../utils/n8n-utils');
-  const n8nUrl = getN8nUrl();
   const directusToken = process.env.DIRECTUS_STATIC_TOKEN;
   const serviceToken = process.env.DIRECTUS_SERVICE_TOKEN;
   const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
@@ -2327,12 +1694,6 @@ router.get('/publish/diagnose', devOnly, authMiddleware, async (req, res) => {
   const diagnosis: any = {
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'unknown',
-    n8n: {
-      url: n8nUrl,
-      configured: !!process.env.N8N_URL,
-      reachable: false,
-      error: null
-    },
     // Не раскрываем даже префиксы токенов — только факт наличия.
     tokens: {
       DIRECTUS_TOKEN: !!directusToken,
@@ -2342,79 +1703,12 @@ router.get('/publish/diagnose', devOnly, authMiddleware, async (req, res) => {
     },
     directus: {
       url: process.env.DIRECTUS_URL || 'NOT SET'
-    },
-    webhooks: {
-      telegram: `${n8nUrl}/webhook/publish-telegram`,
-      instagram: `${n8nUrl}/webhook/publish-instagram`,
-      vk: `${n8nUrl}/webhook/publish-vk`,
-      facebook: `${n8nUrl}/webhook/publish-facebook`,
-      youtube: `${n8nUrl}/webhook/publish-youtube`
     }
   };
-
-  try {
-    const testResponse = await fetch(`${n8nUrl}/healthz`, {
-      method: 'GET',
-      signal: AbortSignal.timeout(5000)
-    });
-    diagnosis.n8n.reachable = testResponse.ok;
-    diagnosis.n8n.status = testResponse.status;
-  } catch (err: any) {
-    diagnosis.n8n.reachable = false;
-    diagnosis.n8n.error = err.message;
-  }
 
   log(`[Diagnose] Publishing system diagnosis: ${JSON.stringify(diagnosis, null, 2)}`);
 
   return res.json(diagnosis);
-});
-
-/**
- * @api {post} /api/publish/test-webhook Тест N8N webhook
- * Отправляет тестовый запрос на N8N webhook
- */
-router.post('/publish/test-webhook', devOnly, authMiddleware, async (req, res) => {
-  const { platform } = req.body;
-  const { getN8nUrl } = await import('../utils/n8n-utils');
-  const n8nUrl = getN8nUrl();
-  const webhookUrl = `${n8nUrl}/webhook/publish-stories`;
-
-  log(`[Test Webhook] Testing webhook: ${webhookUrl}`);
-
-  try {
-    const response = await fetch(webhookUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contentId: 'test-diagnosis'
-      }),
-      signal: AbortSignal.timeout(10000)
-    });
-
-    const responseText = await response.text();
-    let responseData;
-    try {
-      responseData = JSON.parse(responseText);
-    } catch {
-      responseData = responseText;
-    }
-
-    log(`[Test Webhook] Response from ${webhookUrl}: ${response.status} - ${responseText}`);
-
-    return res.json({
-      success: response.ok,
-      webhookUrl,
-      status: response.status,
-      response: responseData
-    });
-  } catch (err: any) {
-    log(`[Test Webhook] Error testing ${webhookUrl}: ${err.message}`);
-    return res.json({
-      success: false,
-      webhookUrl,
-      error: err.message
-    });
-  }
 });
 
 /**

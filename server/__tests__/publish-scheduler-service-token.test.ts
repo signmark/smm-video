@@ -36,7 +36,6 @@ vi.mock('axios', () => {
 
 vi.mock('../utils/logger', () => ({ log: vi.fn() }));
 vi.mock('../storage', () => ({ storage: {} }));
-vi.mock('../utils/n8n-utils', () => ({ getN8nUrl: vi.fn().mockReturnValue('http://n8n.test') }));
 vi.mock('../services/ai-service', () => ({ aiService: { generateContent: vi.fn() } }));
 vi.mock('../utils/content-cache', () => ({ invalidateContentCache: vi.fn() }));
 

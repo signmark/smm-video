@@ -454,7 +454,7 @@ export class StoriesMediaService {
         }
       }
 
-      // Добавляем новое медиа в НАЧАЛО массива (чтобы n8n всегда видел его в [0])
+      // Добавляем новое медиа в НАЧАЛО массива: публикация берёт [0]
       currentAdditionalMedia.unshift({
         type: mediaType,
         url: mediaUrl,

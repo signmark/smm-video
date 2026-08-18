@@ -38,7 +38,6 @@ healthRouter.get('/health', async (req, res) => {
     results.services.s3 = { status: 'unhealthy' };
   }
 
-  results.services.n8n = { status: 'removed' };
 
   const duration = Date.now() - startTime;
   results.duration_ms = duration;

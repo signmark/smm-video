@@ -4,6 +4,8 @@ import { sendSubscriptionRequestEmail } from '../services/email';
 import { getAppBaseUrl } from '../utils/app-base-url';
 import { resolvePlanPrice } from '../services/plan-pricing';
 import { telegramHttp } from '../services/social-platforms/telegram-http';
+import { notifySubscriptionActivated } from '../services/subscription-notify';
+import { logEvent } from '../utils/logger';
 
 // ─── Реестр обработанных заявок (in-memory, TTL 72ч) ───────────────────────
 // Ключ — userId. Предотвращает повторное одобрение после отклонения и наоборот.
@@ -192,23 +194,44 @@ router.get('/subscriptions/approve', async (req: Request, res: Response) => {
         // Telegram пользователю (если есть chat_id)
         const userChatId = u?.telegram_chat_id;
         if (userChatId) {
-          const botToken = process.env.TELEGRAM_BOT_TOKEN;
-          if (botToken) {
-            // AI-101 Phase 2B: через отказоустойчивый транспорт. validateStatus
-            // сохраняет поведение fetch — тот не бросал на 4xx/5xx.
-            const tgUser = await telegramHttp();
-            await tgUser.post(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-              chat_id: userChatId,
-              text: `🎉 <b>Подписка активирована!</b>\n📦 Тариф: <b>${plan}</b>\n📅 До: <b>${expireDate.toLocaleDateString('ru-RU')}</b>`,
-              parse_mode: 'HTML',
-            }, {
-              headers: { 'Content-Type': 'application/json' },
-              validateStatus: () => true,
-            }).catch(() => {});
-          }
+          await notifySubscriptionActivated({
+            userId,
+            chatId: userChatId,
+            text: `🎉 <b>Подписка активирована!</b>\n📦 Тариф: <b>${plan}</b>\n📅 До: <b>${expireDate.toLocaleDateString('ru-RU')}</b>`,
+            parseMode: 'HTML',
+          });
+        } else {
+          // AI-65. Тариф выдан, но Telegram человек не привязывал. Это не отказ,
+          // поэтому уровень отладки: человека нужно догонять письмом, а не искать
+          // поломку.
+          logEvent(
+            'subscription.confirmation_undelivered',
+            { userId, provider: 'telegram', reason: 'chat_id_missing' },
+            'debug',
+            'subscriptions',
+            'Подписка активирована, подтверждение в Telegram отправить некому',
+          );
         }
+      } else {
+        logEvent(
+          'subscription.confirmation_undelivered',
+          { userId, provider: 'telegram', status: userResp.status, reason: 'chat_id_unreadable' },
+          'warn',
+          'subscriptions',
+          'Подписка активирована, но получателя подтверждения не удалось прочитать',
+        );
       }
-    } catch (_) {}
+    } catch (e: any) {
+      // AI-65. Подписка активирована и помечена обработанной выше — ответ человеку
+      // в браузере отдаём в любом случае. Но подтверждение до него не дошло.
+      logEvent(
+        'subscription.confirmation_undelivered',
+        { userId, provider: 'telegram', reason: e?.message ? String(e.message) : 'unknown' },
+        'warn',
+        'subscriptions',
+        'Подписка активирована, но подтверждение человеку не доставлено',
+      );
+    }
 
     return res.send(htmlPage('✅ Подписка активирована', `Тариф <b>${plan}</b> активирован до <b>${expireDate.toLocaleDateString('ru-RU')}</b>.`));
   } catch (err: any) {

@@ -137,14 +137,33 @@ export class WebCrawlerAgent {
         '/app/.apt/usr/bin/google-chrome'
       ];
 
+      let chromiumPath: string | undefined;
       for (const path of possiblePaths) {
         try {
           if (execSync(`test -f ${path} && echo "exists"`).toString().trim() === 'exists') {
             launchOptions.executablePath = path;
+            chromiumPath = path;
             console.log(`[WEB-CRAWLER] 🔍 Found Chromium at: ${path}`);
             break;
           }
-        } catch (e) {}
+        } catch (e) {
+          // AI-65. Молчание здесь намеренное и правильное: это перебор кандидатов,
+          // и «нет такого файла» — обычный ответ, а не отказ. Значение имеет только
+          // исход всего перебора, он записан сразу после цикла.
+        }
+      }
+      if (!chromiumPath) {
+        // Ни один известный путь не подошёл. Puppeteer сейчас попробует
+        // собственный Chromium, и если его в образе нет, запуск упадёт с
+        // сообщением про отсутствующий исполняемый файл — по нему не видно, что
+        // перебор вообще был и чем закончился.
+        logger.logEvent(
+          'crawler.chromium_not_found',
+          { operation: 'launch', count: possiblePaths.length, reason: 'no_candidate_matched' },
+          'warn',
+          'web-crawler',
+          'Ни один известный путь к Chromium не подошёл — запуск пойдёт вслепую',
+        );
       }
       
       this.browser = await puppeteer.launch(launchOptions);

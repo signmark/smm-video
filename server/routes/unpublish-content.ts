@@ -7,6 +7,27 @@ import { telegramHttp } from '../services/social-platforms/telegram-http';
 const router = express.Router();
 
 /**
+ * Имена площадок для сообщения человеку. Он выбирал «ВКонтакте», а не `vk`,
+ * и в отказе должен увидеть то же слово.
+ */
+const PLATFORM_NAMES: Record<string, string> = {
+  vk: 'ВКонтакте',
+  vk_video: 'ВКонтакте (видео)',
+  vk_clip: 'ВКонтакте (клип)',
+  vk_story: 'ВКонтакте (история)',
+  telegram: 'Telegram',
+  instagram: 'Instagram',
+  instagram_story: 'Instagram (история)',
+  instagram_reel: 'Instagram (Reels)',
+  facebook: 'Facebook',
+  facebook_video: 'Facebook (видео)',
+  youtube: 'YouTube',
+  threads: 'Threads',
+};
+
+const platformName = (platform: string) => PLATFORM_NAMES[platform.toLowerCase()] || platform;
+
+/**
  * Удаление публикации из социальных сетей и перевод в черновики
  * POST /api/content/:id/unpublish
  *
@@ -109,10 +130,48 @@ router.post('/content/:id/unpublish', authenticateUser, async (req, res) => {
 
     // AI-114: честный ответ. Если ни одна площадка не была реально снята —
     // не говорим пользователю «снята».
+    //
+    // SM-29: но и «не удалось ни с одной» само по себе человеку бесполезно —
+    // он не знает ни почему, ни что теперь делать. Причина у нас на руках, она
+    // лежит в deletionResults, и раньше уходила в ответ полем, которого
+    // интерфейс не показывал. Теперь она в самом тексте отказа.
+    //
+    // Случая тут два, и они требуют РАЗНЫХ слов:
+    //  - удалять было нечего (ни у одной площадки нет postId): пост опубликован,
+    //    но его идентификатор мы не сохранили, и через API платформы его не
+    //    достать. Снять можно только руками на самой площадке;
+    //  - удаление пробовали и оно не прошло: причина у каждой площадки своя.
     if (!anyDeleted) {
+      const nothingToDelete = deletionResults.length === 0;
+
+      // Причину отказа сохраняем в записи: без этого она живёт до закрытия
+      // всплывающего сообщения, а на следующий день никто не помнит, что было.
+      if (!nothingToDelete) {
+        await axios.patch(
+          `${process.env.DIRECTUS_URL}/items/campaign_content/${id}`,
+          { social_platforms: updatedSocialPlatforms },
+          {
+            headers: {
+              Authorization: `Bearer ${userToken}`,
+              'Content-Type': 'application/json'
+            }
+          }
+        );
+      }
+
+      const reasons = deletionResults
+        .filter((r) => !r.success)
+        .map((r) => `${platformName(r.platform)} — ${r.error || 'причина неизвестна'}`)
+        .join('; ');
+
+      const published = Object.keys(socialPlatforms);
+
       return res.status(409).json({
         success: false,
-        error: 'Не удалось снять публикацию ни с одной площадки',
+        error: nothingToDelete
+          ? `Снять публикацию через нас нельзя: у ${published.length === 1
+              ? `площадки ${platformName(published[0])} не сохранён` : 'площадок не сохранён'} идентификатор поста. Удалите пост на самой площадке — здесь он останется помеченным опубликованным.`
+          : `Не удалось снять публикацию: ${reasons}`,
         deletionResults
       });
     }

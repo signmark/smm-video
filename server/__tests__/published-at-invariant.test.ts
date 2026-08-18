@@ -8,7 +8,7 @@
  * всех разрезов по времени (график активности, экспорт отчётов).
  *
  * Покрываем три пути записи:
- *  1. PublishScheduler.updateContentStatus — основной путь (n8n/планировщик)
+ *  1. PublishScheduler.updateContentStatus — основной путь планировщика
  *  2. POST /api/publish/mark-as-published/:contentId — ручная пометка
  *  3. вебхук статусов платформ — подстраховочное обновление общего статуса
  */
@@ -75,7 +75,6 @@ vi.mock('../services/directus-auth-manager', () => ({
 }));
 
 // Границы, которые планировщик тянет статически, но в этом тесте не использует.
-vi.mock('../utils/n8n-utils', () => ({ getN8nUrl: () => 'http://n8n.test' }));
 vi.mock('../services/ai-service', () => ({ aiService: { generateContent: vi.fn() } }));
 vi.mock('../services/publication-lock-manager', () => ({
   publicationLockManager: {
@@ -110,7 +109,8 @@ import statusWebhookRouter from '../api/social-platform-status-webhook';
 
 // ─── Хелперы ─────────────────────────────────────────────────────────────────
 
-/** Платформа, опубликованная БЕЗ publishedAt — ровно то, что пишет n8n. */
+/** Платформа, опубликованная БЕЗ publishedAt — ровно тот случай из-за которого
+ * и заведён этот набор. */
 const publishedNoDate = (postUrl: string) => ({
   status: 'published',
   selected: true,

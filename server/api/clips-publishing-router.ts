@@ -1,8 +1,7 @@
 /**
  * Clips/Shorts Publishing Router
  * 
- * Прямая публикация коротких видео (VK Clips, YouTube Shorts, Instagram Reels) без N8N
- * Этот функционал позже будет перенесён в N8N
+ * Прямая публикация коротких видео (VK Clips, YouTube Shorts, Instagram Reels)
  */
 
 import express from 'express';
@@ -29,7 +28,7 @@ interface PublishResult {
 
 /**
  * POST /api/clips/publish
- * Публикация clips/shorts напрямую (без N8N)
+ * Публикация clips/shorts напрямую
  */
 router.post('/clips/publish', authMiddleware, async (req, res) => {
   try {

@@ -2,7 +2,7 @@
  * TikTok Content Posting Service
  * 
  * Логика публикации видео в TikTok.
- * В продакшене будет использоваться через n8n workflow.
+ * В текущем релизе TikTok не планируется.
  * 
  * API Documentation: https://developers.tiktok.com/doc/content-posting-api-get-started
  */

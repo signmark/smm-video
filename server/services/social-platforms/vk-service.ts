@@ -1,6 +1,6 @@
 /**
  * VK Direct Publishing Service
- * Публикует текст и изображения через VK API без N8N
+ * Публикует текст и изображения через VK API
  */
 
 import axios from 'axios';

@@ -112,12 +112,12 @@ export class SocialPublishingService {
       const settings = campaign.social_media_settings || campaign.socialMediaSettings || campaign.settings || {};
       log(`Настройки для ${platform}: ${settings[platform] ? 'есть (ключи: ' + Object.keys(settings[platform]).join(', ') + ')' : 'отсутствуют'}`, 'social-publishing');
       
-      // Threads публикуется напрямую (без n8n)
+      // Threads публикуется напрямую
       if (platform === 'threads') {
         return await this.publishThroughThreads(content, settings.threads);
       }
 
-      // YouTube публикуется напрямую (без n8n)
+      // YouTube публикуется напрямую
       if (platform === 'youtube') {
         const ct = (content.content_type || '').toLowerCase();
         const isShorts = ['clip', 'short', 'shorts', 'short_video', 'reel'].includes(ct);
@@ -187,23 +187,6 @@ export class SocialPublishingService {
     }
   }
 
-  /**
-   * @deprecated Устарело — n8n удалён. Метод оставлен для совместимости, но не вызывается.
-   * Прямая публикация теперь происходит в publishToPlatform.
-   */
-  private async publishThroughN8nWebhook(content: any, platform: string, settings: any): Promise<any> {
-    log(`[SocialPublishing] publishThroughN8nWebhook вызван для ${platform} — должен быть недостижим`, 'social-publishing', 'warn');
-    throw new Error(`Платформа ${platform} не поддерживается для прямой публикации (n8n удалён)`);
-  }
-
-  /**
-   * КРИТИЧЕСКОЕ УПРОЩЕНИЕ: n8n сам обновляет статус и postUrl после публикации
-   * Этот метод больше не нужен для ВК, Telegram, Instagram
-   * @param contentId ID контента
-   * @param platform Социальная платформа  
-   * @param publicationResult Результат публикации
-   * @returns Обновленный контент или null в случае ошибки
-   */
   private async publishThroughThreads(content: any, settings: any): Promise<any> {
     const platform = 'threads';
     if (!settings?.accessToken || !settings?.threadsUserId) {
@@ -232,25 +215,6 @@ export class SocialPublishingService {
     }
   }
 
-  public async updatePublicationStatus(
-    contentId: string, 
-    platform: string, 
-    publicationResult: any
-  ) {
-    // Facebook и Threads публикуются напрямую и требуют обновления статуса
-    if (platform === 'facebook') {
-      return await facebookSocialService.updatePublicationStatus(contentId, platform, publicationResult);
-    }
-
-    if (platform === 'threads') {
-      log(`THREADS: Обновляем статус публикации для ${contentId}`, 'social-publishing');
-      return publicationResult;
-    }
-    
-    // Для остальных платформ возвращаем результат как есть - n8n все сделает сам
-    log(`N8N АВТООБНОВЛЕНИЕ: Платформа ${platform} - статус и postUrl обновит n8n`, 'social-publishing');
-    return publicationResult;
-  }
 }
 
 // Экспортируем экземпляр сервиса для использования в приложении

@@ -1,6 +1,6 @@
 /**
  * Telegram Direct Publishing Service
- * Публикует текст и изображения через Telegram Bot API без N8N
+ * Публикует текст и изображения через Telegram Bot API
  */
 
 import axios from 'axios';

@@ -39,9 +39,6 @@ vi.mock('axios', () => {
 
 vi.mock('../utils/logger', () => ({ log: vi.fn() }));
 vi.mock('../storage', () => ({ storage: {} }));
-vi.mock('../utils/n8n-utils', () => ({
-  getN8nUrl: vi.fn().mockReturnValue('http://n8n.test'),
-}));
 vi.mock('../services/ai-service', () => ({
   aiService: { generateContent: vi.fn() },
 }));
@@ -310,15 +307,15 @@ describe('PublishScheduler — роутинг по платформам', () => 
     });
   }
 
-  it('неизвестная платформа → failed без устаревшего N8N fallback', async () => {
+  // Раньше здесь стояла слежка за publishThroughN8nWebhook: проверяли, что
+  // запасной путь через n8n не вызывается. Метода больше нет, вызвать его нельзя
+  // в принципе — проверять осталось само поведение: неизвестная площадка честно
+  // помечается неудачей, а не уходит в никуда.
+  it('неизвестная платформа → failed, запасного пути нет', async () => {
     const content = makeContent({ content_type: 'post' });
-    const spy = vi
-      .spyOn(scheduler as any, 'publishThroughN8nWebhook')
-      .mockResolvedValue({ platform: 'snapchat', success: true });
 
     await runPlatform(scheduler, content, ['snapchat']);
 
-    expect(spy).not.toHaveBeenCalled();
     expect(vi.mocked(directusCrud.update)).toHaveBeenCalledWith(
       'campaign_content',
       content.id,

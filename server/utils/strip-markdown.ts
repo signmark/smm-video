@@ -40,7 +40,7 @@ export function stripMarkdown(text: string): string {
 
 /**
  * Конвертирует Markdown в HTML для Telegram (parse_mode=HTML).
- * Использовать только если n8n-вебхук публикует в Telegram с HTML parse_mode.
+ * Использовать только если публикация в Telegram идёт с HTML parse_mode.
  */
 export function markdownToTelegramHtml(text: string): string {
   if (!text || typeof text !== 'string') return text;

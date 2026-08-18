@@ -2451,7 +2451,7 @@ ${trendSummaries.length > 0 ? `ВЫВОДЫ ПО ТРЕНДАМ:\n${trendSummari
   /**
    * POST /api/trends/collect-direct
    * Прямой сбор трендов через скрейпер (Telegram, VK, YouTube, Instagram)
-   * без n8n, для всех платформ из campaign_content_sources
+   *, для всех платформ из campaign_content_sources
    */
   app.post("/api/trends/collect-direct", authenticateUser, async (req: Request, res: Response) => {
     try {

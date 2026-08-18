@@ -5,7 +5,7 @@ import { BaseSocialService } from './base-service';
 
 /**
  * КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ: ВК-сервис больше НЕ публикует напрямую
- * Все публикации ВК должны идти только через n8n webhook
+ * Публикация ВК идёт через vkService напрямую
  * Этот сервис теперь заблокирован для прямых публикаций
  */
 export class VkService extends BaseSocialService {
@@ -496,12 +496,12 @@ export class VkService extends BaseSocialService {
   }
 
   /**
-   * ПРИМЕЧАНИЕ: Публикация Clips/Shorts в ВК выполняется ТОЛЬКО через n8n webhook
+   * ПРИМЕЧАНИЕ: Публикация Clips/Shorts в ВК идёт отдельным путём
    * Прямые методы загрузки видео заблокированы согласно архитектуре проекта
    * 
    * Для публикации клипов используйте:
    * - POST /api/webhook/vk-clips с { contentId, videoUrl, title, description }
-   * - Или установите content_type = 'clip' для автоматической маршрутизации через n8n
+   * - Или установите content_type = 'clip' для автоматической маршрутизации
    * 
    * n8n workflow URL: ${baseN8nUrl}/webhook/publish-vk-clips
    */

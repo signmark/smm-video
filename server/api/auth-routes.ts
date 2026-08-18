@@ -466,14 +466,11 @@ export function registerAuthRoutes(app: Express): void {
 
   // Маршрут для принудительного обновления переменных окружения
   app.post('/api/config/update', (req: Request, res: Response) => {
-    // process.env.DIRECTUS_URL = 'https://directus.nplanner.ru';
-    // process.env.N8N_URL = 'https://n8n.nplanner.ru';
     
     res.json({
       success: true,
       message: 'Environment variables update disabled to prevent hardcoded overrides',
-      directusUrl: process.env.DIRECTUS_URL,
-      n8nUrl: process.env.N8N_URL
+      directusUrl: process.env.DIRECTUS_URL
     });
   });
 

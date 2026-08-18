@@ -1224,7 +1224,7 @@ app.use('/video-app', (req, res, next) => {
 
       // Запускаем планировщик публикаций с поддержкой индивидуального времени платформ
       scheduleBackgroundJob('publish-scheduler', 35000, () => {
-        log('Запуск планировщика публикаций с поддержкой N8N', 'scheduler');
+        log('Запуск планировщика публикаций', 'scheduler');
         const scheduler = getPublishScheduler();
         scheduler.start();
         log('✅ Планировщик публикаций успешно запущен', 'scheduler');

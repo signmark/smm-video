@@ -10,7 +10,14 @@
  *                                 juggernaut-flux*, flux/*  (и дефолт для новых)
  *   aspect_ratio:"WxH"         — fooocus (кратно 8)
  *   aspect_ratio:"W:H" + resolution:1K|2K|4K — nano-banana-pro (Gemini image)
- *   size:"1024x1024|1536x1024|1024x1536"     — gpt-image (обрабатывается отдельно)
+ *   image_size:{width,height}  — openai/gpt-image-2 ЧЕРЕЗ FAL
+ *
+ * SM-31 (сверено со схемой fal 2026-08-18). Здесь раньше стояло, что gpt-image
+ * ждёт OpenAI-поле size — и клиент так и слал. У fal-эндпоинта openai/gpt-image-2
+ * поля size нет вовсе: он ждёт image_size, а неизвестные поля молча отбрасывает и
+ * берёт СВОЙ дефолт image_size = landscape_4_3. Поэтому выбранный размер
+ * игнорировался, и картинка всегда выходила 4:3. Прямой путь в OpenAI (не через
+ * fal) по-прежнему пользуется полем size — это другой вызов, он в порядке.
  *
  * Отдаём ТОЛЬКО поле(я), которые модель реально понимает — без «слать всё и пусть
  * игнорируют» (часть fal-эндпоинтов строго валидируют вход и вернут 422).
@@ -75,6 +82,15 @@ export function resolveSizeParams(
   // fooocus — aspect_ratio строкой "WxH" (кратно 8).
   if (id.includes('fooocus')) {
     return { aspect_ratio: `${w}x${h}` };
+  }
+
+  // gpt-image через fal — image_size, но только из трёх размеров, которые модель
+  // умеет. Произвольные width/height она не отдаст, поэтому выбираем ближайший по
+  // ориентации: человек просил портрет — получит портрет.
+  if (id.includes('gpt-image')) {
+    if (w > h) return { image_size: { width: 1536, height: 1024 } };
+    if (h > w) return { image_size: { width: 1024, height: 1536 } };
+    return { image_size: { width: 1024, height: 1024 } };
   }
 
   // Всё остальное (schnell, fast-sdxl, sdxl, flux-lora, juggernaut, flux/*, дефолт)

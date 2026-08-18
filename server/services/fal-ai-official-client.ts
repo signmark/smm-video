@@ -273,21 +273,19 @@ export class FalAiOfficialClient {
       console.log(`[fal-ai-official] Параметры для NanoBanana Pro/Edit: prompt="${baseParams.prompt?.substring(0, 50)}...", images=${imageUrls.length}, output=1`);
       return nanoBananaEditParams;
     }
-    // GPT-Image-2 через fal.ai (openai/gpt-image-2) — использует OpenAI API формат
+    // GPT-Image-2 через fal.ai (openai/gpt-image-2).
+    // SM-31. Здесь слались OpenAI-поля size и n. У fal-эндпоинта таких полей нет:
+    // он ждёт image_size и num_images, а неизвестные молча отбрасывает и берёт свой
+    // дефолт image_size = landscape_4_3. Выбранный человеком размер из-за этого не
+    // применялся никогда, и картинка всегда выходила 4:3. Формат сверен со схемой
+    // fal 2026-08-18. quality модель понимает, его оставляем.
     else if (options.model === 'openai/gpt-image-2') {
-      // gpt-image-2 использует OpenAI-нативные поля: size, n, quality
-      let size: string = '1024x1024';
-      if (options.width && options.height) {
-        const w = options.width, h = options.height;
-        if (w > h) size = '1536x1024';
-        else if (h > w) size = '1024x1536';
-      }
       const quality = (options as any).quality || 'medium';
       const params: Record<string, any> = {
         prompt: baseParams.prompt,
-        size,
+        ...resolveSizeParams(options.model, options.width, options.height),
         quality,
-        n: numImages || 1,
+        num_images: numImages || 1,
       };
       console.log(`[fal-ai-official] Параметры для gpt-image-2: ${JSON.stringify(params)}`);
       return params;

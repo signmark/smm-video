@@ -20,6 +20,31 @@ BASE="${1:-${SMOKE_BASE_URL:-https://smm.nplanner.ru}}"
 FAILED=0
 PASSED=0
 
+# check_body МЕТОД ПУТЬ ОЖИДАЕМЫЕ_КОДЫ ОБРАЗЕЦ_ТЕЛА ОПИСАНИЕ
+#
+# Отличается от check тем, что сверяет ещё и тело ответа. Нужно там, где ОДИН
+# И ТОТ ЖЕ код приходит от разных механизмов и по коду их не различить.
+# Породивший случай (AI-124): коллбэки трендов отвечали 401 от гейта подписки,
+# не доходя до собственной проверки секрета. Строка дымовой проверки при этом
+# была зелёной и подтверждала механизм, который не выполнялся.
+check_body() {
+  local method="$1" path="$2" expected="$3" needle="$4" why="$5"
+  local out code body
+  out=$(curl -sS -m 20 -w $'\n%{http_code}' -X "$method" "$BASE$path" 2>/dev/null) || out=$'\n000'
+  code="${out##*$'\n'}"
+  body="${out%$'\n'*}"
+  if [[ ",$expected," == *",$code,"* && "$body" == *"$needle"* ]]; then
+    PASSED=$((PASSED + 1))
+    printf 'ok   %-4s %-55s %s  (%s)\n' "$method" "$path" "$code" "$why"
+  elif [[ ",$expected," != *",$code,"* ]]; then
+    FAILED=$((FAILED + 1))
+    printf 'FAIL %-4s %-55s %s, ожидалось %s  (%s)\n' "$method" "$path" "$code" "$expected" "$why"
+  else
+    FAILED=$((FAILED + 1))
+    printf 'FAIL %-4s %-55s %s, но ответил не тот механизм  (%s)\n' "$method" "$path" "$code" "$why"
+  fi
+}
+
 # check МЕТОД ПУТЬ ОЖИДАЕМЫЕ_КОДЫ ОПИСАНИЕ
 # ОЖИДАЕМЫЕ_КОДЫ — через запятую, без пробелов: "200" или "400,404".
 check() {
@@ -61,8 +86,8 @@ check POST "/api/video-temp/$NO_SUCH_UUID"                401 "video-temp пуб
 check GET  /api/video-temp/not-a-uuid                     401 "video-temp публичен только по строгому UUID"
 
 # --- вебхуки: без секрета не работают ---
-check POST /api/trends/tg-webhook                         401,503 "коллбэк трендов требует секрет (503 = секрет не задан)"
-check POST /api/trends/collect-trends-callback            401,503 "коллбэк трендов требует секрет"
+check_body POST /api/trends/tg-webhook                    401,503 success "коллбэк трендов дошёл до своей проверки секрета и отвергнут ею (503 = секрет не задан)"
+check_body POST /api/trends/collect-trends-callback       401,503 success "коллбэк трендов дошёл до своей проверки секрета и отвергнут ею"
 check POST /api/webhook/trend-topics                      401 "наследство n8n, закрыто сознательно"
 
 echo

@@ -96,7 +96,11 @@ describe('AI-114: снятие публикации', () => {
     expect(patchBody.social_platforms.vk.status).toBe('draft');
   });
 
-  it('при неудачном удалении площадку не стирает (история сохраняется) и не врёт об успехе', async () => {
+  it('при неудачном удалении площадку не стирает, не врёт об успехе и называет причину', async () => {
+    // SM-29: раньше здесь проверялся только факт отказа, и текст «не удалось
+    // снять ни с одной площадки» этот тест устраивал. Человека — нет: он не
+    // узнавал ни почему, ни что делать дальше. Причина у сервера была, она
+    // лежала в deletionResults и до интерфейса не доходила.
     mockContent({
       vk: { status: 'published', postId: '-1_9', postUrl: 'https://vk.com/wall-1_9', publishedAt: 'x' },
     });
@@ -108,7 +112,25 @@ describe('AI-114: снятие публикации', () => {
 
     expect(res.status).toBe(409);
     expect(res.body.success).toBe(false);
-    expect(res.body.error).toContain('ни с одной площадки');
+    expect(res.body.error).toContain('ВКонтакте');
+    expect(res.body.error).toContain('delete failed');
+  });
+
+  it('причина отказа сохраняется в записи, а не живёт до закрытия сообщения', async () => {
+    mockContent({
+      vk: { status: 'published', postId: '-1_9', postUrl: 'https://vk.com/wall-1_9', publishedAt: 'x' },
+    });
+    mockAxiosPost.mockRejectedValue(new Error('delete failed'));
+
+    await request(appWithRouter()).post('/content/c1/unpublish').set('Authorization', 'Bearer tok');
+
+    const patchBody = mockAxiosPatch.mock.calls[0][1];
+    expect(patchBody.social_platforms.vk.unpublishError).toContain('delete failed');
+    // История опубликованного поста при этом не стирается.
+    expect(patchBody.social_platforms.vk.postId).toBe('-1_9');
+    expect(patchBody.social_platforms.vk.status).toBe('published');
+    // И материал не уезжает в черновики: он всё ещё опубликован на площадке.
+    expect(patchBody).not.toHaveProperty('status');
   });
 
   it('без postId удалять нечего -> честный 409, история не трогается', async () => {
@@ -122,6 +144,25 @@ describe('AI-114: снятие публикации', () => {
 
     expect(res.status).toBe(409);
     expect(res.body.success).toBe(false);
+    // Запись не трогаем: удалять было нечего, менять нечего.
+    expect(mockAxiosPatch).not.toHaveBeenCalled();
+  });
+
+  it('нечего удалять и не удалось удалить — это РАЗНЫЕ слова человеку', async () => {
+    // SM-29. Оба случая раньше давали один текст «не удалось снять ни с одной
+    // площадки», хотя делать человеку надо разное: в первом случае идти удалять
+    // пост руками на площадке, во втором — разбираться с отказом платформы.
+    mockContent({
+      telegram: { status: 'published', postUrl: 'https://t.me/x/456', publishedAt: 'x' },
+    });
+
+    const res = await request(appWithRouter())
+      .post('/content/c1/unpublish')
+      .set('Authorization', 'Bearer tok');
+
+    expect(res.body.error).toContain('идентификатор поста');
+    expect(res.body.error).toContain('Telegram');
+    expect(res.body.error).not.toContain('Не удалось снять публикацию:');
   });
 
   it('частичный успех: одна площадка удалена, другая сохранена без стирания', async () => {

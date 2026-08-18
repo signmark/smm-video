@@ -15,12 +15,25 @@
  * ВНИМАНИЕ (правило 49). Первая часть — поведение: состояние действительно
  * проходит через сохранение и восстановление. Вторая — сканер исходника: он
  * стережёт места, но поведение цикла целиком не доказывает.
+ *
+ * AI-130 живёт в этом же файле намеренно. Он про ту же сохранённую копию, а
+ * файл копии на диске один на весь прогон: два тестовых файла, пишущих в него
+ * параллельно, дали бы плавающую красноту. Случаи внутри одного файла
+ * выполняются последовательно.
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { existsSync, readFileSync, writeFileSync, unlinkSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 
-import { restoreAutonomousStates, getAutonomousStatusExternal } from '../services/autonomous-ai';
+import {
+  restoreAutonomousStates,
+  getAutonomousStatusExternal,
+  noteCompletedCycle,
+} from '../services/autonomous-ai';
+import {
+  computeNextCycleDelayMs,
+  MIN_CYCLE_DELAY_MS,
+} from '../services/autonomous-ai-scheduling';
 
 function src(): string {
   return readFileSync(join(__dirname, '../services/autonomous-ai.ts'), 'utf-8');
@@ -35,6 +48,11 @@ const PERSIST_FILE = join(PERSIST_DIR, 'autonomous-states.json');
 
 const SICK = 'ai123v2-sick-campaign';
 const HEALTHY = 'ai123v2-healthy-campaign';
+// AI-130: кампания с суточным интервалом, у которой сохранённая отметка цикла
+// отстала на сутки с лишним — ровно то состояние, в котором её застаёт выкатка.
+const RESTARTED = 'ai130-restarted-campaign';
+const HOUR = 60 * 60 * 1000;
+const STALE_LAST_CYCLE = new Date(Date.now() - 25 * HOUR);
 
 /** Сохранённая копия состояния — то, что осталось бы на диске после выкатки. */
 function savedState(campaignId: string, extra: Record<string, unknown>) {
@@ -69,6 +87,11 @@ beforeAll(async () => {
       lastAbortReason: 'token_refresh_failed',
     }),
     [HEALTHY]: savedState(HEALTHY, {}),
+    [RESTARTED]: savedState(RESTARTED, {
+      consecutiveAbortedCycles: 2,
+      lastAbortReason: 'token_refresh_failed',
+      lastCycleAt: STALE_LAST_CYCLE.toISOString(),
+    }),
   }, null, 2));
 
   // Восстановление из БД здесь падает на первом же шаге (axios замокан в
@@ -166,6 +189,69 @@ describe('AI-123v2: момент сохранения', () => {
     const around = s.slice(idx, idx + 300);
     expect(around).toContain('state.lastAbortReason = undefined;');
     expect(around).toContain('state.cyclesCompleted++');
+  });
+});
+
+describe('AI-130: успешный цикл переживает перезапуск', () => {
+  /** Сохранённая копия кампании — то, что прочитает процесс после выкатки. */
+  function savedCopy(campaignId: string): any {
+    return JSON.parse(readFileSync(PERSIST_FILE, 'utf-8'))[campaignId];
+  }
+
+  it('до правки отставшая отметка означала цикл через пять секунд после старта', () => {
+    // Ровно этим дефект и был опасен: не «счётчик неточный», а лишняя
+    // публикация в живые каналы при каждой выкатке.
+    expect(computeNextCycleDelayMs(STALE_LAST_CYCLE, 24)).toBe(MIN_CYCLE_DELAY_MS);
+    expect(savedCopy(RESTARTED).cyclesCompleted).toBe(0);
+  });
+
+  it('дошедший до конца цикл кладёт свежую отметку в сохранённую копию', () => {
+    const before = Date.now();
+    noteCompletedCycle(RESTARTED);
+
+    const saved = savedCopy(RESTARTED);
+    expect(saved.cyclesCompleted).toBe(1);
+    expect(new Date(saved.lastCycleAt).getTime()).toBeGreaterThanOrEqual(before - 1000);
+  });
+
+  it('и после перезапуска планировщик ждёт ОСТАТОК интервала, а не пять секунд', () => {
+    // Читаем ту самую отметку из копии на диске — её и получит новый процесс.
+    const saved = savedCopy(RESTARTED);
+    const delay = computeNextCycleDelayMs(new Date(saved.lastCycleAt), 24);
+    expect(delay).toBeGreaterThan(23 * HOUR);
+  });
+
+  it('успех снимает счётчик прерываний и в памяти, и в сохранённой копии', () => {
+    // Без этого правило «три прерывания ПОДРЯД» ломается: после перезапуска
+    // возвращается старое число, и между «подряд идущими» прерываниями
+    // оказываются успешные циклы.
+    const status: any = getAutonomousStatusExternal(RESTARTED);
+    expect(status.attention).toBeNull();
+
+    const saved = savedCopy(RESTARTED);
+    expect(saved.consecutiveAbortedCycles).toBe(0);
+    expect(saved.lastAbortReason ?? null).toBeNull();
+  });
+
+  it('остановленный режим успехом не воскрешается', () => {
+    // Цикл длинный, за это время режим могли остановить: сохранённую копию
+    // тогда уже удалили, и писать её обратно нельзя.
+    const before = readFileSync(PERSIST_FILE, 'utf-8');
+    noteCompletedCycle('ai130-never-existed-campaign');
+    expect(readFileSync(PERSIST_FILE, 'utf-8')).toBe(before);
+  });
+
+  it('цикл отмечает завершение общим местом, а не своими присваиваниями', () => {
+    const s = src();
+    const cycleIdx = s.indexOf('async function runAutonomousCycle');
+    expect(cycleIdx).toBeGreaterThan(0);
+    const cycle = s.slice(cycleIdx);
+    expect(cycle).toContain('noteCompletedCycle(state.campaignId)');
+
+    const noteIdx = s.indexOf('export function noteCompletedCycle');
+    expect(noteIdx).toBeGreaterThan(0);
+    const body = s.slice(noteIdx, s.indexOf('\n}\n', noteIdx));
+    expect(body).toContain('saveAutonomousPersistence(state)');
   });
 });
 

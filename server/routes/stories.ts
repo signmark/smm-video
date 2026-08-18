@@ -1,4 +1,5 @@
 import express from 'express';
+import { logEvent } from '../utils/logger';
 import axios from 'axios';
 import { authenticateUser } from '../middleware/user-auth';
 import { directusApi } from '../directus';
@@ -569,7 +570,17 @@ router.post('/story/:id/publish', authenticateUser, async (req, res) => {
               const imageBuffer = Buffer.from(response.data);
               const uploadResult = await uploadToExternalHost(imageBuffer, `story-bg-${updatedStory.id}.jpg`);
               instagramImageUrl = uploadResult.url;
-            } catch (uploadErr) {
+            } catch (uploadErr: any) {
+              // AI-65. Фон не скачался или не загрузился во внешнее хранилище.
+              // Публикация пойдёт дальше без подготовленной картинки, и человек
+              // увидит не то, что собирал, — а причины этому не было нигде.
+              logEvent(
+                'publish.story_image_unprepared',
+                { contentId: updatedStory.id, platform: 'instagram', reason: uploadErr?.message ? String(uploadErr.message) : 'unknown' },
+                'warn',
+                'stories',
+                'Картинка для Stories не подготовлена — уйдёт исходная',
+              );
             }
           }
         } catch (genError) {
@@ -622,16 +633,42 @@ router.post('/story/:id/publish', authenticateUser, async (req, res) => {
       const results = await Promise.allSettled(webhookPromises);
 
       results.forEach((result) => {
+        // AI-65. Раньше здесь стоял разбор исходов с пустыми ветками: результат
+        // публикации по каждой площадке получали и выбрасывали. Ответ человеку
+        // при этом всегда «Story published successfully».
         if (result.status === 'fulfilled') {
-          const { type, success } = result.value;
-          if (success) {
-          } else {
+          const { type, success, error } = result.value as { type: string; success: boolean; error?: unknown };
+          if (!success) {
+            logEvent(
+              'publish.platform_failed',
+              { contentId: updatedStory.id, platform: type, reason: error ? String(error) : 'unknown' },
+              'warn',
+              'stories',
+              'Публикация Stories на площадку не удалась',
+            );
           }
         } else {
+          logEvent(
+            'publish.platform_failed',
+            { contentId: updatedStory.id, reason: result.reason?.message ? String(result.reason.message) : 'unknown' },
+            'warn',
+            'stories',
+            'Публикация Stories прервалась до ответа площадки',
+          );
         }
       });
 
-    } catch (webhookError) {
+    } catch (webhookError: any) {
+      // AI-65. Сюда попадает поломка самой рассылки по площадкам — то есть не
+      // опубликовалось нигде. Ответ человеку остаётся прежним (успех), и это
+      // отдельный разговор; но в журнале теперь есть чему возразить.
+      logEvent(
+        'publish.story_dispatch_failed',
+        { contentId: updatedStory.id, reason: webhookError?.message ? String(webhookError.message) : 'unknown' },
+        'error',
+        'stories',
+        'Рассылка Stories по площадкам не состоялась',
+      );
     }
 
     res.json({
@@ -1303,7 +1340,17 @@ router.post('/publish-clip', authenticateUser, async (req, res) => {
           || {};
 
       }
-    } catch (err) {
+    } catch (err: any) {
+      // AI-65. Настройки кампании не прочитаны — дальше человек получит ответ в
+      // духе «площадка не настроена», хотя настроена. Ровно то же место, что и в
+      // публикации Stories и в аналитике, поэтому имя события общее.
+      logEvent(
+        'campaign.settings_unreadable',
+        { contentId, reason: err?.message ? String(err.message) : 'unknown' },
+        'warn',
+        'stories',
+        'Настройки кампании не прочитаны — площадка покажется ненастроенной',
+      );
     }
 
     // Определяем платформы для публикации
@@ -1420,7 +1467,17 @@ router.post('/publish-clip', authenticateUser, async (req, res) => {
                 headers: { 'Authorization': `Bearer ${token}` }
               });
 
-            } catch (updateError) {
+            } catch (updateError: any) {
+              // AI-65. Ролик уже опубликован, а отметка об этом не записана.
+              // Человек видит «не опубликовано» и публикует второй раз — на канал
+              // уходит дубль. Это ошибка, а не предупреждение.
+              logEvent(
+                'publish.status_writeback_failed',
+                { contentId, platform: 'youtube', reason: updateError?.message ? String(updateError.message) : 'unknown' },
+                'error',
+                'stories',
+                'Ролик опубликован, но отметка об этом не сохранена — человек опубликует повторно',
+              );
             }
           }
 

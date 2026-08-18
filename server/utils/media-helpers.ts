@@ -41,7 +41,10 @@ export async function fetchAndProxyImage(url: string, res: any, options: { isRet
     if (url.includes('tgcnt.ru')) {
       try {
         fixedUrl = decodeURIComponent(url);
-      } catch (e: any) {}
+      } catch (e: any) {
+        // AI-65. Молчание намеренное: ссылка просто не была закодирована, и
+        // дальше идёт исходная. Отказа здесь нет.
+      }
     }
     
     const isInstagram = url.includes('instagram.') || url.includes('fbcdn.net') || url.includes('cdninstagram.com') || options.forceType === 'instagram';

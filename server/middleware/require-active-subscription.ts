@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { directusApi } from '../directus';
 import { isPublicApiPath } from './api-auth-gate';
+import { logEvent } from '../utils/logger';
 
 /**
  * Гейт подписки.
@@ -62,6 +63,11 @@ const ALLOWED_PREFIXES = [
 interface StatusEntry {
   expireDate: string | null;
   isAdmin: boolean;
+  /**
+   * AI-65. Кого именно гейт не пропустил. Без этого поля отказ виден в журнале,
+   * но не связывается с остальным путём запроса того же человека.
+   */
+  userId: string | null;
   at: number;
 }
 
@@ -165,7 +171,7 @@ async function fetchStatus(token: string): Promise<StatusEntry> {
     // Валидируем личность через сам токен — Directus отвергнет поддельный/просроченный
     resp = await directusApi.get('/users/me', {
       headers: { Authorization: `Bearer ${token}` },
-      params: { fields: 'expire_date,is_smm_admin,is_smm_super' },
+      params: { fields: 'id,expire_date,is_smm_admin,is_smm_super' },
     });
   } catch (err: any) {
     const status = err?.response?.status;
@@ -196,10 +202,66 @@ async function fetchStatus(token: string): Promise<StatusEntry> {
   const entry: StatusEntry = {
     expireDate: readExpireDate(userData),
     isAdmin: isAdminFlag || isSuperFlag,
+    // Идентификатор берём только если он пришёл строкой: гейт не должен падать
+    // из-за поля, которое не влияет на решение о доступе.
+    userId: typeof userData.id === 'string' ? userData.id : null,
     at: Date.now(),
   };
   statusCache.set(token, entry);
   return entry;
+}
+
+/**
+ * AI-65. Путь без подставленных идентификаторов.
+ *
+ * В журнал нельзя писать `/api/campaigns/<uuid>`: это чужой идентификатор в
+ * общем потоке логов, и по условию задачи в событиях допускается только шаблон
+ * маршрута. Шаблона у общего middleware нет — Express разбирает маршрут позже,
+ * — поэтому собираем его сами: всё, что похоже на идентификатор, заменяется.
+ */
+export function routeTemplate(path: string): string {
+  return path
+    .split('/')
+    .map((seg) => {
+      if (!seg) return seg;
+      if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(seg)) return ':id';
+      if (/^\d+$/.test(seg)) return ':id';
+      // Длинная строка без разделителей — почти всегда идентификатор или токен.
+      if (seg.length > 24 && !seg.includes('.') && !seg.includes('-')) return ':id';
+      return seg;
+    })
+    .join('/');
+}
+
+/**
+ * AI-65. Единственное место, где гейт отказывает.
+ *
+ * Раньше все пять отказов уходили только в ответ клиенту и в журнале не
+ * оставляли ничего. На вопрос «почему у человека не сработала кнопка» ответа не
+ * было: 401 от гейта, 401 от истёкшей сессии и 503 от недоступной проверки
+ * снаружи выглядят одинаково, а причины у них разные и чинятся по-разному.
+ *
+ * `reason` — машинная и стабильная: по ней считают, а не читают.
+ */
+function denyGate(
+  req: Request,
+  res: Response,
+  params: { status: number; reason: string; userId?: string | null; body: Record<string, unknown> },
+) {
+  logEvent(
+    'gate.denied',
+    {
+      reason: params.reason,
+      status: params.status,
+      method: req.method,
+      route: routeTemplate(req.path),
+      userId: params.userId || undefined,
+    },
+    params.status >= 500 ? 'error' : 'warn',
+    'gate',
+    'Гейт подписки не пропустил изменяющий запрос',
+  );
+  return res.status(params.status).json(params.body);
 }
 
 export const requireActiveSubscription = async (
@@ -234,10 +296,14 @@ export const requireActiveSubscription = async (
     // Личность не предъявлена. Раньше это трактовалось как «наверное вебхук»
     // и пропускалось — теперь непроверяемая mutation не исполняется.
     if (!token) {
-      return res.status(401).json({
-        error: 'Требуется авторизация',
-        message: 'Для этого действия нужен действующий вход в аккаунт.',
-        code: 'SUBSCRIPTION_IDENTITY_REQUIRED',
+      return denyGate(req, res, {
+        status: 401,
+        reason: 'identity_missing',
+        body: {
+          error: 'Требуется авторизация',
+          message: 'Для этого действия нужен действующий вход в аккаунт.',
+          code: 'SUBSCRIPTION_IDENTITY_REQUIRED',
+        },
       });
     }
 
@@ -252,16 +318,24 @@ export const requireActiveSubscription = async (
     } catch (err) {
       const kind = err instanceof SubscriptionCheckError ? err.kind : 'unavailable';
       if (kind === 'invalid-session') {
-        return res.status(401).json({
-          error: 'Сессия недействительна',
-          message: 'Войдите в аккаунт заново.',
-          code: 'SUBSCRIPTION_SESSION_INVALID',
+        return denyGate(req, res, {
+          status: 401,
+          reason: 'session_invalid',
+          body: {
+            error: 'Сессия недействительна',
+            message: 'Войдите в аккаунт заново.',
+            code: 'SUBSCRIPTION_SESSION_INVALID',
+          },
         });
       }
-      return res.status(503).json({
-        error: 'Проверка подписки временно недоступна',
-        message: 'Не удалось подтвердить статус подписки. Повторите попытку позже.',
-        code: 'SUBSCRIPTION_VALIDATION_UNAVAILABLE',
+      return denyGate(req, res, {
+        status: 503,
+        reason: 'validation_unavailable',
+        body: {
+          error: 'Проверка подписки временно недоступна',
+          message: 'Не удалось подтвердить статус подписки. Повторите попытку позже.',
+          code: 'SUBSCRIPTION_VALIDATION_UNAVAILABLE',
+        },
       });
     }
 
@@ -269,11 +343,16 @@ export const requireActiveSubscription = async (
 
     const expired = !!status.expireDate && new Date(status.expireDate) <= new Date();
     if (expired) {
-      return res.status(403).json({
-        error: 'Подписка истекла',
-        message:
-          'Доступ ограничен. Вы можете просмотреть и сохранить данные своих кампаний, но для продолжения работы выберите тариф.',
-        subscriptionExpired: true,
+      return denyGate(req, res, {
+        status: 403,
+        reason: 'subscription_expired',
+        userId: status.userId,
+        body: {
+          error: 'Подписка истекла',
+          message:
+            'Доступ ограничен. Вы можете просмотреть и сохранить данные своих кампаний, но для продолжения работы выберите тариф.',
+          subscriptionExpired: true,
+        },
       });
     }
 
@@ -282,10 +361,17 @@ export const requireActiveSubscription = async (
     // Непредвиденный сбой самого гейта — тоже отказ, а не пропуск: иначе
     // достаточно уронить гейт, чтобы обойти проверку.
     if (res.headersSent) return;
-    return res.status(503).json({
-      error: 'Проверка подписки временно недоступна',
-      message: 'Не удалось подтвердить статус подписки. Повторите попытку позже.',
-      code: 'SUBSCRIPTION_VALIDATION_UNAVAILABLE',
+    return denyGate(req, res, {
+      status: 503,
+      // Отдельная причина: снаружи ответ тот же, но здесь сломался сам гейт, а
+      // не проверка подписки. Смешать их — значит потерять собственную аварию
+      // среди чужих простоев.
+      reason: 'gate_failure',
+      body: {
+        error: 'Проверка подписки временно недоступна',
+        message: 'Не удалось подтвердить статус подписки. Повторите попытку позже.',
+        code: 'SUBSCRIPTION_VALIDATION_UNAVAILABLE',
+      },
     });
   }
 };

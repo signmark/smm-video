@@ -345,6 +345,10 @@ export const EVENT_FIELD_ALLOWLIST = [
   'userId',
   'count',
   'attempt',
+  // AI-65. Идентификатор одного прогона фоновой задачи: по нему начало,
+  // окончание и отказ одного и того же прогона сходятся в одну строку истории.
+  // Без него в журнале видно только «какая-то задача что-то делала».
+  'jobId',
 ] as const;
 
 export type EventField = (typeof EVENT_FIELD_ALLOWLIST)[number];

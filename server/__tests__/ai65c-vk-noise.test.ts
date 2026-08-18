@@ -107,6 +107,18 @@ describe('AI-65: сторож шума в кроне', () => {
   });
 
   it('истекающий токен по-прежнему называется поимённо — он срочный и редкий', () => {
-    expect(index).toMatch(/токен истекает через \$\{soon\.minutesLeft\} мин`, 'vk-cron', 'warn'/);
+    // AI-65, продолжение. Строка текста заменена событием: по строке нельзя
+    // ни посчитать истекающие токены, ни отследить рост. Требование при этом
+    // не ослаблено — проверяется всё то же самое, что и раньше:
+    // поимённо по кампании, с оставшимися минутами и на уровне предупреждения.
+    const idx = index.indexOf("'platform.token_expiring'");
+    expect(idx).toBeGreaterThan(0);
+    const call = index.slice(idx, idx + 400);
+
+    expect(call).toContain('campaignId: soon.id');
+    expect(call).toMatch(/токен истекает через \$\{soon\.minutesLeft\} мин/);
+    expect(call).toContain("'warn'");
+    // Цикл по кампаниям, а не одна сводная строка.
+    expect(index).toMatch(/for \(const soon of status\.expiringSoon\)/);
   });
 });

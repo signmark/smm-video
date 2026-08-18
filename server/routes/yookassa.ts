@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import crypto from 'node:crypto';
+import { logEvent } from '../utils/logger';
 import { v4 as uuidv4 } from 'uuid';
 import { sendPurchasePostback } from '../services/partner-postback';
 import { getAppBaseUrl } from '../utils/app-base-url';
@@ -460,7 +461,19 @@ async function activateSubscription(userId: string, plan: string): Promise<void>
         }).catch(() => {});
       }
     }
-  } catch (_) {}
+  } catch (e: any) {
+    // AI-65. Подписка к этому моменту уже активирована — падать нельзя, деньги
+    // приняты и тариф выдан. Но и молчать нельзя: человек заплатил и НЕ получил
+    // подтверждения. Он не знает, прошла ли оплата, и идёт спрашивать — а у нас
+    // на этот вопрос не было ни одной строки в журнале.
+    logEvent(
+      'payment.confirmation_undelivered',
+      { operation: 'yookassa-activate', userId, provider: 'telegram', reason: e?.message ? String(e.message) : 'unknown' },
+      'warn',
+      'payments',
+      'Подписка активирована, но подтверждение человеку не доставлено',
+    );
+  }
 }
 
 // POST /api/payments/create
@@ -526,7 +539,19 @@ router.post('/payments/create', async (req: Request, res: Response) => {
         const { data: emailData } = await emailResp.json();
         userEmail = emailData?.email || '';
       }
-    } catch (_) {}
+    } catch (e: any) {
+      // AI-65. Адрес нужен для чека по 54-ФЗ. Пустой адрес не отменяет платёж,
+      // поэтому здесь по-прежнему не бросаем — но невыясненный адрес означает
+      // чек, который человеку некуда отправить, и узнать об этом задним числом
+      // было неоткуда.
+      logEvent(
+        'payment.receipt_email_unresolved',
+        { operation: 'yookassa-create', userId, reason: e?.message ? String(e.message) : 'unknown' },
+        'warn',
+        'payments',
+        'Не удалось получить адрес для чека — чек уйдёт без адреса',
+      );
+    }
 
     // Цена — только серверная. Базовая из общего резолвера (та же, что на витрине),
     // скидка — только из промокода, перепроверенного здесь и сейчас. Сумма с фронта
@@ -863,7 +888,19 @@ async function activateVerifiedPayment(
         }).catch(() => {});
       }
     }
-  } catch (_) {}
+  } catch (e: any) {
+    // AI-65. Партнёрская отметка о покупке. Оплата состоялась, возвращать 500
+    // провайдеру из-за неё нельзя — он начнёт повторять уведомление. Но молча
+    // потерянная отметка это не доплаченные партнёру деньги, и обнаружиться она
+    // должна раньше, чем в разговоре о расхождении в отчётах.
+    logEvent(
+      'payment.partner_postback_failed',
+      { operation: 'yookassa-webhook', userId: meta.user_id, reason: e?.message ? String(e.message) : 'unknown' },
+      'warn',
+      'payments',
+      'Покупка прошла, но партнёрская отметка не отправлена',
+    );
+  }
 
   return { status: 200, body: { ok: true, plan: meta.plan } };
 }

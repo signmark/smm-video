@@ -41,6 +41,12 @@ function stateToRecord(state: AutonomousState): Record<string, any> {
     // первого же деплоя.
     cycles_completed: state.cyclesCompleted,
     posts_created: state.postsCreated,
+    // AI-123v2. Счётчик прерываний обязан пережить рестарт. В памяти его
+    // обнуляла каждая выкатка, а при суточном интервале три прерывания подряд
+    // набираются трое суток — за это время выкаток несколько, и остановка не
+    // наступала никогда. Ровно та же история, что была со счётчиком циклов.
+    consecutive_aborted_cycles: state.consecutiveAbortedCycles || 0,
+    last_abort_reason: state.lastAbortReason || null,
     launch_command: state.launchCommand || null,
     last_cycle_at: state.lastCycleAt ? state.lastCycleAt.toISOString() : null,
     // SM-20 Phase2 (A): durable cycle identity — source of truth is БД.
@@ -57,6 +63,7 @@ function activateRestoredState(saved: {
   launchCommand?: string; lastCycleAt?: string;
   paused?: boolean; pausedAt?: string;
   cyclesCompleted?: number; postsCreated?: number;
+  consecutiveAbortedCycles?: number; lastAbortReason?: string;
   runId?: string; cycleId?: string; phase?: 'running' | 'pausing' | 'paused';
 }) {
   if (autonomousStates.has(saved.campaignId)) return;
@@ -76,6 +83,10 @@ function activateRestoredState(saved: {
     launchCommand: saved.launchCommand,
     cyclesCompleted: saved.cyclesCompleted ?? 0,
     postsCreated: saved.postsCreated ?? 0,
+    // AI-123v2: см. stateToRecord — без этих двух строк счётчик обнуляется
+    // выкаткой, и остановка по трём прерываниям подряд не наступает.
+    consecutiveAbortedCycles: saved.consecutiveAbortedCycles ?? 0,
+    lastAbortReason: saved.lastAbortReason,
     cycleRunning: false,
     errors: [],
     lastCycleAt: saved.lastCycleAt ? new Date(saved.lastCycleAt) : undefined,
@@ -128,6 +139,9 @@ function saveAutonomousPersistenceFile() {
         pausedAt: state.pausedAt ? state.pausedAt.toISOString() : undefined,
         cyclesCompleted: state.cyclesCompleted,
         postsCreated: state.postsCreated,
+        // AI-123v2: счётчик прерываний — такой же долгоживущий, как счётчик циклов.
+        consecutiveAbortedCycles: state.consecutiveAbortedCycles || 0,
+        lastAbortReason: state.lastAbortReason,
       };
     });
     writeFileSync(AUTONOMOUS_PERSIST_FILE, JSON.stringify(toSave, null, 2));
@@ -269,6 +283,8 @@ export async function restoreAutonomousStates() {
         pausedAt: rec.paused_at || undefined,
         cyclesCompleted: typeof rec.cycles_completed === "number" ? rec.cycles_completed : 0,
         postsCreated: typeof rec.posts_created === "number" ? rec.posts_created : 0,
+        consecutiveAbortedCycles: typeof rec.consecutive_aborted_cycles === "number" ? rec.consecutive_aborted_cycles : 0,
+        lastAbortReason: typeof rec.last_abort_reason === "string" && rec.last_abort_reason ? rec.last_abort_reason : undefined,
         // SM-20 Phase2 (A): DB identity.
         runId: dbIdentity.runId,
         cycleId: dbIdentity.cycleId,
@@ -473,6 +489,17 @@ export function getAutonomousStatusExternal(campaignId: string) {
   // совместимости с существующими потребителями и означает «режим заведён»,
   // а фактическую работу показывает status.
   if (!state) return { isActive: false, status: 'stopped' as const, quotaError, stopReason };
+  // AI-123v2: режим ещё работает, но последние попытки срывались. Человеку
+  // это нужно знать сейчас, а не через трое суток, когда режим выключится.
+  const failedAttempts = state.consecutiveAbortedCycles || 0;
+  const attention = failedAttempts > 0
+    ? {
+        kind: state.lastAbortReason || 'unknown',
+        message: warningMessageForAbortReason(state.lastAbortReason),
+        failedAttempts,
+        stopsAfter: MAX_CONSECUTIVE_ABORTED_CYCLES,
+      }
+    : null;
   const runtimeMin = Math.round((Date.now() - state.startedAt.getTime()) / 60000);
   // SM-20: на паузе обратный отсчёт врёт — таймеров нет, а число продолжало
   // бы уменьшаться. Отдаём null: «неизвестно, пока не возобновят».
@@ -498,6 +525,7 @@ export function getAutonomousStatusExternal(campaignId: string) {
     startedAt: state.startedAt,
     errors: state.errors.slice(-5),
     quotaError,
+    attention,
     // Ожидание одобрения контент-плана
     pendingApprovalStep: state.pendingApprovalStep || null,
     pendingPlan: state.pendingPlan || null,
@@ -662,6 +690,8 @@ interface AutonomousState {
    * человек включил, а вот три подряд означают, что дело не в сбое.
    */
   consecutiveAbortedCycles?: number;
+  /** Причина последнего прерывания — из неё складывается предупреждение человеку. */
+  lastAbortReason?: string;
   errors: string[];
   timer?: NodeJS.Timeout;
   /**
@@ -785,6 +815,21 @@ function stopMessageForAbortReason(reason: string): string {
 }
 
 /**
+ * AI-123v2. Текст ПРЕДУПРЕЖДЕНИЯ — режим ещё работает, но последняя попытка не
+ * удалась. Раньше человек при суточном интервале узнавал о поломке только на
+ * третьи сутки, когда режим уже выключался. Теперь узнаёт в первые.
+ */
+function warningMessageForAbortReason(reason?: string): string {
+  if (reason === 'token_refresh_failed') {
+    return 'Последняя попытка не удалась: подключение к вашему аккаунту потеряно. Войдите в систему заново — иначе режим скоро остановится.';
+  }
+  if (reason === 'campaign_settings_unreadable' || reason === 'campaign_keywords_unreadable') {
+    return 'Последняя попытка не удалась: не удаётся прочитать настройки кампании. Войдите в систему заново — иначе режим скоро остановится.';
+  }
+  return 'Последняя попытка не удалась. Если это повторится, автономный режим остановится.';
+}
+
+/**
  * Полная остановка режима с сохранением причины для интерфейса. Повторяет то,
  * что делает остановка по исчерпанной квоте: снимает таймеры, убирает состояние
  * и его сохранённую копию — иначе после перезапуска процесса режим воскреснет
@@ -815,9 +860,15 @@ function stopAutonomousWithReason(state: AutonomousState, kind: string, message:
  */
 function noteAbortedCycle(state: AutonomousState, reason: string): void {
   state.consecutiveAbortedCycles = (state.consecutiveAbortedCycles || 0) + 1;
+  state.lastAbortReason = reason;
   if (state.consecutiveAbortedCycles >= MAX_CONSECUTIVE_ABORTED_CYCLES) {
     stopAutonomousWithReason(state, reason, stopMessageForAbortReason(reason));
+    return;
   }
+  // AI-123v2. Сохраняем СРАЗУ: до следующей попытки при суточном интервале
+  // сутки, и за это время процесс успевает перезапуститься не раз. Порядок
+  // важен — при остановке сохранённая копия удаляется, писать её обратно нельзя.
+  saveAutonomousPersistence(state);
 }
 
 // Определяет является ли ошибка превышением квоты/rate-limit AI
@@ -4725,6 +4776,7 @@ ${criteriaLines}
     // AI-123. Счётчик прерываний считается ПОДРЯД: дошли до конца — значит
     // предыдущие неудачи были сбоем, а не состоянием.
     state.consecutiveAbortedCycles = 0;
+    state.lastAbortReason = undefined;
 
     // Обновляем статус цикла
     state.cyclesCompleted++;

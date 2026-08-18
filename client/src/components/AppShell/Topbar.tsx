@@ -82,6 +82,10 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
   // выглядело как «режим просто выключен» — хотя выключил его не человек, и
   // человек об этом не знал, пока не замечал отсутствие постов.
   const hasStopReason = !isAutonomousActive && !hasQuotaError && !!autonomousStatus?.stopReason;
+  // AI-123v2. Режим ещё работает, но последняя попытка сорвалась. При суточном
+  // интервале до остановки по трём прерываниям подряд трое суток — человек всё
+  // это время видел бы обычное зелёное «работает» и ждал постов, которых нет.
+  const hasAttention = isAutonomousActive && !!autonomousStatus?.attention;
 
   // Настройки автономного режима из кампании.
   // Раньше здесь был useQuery без queryFn с ключом ['/api/campaigns', id]:
@@ -405,7 +409,9 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
                   >
                     <Bot
                       className={`h-4 w-4 transition-colors ${
-                        isAutonomousActive
+                        hasAttention
+                          ? 'text-yellow-500 dark:text-yellow-400'
+                          : isAutonomousActive
                           ? 'text-green-500 dark:text-green-400'
                           : hasQuotaError
                           ? 'text-yellow-500 dark:text-yellow-400'
@@ -415,7 +421,9 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
                     />
                     <span
                       className={`absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full ${
-                        isAutonomousActive
+                        hasAttention
+                          ? 'bg-yellow-500 animate-pulse'
+                          : isAutonomousActive
                           ? 'bg-green-500 animate-pulse'
                           : hasQuotaError
                           ? 'bg-yellow-500 animate-pulse'
@@ -432,6 +440,14 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
                     <p className="font-medium text-amber-600 dark:text-amber-400">{t('topbar.autonomous.pendingTitle')}</p>
                     <p className="text-xs text-muted-foreground">
                       {t('topbar.autonomous.pendingDescription')}
+                    </p>
+                  </div>
+                ) : hasAttention ? (
+                  <div className="space-y-0.5">
+                    <p className="font-medium text-yellow-600 dark:text-yellow-400">Режим работает, но есть проблема</p>
+                    <p className="text-xs text-yellow-700 dark:text-yellow-300">{autonomousStatus.attention.message}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Неудачных попыток подряд: {autonomousStatus.attention.failedAttempts} из {autonomousStatus.attention.stopsAfter}.
                     </p>
                   </div>
                 ) : isAutonomousActive ? (
@@ -452,8 +468,8 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
                   </div>
                 ) : hasStopReason ? (
                   <div className="space-y-0.5">
-                    <p className="font-medium text-yellow-600 dark:text-yellow-400">Режим остановлен</p>
-                    <p className="text-xs text-yellow-700 dark:text-yellow-300">{autonomousStatus.stopReason.message}</p>
+                    <p className="font-medium text-red-600 dark:text-red-400">Режим остановлен</p>
+                    <p className="text-xs text-red-700 dark:text-red-300">{autonomousStatus.stopReason.message}</p>
                     <p className="text-xs text-muted-foreground">Включите автономный режим снова после входа.</p>
                   </div>
                 ) : hasQuotaError ? (

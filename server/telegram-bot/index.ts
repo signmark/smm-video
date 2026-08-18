@@ -3,7 +3,8 @@ import { message } from 'telegraf/filters';
 import axios from 'axios';
 import { telegramHttp, getTelegramAgent } from '../services/social-platforms/telegram-http';
 import { toSafeErrorDetails } from '../utils/safe-error';
-import { error as logError } from '../utils/logger';
+import { error as logError, logEvent } from '../utils/logger';
+import { notifySubscriptionActivated } from '../services/subscription-notify';
 import * as fs from 'fs';
 import * as path from 'path';
 import { telegramSessionStorage } from '../services/telegram-session-storage';
@@ -953,20 +954,43 @@ class TelegramBotService {
             const userJson = await userResp.json();
             const userChatId = userJson.data?.telegram_chat_id;
             if (userChatId) {
-              const botToken = process.env.TELEGRAM_BOT_TOKEN;
-              // AI-101 Phase 2B: через отказоустойчивый транспорт. validateStatus
-              // сохраняет поведение fetch — тот не бросал на 4xx/5xx.
-              const tg = await telegramHttp();
-              await tg.post(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-                chat_id: userChatId,
+              await notifySubscriptionActivated({
+                userId,
+                chatId: userChatId,
                 text: `🎉 Подписка активирована!\n📦 Тариф: ${planName}\n📅 До: ${expireDate.toLocaleDateString('ru-RU')}`,
-              }, {
-                headers: { 'Content-Type': 'application/json' },
-                validateStatus: () => true,
-              }).catch(() => {});
+              });
+            } else {
+              // AI-65. Тариф выдан, а написать некому. Здесь это странно: заявка
+              // пришла через бота, значит Telegram у человека есть.
+              logEvent(
+                'subscription.confirmation_undelivered',
+                { userId, provider: 'telegram', reason: 'chat_id_missing' },
+                'warn',
+                'subscriptions',
+                'Подписка активирована, но получатель подтверждения не найден',
+              );
             }
+          } else {
+            logEvent(
+              'subscription.confirmation_undelivered',
+              { userId, provider: 'telegram', status: userResp.status, reason: 'chat_id_unreadable' },
+              'warn',
+              'subscriptions',
+              'Подписка активирована, но получателя подтверждения не удалось прочитать',
+            );
           }
-        } catch (_) {}
+        } catch (e: any) {
+          // AI-65. Тариф уже выдан и записан — падать нельзя. Но человек не
+          // получил подтверждения оплаченного тарифа, и до сих пор об этом не
+          // оставалось следа.
+          logEvent(
+            'subscription.confirmation_undelivered',
+            { userId, provider: 'telegram', reason: e?.message ? String(e.message) : 'unknown' },
+            'warn',
+            'subscriptions',
+            'Подписка активирована, но подтверждение человеку не доставлено',
+          );
+        }
 
         // Помечаем заявку как обработанную — блокирует повторное одобрение через email
         markSubscriptionProcessed(userId, 'approved');

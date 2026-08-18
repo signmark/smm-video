@@ -6,6 +6,8 @@
  *   OMEMO_POSTBACK_SECRET — shared secret (Bearer + X-Omemo-Token)
  */
 
+import { logEvent } from '../utils/logger';
+
 const POSTBACK_URL = process.env.OMEMO_POSTBACK_URL || 'https://omemo.tech/api/v1/postback';
 const POSTBACK_SECRET = process.env.OMEMO_POSTBACK_SECRET || '';
 const SOURCE_APP = 'smmhub';
@@ -63,9 +65,27 @@ async function send(payload: PostbackPayload): Promise<void> {
       console.log(`[partner-postback] ✅ ${payload.event_type} отправлен (partner=${payload.partner_code} tx=${payload.transaction_id})`);
     } else {
       console.warn(`[partner-postback] ⚠️ ${payload.event_type} → HTTP ${res.status}: ${text}`);
+      // AI-65. Партнёр не получил отметку о событии. Это не доплаченные ему
+      // деньги, и обнаружиться такое должно раньше, чем в разговоре о
+      // расхождении в отчётах. Ответ партнёрского API остаётся в консоли и в
+      // событие не уходит: там может быть что угодно, включая эхо заголовков.
+      logEvent(
+        'partner.postback_failed',
+        { operation: payload.event_type, status: res.status, reason: 'rejected' },
+        'warn',
+        'partners',
+        'Партнёрское API отклонило отметку о событии',
+      );
     }
   } catch (err: any) {
     console.error(`[partner-postback] ❌ Ошибка отправки ${payload.event_type}:`, err?.message);
+    logEvent(
+      'partner.postback_failed',
+      { operation: payload.event_type, reason: err?.message ? String(err.message) : 'unknown' },
+      'warn',
+      'partners',
+      'Отметка о событии до партнёра не дошла',
+    );
   }
 }
 

@@ -6,7 +6,7 @@ import { Request, Response, Express } from 'express';
 import axios from 'axios';
 import { directusApiManager } from '../directus';
 import { directusAuthManager } from '../services/directus-auth-manager';
-import { log } from '../utils/logger';
+import { log, logEvent } from '../utils/logger';
 import { isUserAdmin } from '../routes-global-api-keys';
 import { detectEnvironment } from '../utils/environment-detector';
 import { sendRegistrationPostback } from '../services/partner-postback';
@@ -201,7 +201,20 @@ export function registerAuthRoutes(app: Express): void {
             const ud = userResp.data?.data;
             if (ud?.email) postbackEmail = ud.email;
             if (ud?.telegram_chat_id) postbackTelegramId = String(ud.telegram_chat_id);
-          } catch (_) {}
+          } catch (e: any) {
+            // AI-65. Регистрация состоялась — ронять её нельзя. Но постбек уйдёт
+            // партнёру с тем, что известно из формы: без telegram_chat_id и,
+            // возможно, с неактуальным адресом. Неполная отметка о регистрации —
+            // это спор о вознаграждении, который всплывает через месяц в сверке
+            // отчётов, и узнать о нём заранее было неоткуда.
+            logEvent(
+              'auth.postback_identity_unresolved',
+              { operation: 'register', userId: newUserId, reason: e?.message ? String(e.message) : 'unknown' },
+              'warn',
+              'auth',
+              'Постбек партнёру уйдёт с неполными данными о зарегистрированном',
+            );
+          }
 
           sendRegistrationPostback({
             partnerCode: normalizedCode,

@@ -23,7 +23,7 @@ describe('AI-128: contentAdaptationReadiness — реальный исход /ad
     const ready = contentAdaptationReadiness(undefined, undefined);
     if (!ready.canAdapt) {
       // Понятная причина дежурному/человеку, БЕЗ внутренних имён переменных (N8N_URL/N8N_API_KEY).
-      expect(ready.reason).toContain('Адаптация под площадки сейчас недоступна');
+      expect(ready.reason).toContain('скоро появится');
       expect(ready.reason).not.toContain('N8N_URL');
       expect(ready.reason).not.toContain('N8N_API_KEY');
     }

@@ -21,7 +21,18 @@
  *
  * Отдаём ТОЛЬКО поле(я), которые модель реально понимает — без «слать всё и пусть
  * игнорируют» (часть fal-эндпоинтов строго валидируют вход и вернут 422).
+ *
+ * SM-32. Сам перечень возможностей («три размера у gpt-image», «соотношения у
+ * nano-banana») переехал в shared/image-size-capabilities.ts — туда же смотрит
+ * список размеров в интерфейсе. Здесь остаётся только ФОРМА параметров: какое
+ * поле и в каком виде ждёт конкретный fal-эндпоинт. Пока перечень жил здесь,
+ * клиент про него не знал и предлагал размеры, которых модель не умеет.
  */
+import {
+  GPT_IMAGE_SIZES,
+  NANO_BANANA_RATIOS,
+  nearestAllowedSize,
+} from '@shared/image-size-capabilities';
 
 function roundToMultiple(n: number, mult: number): number {
   const v = Math.round((Number(n) || 0) / mult) * mult;
@@ -29,18 +40,10 @@ function roundToMultiple(n: number, mult: number): number {
 }
 
 /** Ближайший из поддерживаемых nano-banana аспектов к заданным w:h. */
-const NANO_ASPECTS: Array<{ label: string; value: number }> = [
-  { label: '21:9', value: 21 / 9 },
-  { label: '16:9', value: 16 / 9 },
-  { label: '3:2', value: 3 / 2 },
-  { label: '4:3', value: 4 / 3 },
-  { label: '5:4', value: 5 / 4 },
-  { label: '1:1', value: 1 },
-  { label: '4:5', value: 4 / 5 },
-  { label: '3:4', value: 3 / 4 },
-  { label: '2:3', value: 2 / 3 },
-  { label: '9:16', value: 9 / 16 },
-];
+const NANO_ASPECTS: Array<{ label: string; value: number }> = NANO_BANANA_RATIOS.map((label) => {
+  const [w, h] = label.split(':').map(Number);
+  return { label, value: w / h };
+});
 
 function nearestNanoAspect(width: number, height: number): string {
   const r = (Number(width) || 1) / (Number(height) || 1);
@@ -85,12 +88,13 @@ export function resolveSizeParams(
   }
 
   // gpt-image через fal — image_size, но только из трёх размеров, которые модель
-  // умеет. Произвольные width/height она не отдаст, поэтому выбираем ближайший по
-  // ориентации: человек просил портрет — получит портрет.
+  // умеет (перечень в общем описании возможностей). Произвольные width/height она
+  // не отдаст, поэтому берём ближайший допустимый: человек просил портрет —
+  // получит портрет. SM-32: в интерфейсе этих трёх размеров теперь и не обойти,
+  // но старые запросы и автономный режим сюда всё ещё приходят с любыми числами.
   if (id.includes('gpt-image')) {
-    if (w > h) return { image_size: { width: 1536, height: 1024 } };
-    if (h > w) return { image_size: { width: 1024, height: 1536 } };
-    return { image_size: { width: 1024, height: 1024 } };
+    const { width, height } = nearestAllowedSize(id, { width: w, height: h }, GPT_IMAGE_SIZES);
+    return { image_size: { width, height } };
   }
 
   // Всё остальное (schnell, fast-sdxl, sdxl, flux-lora, juggernaut, flux/*, дефолт)

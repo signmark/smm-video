@@ -32,6 +32,17 @@ import {
   supportsReference,
 } from "@/components/image-generation/reference-models";
 import { SUPPORTED_STYLES, STYLE_DESCRIPTIONS, ASPECT_RATIOS } from "../../../shared/fal-ai-styles";
+import { resolveSizeSelection, type ImageSizeOption } from "@shared/image-size-capabilities";
+
+/**
+ * SM-32. Общий список размеров в виде, который понимает описание возможностей.
+ * Что из него доступно — решает выбранная модель, а не этот файл.
+ */
+const BASE_SIZE_OPTIONS: ImageSizeOption[] = ASPECT_RATIOS.map((ratio) => ({
+  width: ratio.width,
+  height: ratio.height,
+  label: `${ratio.width}x${ratio.height} ${ratio.name}`,
+}));
 
 /**
  * ОТКЛЮЧЕНО: Извлечение ключевых слов больше не используется
@@ -291,6 +302,9 @@ export function ImageGenerationDialog({
     const [width, height] = imageSize.split("x").map(Number);
     return { width, height };
   };
+
+  // SM-32. Что модель умеет: список для поля и подпись про ограничение.
+  const sizeSelection = resolveSizeSelection(modelType, getImageDimensions(), BASE_SIZE_OPTIONS);
   
   // Мутация для генерации промта из текста
   const { mutate: generateTextPrompt, isPending: isPromptGenerationPending } = useMutation({
@@ -776,7 +790,26 @@ export function ImageGenerationDialog({
           </Label>
           <Select 
             value={modelType} 
-            onValueChange={(value) => setModelType(value)}
+            onValueChange={(value) => {
+              setModelType(value);
+
+              // SM-32. Молчаливая подмена размера и была дефектом: человек
+              // выбирал 768x1024, модель отдавала 1024x1536, и нигде об этом не
+              // говорилось. Меняем сами и сообщаем словами.
+              const previous = imageSize;
+              const { selected, replaced, note } = resolveSizeSelection(
+                value,
+                getImageDimensions(),
+                BASE_SIZE_OPTIONS,
+              );
+              if (replaced) {
+                setImageSize(`${selected.width}x${selected.height}`);
+                toast({
+                  title: 'Размер изображения заменён',
+                  description: `${previous} эта модель не умеет — поставили ${selected.width}x${selected.height}. ${note}`,
+                });
+              }
+            }}
           >
             <SelectTrigger className="h-8">
               <SelectValue placeholder="Выберите модель" />
@@ -800,13 +833,18 @@ export function ImageGenerationDialog({
               <SelectValue placeholder="Выберите размер" />
             </SelectTrigger>
             <SelectContent className="z-[9999]">
-              {ASPECT_RATIOS.map((ratio) => (
-                <SelectItem key={`${ratio.width}x${ratio.height}`} value={`${ratio.width}x${ratio.height}`}>
-                  {`${ratio.width}x${ratio.height}`} {ratio.name}
+              {sizeSelection.options.map((option) => (
+                <SelectItem key={`${option.width}x${option.height}`} value={`${option.width}x${option.height}`}>
+                  {option.label}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
+          {sizeSelection.note && (
+            <p className="text-[11px] text-muted-foreground" data-testid="image-size-note">
+              {sizeSelection.note}
+            </p>
+          )}
         </div>
       </div>
 

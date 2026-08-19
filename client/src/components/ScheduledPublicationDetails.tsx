@@ -218,8 +218,14 @@ export default function ScheduledPublicationDetails({
     <>
       <div className="flex items-stretch gap-0 border rounded-lg bg-card overflow-hidden hover:shadow-sm transition-shadow">
         
-        {/* Левый блок — дата */}
-        <div className="flex-shrink-0 flex flex-col items-center justify-center px-3 py-3 bg-blue-50 dark:bg-blue-950/40 border-r border-blue-100 dark:border-blue-900 min-w-[64px] text-center">
+        {/* Левый блок — дата. SM-30: он же кнопка изменения времени. */}
+        <button
+          type="button"
+          onClick={() => setIsEditDialogOpen(true)}
+          aria-label="Изменить дату и время публикации"
+          data-testid={`btn-edit-time-${content.id}`}
+          className="flex-shrink-0 flex flex-col items-center justify-center px-3 py-3 bg-blue-50 dark:bg-blue-950/40 border-r border-blue-100 dark:border-blue-900 min-w-[64px] text-center cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 transition-colors"
+        >
           <span className="text-[11px] font-medium text-blue-500 dark:text-blue-400 uppercase tracking-wide leading-none">
             {dateBlock?.month ?? '—'}
           </span>
@@ -229,7 +235,21 @@ export default function ScheduledPublicationDetails({
           <span className="text-[13px] font-semibold text-blue-600 dark:text-blue-400 leading-none mt-0.5">
             {dateBlock?.time ?? '—:—'}
           </span>
-        </div>
+          {/*
+            SM-30. Подпись видна всегда, а не по наведению. Тестировщик не нашёл
+            способ изменить время именно потому, что возможность была, но ничем
+            себя не выдавала: карандаш без подписи справа и дата обычным текстом
+            слева. Подсказка при наведении тут не помогла бы — её тоже надо
+            сначала догадаться вызвать.
+          */}
+          <span
+            className="mt-1 inline-flex items-center gap-0.5 text-[10px] leading-none text-blue-600/80 dark:text-blue-400/80 underline decoration-dotted underline-offset-2"
+            data-testid={`hint-edit-time-${content.id}`}
+          >
+            <Clock size={9} />
+            изменить
+          </span>
+        </button>
 
         {/* Центральный блок — контент */}
         <div className="flex-1 min-w-0 px-3 py-2.5 flex flex-col justify-center gap-1.5">
@@ -320,7 +340,7 @@ export default function ScheduledPublicationDetails({
                   <Edit2 size={15} />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent side="top" className="text-xs">Изменить</TooltipContent>
+              <TooltipContent side="top" className="text-xs">Изменить публикацию: текст, площадки, время</TooltipContent>
             </Tooltip>
 
             {hasFailedPlatforms && (

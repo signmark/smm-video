@@ -207,10 +207,14 @@ export function registerAiRoutes(app: Express) {
         }
       }
       
-      const isGeminiModel = model === 'gemini' 
-        || model === 'fal-ai/nano-banana-pro' 
-        || model === 'fal-ai/nano-banana-pro/edit';
       const isEditModel = model === 'fal-ai/nano-banana-pro/edit';
+      // AI-131. Модель «Генерация по образцу» раньше стояла в этом же списке и
+      // уходила в Vertex AI, куда список образцов не передаётся вовсе: признак
+      // isEditModel влиял ровно на одну строчку журнала. Человек прикладывал
+      // картинку, а генерация шла по одному тексту — тестировщик видел
+      // случайных персонажей и был прав.
+      const isGeminiModel = !isEditModel
+        && (model === 'gemini' || model === 'fal-ai/nano-banana-pro');
       const isOpenAIDirectModel = model === 'gpt-image-1' || model === 'gpt-image-2'
         || model === 'openai/gpt-image-1' || model === 'openai/gpt-image-2';
 
@@ -224,7 +228,8 @@ export function registerAiRoutes(app: Express) {
         if (!openAiKey) return res.status(400).json({ error: "API ключ OpenAI не найден", key_missing: true });
       }
 
-      // Ключ fal.ai нужен для всех не-Gemini и не-OpenAI моделей
+      // Ключ fal.ai нужен для всех не-Gemini и не-OpenAI моделей, включая
+      // модель «по образцу» (AI-131).
       let falAiKey: string | null = null;
       if (!isGeminiModel && !isOpenAIDirectModel) {
         // Приоритет 1: env (работает и в dev/Replit)
@@ -263,8 +268,37 @@ export function registerAiRoutes(app: Express) {
           throw new Error(gptResult.error || 'Не удалось сгенерировать изображение через OpenAI');
         }
         result = gptResult.imageUrls;
+      } else if (isEditModel) {
+        // AI-131. Образцы обязаны дойти до модели. Зовём официальный клиент
+        // напрямую, а не через универсальный сервис: у того на ошибке стоит
+        // запасной путь, который повторяет запрос БЕЗ картинок — то есть снова
+        // молча отдаёт генерацию по одному тексту. Здесь отказ должен быть
+        // отказом, и человек должен его увидеть.
+        const sources: string[] = Array.isArray(imageUrls)
+          ? imageUrls.filter((url: unknown) => typeof url === 'string' && url.trim() !== '')
+          : [];
+
+        if (sources.length === 0) {
+          return res.status(400).json({
+            success: false,
+            error: 'Для генерации по образцу приложите хотя бы одну картинку-образец.',
+          });
+        }
+
+        log(`[API] 🍌✏️ Генерация по образцу через fal: образцов ${sources.length}`, 'info');
+        const { falAiOfficialClient } = await import('../services/fal-ai-official-client');
+        result = await falAiOfficialClient.generateImages({
+          model: 'fal-ai/nano-banana-pro/edit',
+          token: falAiKey || undefined,
+          prompt,
+          negativePrompt,
+          imageUrls: sources,
+        } as any);
+        if (!result || result.length === 0) {
+          throw new Error('Генерация по образцу не вернула изображений');
+        }
       } else if (isGeminiModel) {
-        const modelLabel = isEditModel ? '🍌✏️ NanoBanana Pro/Edit' : model === 'fal-ai/nano-banana-pro' ? '🍌⚡ NanoBanana Pro' : '🍌 Nano Banana';
+        const modelLabel = model === 'fal-ai/nano-banana-pro' ? '🍌⚡ NanoBanana Pro' : '🍌 Nano Banana';
         log(`[API] Генерация изображения через Vertex AI + Service Account (${modelLabel})`, 'info');
         const geminiImageService = new GeminiImageService();
         const count = numImages ? parseInt(numImages.toString()) : 1;

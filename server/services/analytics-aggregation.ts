@@ -22,6 +22,18 @@ export interface PlatformAnalyticsStats {
     shares: number;
     comments: number;
   };
+  /**
+   * SM-15 (решение владельца 19.08): чем именно отличается цифра по каналу от
+   * цифры кампании. Отсутствует, если канал ведёт одна кампания — тогда
+   * раскладывать нечего.
+   */
+  channelAttribution?: {
+    /** Имя текущей кампании: подсказке нужно назвать, чьи посты учтены. */
+    campaignName: string;
+    own: ChannelWideStats;
+    others: AttributedCampaignStats[];
+    unattributed: ChannelWideStats;
+  };
 }
 
 export interface AggregatedPublicationAnalytics {
@@ -366,11 +378,61 @@ export interface ChannelWideStats {
 export interface CampaignChannelStats extends ChannelWideStats {
   /** То же самое, но по всем публикациям канала за период, включая не наши. */
   channelTotals: ChannelWideStats;
+  /**
+   * Решение владельца 19.08: «Хорошо бы написать, посты из какой кампании
+   * учтены». До него разница «канал минус кампания» была одним безымянным
+   * числом, и человек не мог понять, чья это активность: соседней кампании в
+   * том же канале, ручной публикации или нашей же публикации с потерянным
+   * идентификатором поста.
+   *
+   * Отсутствует, если соседних кампаний в этом канале не нашлось — тогда
+   * раскладывать нечего, а пустой блок в интерфейсе читался бы как «данные
+   * пропали».
+   */
+  attribution?: ChannelAttribution;
+}
+
+/** Кампания, которая ведёт ТОТ ЖЕ канал, и её опубликованные посты за период. */
+export interface SiblingCampaign {
+  campaignId: string;
+  name: string;
+  expectedIds: Set<string>;
+}
+
+export interface AttributedCampaignStats extends ChannelWideStats {
+  campaignId: string;
+  name: string;
+}
+
+export interface ChannelAttribution {
+  /** Соседние кампании, чьи публикации нашлись в канале за период. */
+  others: AttributedCampaignStats[];
+  /**
+   * Всё остальное: ручные публикации, чужие и наши же, у которых не сохранён
+   * идентификатор поста. Разделить их по данным канала нельзя — и выдавать
+   * догадку за факт мы не будем.
+   */
+  unattributed: ChannelWideStats;
+}
+
+function emptyStats(): ChannelWideStats {
+  return { posts: 0, views: 0, likes: 0, comments: 0, shares: 0 };
+}
+
+function addTo(target: ChannelWideStats, group: {
+  views: number; likes: number; comments: number; shares: number;
+}): void {
+  target.posts++;
+  target.views += group.views;
+  target.likes += group.likes;
+  target.comments += group.comments;
+  target.shares += group.shares;
 }
 
 export function aggregateCampaignChannelPosts(
   channelPosts: ChannelPostRow[],
   expectedIds: Set<string>,
+  siblings: SiblingCampaign[] = [],
 ): CampaignChannelStats {
   let posts = 0;
   let views = 0;
@@ -378,7 +440,9 @@ export function aggregateCampaignChannelPosts(
   let comments = 0;
   let shares = 0;
 
-  const channelTotals: ChannelWideStats = { posts: 0, views: 0, likes: 0, comments: 0, shares: 0 };
+  const channelTotals: ChannelWideStats = emptyStats();
+  const perSibling = new Map<string, AttributedCampaignStats>();
+  const unattributed: ChannelWideStats = emptyStats();
 
   for (const group of groupChannelPostsIntoPublications(channelPosts, expectedIds)) {
     // Метрики берутся максимумом по группе, а не суммой: Telegram повторяет
@@ -397,7 +461,26 @@ export function aggregateCampaignChannelPosts(
     const belongsToCampaign = group.some(post => (
       matchesPublishedPlatformPostId(expectedIds, post.platform_post_id)
     ));
-    if (!belongsToCampaign) continue;
+    if (!belongsToCampaign) {
+      // Чья это публикация: соседней кампании в том же канале или ничья.
+      // Первое совпадение выигрывает: одна публикация не может принадлежать
+      // двум кампаниям сразу, а порядок соседей задаёт вызывающий.
+      const owner = siblings.find(sibling => group.some(post => (
+        matchesPublishedPlatformPostId(sibling.expectedIds, post.platform_post_id)
+      )));
+
+      if (owner) {
+        let bucket = perSibling.get(owner.campaignId);
+        if (!bucket) {
+          bucket = { campaignId: owner.campaignId, name: owner.name, ...emptyStats() };
+          perSibling.set(owner.campaignId, bucket);
+        }
+        addTo(bucket, { views: groupViews, likes: groupLikes, comments: groupComments, shares: groupShares });
+      } else {
+        addTo(unattributed, { views: groupViews, likes: groupLikes, comments: groupComments, shares: groupShares });
+      }
+      continue;
+    }
 
     posts++;
     views += groupViews;
@@ -406,5 +489,17 @@ export function aggregateCampaignChannelPosts(
     shares += groupShares;
   }
 
-  return { posts, views, likes, comments, shares, channelTotals };
+  const result: CampaignChannelStats = { posts, views, likes, comments, shares, channelTotals };
+
+  // Разложение отдаём только когда было с кем сравнивать: без списка соседних
+  // кампаний «остальное» означало бы просто «не наше», и число выглядело бы
+  // осмысленнее, чем оно есть.
+  if (siblings.length > 0) {
+    result.attribution = {
+      others: [...perSibling.values()].sort((a, b) => b.posts - a.posts),
+      unattributed,
+    };
+  }
+
+  return result;
 }

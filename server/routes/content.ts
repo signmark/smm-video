@@ -29,8 +29,7 @@ export function contentAdaptationReadiness(
   if (!n8nUrl || !n8nApiKey) {
     return {
       canAdapt: false,
-      reason: 'Адаптация недоступна: сервис не настроен (N8N_URL / N8N_API_KEY не заданы). ' +
-        'Работа не запускалась — результат не изменён.',
+      reason: 'Адаптация под площадки сейчас недоступна. Работа не запускалась, ваш текст не изменён.',
     };
   }
   return { canAdapt: true };

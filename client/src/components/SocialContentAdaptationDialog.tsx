@@ -84,9 +84,16 @@ export function SocialContentAdaptationDialog({
               return acc;
             }, {})
         })
-      }).then(response => {
+      }).then(async response => {
         if (!response.ok) {
-          throw new Error("Ошибка при сохранении адаптированного контента");
+          // AI-128: показываем причину с сервера (error из тела), если она есть,
+          // вместо своей общей фразы, которая скрывала настоящую причину отказа.
+          let serverError: string | undefined;
+          try {
+            const body = await response.json();
+            serverError = typeof body?.error === 'string' ? body.error : undefined;
+          } catch { /* тело не JSON — оставляем общую фразу */ }
+          throw new Error(serverError || "Ошибка при сохранении адаптированного контента");
         }
         return response.json();
       });

@@ -14,7 +14,10 @@ describe('Topbar copy encoding', () => {
     const ru = read('../../locales/ru.json');
 
     expect(ru).toContain('Тарифы');
-    expect(ru).toContain('СММ Админ');
+    // Решение владельца 19.08: «СММ» — транслитерация, в русском такого термина
+    // нет. Сокращение остаётся латиницей, статус пользователя — русским словом.
+    expect(ru).toContain('SMM-администратор');
+    expect(ru).not.toContain('СММ');
     expect(ru).not.toMatch(MOJIBAKE);
   });
 

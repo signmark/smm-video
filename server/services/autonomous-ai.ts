@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { directusCrud } from './directus-crud';
+import { toolErrorText, hasUsableTopic } from './autonomous-topic-guard';
 import { geminiDirect } from './gemini-direct';
 import { aiService } from './ai-service';
 import { writeFileSync, readFileSync, existsSync, mkdirSync } from 'fs';
@@ -811,6 +812,10 @@ function stopMessageForAbortReason(reason: string): string {
   if (reason === 'campaign_settings_unreadable' || reason === 'campaign_keywords_unreadable') {
     return 'Не удаётся прочитать настройки кампании — войдите в систему заново и включите автономный режим снова.';
   }
+  // SM-38. Тут вход заново не поможет: не хватает не доступа, а темы.
+  if (reason === 'campaign_topic_missing') {
+    return 'Автономный режим остановлен: у кампании нет темы. Добавьте ключевые слова или заполните описание кампании и включите режим снова.';
+  }
   return 'Автономный режим остановлен: несколько попыток подряд не удались.';
 }
 
@@ -825,6 +830,10 @@ function warningMessageForAbortReason(reason?: string): string {
   }
   if (reason === 'campaign_settings_unreadable' || reason === 'campaign_keywords_unreadable') {
     return 'Последняя попытка не удалась: не удаётся прочитать настройки кампании. Войдите в систему заново — иначе режим скоро остановится.';
+  }
+  // SM-38. Человеку надо сказать не «войдите заново», а что именно заполнить.
+  if (reason === 'campaign_topic_missing') {
+    return 'Пост не создан: у кампании нет темы. Добавьте ключевые слова или заполните описание кампании — иначе режим скоро остановится.';
   }
   return 'Последняя попытка не удалась. Если это повторится, автономный режим остановится.';
 }
@@ -4271,6 +4280,13 @@ async function runAutonomousCycle(state: AutonomousState) {  // SM-20: стра�
       const kwRes: any = await TOOL_IMPLEMENTATIONS.getCampaignKeywords({
         campaignId: state.campaignId
       }, request);
+      // SM-38. getCampaignKeywords ловит свою ошибку внутри и возвращает её
+      // ЗНАЧЕНИЕМ: { error: '...' }. Исключения нет — значит catch ниже не
+      // срабатывал, список выходил пустым, и цикл шёл дальше молча. Защита
+      // AI-121 существовала, но была недостижима. Поднимаем отказ в исключение,
+      // чтобы он пошёл тем же путём, что и настоящий сбой чтения.
+      const kwErrText = toolErrorText(kwRes);
+      if (kwErrText) throw new Error(kwErrText);
       const kws = Array.isArray(kwRes?.keywords) ? kwRes.keywords : [];
       const allKeywords = kws
         .map((k: any) => (k?.keyword || k?.keyword_text || '').toString().trim())
@@ -4303,6 +4319,35 @@ async function runAutonomousCycle(state: AutonomousState) {  // SM-20: стра�
       noteAbortedCycle(state, 'campaign_keywords_unreadable');
       // AI-121: прерванная попытка тоже проставляет время цикла (см. подробное
       // объяснение выше, у прерывания по токену) — иначе цикл каждые пять секунд.
+      state.lastCycleAt = new Date();
+      state.cycleRunning = false;
+      return;
+    }
+
+    // SM-38. Честный ноль ключевых слов — не сбой, но и не повод писать.
+    // Тему задают слова, описание кампании и команда запуска; globalPrompt
+    // описывает КАК писать, а не О ЧЁМ, и подсказкой темы служить не может.
+    // Без темы модель писала про то, о чём говорит её роль, — так у кампании
+    // «Отче наш» вышли шесть черновиков про SMM вместо постов о молитве.
+    if (!hasUsableTopic({
+      keywords: topKeywords,
+      campaignName,
+      campaignDescription: campaignContext,
+      launchCommand,
+    })) {
+      logEvent(
+        'autonomous.cycle_aborted',
+        { operation: 'autonomous-cycle', campaignId: state.campaignId, userId: state.userId,
+          reason: 'campaign_topic_missing' },
+        'error',
+        'autonomous',
+        'Цикл прерван: теме взяться неоткуда — нет ни ключевых слов, ни описания кампании',
+      );
+      log('[AUTONOMOUS-CYCLE] ⚠️ Тема кампании не определена: ни ключевых слов, ни описания', 'autonomous');
+      state.errors.push(`Цикл ${state.cyclesCompleted + 1}: у кампании нет темы — ни ключевых слов, ни описания`);
+      noteAbortedCycle(state, 'campaign_topic_missing');
+      // Прерванная попытка тоже проставляет время цикла — иначе цикл каждые
+      // пять секунд (то же соображение, что и у прерываний AI-121).
       state.lastCycleAt = new Date();
       state.cycleRunning = false;
       return;

@@ -11,7 +11,7 @@ import { authorizeCampaignAccess } from './campaign-access';
  * Результат НИКОГДА не возвращать клиенту.
  */
 
-export type TokenPlatform = 'instagram' | 'facebook' | 'vk' | 'threads';
+export type TokenPlatform = 'instagram' | 'facebook' | 'vk' | 'threads' | 'telegram';
 
 /**
  * Каскад выбора токена из уже загруженных social_media_settings.
@@ -35,6 +35,10 @@ export function pickPlatformToken(
       return sms.vk?.token || undefined;
     case 'threads':
       return sms.threads?.accessToken || undefined;
+    // SM-24. Токен бота в браузер не приходит, поэтому живую проверку связи
+    // сервер делает по сохранённым настройкам кампании — как и для VK.
+    case 'telegram':
+      return sms.telegram?.token || undefined;
   }
 }
 

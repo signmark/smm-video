@@ -66,6 +66,192 @@ export async function validateTelegramToken(token: string): Promise<ApiKeyValida
 }
 
 /**
+ * Итог живой проверки связи с Telegram.
+ *
+ * SM-24. Метка «Настроено» говорила лишь о том, что настройки сохранены: токен
+ * мог быть отозван, бота могли выгнать из канала, а человек всё равно видел
+ * зелёную метку и узнавал правду только из неудачной публикации. Здесь мы
+ * спрашиваем сам Telegram — и делаем это только чтением: getMe, getChat,
+ * getChatMember. Ни одного сообщения в чужой канал проверка не отправляет.
+ */
+export interface TelegramConnectionResult {
+  isValid: boolean;
+  message: string;
+  /** error — виновата настройка; warning — виноват момент, стоит повторить. */
+  severity?: 'error' | 'warning';
+  /** true — исход мог измениться сам собой (сеть, таймаут, сбой Telegram). */
+  retryable?: boolean;
+  details?: {
+    botUsername?: string;
+    chatTitle?: string;
+    chatType?: string;
+    canPost?: boolean;
+  };
+}
+
+/**
+ * Признак «дело не в настройках, а в моменте»: сеть, таймаут, сбой на той
+ * стороне. Ошибку разбираем по её форме, а не через axios.isAxiosError:
+ * запросы к Telegram идут отказоустойчивым транспортом (telegramHttp), и
+ * привязываться к тому, каким именно клиентом собран объект ошибки, незачем.
+ */
+function isTransientTelegramError(error: any): boolean {
+  const status = error?.response?.status;
+  if (status === undefined) return true; // ответа нет вовсе — сеть или таймаут
+  return status >= 500 || status === 429;
+}
+
+function telegramErrorText(error: any, fallback: string): string {
+  return error?.response?.data?.description || error?.message || fallback;
+}
+
+/**
+ * Проверяет, дойдёт ли публикация: жив ли токен бота и есть ли у бота доступ
+ * к указанному каналу с правом писать.
+ *
+ * @param token токен бота
+ * @param chatId идентификатор канала или @username
+ */
+export async function validateTelegramConnection(
+  token: string,
+  chatId?: string,
+): Promise<TelegramConnectionResult> {
+  const tg = await telegramHttp();
+  // Имя переменной намеренно длинное: сторож транспорта
+  // (telegram-transport-coverage) ищет вызовы по имени базового адреса, и
+  // короткое `api` он находил внутри `api.vk.com` в этом же файле.
+  const telegramApi = `https://api.telegram.org/bot${token}`;
+
+  // Шаг 1. Жив ли токен.
+  let botId: number | undefined;
+  let botUsername: string | undefined;
+  try {
+    const me = await tg.get(`${telegramApi}/getMe`, { timeout: 10000 });
+    if (!me.data?.ok) {
+      return {
+        isValid: false,
+        message: 'Telegram ответил неожиданно — проверить связь не удалось.',
+        severity: 'warning',
+        retryable: true,
+      };
+    }
+    botId = me.data.result?.id;
+    botUsername = me.data.result?.username;
+  } catch (error: any) {
+    log(`Проверка связи Telegram: getMe не прошёл — ${error.message}`, 'api-validator');
+    if (isTransientTelegramError(error)) {
+      return {
+        isValid: false,
+        message: 'Telegram сейчас не отвечает — проверим связь позже.',
+        severity: 'warning',
+        retryable: true,
+      };
+    }
+    return {
+      isValid: false,
+      message: `Токен бота не принят Telegram: ${telegramErrorText(error, 'доступ отклонён')}. Замените токен.`,
+      severity: 'error',
+      retryable: false,
+    };
+  }
+
+  const chat = (chatId || '').trim();
+  if (!chat) {
+    return {
+      isValid: false,
+      message: `Бот @${botUsername || 'без имени'} на связи, но канал не указан — публиковать некуда.`,
+      severity: 'error',
+      retryable: false,
+      details: { botUsername },
+    };
+  }
+
+  // Шаг 2. Виден ли боту сам канал.
+  let chatTitle: string | undefined;
+  let chatType: string | undefined;
+  try {
+    const info = await tg.get(`${telegramApi}/getChat`, { params: { chat_id: chat }, timeout: 10000 });
+    chatTitle = info.data?.result?.title || info.data?.result?.username;
+    chatType = info.data?.result?.type;
+  } catch (error: any) {
+    log(`Проверка связи Telegram: getChat не прошёл — ${error.message}`, 'api-validator');
+    if (isTransientTelegramError(error)) {
+      return {
+        isValid: false,
+        message: 'Telegram сейчас не отвечает — проверим связь позже.',
+        severity: 'warning',
+        retryable: true,
+        details: { botUsername },
+      };
+    }
+    return {
+      isValid: false,
+      message: `Бот не видит канал ${chat}: ${telegramErrorText(error, 'канал не найден')}. Проверьте идентификатор и добавьте бота в канал.`,
+      severity: 'error',
+      retryable: false,
+      details: { botUsername },
+    };
+  }
+
+  // Шаг 3. Право писать. Если сам этот запрос не прошёл — связь мы уже
+  // подтвердили, поэтому вердикт не портим, а честно говорим, что права
+  // проверить не вышло.
+  try {
+    const member = await tg.get(`${telegramApi}/getChatMember`, {
+      params: { chat_id: chat, user_id: botId },
+      timeout: 10000,
+    });
+    const status = member.data?.result?.status;
+    const canPost = member.data?.result?.can_post_messages;
+
+    if (status === 'left' || status === 'kicked') {
+      return {
+        isValid: false,
+        message: `Бот @${botUsername} удалён из канала ${chatTitle || chat}. Добавьте его обратно администратором.`,
+        severity: 'error',
+        retryable: false,
+        details: { botUsername, chatTitle, chatType, canPost: false },
+      };
+    }
+
+    const isAdmin = status === 'administrator' || status === 'creator';
+    if (chatType === 'channel' && !isAdmin) {
+      return {
+        isValid: false,
+        message: `В канал ${chatTitle || chat} писать может только администратор, а бот @${botUsername} им не является.`,
+        severity: 'error',
+        retryable: false,
+        details: { botUsername, chatTitle, chatType, canPost: false },
+      };
+    }
+    if (isAdmin && canPost === false) {
+      return {
+        isValid: false,
+        message: `Бот @${botUsername} — администратор канала ${chatTitle || chat}, но без права публикации. Включите его в настройках канала.`,
+        severity: 'error',
+        retryable: false,
+        details: { botUsername, chatTitle, chatType, canPost: false },
+      };
+    }
+
+    return {
+      isValid: true,
+      message: `Связь есть: бот @${botUsername} пишет в ${chatTitle || chat}.`,
+      details: { botUsername, chatTitle, chatType, canPost: true },
+    };
+  } catch (error: any) {
+    log(`Проверка связи Telegram: getChatMember не прошёл — ${error.message}`, 'api-validator');
+    return {
+      isValid: true,
+      message: `Бот @${botUsername} видит ${chatTitle || chat}, но право публикации проверить не удалось.`,
+      severity: 'warning',
+      retryable: true,
+      details: { botUsername, chatTitle, chatType },
+    };
+  }
+}
+
+/**
  * Достаёт сообщество из ответа `groups.getById` независимо от версии API.
  *
  * v5.131 отдаёт `{ response: [ {...} ] }`, v5.199 — `{ response: { groups: [ {...} ] } }`.

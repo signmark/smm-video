@@ -6,6 +6,7 @@
 import { Express, Request, Response } from 'express';
 import {
   validateTelegramToken,
+  validateTelegramConnection,
   validateVkToken,
   validateInstagramToken,
   validateFacebookToken,
@@ -30,18 +31,53 @@ export function registerValidationRoutes(app: Express): void {
   // Telegram API Token validation
   app.post('/api/validate/telegram', authenticateUser, async (req: Request, res: Response) => {
     try {
-      const { token } = req.body;
+      let { token } = req.body;
+      const { chatId, campaignId } = req.body;
+
+      // SM-24. Токен бота вырезан из ответов сервера и в браузере его нет, а
+      // проверять надо именно сохранённое подключение — иначе живая проверка
+      // возможна лишь в момент ввода токена, то есть ровно тогда, когда она
+      // меньше всего нужна. Токен берём из настроек кампании; наружу уходит
+      // только вердикт.
+      let chatToCheck = typeof chatId === 'string' ? chatId : '';
+      if (campaignId) {
+        try {
+          const sms = await getCampaignSocialSettings(campaignId, { user: req.user });
+          if (!token) token = pickPlatformToken(sms, 'telegram');
+          if (!chatToCheck) chatToCheck = sms.telegram?.chatId || '';
+        } catch (e: any) {
+          if (e instanceof CampaignAccessError) {
+            return res.status(e.status).json({ success: false, message: e.code });
+          }
+          log(`Проверка Telegram: не удалось прочитать настройки кампании ${campaignId}: ${e.message}`, 'api-validation');
+        }
+      }
+
       if (!token) {
         return res.status(400).json({ success: false, message: 'Токен не указан' });
       }
-      
-      log(`Валидация токена Telegram: [redacted len=${token.length}]`, 'api-validation');
-      const result = await validateTelegramToken(token);
-      
+
+      log(`Проверка связи Telegram: [redacted len=${token.length}]${chatToCheck ? ' + канал' : ''}`, 'api-validation');
+
+      // Без канала проверять нечего сверх самого токена — старое поведение
+      // маршрута сохраняется в неприкосновенности для тех, кто зовёт его при
+      // вводе нового токена.
+      if (!chatToCheck) {
+        const result = await validateTelegramToken(token);
+        return res.json({
+          success: result.isValid,
+          message: result.message,
+          details: result.details,
+        });
+      }
+
+      const result = await validateTelegramConnection(token, chatToCheck);
       return res.json({
         success: result.isValid,
         message: result.message,
-        details: result.details
+        severity: result.severity,
+        retryable: result.retryable,
+        details: result.details,
       });
     } catch (error) {
       log.error('Error validating Telegram token:', error);

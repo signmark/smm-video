@@ -96,6 +96,7 @@ vi.mock('lucide-react', async () => {
 });
 
 import { apiRequest } from '@/lib/queryClient';
+import { api } from '@/lib/api';
 import { SocialMediaSettings } from '@/components/SocialMediaSettings';
 
 // Ровно то, что доезжает до браузера: сам токен вырезан, остался признак.
@@ -106,6 +107,10 @@ let qc: QueryClient;
 beforeEach(() => {
   vi.clearAllMocks();
   (apiRequest as any).mockResolvedValue({ success: true });
+  // Живая проверка связи (SM-33) уходит на сервер сама при открытии настроек.
+  (api as any).post.mockResolvedValue({
+    data: { success: true, message: 'Связь есть: бот @smm_bot пишет в @channel' },
+  });
   qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
 });
 
@@ -123,9 +128,34 @@ function renderComponent(initialSettings: any, onSettingsUpdated = vi.fn()) {
 }
 
 describe('SM-24: метка «Настроено» и снятие токена Telegram', () => {
-  it('метка стоит по сохранённым настройкам', () => {
+  it('метка стоит по сохранённым настройкам и показывает живую связь', async () => {
+    // SM-33. Раньше метка говорила «Настроено» — то есть «поля сохранены».
+    // Теперь интерфейс сам спрашивает Telegram по сохранённым настройкам и
+    // показывает ответ: дойдёт ли публикация.
     renderComponent(SAVED_TELEGRAM);
-    expect(screen.getByText('Настроено')).toBeInTheDocument();
+
+    await waitFor(() => expect((api as any).post).toHaveBeenCalledWith(
+      '/validate/telegram',
+      expect.objectContaining({ campaignId: 'test-campaign-1', chatId: '@channel' }),
+    ));
+    await waitFor(() => expect(screen.getByTestId('badge-telegram-state')).toHaveTextContent('Связь есть'));
+  });
+
+  it('сохранённое, но мёртвое подключение видно сразу, а не по неудачной публикации', async () => {
+    (api as any).post.mockResolvedValue({
+      data: { success: false, severity: 'error', message: 'Токен бота не принят Telegram. Замените токен.' },
+    });
+
+    renderComponent(SAVED_TELEGRAM);
+
+    await waitFor(() => expect(screen.getByTestId('badge-telegram-state')).toHaveTextContent('Нет связи'));
+  });
+
+  it('проверка не уходит, пока канал не сохранён: спрашивать нечего', async () => {
+    renderComponent({ telegram: { hasToken: true } });
+
+    await waitFor(() => expect(screen.getByText('Telegram')).toBeInTheDocument());
+    expect((api as any).post).not.toHaveBeenCalledWith('/validate/telegram', expect.anything());
   });
 
   it('набранный, но не сохранённый ID чата метку не зажигает', async () => {

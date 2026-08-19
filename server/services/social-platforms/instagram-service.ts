@@ -9,6 +9,7 @@ import FormData from 'form-data';
 import { randomUUID } from 'crypto';
 import log, { logEvent } from '../../utils/logger';
 import { storeTempVideo } from '../../utils/temp-video-store';
+import { describePlatformError } from './platform-error';
 
 /**
  * Скачивает видео и возвращает публичный URL для Instagram API.
@@ -327,7 +328,12 @@ class InstagramService {
       log.info(`[${opId}] [Instagram] Успешно: postId=${postId}, url=${postUrl}`);
       return { success: true, postId, postUrl };
     } catch (err: any) {
-      const errMsg = err.response?.data?.error?.message || err.message;
+      // SM-39: пустая строка тут оставляла и человека, и журнал без причины.
+      const errMsg = describePlatformError(err, {
+        platform: 'Instagram',
+        step: 'публикация',
+        opId,
+      });
       log.error(`[${opId}] [Instagram] Ошибка: ${errMsg}`);
       return { success: false, error: errMsg };
     }

@@ -7,6 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import RichTextEditor from "./RichTextEditor";
+import { ADAPT_COMING_SOON_NOTICE, adaptSaveState } from "@/lib/adapt-stub";
 
 // Определение типов
 type SocialPlatform = 'instagram' | 'telegram' | 'vk' | 'facebook' | 'youtube';
@@ -221,12 +222,30 @@ export function SocialContentAdaptationDialog({
     }
   };
 
+  const saveState = adaptSaveState({
+    saving: isSaving,
+    anyPlatformEnabled: Object.values(platformsContent).some(p => p.isEnabled),
+  });
+
   return (
     <Dialog open={true} onOpenChange={() => onClose()}>
       <DialogContent className="sm:max-w-[700px]">
         <DialogHeader>
           <DialogTitle>Адаптация контента для социальных сетей</DialogTitle>
         </DialogHeader>
+
+        {/*
+          Заглушка (решение владельца 19.08): сохранение текстов по площадкам
+          ещё не сделано, реализация — SM-35. Предупреждение стоит ДО вкладок:
+          человек должен узнать об этом прежде, чем напишет текст под три
+          площадки, а не после нажатия «Сохранить».
+        */}
+        <div
+          className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+          data-testid="adapt-coming-soon"
+        >
+          {ADAPT_COMING_SOON_NOTICE}
+        </div>
 
         <div className="mt-4">
           <div className="grid grid-cols-4 gap-2 mb-4">
@@ -285,19 +304,21 @@ export function SocialContentAdaptationDialog({
           <Button variant="outline" onClick={onClose}>
             Отмена
           </Button>
-          <Button 
-            onClick={() => saveAdaptedContent()} 
-            disabled={isSaving || Object.values(platformsContent).every(p => !p.isEnabled)}
+          <Button
+            onClick={() => saveAdaptedContent()}
+            disabled={saveState.disabled}
+            title={saveState.disabled && !isSaving ? ADAPT_COMING_SOON_NOTICE : undefined}
+            data-testid="button-save-adaptation"
           >
             {isSaving ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Сохранение...
+                {saveState.label}
               </>
             ) : (
               <>
                 <CheckCircle2 className="mr-2 h-4 w-4" />
-                Сохранить
+                {saveState.label}
               </>
             )}
           </Button>

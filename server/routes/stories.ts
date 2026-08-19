@@ -926,61 +926,9 @@ router.post('/publish-video/:id', authenticateUser, async (req, res) => {
       });
     }
 
-    // Publish to Instagram Stories via N8N webhook with creation_id fix
-    const n8nPayload = {
-      contentId: id,
-      contentType: 'video_story',
-      platforms: ['instagram'],
-      scheduledAt: new Date().toISOString(),
-
-      // КОНФИГУРАЦИЯ ДЛЯ СУЩЕСТВУЮЩЕГО WORKFLOW (который работал с другими видео)
-      instagram_config: {
-        media_type: 'VIDEO',
-        published: false, // Двухэтапный процесс как в рабочем workflow
-        api_version: 'v18.0',
-
-        // ИСПРАВЛЕНИЕ: Instagram Stories может требовать image_url для видео
-        container_parameters: {
-          image_url: conversionResult.convertedUrl, // Instagram использует image_url даже для видео Stories
-          media_type: 'VIDEO',
-          published: false
-        },
-
-        // Параметры для публикации (Publish Story узел) 
-        publish_parameters: {
-          creation_id: '{{CONTAINER_ID}}' // Как в рабочем workflow
-        },
-
-        // Указываем что используем существующий Stories workflow
-        use_existing_stories_workflow: true,
-        workflow_type: 'instagram_stories'
-      },
-
-      content: {
-        title: story.title || 'Video Story',
-        description: story.content || '',
-        videoUrl: conversionResult.convertedUrl,
-        originalVideoUrl: story.video_url,
-        mediaType: 'VIDEO',
-        storyType: 'instagram_stories'
-      },
-      metadata: {
-        converted: true,
-        conversionTime: conversionResult.duration,
-        videoFormat: 'mp4',
-        resolution: '1080x1920',
-        codec: 'H.264',
-        ...conversionResult.metadata
-      },
-      campaignId: story.campaign_id,
-      userId: story.user_id,
-      // Instagram API specific fields (дублируем для совместимости)
-      media_type: 'VIDEO',
-      video_url: conversionResult.convertedUrl,
-      image_url: conversionResult.convertedUrl, // Instagram Stories может использовать image_url для видео
-      publish_mode: 'instagram_stories'
-    };
-
+    // AI-128: мёртвый объект n8nPayload (строился, но никуда не отправлялся — сразу ниже
+    // прямой вызов publishInstagramStory) удалён. n8n из продукта выведен, публикация
+    // Stories идёт напрямую через Instagram Graph API.
 
     // Publish to Instagram directly
     const adminToken = process.env.DIRECTUS_STATIC_TOKEN || '';

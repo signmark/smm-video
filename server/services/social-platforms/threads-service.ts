@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto';
 import { log } from '../../utils/logger';
 import { storeTempVideo } from '../../utils/temp-video-store';
 import { stripMarkdown } from '../../utils/strip-markdown';
+import { describePlatformError } from './platform-error';
 
 const THREADS_API = 'https://graph.threads.net/v1.0';
 
@@ -161,7 +162,7 @@ class ThreadsService {
       });
       return { isValid: true, username: res.data.username };
     } catch (err: any) {
-      const msg = err.response?.data?.error?.message || err.message;
+      const msg = describePlatformError(err, { platform: 'Threads', step: 'проверка доступа' });
       const isPermissionError = msg?.includes('threads_basic') || msg?.includes('app review') || msg?.includes('Threads testers');
       if (isPermissionError) {
         return {

@@ -7,6 +7,7 @@ import axios from 'axios';
 import log from '../../utils/logger';
 import { CampaignContent, SocialPlatform, SocialPublication } from '@shared/schema';
 import { TokenValidationResult } from './base-service';
+import { describePlatformError } from './platform-error';
 
 class FacebookService {
   private apiVersion = 'v19.0';
@@ -55,7 +56,7 @@ class FacebookService {
         details: { scopes: data.scopes }
       };
     } catch (error: any) {
-      const msg = error.response?.data?.error?.message || error.message;
+      const msg = describePlatformError(error, { platform: 'Facebook', step: 'проверка доступа' });
       return { isValid: false, error: msg };
     }
   }
@@ -724,7 +725,12 @@ class FacebookService {
       log.info(`[${opId}] [Facebook] Успешно опубликовано: ${permalink}`);
       return { success: true, postId, postUrl: permalink };
     } catch (err: any) {
-      const errMsg = err.response?.data?.error?.message || err.message;
+      // SM-39: причина отказа обязана доехать до человека и до журнала.
+      const errMsg = describePlatformError(err, {
+        platform: 'Facebook',
+        step: 'публикация',
+        opId,
+      });
       log.error(`[${opId}] [Facebook] Ошибка публикации: ${errMsg}`);
       return { success: false, error: errMsg };
     }

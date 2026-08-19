@@ -9,6 +9,7 @@ import { log } from '../../utils/logger';
 import { directusApi } from '../../directus';
 import { TokenValidationResult } from './base-service';
 import { publicUrl } from '../../utils/public-url';
+import { describePlatformError } from './platform-error';
 
 const LOG_PREFIX = 'instagram-reels';
 
@@ -68,7 +69,7 @@ export class InstagramReelsService {
 
       return { isValid: true };
     } catch (error: any) {
-      const msg = error.response?.data?.error?.message || error.message;
+      const msg = describePlatformError(error, { platform: 'Instagram', step: 'проверка доступа' });
       return { isValid: false, error: msg };
     }
   }
@@ -294,7 +295,10 @@ export class InstagramReelsService {
       
       return null;
     } catch (error: any) {
-      const errorMsg = error.response?.data?.error?.message || error.message;
+      const errorMsg = describePlatformError(error, {
+        platform: 'Instagram',
+        step: 'создание контейнера Reels',
+      });
       log(`Ошибка создания контейнера Reels: ${errorMsg}`, LOG_PREFIX);
       throw new Error(`Ошибка создания контейнера: ${errorMsg}`);
     }
@@ -396,7 +400,10 @@ export class InstagramReelsService {
       
       return null;
     } catch (error: any) {
-      const errorMsg = error.response?.data?.error?.message || error.message;
+      const errorMsg = describePlatformError(error, {
+        platform: 'Instagram',
+        step: 'публикация контейнера',
+      });
       log(`Ошибка публикации контейнера: ${errorMsg}`, LOG_PREFIX);
       throw new Error(`Ошибка публикации: ${errorMsg}`);
     }

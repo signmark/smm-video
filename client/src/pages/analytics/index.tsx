@@ -1,12 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import {
-  channelBreakdownParts,
-  hasMeaningfulBreakdown,
-  type ChannelAttribution,
-  type ChannelMetric,
-} from '@/lib/channel-breakdown';
+import { type ChannelAttribution } from '@/lib/channel-breakdown';
+import { ChannelTotal } from '@/components/analytics/ChannelTotal';
 import { usePlan } from '@/hooks/use-plan';
 import { Lock } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -58,65 +54,6 @@ interface AnalyticsData {
      */
     channelAttribution?: ChannelAttribution;
   }>;
-}
-
-/**
- * AI-81: вторая цифра — та же метрика по всему каналу за период.
- *
- * Показывается ТОЛЬКО когда она отличается от кампанийной. Если совпадает,
- * сравнивать не с чем, а лишнее число рядом с каждой метрикой читается как шум
- * и обесценивает те случаи, когда расхождение действительно есть.
- *
- * SM-15, 19.08. Подпись раньше объясняла расхождение ручными публикациями мимо
- * системы. Замер по боевой базе показал, что это третий по значимости источник
- * из трёх: шесть каналов ведут по две-три кампании сразу (посты соседней
- * кампании в эту аналитику не попадают, и правильно), а 67 опубликованных
- * записей из 2862 не сохранили идентификатор поста и уже не сопоставимы с
- * каналом никогда. Поэтому подпись перечисляет все три источника, а первая
- * цифра остаётся: она единственная говорит про САМУ кампанию.
- *
- * Отсутствие `channel` (нет пост-уровневой атрибуции) — тоже причина молчать:
- * подставить ноль или продублировать нашу цифру значило бы выдумать данные.
- */
-function ChannelTotal({
-  own,
-  channel,
-  metric,
-  attribution,
-}: {
-  own: number;
-  channel?: number;
-  metric: ChannelMetric;
-  attribution?: ChannelAttribution;
-}) {
-  const { t } = useTranslation();
-  if (channel === undefined || channel === own) return null;
-
-  // SM-15, решение владельца 19.08: «Хорошо бы написать, посты из какой
-  // кампании учтены». Разница между цифрами была безымянной — теперь в
-  // подсказке она разложена поимённо.
-  const parts = hasMeaningfulBreakdown(metric, attribution)
-    ? channelBreakdownParts(metric, attribution)
-    : [];
-
-  const hint = parts.length
-    ? [t('analytics.channelBreakdownIntro'), ...parts.map(part => {
-      const value = part.value.toLocaleString();
-      if (part.kind === 'own') return t('analytics.channelBreakdownOwn', { value, name: part.name });
-      if (part.kind === 'other') return t('analytics.channelBreakdownOther', { value, name: part.name });
-      return t('analytics.channelBreakdownUnattributed', { value });
-    })].join('\n')
-    : t('analytics.channelHint');
-
-  return (
-    <span
-      className="text-muted-foreground text-xs"
-      title={hint}
-      data-testid="channel-total"
-    >
-      ({t('analytics.channelValue', { value: channel.toLocaleString() })})
-    </span>
-  );
 }
 
 export default function AnalyticsPage() {

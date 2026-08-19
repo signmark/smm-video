@@ -49,6 +49,7 @@ import { formatDistanceToNow, format, isAfter, isBefore, parseISO, startOfDay, e
 import { ru } from "date-fns/locale";
 import { ContentGenerationDialog } from "@/components/ContentGenerationDialog";
 import { SocialContentAdaptationDialog } from "@/components/SocialContentAdaptationDialog";
+import { bulkAdaptToastText, isProtectedFromBulkAdapt } from "@/lib/bulk-adapt";
 import { ImageGenerationDialog } from "@/components/ImageGenerationDialog";
 import { ContentPlanGenerator } from "@/components/ContentPlanGenerator";
 import { useCampaignStore } from "@/lib/campaignStore";
@@ -1165,10 +1166,17 @@ export default function ContentPage() {
   const bulkAdapt = async () => {
     setShowBulkAdaptConfirm(false);
     const platforms = ['telegram', 'vk', 'instagram', 'facebook', 'youtube', 'threads'];
+    // Решение владельца 19.08: опубликованные и запланированные посты пропускаем.
+    // Пересборка social_platforms сбросила бы их статус в «ожидает» и стёрла
+    // идентификатор поста, ссылку и время публикации — продукт забыл бы о
+    // публикации, которая на самом деле состоялась.
+    let skippedProtected = 0;
+    let skippedEmpty = 0;
     const { ok, total, cancelled } = await runBulkOperation('Адаптация', async (id) => {
       const c = (filteredContent as any[]).find((x: any) => x.id === id);
+      if (isProtectedFromBulkAdapt(c?.status)) { skippedProtected++; return false; }
       const text: string = c?.content || '';
-      if (!text.trim()) return false;
+      if (!text.trim()) { skippedEmpty++; return false; }
       const socialPlatforms: Record<string, any> = {};
       platforms.forEach(platform => {
         let adapted = text;
@@ -1178,9 +1186,7 @@ export default function ContentPage() {
       await apiRequest(`/api/campaign-content/${id}`, { method: 'PATCH', data: { social_platforms: socialPlatforms } });
     });
     toast({
-      description: cancelled
-        ? `Адаптация остановлена: обработано ${ok} из ${total} постов, остальные остались выбранными`
-        : `Адаптация завершена: ${ok} из ${total} постов`,
+      description: bulkAdaptToastText({ ok, total, skippedProtected, skippedEmpty, cancelled }),
     });
   };
   // ─────────────────────────────────────────────────────────────────────────
@@ -2255,6 +2261,10 @@ export default function ContentPage() {
                           <p>
                             <strong>Существующие версии для соцсетей перезапишутся</strong>, а их статусы
                             публикации сбросятся в «ожидает».
+                          </p>
+                          <p>
+                            Уже опубликованные и запланированные посты будут пропущены — записи об их
+                            публикации не пострадают. Сколько пропущено, скажем после прогона.
                           </p>
                           <p>Прогон можно прервать кнопкой «Стоп».</p>
                         </div>

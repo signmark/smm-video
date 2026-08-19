@@ -32,7 +32,7 @@
     "aiAssistant": "AI Помощник",
     "tgAssistant": "TG Ассистент",
     "pricing": "Тарифы",
-    "smmAdmin": "СММ Админ",
+    "smmAdmin": "SMM-администратор",
     "autonomous": {
       "schedule_one": "{{count}} пост каждые {{interval}} ч",
       "schedule_few": "{{count}} поста каждые {{interval}} ч",

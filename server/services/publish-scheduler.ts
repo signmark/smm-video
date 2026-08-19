@@ -2,6 +2,7 @@ import axios from 'axios';
 import { log, logEvent } from '../utils/logger';
 import { storage } from '../storage';
 import { directusCrud } from './directus-crud';
+import { mergePlatformStatus } from './publish-status-merge';
 import { publicationLockManager } from './publication-lock-manager';
 import { publicationTracker } from './publication-tracking';
 import { aiService } from './ai-service';
@@ -1721,7 +1722,7 @@ ${text}
         await directusCrud.update('campaign_content', entry.contentId, {
           social_platforms: {
             ...currentPlatforms,
-            [entry.platform]: { ...(currentPlatforms[entry.platform] || {}), ...entry.fields, status: 'published' }
+            [entry.platform]: mergePlatformStatus(currentPlatforms[entry.platform], { ...entry.fields, status: 'published' })
           }
         }, { useAdminToken: true });
         await forget(entry.contentId, entry.platform);
@@ -1755,7 +1756,13 @@ ${text}
         const fresh = freshList?.[0];
         const currentPlatforms = fresh?.social_platforms || content.social_platforms || {};
         await directusCrud.update('campaign_content', content.id, {
-          social_platforms: { ...currentPlatforms, [platform]: { ...(currentPlatforms[platform] || {}), ...data } }
+          social_platforms: {
+            ...currentPlatforms,
+            // Успех обязан стирать следы неудачной попытки: иначе у поста стоит
+            // «опубликовано» со ссылкой и рядом лежит ошибка прошлого раза, а
+            // человеку показываются оба несовместимых результата сразу.
+            [platform]: mergePlatformStatus(currentPlatforms[platform], data),
+          }
         }, { useAdminToken: true });
         // Единственная точка записи статуса платформы в планировщике — отсюда и
         // сбрасываем кеш. Раньше это делали вручную у отдельных платформ, и из 14

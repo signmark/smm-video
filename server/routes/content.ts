@@ -16,6 +16,26 @@ import axios from 'axios';
 import { buildCacheKey, getFromCache, setToCache, invalidateContentCache } from '../utils/content-cache';
 export { invalidateContentCache };
 
+/**
+ * AI-128 (2026-08-19): решение, можно ли запустить адаптацию контента.
+ * Чистая функция, тестируется напрямую. Раньше маршрут /adapt возвращал success:true
+ * даже когда сервис не настроен и никакого вызова не происходило. Теперь решение
+ * «адаптация возможна/нет» вынесено отдельно — поведение маршрута отражает реальный исход.
+ */
+export function contentAdaptationReadiness(
+  n8nUrl: string | undefined,
+  n8nApiKey: string | undefined,
+): { canAdapt: true } | { canAdapt: false; reason: string } {
+  if (!n8nUrl || !n8nApiKey) {
+    return {
+      canAdapt: false,
+      reason: 'Адаптация недоступна: сервис не настроен (N8N_URL / N8N_API_KEY не заданы). ' +
+        'Работа не запускалась — результат не изменён.',
+    };
+  }
+  return { canAdapt: true };
+}
+
 // Creation timestamps are owned by Directus. SMM panel requests must never
 // provide or overwrite them, including through generic POST/PATCH/PUT routes.
 const IMMUTABLE_CONTENT_FIELDS = new Set([
@@ -953,19 +973,26 @@ ${originalText}
 
       const n8nUrl = process.env.N8N_URL;
       const n8nApiKey = process.env.N8N_API_KEY;
-      
-      if (n8nUrl && n8nApiKey) {
-        await axios.post(`${n8nUrl}/webhook/0b4d5ad4-00bf-420a-b107-5f09a9ae913c`, {
-          contentId: id,
-          campaignId: content.campaign_id,
-          userId,
-          platforms: Object.keys(socialPlatforms),
-          content: socialPlatforms,
-          title: content.title
-        }, {
-          headers: { 'X-N8N-Authorization': n8nApiKey }
-        });
+
+      // AI-128: раньше этот маршрут возвращал success:true и «Content adaptation started»
+      // даже когда сервиса адаптации нет (N8N_URL/N8N_API_KEY отсутствуют — то есть исходящего
+      // вызова не было вовсе, а человеку врали, что адаптация запущена). Теперь — реальный
+      // исход: успех только если можно запустить (webhook реально отправился).
+      const readiness = contentAdaptationReadiness(n8nUrl, n8nApiKey);
+      if (!readiness.canAdapt) {
+        return res.status(503).json({ success: false, error: readiness.reason });
       }
+
+      await axios.post(`${n8nUrl}/webhook/0b4d5ad4-00bf-420a-b107-5f09a9ae913c`, {
+        contentId: id,
+        campaignId: content.campaign_id,
+        userId,
+        platforms: Object.keys(socialPlatforms),
+        content: socialPlatforms,
+        title: content.title
+      }, {
+        headers: { 'X-N8N-Authorization': n8nApiKey }
+      });
       
       res.json({ success: true, message: "Content adaptation started" });
     } catch (error) {

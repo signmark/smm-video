@@ -224,7 +224,7 @@ router.get('/instagram/auth/callback', async (req, res) => {
 
     log('instagram-oauth', `Найдено страниц с Instagram: ${pagesWithInstagram.length}`);
 
-    // Подготавливаем данные для отправки в N8N webhook
+    // Подготавливаем данные для отправки в webhook уведомления об авторизации Instagram
     const webhookData = {
       success: true,
       appId: session.appId,
@@ -343,7 +343,7 @@ router.get('/instagram/auth/callback', async (req, res) => {
       log('instagram-oauth', `Instagram настройки успешно сохранены в кампанию ${session.campaignId}`);
       log('instagram-oauth', `Сохраненные настройки: hasToken=${!!updatedInstagramSettings.token}, hasAppSecret=${!!updatedInstagramSettings.appSecret}, businessAccountId=${updatedInstagramSettings.businessAccountId || 'нет'}`);
 
-      // Дополнительно отправляем в N8N webhook если указан
+      // Дополнительно отправляем в webhook уведомления об авторизации, если указан
       if (session.webhookUrl) {
         try {
           const webhookNotification = {
@@ -361,9 +361,9 @@ router.get('/instagram/auth/callback', async (req, res) => {
             },
             timeout: 10000
           });
-          log('instagram-oauth', `Данные также отправлены в N8N webhook: ${session.webhookUrl}`);
+          log('instagram-oauth', `Данные также отправлены в webhook авторизации: ${session.webhookUrl}`);
         } catch (webhookError) {
-          log('instagram-oauth', `Ошибка отправки в N8N webhook: ${webhookError}`);
+          log('instagram-oauth', `Ошибка отправки в webhook авторизации: ${webhookError}`);
         }
       }
 

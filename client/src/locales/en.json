@@ -491,7 +491,7 @@
       "enterUrlPrompt": "Enter website URL and click \"Analyze\""
     },
     "channelValue": "channel: {{value}}",
-    "channelHint": "The first number counts campaign publications. The second counts the whole channel over the same period, including posts published manually outside the system."
+    "channelHint": "The first number counts this campaign's publications. The second counts the whole channel over the same period: posts of other campaigns in the same channel, our own posts whose id was not stored, and posts published manually."
   },
   "auth": {
     "login": "Login",

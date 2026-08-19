@@ -40,6 +40,7 @@ import InstagramSetupWizardSimple from "./InstagramSetupWizardSimple";
 import VkSetupWizard from "./VkSetupWizard";
 import FacebookSetupWizard from "./FacebookSetupWizard";
 import { isPlatformConnected, parseSocialSettings } from "@/lib/platform-connection";
+import { telegramBadgeState, TELEGRAM_BADGE_CLASSES } from "@/lib/telegram-connection-state";
 import { fetchVkGroupsByManualToken } from "@/lib/vk-groups-request";
 import type { SocialMediaSettings } from "@shared/schema";
 
@@ -249,6 +250,8 @@ export function SocialMediaSettings({
   const [isVkReconnecting, setIsVkReconnecting] = useState(false);
   const vkReconnectListenerRef = useRef<((e: MessageEvent) => void) | null>(null);
   const vkReconnectCheckRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // SM-24: ключ последней живой проверки Telegram — «кампания:канал».
+  const telegramCheckedRef = useRef<string | null>(null);
   const vkValidatedForSettingsRef = useRef<any>(null);
   // true после «Отмена» или таймаута — блокирует авто-рестарт поллинга из useEffect
   const vkPollCancelledRef = useRef(false);
@@ -1299,6 +1302,70 @@ export function SocialMediaSettings({
     }
   };
   
+  /**
+   * SM-24. Живая проверка связи: жив ли токен бота и достаёт ли бот до канала.
+   * Токен в браузер не приходит, поэтому сохранённое подключение проверяет
+   * сервер по campaignId — набранный в поле токен, если он есть, имеет
+   * приоритет. Проверка только читает, ничего в канал не отправляет.
+   */
+  const checkTelegramConnection = async (opts?: { silent?: boolean; chatId?: string }) => {
+    const typedToken = form.getValues("telegram.token");
+    const chatId = opts?.chatId ?? form.getValues("telegram.chatId");
+
+    try {
+      setTelegramStatus({ isLoading: true });
+      const response = await api.post('/validate/telegram', {
+        campaignId,
+        chatId,
+        ...(typedToken ? { token: typedToken } : {}),
+      });
+
+      setTelegramStatus({
+        isLoading: false,
+        isValid: response.data.success,
+        message: response.data.message,
+        severity: response.data.severity,
+        retryable: response.data.retryable,
+      });
+
+      if (!opts?.silent) {
+        toast({
+          variant: response.data.success ? "default" : "destructive",
+          description: response.data.message,
+        });
+      }
+    } catch (error) {
+      // Не достучались до своего же сервера — это «подождите», а не приговор
+      // подключению: ровно так же устроена проверка ВКонтакте.
+      setTelegramStatus({
+        isLoading: false,
+        isValid: false,
+        message: 'Не удалось выполнить проверку — попробуем позже.',
+        severity: 'warning',
+        retryable: true,
+      });
+      if (!opts?.silent) {
+        toast({ variant: "destructive", description: 'Не удалось выполнить проверку связи с Telegram' });
+      }
+    }
+  };
+
+  // Автопроверка при открытии настроек — тихо, без всплывающих сообщений.
+  // Раньше метка «Настроено» означала лишь «поля сохранены»: отозванный токен
+  // и выгнанного из канала бота человек обнаруживал только по несостоявшейся
+  // публикации.
+  useEffect(() => {
+    if (!campaignId || !telegramHasSavedToken) return;
+    const saved = (parseSocialSettings(initialSettings) as any)?.telegram || {};
+    const chatId = saved.chatId || '';
+    if (!chatId) return;
+
+    const key = `${campaignId}:${chatId}`;
+    if (telegramCheckedRef.current === key) return;
+    telegramCheckedRef.current = key;
+    checkTelegramConnection({ silent: true, chatId });
+  }, [campaignId, telegramHasSavedToken, initialSettings]);
+
   const validateVkToken = async () => {
     const token = form.getValues("vk.token");
     const groupId = form.getValues("vk.groupId");
@@ -1656,6 +1723,25 @@ export function SocialMediaSettings({
     }
   };
   
+  /**
+   * SM-24. Метка Telegram. Пока живая проверка не ответила — говорим ровно то,
+   * что знаем: настройки сохранены. Как только ответ есть, метка показывает
+   * его, а подробности лежат в подсказке.
+   */
+  const TelegramStateBadge = ({ status }: { status: ValidationStatus }) => {
+    const state = telegramBadgeState(status);
+    return (
+      <Badge
+        variant="secondary"
+        className={TELEGRAM_BADGE_CLASSES[state.tone]}
+        title={status.message}
+        data-testid="badge-telegram-state"
+      >
+        {state.label}
+      </Badge>
+    );
+  };
+
   // Компонент статуса валидации
   const ValidationBadge = ({ status }: { status: ValidationStatus }) => {
     if (status.isLoading) {
@@ -1874,8 +1960,9 @@ export function SocialMediaSettings({
             <AccordionTrigger className="py-2">
               <div className="flex items-center space-x-2">
                 <span>Telegram</span>
-                {isConfigured('telegram') && <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">Настроено</Badge>}
-                <ValidationBadge status={telegramStatus} />
+                {isConfigured('telegram')
+                  ? <TelegramStateBadge status={telegramStatus} />
+                  : <ValidationBadge status={telegramStatus} />}
               </div>
             </AccordionTrigger>
             <AccordionContent className="space-y-4 pt-2">
@@ -1925,6 +2012,18 @@ export function SocialMediaSettings({
                     data-testid="button-telegram-change-token"
                   >
                     🔄 Заменить токен
+                  </Button>
+                  {/* SM-24: связь можно перепроверить в любой момент, а не
+                      только в момент ввода нового токена. */}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={telegramStatus.isLoading}
+                    onClick={() => checkTelegramConnection()}
+                    data-testid="button-telegram-check-connection"
+                  >
+                    {telegramStatus.isLoading ? 'Проверяем…' : 'Проверить связь'}
                   </Button>
                   {/* SM-24: снять настройку было нечем. Пустое поле означает
                       «оставить как есть», поэтому стёртый токен не сохранялся,

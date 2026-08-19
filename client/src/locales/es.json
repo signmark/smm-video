@@ -492,7 +492,11 @@
       "enterUrlPrompt": "Ingrese URL del sitio web y haga clic en \"Analizar\""
     },
     "channelValue": "canal: {{value}}",
-    "channelHint": "El primer número cuenta las publicaciones de esta campaña. El segundo cuenta todo el canal en el mismo período: publicaciones de otras campañas en el mismo canal, nuestras publicaciones sin identificador guardado y las publicadas manualmente."
+    "channelHint": "El primer número cuenta las publicaciones de esta campaña. El segundo cuenta todo el canal en el mismo período: publicaciones de otras campañas en el mismo canal, nuestras publicaciones sin identificador guardado y las publicadas manualmente.",
+    "channelBreakdownIntro": "De qué se compone la cifra del canal:",
+    "channelBreakdownOwn": "{{value}} — esta campaña «{{name}}»",
+    "channelBreakdownOther": "{{value}} — campaña «{{name}}»",
+    "channelBreakdownUnattributed": "{{value}} — publicaciones sin campaña: hechas a mano o con identificador no guardado"
   },
   "auth": {
     "login": "Iniciar sesión",

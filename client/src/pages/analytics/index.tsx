@@ -1,6 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import {
+  channelBreakdownParts,
+  hasMeaningfulBreakdown,
+  type ChannelAttribution,
+  type ChannelMetric,
+} from '@/lib/channel-breakdown';
 import { usePlan } from '@/hooks/use-plan';
 import { Lock } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -45,6 +51,12 @@ interface AnalyticsData {
       shares: number;
       comments: number;
     };
+    /**
+     * SM-15 (решение владельца 19.08): из чего складывается цифра по каналу.
+     * Приходит только когда канал ведёт больше одной кампании — иначе
+     * раскладывать нечего.
+     */
+    channelAttribution?: ChannelAttribution;
   }>;
 }
 
@@ -66,14 +78,40 @@ interface AnalyticsData {
  * Отсутствие `channel` (нет пост-уровневой атрибуции) — тоже причина молчать:
  * подставить ноль или продублировать нашу цифру значило бы выдумать данные.
  */
-function ChannelTotal({ own, channel }: { own: number; channel?: number }) {
+function ChannelTotal({
+  own,
+  channel,
+  metric,
+  attribution,
+}: {
+  own: number;
+  channel?: number;
+  metric: ChannelMetric;
+  attribution?: ChannelAttribution;
+}) {
   const { t } = useTranslation();
   if (channel === undefined || channel === own) return null;
+
+  // SM-15, решение владельца 19.08: «Хорошо бы написать, посты из какой
+  // кампании учтены». Разница между цифрами была безымянной — теперь в
+  // подсказке она разложена поимённо.
+  const parts = hasMeaningfulBreakdown(metric, attribution)
+    ? channelBreakdownParts(metric, attribution)
+    : [];
+
+  const hint = parts.length
+    ? [t('analytics.channelBreakdownIntro'), ...parts.map(part => {
+      const value = part.value.toLocaleString();
+      if (part.kind === 'own') return t('analytics.channelBreakdownOwn', { value, name: part.name });
+      if (part.kind === 'other') return t('analytics.channelBreakdownOther', { value, name: part.name });
+      return t('analytics.channelBreakdownUnattributed', { value });
+    })].join('\n')
+    : t('analytics.channelHint');
 
   return (
     <span
       className="text-muted-foreground text-xs"
-      title={t('analytics.channelHint')}
+      title={hint}
       data-testid="channel-total"
     >
       ({t('analytics.channelValue', { value: channel.toLocaleString() })})
@@ -287,22 +325,26 @@ export default function AnalyticsPage() {
             <div className="flex items-center gap-2">
               <Eye className="h-4 w-4 text-blue-500" />
               <span>{platform.views.toLocaleString()} {t('analytics.viewsCount')}</span>
-              <ChannelTotal own={platform.views} channel={platform.channelTotals?.views} />
+              <ChannelTotal own={platform.views} channel={platform.channelTotals?.views}
+                metric="views" attribution={platform.channelAttribution} />
             </div>
             <div className="flex items-center gap-2">
               <Heart className="h-4 w-4 text-red-500" />
               <span>{platform.likes.toLocaleString()} {t('analytics.likesCount')}</span>
-              <ChannelTotal own={platform.likes} channel={platform.channelTotals?.likes} />
+              <ChannelTotal own={platform.likes} channel={platform.channelTotals?.likes}
+                metric="likes" attribution={platform.channelAttribution} />
             </div>
             <div className="flex items-center gap-2">
               <Share2 className="h-4 w-4 text-green-500" />
               <span>{platform.shares.toLocaleString()} {t('analytics.sharesCount')}</span>
-              <ChannelTotal own={platform.shares} channel={platform.channelTotals?.shares} />
+              <ChannelTotal own={platform.shares} channel={platform.channelTotals?.shares}
+                metric="shares" attribution={platform.channelAttribution} />
             </div>
             <div className="flex items-center gap-2">
               <MessageCircle className="h-4 w-4 text-purple-500" />
               <span>{platform.comments.toLocaleString()} {t('analytics.commentsCount')}</span>
-              <ChannelTotal own={platform.comments} channel={platform.channelTotals?.comments} />
+              <ChannelTotal own={platform.comments} channel={platform.channelTotals?.comments}
+                metric="comments" attribution={platform.channelAttribution} />
             </div>
           </div>
         </CardContent>

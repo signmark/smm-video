@@ -7,6 +7,7 @@ import {
   getPublishedPlatformPostIds,
   matchesPublishedPlatformPostId,
 } from './analytics-aggregation';
+import { collectSiblingCampaigns } from './analytics-siblings';
 import type { ChannelPost } from './scraper-analytics';
 import { authorizeCampaignAccess } from './campaign-access';
 
@@ -377,10 +378,68 @@ export class AnalyticsService {
       const matchedChannelPosts = channelPosts?.filter(post => (
         matchesPublishedPlatformPostId(expectedPostIds, post.platform_post_id)
       )) ?? null;
+
+      // SM-15 (решение владельца 19.08). Разницу «канал минус кампания» надо
+      // называть по именам: главный её источник — соседние кампании в том же
+      // канале, а не ручные публикации. Ищем их только когда есть что
+      // раскладывать, то есть когда считаем по постам.
+      const ownerId = typeof campaign.user_id === 'object' ? campaign.user_id?.id : campaign.user_id;
+      const siblings = channelPosts
+        ? await collectSiblingCampaigns(
+          {
+            platform: ch.platform,
+            platformId: ch.platformId,
+            scraperChannelId,
+          },
+          {
+            listCandidates: async () => {
+              if (!ownerId) return [];
+              const response = await directusApi.get('/items/user_campaigns', {
+                headers: { Authorization: `Bearer ${adminToken}` },
+                params: {
+                  filter: JSON.stringify({
+                    user_id: { _eq: ownerId },
+                    id: { _neq: campaignId },
+                  }),
+                  fields: ['id', 'name', 'social_media_settings'],
+                  limit: -1,
+                },
+              });
+              const items = response.data?.data;
+              return Array.isArray(items) ? items : [];
+            },
+            publishedIdsOf: async (siblingId: string) => {
+              const response = await directusApi.get('/items/campaign_content', {
+                headers: { Authorization: `Bearer ${adminToken}` },
+                params: {
+                  filter: JSON.stringify({
+                    campaign_id: { _eq: siblingId },
+                    status: { _in: ['published', 'partially_published', 'partial'] },
+                  }),
+                  fields: ['id', 'status', 'social_platforms', 'scheduled_at', 'published_at'],
+                  limit: AnalyticsService.ANALYTICS_PAGE_SIZE,
+                },
+              });
+              const items = response.data?.data;
+              return getPublishedPlatformPostIds(
+                Array.isArray(items) ? items : [],
+                ch.platform,
+                fromDate,
+                toDate,
+              );
+            },
+          },
+          reason => logAnalyticsTrace('sibling_lookup_failed', {
+            campaignId,
+            platform: ch.platform,
+            reason,
+          }),
+        )
+        : [];
       // Album messages share one publication: metrics must be read per group,
       // otherwise the reaction on the sibling message is dropped (SM-15).
       const currentMetrics = channelPosts
-        ? aggregateCampaignChannelPosts(channelPosts, expectedPostIds)
+        ? aggregateCampaignChannelPosts(channelPosts, expectedPostIds, siblings)
         : null;
       const responseSummary = {
         campaignId,
@@ -457,6 +516,23 @@ export class AnalyticsService {
       // выдумано.
       if ('channelTotals' in currentMetrics && currentMetrics.channelTotals) {
         stats.channelTotals = currentMetrics.channelTotals;
+      }
+      // SM-15: и само разложение разницы по кампаниям. Имя текущей кампании
+      // добавляем здесь же — интерфейсу нужно назвать её в подсказке, а
+      // отдельного запроса за ним делать незачем.
+      if (currentMetrics.attribution) {
+        stats.channelAttribution = {
+          campaignName: campaign.name || 'Текущая кампания',
+          own: {
+            posts: currentMetrics.posts,
+            views: currentMetrics.views,
+            likes: currentMetrics.likes,
+            comments: currentMetrics.comments,
+            shares: currentMetrics.shares,
+          },
+          others: currentMetrics.attribution.others,
+          unattributed: currentMetrics.attribution.unattributed,
+        };
       }
       platformStatsMap.set(ch.platform, stats);
     }

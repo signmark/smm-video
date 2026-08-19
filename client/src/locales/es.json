@@ -492,7 +492,7 @@
       "enterUrlPrompt": "Ingrese URL del sitio web y haga clic en \"Analizar\""
     },
     "channelValue": "canal: {{value}}",
-    "channelHint": "El primer número cuenta las publicaciones de la campaña. El segundo cuenta todo el canal en el mismo período, incluidas las publicaciones hechas manualmente fuera del sistema."
+    "channelHint": "El primer número cuenta las publicaciones de esta campaña. El segundo cuenta todo el canal en el mismo período: publicaciones de otras campañas en el mismo canal, nuestras publicaciones sin identificador guardado y las publicadas manualmente."
   },
   "auth": {
     "login": "Iniciar sesión",

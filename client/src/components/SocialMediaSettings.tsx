@@ -41,6 +41,7 @@ import VkSetupWizard from "./VkSetupWizard";
 import FacebookSetupWizard from "./FacebookSetupWizard";
 import { isPlatformConnected, parseSocialSettings } from "@/lib/platform-connection";
 import { telegramBadgeState, TELEGRAM_BADGE_CLASSES } from "@/lib/telegram-connection-state";
+import { connectionView } from "@/lib/connection-freshness";
 import { fetchVkGroupsByManualToken } from "@/lib/vk-groups-request";
 import type { SocialMediaSettings } from "@shared/schema";
 
@@ -1729,6 +1730,23 @@ export function SocialMediaSettings({
    * его, а подробности лежат в подсказке.
    */
   const TelegramStateBadge = ({ status }: { status: ValidationStatus }) => {
+    // SM-41. Живая проверка в этом окне ещё не запускалась — значит показываем
+    // сохранённый исход прошлой, а не безликое «Настроено». Раньше он
+    // терялся вместе с закрытым окном.
+    const saved = parseSocialSettings(initialSettings) || {};
+    const savedView = connectionView((saved as any).telegram, true, new Date());
+    if (status.isValid === undefined && !status.isLoading && savedView.tone !== 'unknown') {
+      return (
+        <Badge
+          variant="secondary"
+          className={TELEGRAM_BADGE_CLASSES[savedView.tone]}
+          title={savedView.reason || `Проверяли ${savedView.checkedAt}`}
+          data-testid="badge-telegram-state"
+        >
+          {savedView.checkedAt ? `${savedView.label} · ${savedView.checkedAt}` : savedView.label}
+        </Badge>
+      );
+    }
     const state = telegramBadgeState(status);
     return (
       <Badge
@@ -1738,6 +1756,33 @@ export function SocialMediaSettings({
         data-testid="badge-telegram-state"
       >
         {state.label}
+      </Badge>
+    );
+  };
+
+  /**
+   * SM-41. Метка площадки по СОХРАНЁННОМУ исходу последней проверки связи.
+   *
+   * Раньше у пяти площадок из шести зелёное «Настроено» означало только
+   * «поля заполнены»: дойдёт ли публикация, мы не знали до самой публикации.
+   * Живую проверку в SM-24 получил один Telegram, и его красное «Нет связи»
+   * стояло рядом с зелёной галочкой кампании — отсюда и жалоба тестировщика.
+   *
+   * Три состояния различаются словами, а не только цветом: «Связь не
+   * проверяли» — не то же самое, что «Нет связи».
+   */
+  const PlatformStateBadge = ({ platform }: { platform: 'instagram' | 'youtube' | 'facebook' | 'vk' | 'threads' }) => {
+    const settings = parseSocialSettings(initialSettings) || {};
+    const view = connectionView((settings as any)[platform], isConfigured(platform), new Date());
+    if (view.tone === 'unknown' && view.label === 'Не настроено') return null;
+    return (
+      <Badge
+        variant="secondary"
+        className={TELEGRAM_BADGE_CLASSES[view.tone]}
+        title={view.reason || (view.checkedAt ? `Проверяли ${view.checkedAt}` : undefined)}
+        data-testid={`badge-${platform}-state`}
+      >
+        {view.checkedAt ? `${view.label} · ${view.checkedAt}` : view.label}
       </Badge>
     );
   };
@@ -2451,7 +2496,7 @@ export function SocialMediaSettings({
             <AccordionTrigger className="py-2">
               <div className="flex items-center space-x-2">
                 <span>Instagram</span>
-                {isConfigured('instagram') && <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">Настроено</Badge>}
+                <PlatformStateBadge platform="instagram" />
                 <ValidationBadge status={instagramStatus} />
               </div>
             </AccordionTrigger>
@@ -2613,7 +2658,7 @@ export function SocialMediaSettings({
             <AccordionTrigger className="py-2">
               <div className="flex items-center space-x-2">
                 <span>Facebook</span>
-                {isConfigured('facebook') && <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">Настроено</Badge>}
+                <PlatformStateBadge platform="facebook" />
                 <ValidationBadge status={facebookStatus} />
               </div>
             </AccordionTrigger>
@@ -2674,7 +2719,7 @@ export function SocialMediaSettings({
             <AccordionTrigger className="py-2">
               <div className="flex items-center space-x-2">
                 <span>Threads</span>
-                {isConfigured('threads') && <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">Настроено</Badge>}
+                <PlatformStateBadge platform="threads" />
                 {threadsStatus.isLoading && <Badge variant="outline">Проверка...</Badge>}
                 {threadsStatus.isValid === true && !threadsStatus.isLoading && <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">Активен</Badge>}
                 {threadsStatus.isValid === false && !threadsStatus.isLoading && <Badge variant="destructive">Ошибка</Badge>}
@@ -2899,7 +2944,7 @@ export function SocialMediaSettings({
             <AccordionTrigger className="py-2">
               <div className="flex items-center space-x-2">
                 <span>YouTube</span>
-                {isConfigured('youtube') && <Badge variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">Настроено</Badge>}
+                <PlatformStateBadge platform="youtube" />
               </div>
             </AccordionTrigger>
             <AccordionContent className="space-y-4 pt-2">

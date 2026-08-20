@@ -17,6 +17,7 @@ import { getCampaignSocialSettings, pickPlatformToken } from '../services/campai
 import { authenticateUser } from '../middleware/user-auth';
 import { CampaignAccessError } from '../services/campaign-access';
 import { classifyVkError, isVkAuthExpired } from '../services/vk-error-classifier';
+import { checkAllPlatforms, persistConnectionChecks } from '../services/connection-check';
 
 /**
  * Единственный дом маршрутов `/api/validate/*` (кроме threads — он в
@@ -28,6 +29,42 @@ import { classifyVkError, isVkAuthExpired } from '../services/vk-error-classifie
  * @param app Express приложение
  */
 export function registerValidationRoutes(app: Express): void {
+  /**
+   * SM-41. «Проверить сейчас» со страницы кампании: живая проверка всех
+   * площадок с сохранёнными доступами. Исход кладётся рядом с настройками,
+   * поэтому переживает закрытие окна — раньше он жил только в памяти открытой
+   * формы, и страница кампании о нём не знала.
+   *
+   * Сама по себе проверка не запускается никогда: это поход в шесть чужих
+   * сервисов, и делать его на каждое открытие страницы нельзя.
+   *
+   * Наружу уходят вердикты, токены — нет.
+   */
+  app.post('/api/campaigns/:campaignId/social/check', authenticateUser, async (req: Request, res: Response) => {
+    const { campaignId } = req.params;
+    try {
+      const sms = await getCampaignSocialSettings(campaignId, { user: req.user });
+      const checkedAt = new Date().toISOString();
+      const checks = await checkAllPlatforms(sms, checkedAt);
+
+      try {
+        await persistConnectionChecks(campaignId, checks);
+      } catch (saveErr: any) {
+        // Проверку человек уже оплатил ожиданием — отдаём исход, даже если
+        // сохранить не удалось. Молчание тут было бы худшим из ответов.
+        log(`SM-41: исходы проверки кампании ${campaignId} не сохранились: ${saveErr.message}`, 'api-validation', 'error');
+      }
+
+      return res.json({ success: true, checkedAt, results: checks });
+    } catch (e: any) {
+      if (e instanceof CampaignAccessError) {
+        return res.status(e.status).json({ success: false, message: e.code });
+      }
+      log(`SM-41: проверка связи кампании ${campaignId} не удалась: ${e.message}`, 'api-validation', 'error');
+      return res.status(500).json({ success: false, message: 'Не удалось проверить связь' });
+    }
+  });
+
   // Telegram API Token validation
   app.post('/api/validate/telegram', authenticateUser, async (req: Request, res: Response) => {
     try {

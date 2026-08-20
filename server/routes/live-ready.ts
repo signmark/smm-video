@@ -83,7 +83,8 @@ export async function readyHandler(_req: Request, res: Response) {
   const verdict = decideReadiness(probes);
 
   // SM-45: признак жизни планировщика (machine-readable, по времени). Порог
-  // 2 интервала цикла (30s) — при 3 пропавших проходах подряд уже stale.
+  // Порог 60s при цикле 30s: stale наступает уже после 2 пропущенных проходов
+  // (строгое >, а не >= — читай classifySchedulerLiveness).
   const snapshot = getPublishScheduler().getLivenessSnapshot();
   const liveness = classifySchedulerLiveness({
     lastSuccessfulPassAt: snapshot.lastSuccessfulPassAt,

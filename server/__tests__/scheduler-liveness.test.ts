@@ -50,6 +50,13 @@ describe('SM-45: классификация живости по времени',
     expect(r.ageMs).toBe(STALE + 1);
   });
 
+  it('граница age == threshold считается fresh (строгое >, не >=)', () => {
+    // Документирует текущую семантику: stale наступает только на age > порог.
+    const r = classify(T0 + 1, T0, T0 + 1 + STALE);
+    expect(r.status).toBe('fresh');
+    expect(r.ageMs).toBe(STALE);
+  });
+
   it('recovery fresh: после stale следующий успех возвращает fresh', () => {
     // Было stale...
     const stale = classify(T0 + 1, T0, T0 + 1 + STALE + 1);

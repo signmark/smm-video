@@ -97,7 +97,8 @@ describe('SM-45: lastSuccessfulPassAt двигает только успешны
     const before = 1000; // фиксируем старый success давно
     // @ts-ignore
     scheduler.lastSuccessfulPassAt = before;
-    // list кидает — цикл падает в catch (cron.failed).
+    // list кидает — цикл не завершается успехом (отказ ловится внутренним
+    // catch), поэтому timestamp не двигается.
     vi.mocked(directusCrud.list).mockRejectedValue(new Error('db down'));
 
     await scheduler.checkScheduledContent();

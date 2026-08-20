@@ -16,7 +16,9 @@ vi.mock('../services/trend-collector', () => ({
 vi.mock('../utils/logger', () => ({
   log: Object.assign(vi.fn(), {
     warn: vi.fn(),
-    info: vi.fn(), // SM-44 ч.1: обычные исходящие запросы скрапера логируются info, не warn
+    info: vi.fn(),
+    debug: vi.fn(),
+    error: vi.fn(),
   }),
 }));
 

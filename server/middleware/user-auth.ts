@@ -27,12 +27,12 @@ async function fetchAdminStatus(userId: string): Promise<boolean> {
     }
     const directusUrl = (process.env.DIRECTUS_URL || '').replace(/\/$/, '');
     const url = `${directusUrl}/users/${userId}?fields=is_smm_admin`;
-    log(`[user-auth] fetchAdminStatus: GET ${url}`);
+    log.debug(`[user-auth] fetchAdminStatus: GET ${url}`);
     const resp = await fetch(url, {
       headers: { Authorization: `Bearer ${adminToken}` },
       signal: AbortSignal.timeout(5_000),
     });
-    log(`[user-auth] fetchAdminStatus: status=${resp.status}`);
+    log.debug(`[user-auth] fetchAdminStatus: status=${resp.status}`);
     if (!resp.ok) {
       const errText = await resp.text();
       log.error(`[user-auth] fetchAdminStatus: ошибка ${resp.status}: ${errText}`);
@@ -40,7 +40,7 @@ async function fetchAdminStatus(userId: string): Promise<boolean> {
     }
     const data = await resp.json() as any;
     const val = data?.data?.is_smm_admin;
-    log(`[user-auth] fetchAdminStatus: userId=${userId}, is_smm_admin=${val}`);
+    log.debug(`[user-auth] fetchAdminStatus: userId=${userId}, is_smm_admin=${val}`);
     const isAdmin = val === true || val === 1 || val === '1' || val === 'true';
     adminStatusCache.set(userId, { is_smm_admin: isAdmin, cachedAt: Date.now() });
     return isAdmin;

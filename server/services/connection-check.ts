@@ -178,8 +178,11 @@ export function platformsWithCredentials(sms: Record<string, any>): CheckablePla
 export async function checkAllPlatforms(
   sms: Record<string, any>,
   nowIso: string,
-): Promise<Record<string, ConnectionCheck>> {
+): Promise<Record<string, ConnectionCheck> | null> {
   const platforms = platformsWithCredentials(sms);
+  // SM-46: ноль настроенных площадок — это не «успех» и не транспортная ошибка.
+  // Отдельный нейтральный результат «проверять нечего», и НИ одного probe по сети.
+  if (platforms.length === 0) return null;
   const outcomes = await Promise.all(platforms.map((p) => checkPlatform(p, sms)));
   const result: Record<string, ConnectionCheck> = {};
   platforms.forEach((platform, i) => {

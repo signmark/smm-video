@@ -38,6 +38,7 @@ import {
   platformTitle,
   PLATFORM_TITLES,
 } from "@/lib/connection-freshness";
+import { resolveConnectionCheckToast } from "@/lib/connection-check-toast";
 import AutonomousSettings from "@/components/AutonomousSettings";
 import { TrendAnalysisSettings } from "@/components/TrendAnalysisSettings";
 import { ContentPlanDialog } from "@/components/ContentPlanApproval";
@@ -182,17 +183,10 @@ export default function CampaignDetails() {
       return apiRequest<any>(`/api/campaigns/${id}/social/check`, { method: "POST", data: {} });
     },
     onSuccess: (data: any) => {
-      const results = data?.results || {};
-      const failed = Object.entries(results)
-        .filter(([, v]: any) => v && v.ok === false)
-        .map(([platform]) => platformTitle(platform));
+      // SM-46: правило показа тоста вынесено в чистую функцию — тестируется без страницы.
+      const t = resolveConnectionCheckToast(data, platformTitle);
       queryClient.invalidateQueries({ queryKey: campaignDetailKey(id) });
-      toast({
-        variant: failed.length ? "destructive" : "default",
-        description: failed.length
-          ? `Нет связи: ${failed.join(", ")}`
-          : "Связь есть со всеми настроенными площадками",
-      });
+      toast({ variant: t.variant, description: t.description });
     },
     onError: () => {
       toast({ variant: "destructive", description: "Не удалось проверить связь" });

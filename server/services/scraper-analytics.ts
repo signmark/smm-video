@@ -49,7 +49,7 @@ function logAnalyticsRequest(
     query: params || {},
     ...(method === 'POST' ? { body: body || {} } : {}),
   };
-  log.warn(`scraper request=${JSON.stringify(request)}`, 'analytics');
+  log.info(`scraper request=${JSON.stringify(request)}`, 'analytics');
 }
 
 // ─── Типы ─────────────────────────────────────────────────────────────────────

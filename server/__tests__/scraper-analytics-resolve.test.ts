@@ -15,7 +15,7 @@ vi.mock('../services/trend-collector', () => ({
 }));
 
 vi.mock('../utils/logger', () => ({
-  log: Object.assign(vi.fn(), { warn: vi.fn() }),
+  log: Object.assign(vi.fn(), { warn: vi.fn(), info: vi.fn() }), // SM-44 ч.1: info для рутины
 }));
 
 import axios from 'axios';

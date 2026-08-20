@@ -16,6 +16,7 @@ vi.mock('../services/trend-collector', () => ({
 vi.mock('../utils/logger', () => ({
   log: Object.assign(vi.fn(), {
     warn: vi.fn(),
+    info: vi.fn(), // SM-44 ч.1: обычные исходящие запросы скрапера логируются info, не warn
   }),
 }));
 
@@ -70,8 +71,14 @@ describe('scraper analytics client', () => {
         paramsSerializer: { indexes: null },
       }),
     );
-    expect(log.warn).toHaveBeenCalledWith(
-      'scraper request={"method":"POST","url":"http://analytics.test/api/v1/monitoring/scheduler/metrics-refresh","headers":{"Content-Type":"application/json","Authorization":"Bearer [REDACTED]"},"query":{"channel_ids":["channel-uuid"],"days":30,"force":true},"body":{}}',
+    // SM-44 ч.1: обычный исходящий запрос скрапера пишется в info, не в warn
+    // (warn остаётся для реальных ошибок и security-отказов).
+    expect(log.warn).not.toHaveBeenCalledWith(
+      'scraper request={"method":"POST","url":"http://analytics.test/api/v1/monitoring/scheduler/metrics-refresh","headers":{"Content-Type":"application/json"',
+      'analytics',
+    );
+    expect(log.info).toHaveBeenCalledWith(
+      expect.stringContaining('scraper request={'),
       'analytics',
     );
   });
@@ -107,7 +114,8 @@ describe('scraper analytics client', () => {
 
     await expect(getMonitoredChannels({ page_size: 100 }, true))
       .rejects.toThrow('Analytics API отклонил ключ доступа (HTTP 401): Invalid API key');
-    expect(log.warn).toHaveBeenCalledWith(
+    // SM-44 ч.1: сам исходящий запрос логируется info; ошибка уходит warn отдельно.
+    expect(log.info).toHaveBeenCalledWith(
       'scraper request={"method":"GET","url":"http://analytics.test/api/v1/monitoring/channels","headers":{"Authorization":"Bearer [REDACTED]"},"query":{"page_size":100}}',
       'analytics',
     );
@@ -309,7 +317,8 @@ describe('scraper analytics client', () => {
     })).rejects.toThrow('Analytics API вернул HTTP 500 для POST /api/v1/monitoring/scheduler/metrics-refresh: Internal Server Error');
 
     expect(axios.post).toHaveBeenCalledTimes(1);
-    expect(log.warn).toHaveBeenCalledWith(
+    // SM-44 ч.1: запрос логируется info; ошибка (500) уходит warn.
+    expect(log.info).toHaveBeenCalledWith(
       expect.stringContaining(
         '"query":{"channel_ids":["telegram-uuid","vk-uuid"],"days":7,"force":true}',
       ),

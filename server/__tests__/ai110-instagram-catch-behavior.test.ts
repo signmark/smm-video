@@ -22,7 +22,7 @@ vi.mock('axios', () => ({
 
 const mockLog = vi.fn();
 vi.mock('../utils/logger', () => ({
-  log: (...args: any[]) => mockLog(...args),
+  log: Object.assign((...args: any[]) => mockLog(...args), { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
   debug: vi.fn(),
   error: vi.fn(),
   warn: vi.fn(),

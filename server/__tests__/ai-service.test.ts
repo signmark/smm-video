@@ -22,7 +22,7 @@ vi.mock('../services/api-keys', () => ({
     }
 }));
 vi.mock('../utils/logger', () => ({
-    log: vi.fn(),
+    log: Object.assign(vi.fn(), { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
     DEBUG_LEVELS: {}
 }));
 vi.mock('../directus', () => ({

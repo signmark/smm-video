@@ -35,7 +35,7 @@ vi.mock('../services/stories-image-generator', () => ({ generateStoriesImageServ
 vi.mock('../utils/content-cache', () => ({ invalidateContentCache: vi.fn() }));
 // В проде log() из utils/logger пишет в консоль с префиксом; здесь он не участвует
 // в проверяемых ветках, поэтому подменяем заглушкой, чтобы не шуметь в выводе.
-vi.mock('../utils/logger', () => ({ log: vi.fn() }));
+vi.mock('../utils/logger', () => ({ log: Object.assign(vi.fn(), { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }));
 // В проде authenticateUser (server/middleware/user-auth.ts) валидирует сессию
 // пользователя через Directus. Этот файл проверяет redaction, а не auth —
 // подменяем middleware пропуском запроса.

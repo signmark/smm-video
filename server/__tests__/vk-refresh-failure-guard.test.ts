@@ -11,7 +11,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
  * Access-токен при этом был жив ещё 49 минут — до 09:27:42.
  */
 
-vi.mock('../utils/logger', () => ({ log: vi.fn() }));
+vi.mock('../utils/logger', () => ({ log: Object.assign(vi.fn(), { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }));
 vi.mock('axios', () => ({
   default: { get: vi.fn(), post: vi.fn(), patch: vi.fn() },
   get: vi.fn(), post: vi.fn(), patch: vi.fn(),

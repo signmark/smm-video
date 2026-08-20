@@ -16,7 +16,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 const { mockTlsConnect, mockResolve4, mockLog } = vi.hoisted(() => ({
   mockTlsConnect: vi.fn(),
   mockResolve4: vi.fn(),
-  mockLog: vi.fn(),
+  mockLog: Object.assign(vi.fn(), { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
 }));
 
 vi.mock('tls', async (importOriginal) => {

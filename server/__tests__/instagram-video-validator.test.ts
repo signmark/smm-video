@@ -11,10 +11,12 @@ import {
 } from '../utils/instagram-video-validator';
 
 vi.mock('../utils/logger', () => ({
-  log: {
+  log: Object.assign(vi.fn(), {
+    debug: vi.fn(),
     info: vi.fn(),
+    warn: vi.fn(),
     error: vi.fn(),
-  },
+  }),
 }));
 
 describe('server/utils/instagram-video-validator', () => {

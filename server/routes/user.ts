@@ -6,6 +6,7 @@ import { directusApi } from '../directus';
 import { invalidateUserResetTokens } from '../utils/password-reset-tokens';
 import { verifyCurrentPassword } from '../utils/verify-current-password';
 import { requestEmailChange } from '../api/email-change';
+import { featureAccessFor } from '@shared/feature-access';
 
 export function registerUserRoutes(app: Express) {
   app.get('/api/user/profile', authenticateUser, async (req: Request, res: Response) => {
@@ -60,6 +61,9 @@ export function registerUserRoutes(app: Express) {
           ? (userData.plan || 'basic')
           : getEffectivePlan(userData.plan, userData.expire_date),
         expire_date: userData.expire_date || null,
+        // SM-36. Что доступно — решает сервер и говорит прямо. Раньше страница
+        // кампании сравнивала почту с записанной в код строкой и решала сама.
+        features: featureAccessFor({ email: userData.email }, process.env as Record<string, string | undefined>),
       };
 
       res.json(userProfile);

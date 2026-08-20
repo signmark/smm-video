@@ -4,6 +4,19 @@ import { storage } from '../storage';
 import { directusCrud } from './directus-crud';
 import { mergePlatformStatus } from './publish-status-merge';
 import { publicationLockManager } from './publication-lock-manager';
+import { publicationTracker } from './publication-tracking';
+import { aiService } from './ai-service';
+import { getContentAggregateTimes, isSameStoredInstant, parseStoredInstant, resolvePublishFinalization } from '@shared/schedule-time';
+import { invalidateContentCache } from '../utils/content-cache';
+import {
+  resolveStuckContent,
+  isPermanentPublishError,
+  getStaleDays,
+} from './publication-terminal-state';
+import { notifyPublished } from './notification-bus';
+import { recordPublished, wasPublished, forget, readJournal } from './publish-fallback-journal';
+import { resolvePublishingToken } from './publishing-token';
+import { stripMarkdown, markdownToTelegramHtml } from '../utils/strip-markdown';
 
 /**
  * SM-20 Phase2 (B): статусы, при которых публикация вообще может выйти.
@@ -18,19 +31,6 @@ export const PUBLISHABLE_STATUSES = ['scheduled', 'partial', 'pending', 'partial
 export function isPublishableStatus(status: unknown): boolean {
   return typeof status === 'string' && (PUBLISHABLE_STATUSES as readonly string[]).includes(status);
 }
-import { publicationTracker } from './publication-tracking';
-import { aiService } from './ai-service';
-import { getContentAggregateTimes, isSameStoredInstant, parseStoredInstant, resolvePublishFinalization } from '@shared/schedule-time';
-import { invalidateContentCache } from '../utils/content-cache';
-import {
-  resolveStuckContent,
-  isPermanentPublishError,
-  getStaleDays,
-} from './publication-terminal-state';
-import { notifyPublished } from './notification-bus';
-import { recordPublished, wasPublished, forget, readJournal } from './publish-fallback-journal';
-import { resolvePublishingToken } from './publishing-token';
-import { stripMarkdown, markdownToTelegramHtml } from '../utils/strip-markdown';
 
 // Платформо-специфичные правила адаптации контента
 const PLATFORM_STYLE: Record<string, string> = {
@@ -739,37 +739,8 @@ export class PublishScheduler {
           while (nextPublicationJob < publicationJobs.length) {
             const jobIndex = nextPublicationJob++;
             const { content, platforms } = publicationJobs[jobIndex];
-            try {
-              // SM-20 Phase2 (B): пачка выбрана раньше, а отправляем сейчас.
-              // За это время пауза могла снять публикацию с очереди — тогда
-              // отправлять нельзя. Блокировки на этот момент уже наши, поэтому
-              // после успешной проверки пауза до строки не дотянется: она
-              // увидит занятую блокировку и оставит запись публикатору.
-              if (!(await this.isStillPublishable(content.id))) {
-                log(`⏹️ ${content.id}: снят с очереди во время подготовки — не публикуем`, 'scheduler');
-                for (const platform of platforms) {
-                  this.releasePlatformCache(content.id, platform);
-                  publicationTracker.releasePublication(content.id, platform);
-                }
-                await Promise.allSettled(
-                  platforms.map(platform => publicationLockManager.releaseLock(content.id, platform))
-                );
-                continue;
-              }
-              await this.publishContentToPlatforms(content, platforms);
+            if (await this.runPublicationJob(content, platforms)) {
               publishedCount++;
-            } catch (error: any) {
-              log(`Publication batch error for ${content.id}: ${error.message}`, 'scheduler', 'error');
-
-              // Do not leave an unexpectedly failed post blocked until cache timeout.
-              // Persisted postUrl/status still protects a publication that already completed.
-              for (const platform of platforms) {
-                this.releasePlatformCache(content.id, platform);
-                publicationTracker.releasePublication(content.id, platform);
-              }
-              await Promise.allSettled(
-                platforms.map(platform => publicationLockManager.releaseLock(content.id, platform))
-              );
             }
           }
         };
@@ -1786,6 +1757,46 @@ ${text}
       }
     }
     return healed;
+  }
+
+  /**
+   * Отправка одной уже отобранной публикации.
+   *
+   * SM-20 Phase2 (B): пачка выбрана раньше, а отправляем сейчас. За это время
+   * пауза могла снять публикацию с очереди — тогда отправлять нельзя. Блокировки
+   * на этот момент уже наши, поэтому после успешной проверки пауза до строки
+   * не дотянется: она увидит занятую блокировку и оставит запись публикатору.
+   *
+   * Возвращает true, если публикация была отправлена.
+   */
+  async runPublicationJob(content: any, platforms: string[]): Promise<boolean> {
+    try {
+      if (!(await this.isStillPublishable(content.id))) {
+        log(`⏹️ ${content.id}: снят с очереди во время подготовки — не публикуем`, 'scheduler');
+        await this.releasePublicationJob(content.id, platforms);
+        return false;
+      }
+      await this.publishContentToPlatforms(content, platforms);
+      return true;
+    } catch (error: any) {
+      log(`Publication batch error for ${content.id}: ${error.message}`, 'scheduler', 'error');
+
+      // Do not leave an unexpectedly failed post blocked until cache timeout.
+      // Persisted postUrl/status still protects a publication that already completed.
+      await this.releasePublicationJob(content.id, platforms);
+      return false;
+    }
+  }
+
+  /** Отпускает все три удержания, взятые под отправку. */
+  private async releasePublicationJob(contentId: string, platforms: string[]): Promise<void> {
+    for (const platform of platforms) {
+      this.releasePlatformCache(contentId, platform);
+      publicationTracker.releasePublication(contentId, platform);
+    }
+    await Promise.allSettled(
+      platforms.map(platform => publicationLockManager.releaseLock(contentId, platform))
+    );
   }
 
   /**

@@ -47,6 +47,17 @@ export function registerValidationRoutes(app: Express): void {
       const checkedAt = new Date().toISOString();
       const checks = await checkAllPlatforms(sms, checkedAt);
 
+      // SM-46: ноль настроенных площадок — нейтральный результат «проверять нечего»,
+      // а не success и не транспортная ошибка. Хранить исход здесь нечего.
+      if (checks === null) {
+        return res.json({
+          success: false,
+          message: 'Нет настроенных площадок для проверки',
+          checkedAt,
+          results: {},
+        });
+      }
+
       try {
         await persistConnectionChecks(campaignId, checks);
       } catch (saveErr: any) {

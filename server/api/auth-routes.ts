@@ -497,10 +497,10 @@ export function registerAuthRoutes(app: Express): void {
       }
       
       const token = authHeader.substring(7);
-      log(`Проверка статуса админа (токен: [redacted len=${token.length}])`, 'auth');
+      log.debug('Проверка статуса админа', 'auth');
       
       const isAdmin = await isUserAdmin(req, token);
-      log(`Результат проверки администратора: ${isAdmin}`, 'auth');
+      log.debug(`Результат проверки администратора: ${isAdmin}`, 'auth');
       
       // Добавляем случайный параметр в ответ, чтобы предотвратить кэширование
       return res.status(200).json({ 

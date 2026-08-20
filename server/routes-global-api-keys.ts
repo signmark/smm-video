@@ -51,7 +51,7 @@ export async function isUserAdmin(req: Request, directusToken?: string): Promise
       return false;
     }
 
-    log(`Проверка прав администратора (токен: [redacted len=${token.length}])`, 'admin');
+    log.debug('Проверка прав администратора', 'admin');
 
     const directusUrl = (process.env.DIRECTUS_URL || '').replace(/\/$/, '');
 

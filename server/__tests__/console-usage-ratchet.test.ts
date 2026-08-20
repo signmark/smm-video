@@ -50,7 +50,7 @@ import { join } from 'node:path';
  * AI-127 (2026-08-18): планка опущена 1948->1938 — вместе с мёртвым кодом n8n
  * ушли десять его console.*. Отдельной работы по выводу тут не делалось.
  */
-const BASELINE = 1938;
+const BASELINE = 1924;
 
 const CONSOLE_CALL = /\bconsole\.(log|error|warn|info|debug)\s*\(/g;
 

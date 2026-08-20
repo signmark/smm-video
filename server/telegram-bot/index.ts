@@ -3,7 +3,7 @@ import { message } from 'telegraf/filters';
 import axios from 'axios';
 import { telegramHttp, getTelegramAgent } from '../services/social-platforms/telegram-http';
 import { toSafeErrorDetails } from '../utils/safe-error';
-import { error as logError, logEvent } from '../utils/logger';
+import { error as logError, logEvent, log } from '../utils/logger';
 import { notifySubscriptionActivated } from '../services/subscription-notify';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -78,7 +78,7 @@ const getApiBaseUrl = () => {
 };
 
 const API_BASE_URL = getApiBaseUrl();
-console.log(`🤖 [TELEGRAM-BOT] Используется API_BASE_URL: ${API_BASE_URL}`);
+log.debug(`🤖 [TELEGRAM-BOT] Используется API_BASE_URL: ${API_BASE_URL}`);
 const DIRECTUS_URL = process.env.DIRECTUS_URL;
 
 if (!DIRECTUS_URL) {
@@ -124,7 +124,7 @@ class TelegramBotService {
             // Сохраняем в БД
             try {
               await this.saveSessionToDB(chatId, session);
-              console.log(`✅ Обновлен refresh_token в БД для пользователя ${userId} (chat ${chatId})`);
+              log.debug(`✅ Обновлен refresh_token в БД для пользователя ${userId} (chat ${chatId})`);
             } catch (error) {
               console.error(`❌ Ошибка сохранения обновленного refresh_token для пользователя ${userId}:`, error);
             }
@@ -138,6 +138,7 @@ class TelegramBotService {
    * Загружает все сохраненные сессии из БД при старте бота
    */
   private async loadAllSessionsFromDB(): Promise<void> {
+    const start = Date.now();
     try {
       const savedSessions = await telegramSessionStorage.getAllSessions();
       let loadedCount = 0;
@@ -146,7 +147,6 @@ class TelegramBotService {
       for (const dbSession of savedSessions) {
         // Удаляем старые сессии без refresh_token (они не смогут обновить токены)
         if (!dbSession.refresh_token) {
-          console.log(`⚠️ Удаляю устаревшую сессию без refresh_token для chat_id ${dbSession.chat_id}`);
           await telegramSessionStorage.deleteSession(dbSession.chat_id);
           deletedCount++;
           continue;
@@ -167,15 +167,19 @@ class TelegramBotService {
       }
 
       if (loadedCount > 0) {
-        console.log(`✅ Загружено ${loadedCount} актуальных сессий из БД при запуске бота`);
+        log.debug(`Загружено ${loadedCount} актуальных сессий из БД`);
 
         // КРИТИЧНО: Загружаем ВСЕ сессии из БД в DirectusAuthManager разом для proactive refresh
         // Это более эффективно чем upsertSession в цикле
         await directusAuthManager.loadSessionsFromDB();
-        console.log(`✅ Сессии синхронизированы с DirectusAuthManager для автообновления`);
       }
+
+      // Агрегированная запись cleanup: count + duration
+      const duration = Date.now() - start;
       if (deletedCount > 0) {
-        console.log(`🗑️ Удалено ${deletedCount} устаревших сессий без refresh_token`);
+        log.info(`Session cleanup: deleted ${deletedCount} stale sessions in ${duration}ms`);
+      } else {
+        log.debug(`Session cleanup: 0 stale sessions in ${duration}ms`);
       }
     } catch (error) {
       console.error('Ошибка загрузки сессий при старте бота:', error);
@@ -235,7 +239,7 @@ class TelegramBotService {
             }
           });
 
-          console.log(`✅ Восстановлен refresh_token для пользователя ${session.userId} при загрузке сессии (proactive refresh активирован)`);
+          log.debug(`✅ Восстановлен refresh_token для пользователя ${session.userId} при загрузке сессии (proactive refresh активирован)`);
         }
 
         return session;
@@ -279,7 +283,7 @@ class TelegramBotService {
    */
   private async getFreshToken(ctx: BotContext): Promise<string | null> {
     if (!ctx.session.userId) {
-      console.log('[GET-TOKEN] No userId in session');
+      log.debug('[GET-TOKEN] No userId in session');
       return null;
     }
 
@@ -288,11 +292,11 @@ class TelegramBotService {
       const freshToken = await directusAuthManager.getValidToken(ctx.session.userId);
 
       if (!freshToken) {
-        console.log(`[GET-TOKEN] Failed to get valid token for user ${ctx.session.userId} - refresh token expired`);
+        log.debug(`[GET-TOKEN] Failed to get valid token for user ${ctx.session.userId} - refresh token expired`);
 
         // КРИТИЧНО: Если токен протух и не может быть обновлен, очищаем сессию
         // чтобы пользователь мог заново авторизоваться через /login
-        console.log(`[GET-TOKEN] Clearing expired session for user ${ctx.session.userId}`);
+        log.debug(`[GET-TOKEN] Clearing expired session for user ${ctx.session.userId}`);
         ctx.session.userId = undefined;
         ctx.session.token = undefined;
         ctx.session.refreshToken = undefined;
@@ -307,7 +311,7 @@ class TelegramBotService {
 
       // Обновляем токен в сессии если он изменился
       if (ctx.session.token !== freshToken) {
-        console.log(`[GET-TOKEN] Token refreshed for user ${ctx.session.userId}`);
+        log.debug(`[GET-TOKEN] Token refreshed for user ${ctx.session.userId}`);
         ctx.session.token = freshToken;
 
         // Сохраняем обновлённый токен в БД
@@ -321,7 +325,7 @@ class TelegramBotService {
       console.error(`[GET-TOKEN] Error getting fresh token for user ${ctx.session.userId}:`, error);
 
       // При критической ошибке также очищаем сессию
-      console.log(`[GET-TOKEN] Clearing session due to critical error for user ${ctx.session.userId}`);
+      console.error(`[GET-TOKEN] Clearing session due to critical error for user ${ctx.session.userId}`);
       ctx.session.userId = undefined;
       ctx.session.token = undefined;
       ctx.session.refreshToken = undefined;
@@ -378,7 +382,7 @@ class TelegramBotService {
         }
 
         if (syncedCount > 0) {
-          console.log(`✅ Синхронизировано ${syncedCount} сессий с БД`);
+          log.debug(`✅ Синхронизировано ${syncedCount} сессий с БД`);
         }
       } catch (error) {
         console.error('Ошибка периодической синхронизации сессий:', error);
@@ -402,7 +406,7 @@ class TelegramBotService {
           try {
             const freshToken = await directusAuthManager.getAuthToken(ctx.session.userId, true);
             if (freshToken && freshToken !== ctx.session.token) {
-              console.log(`🔄 Обновлен токен для пользователя ${ctx.session.userId} в Telegram боте`);
+              log.debug(`🔄 Обновлен токен для пользователя ${ctx.session.userId} в Telegram боте`);
               ctx.session.token = freshToken;
               // Сохраняем обновленный токен в БД
               await this.saveSessionToDB(chatId, ctx.session);
@@ -519,7 +523,7 @@ class TelegramBotService {
         { command: 'autonomous_status', description: '📊 Статус автономного режима' },
         { command: 'help', description: '❓ Помощь' }
       ]);
-      console.log('✅ Команды бота успешно зарегистрированы в Telegram');
+      log.debug('✅ Команды бота успешно зарегистрированы в Telegram');
     } catch (error) {
       console.error('❌ Ошибка регистрации команд бота:', error);
     }

@@ -3,35 +3,42 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
- * SM-44 (часть 1, @Deepseek_Intern_Hermi): обычные исходящие запросы скрапера больше
- * НЕ пишутся уровнем warn (это штатная активность, а не повод для алерта). В warn остаются
- * ТОЛЬКО настоящие ошибки/отказы (включая security-отказы), которые обязаны быть видимыми.
- *
- * @Clause_Dev_Hermi: «Тихий лог, в котором не видно отказов по безопасности, хуже шумного.»
- * Поэтому стороже: (1) рутинный запрос пишется в info, (2) error-catch не понижен до info.
+ * SM-44 (часть 1): обычные исходящие запросы скрапера не должны шуметь уровнем warn и не
+ * должны ложиться в журнал по три строки с телом ответа. Итог: ОДНА строка на запрос
+ * (метод, путь, код ответа, длительность) и БЕЗ тела ответа; настоящие ошибки/отказы
+ * (включая security-отказы) остаются warn и видимыми — «тихий лог без видимости security-отказов
+ * хуже шумного» (@Clause_Dev_Hermi). Это source-guard на server/services/scraper-analytics.ts.
  */
 
 const src = () => readFileSync(join(__dirname, '../services/scraper-analytics.ts'), 'utf-8');
 
-describe('SM-44 ч.1: scraper-analytics — верные уровни (info для рутины, warn для ошибок)', () => {
-  it('рутинный исходящий запрос логируется info, а не warn', () => {
+describe('SM-44 ч.1: scraper-analytics — одна строка исхода на запрос, без тела; ошибки в warn', () => {
+  it('каждый request-хелпер пишет ОДНУ info-строку исхода (метод/путь/статус/длительность), без тела ответа', () => {
     const s = src();
-    // logAnalyticsRequest — обёртка лога каждого исходящего запроса.
-    const fnStart = s.indexOf('function logAnalyticsRequest(');
-    expect(fnStart).toBeGreaterThan(0);
-    const fnBody = s.slice(fnStart, s.indexOf('// ─── Типы', fnStart));
-    expect(fnBody).toContain("log.info(`scraper request=");
-    expect(fnBody).not.toContain("log.warn(");
+    const getBody = s.slice(s.indexOf('async function analyticsGet'), s.indexOf('async function analyticsPost'));
+    const postBody = s.slice(s.indexOf('async function analyticsPost'), s.indexOf('async function analyticsDelete'));
+    const delBody = s.slice(s.indexOf('async function analyticsDelete'), s.indexOf('// ─── Мониторинг каналов'));
+
+    // Ни одного старого многострочного «→/←» и ни одного дампа response= в журнал.
+    expect(postBody).not.toContain('→ POST');
+    expect(postBody).not.toContain('← POST');
+    expect(postBody).not.toContain('response=JSON.stringify(response.data)');
+    // Ровно одна info-строка исхода в каждом хелпере, и она несёт путь+статус.
+    for (const [label, block, method] of [
+      ['GET', getBody, 'GET'],
+      ['POST', postBody, 'POST'],
+      ['DELETE', delBody, 'DELETE'],
+    ] as const) {
+      const infos = (block.match(/log\.info\(`\[ScraperAnalytics\] /g) || []).length;
+      expect(infos, `${label}: ровно одна info-строка исхода`).toBe(1);
+      expect(block).toContain(`] ${method} `);
+    }
   });
 
-  it('настоящие ошибки/отказы остаются на warn (не понижены до info)', () => {
+  it('настоящие ошибки остаются на warn (не понижены до info) и не светят ключ', () => {
     const s = src();
-    // error-catch'и вокруг HTTP-вызовов с getAnalyticsErrorMessage обязаны остаться warn.
-    const getCatch = s.indexOf("getAnalyticsErrorMessage('GET'");
-    expect(getCatch).toBeGreaterThan(0);
-    const catchWindow = s.slice(getCatch, getCatch + 400);
-    expect(catchWindow).toContain('log.warn(');
-    // force-parse ошибки тоже warn.
-    expect(s).toContain("log.warn(message, 'analytics')");
+    const catchWindow = s.slice(s.indexOf("getAnalyticsErrorMessage('GET'"));
+    expect(catchWindow).toContain('log.warn(message');
+    expect(s).not.toContain("log.warn(`scraper request=");
   });
 });

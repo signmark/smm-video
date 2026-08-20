@@ -33,25 +33,6 @@ function getAnalyticsErrorMessage(method: string, path: string, err: any): strin
   return `Analytics API недоступен для ${method} ${path}: ${networkDetails}`;
 }
 
-function logAnalyticsRequest(
-  method: 'GET' | 'POST' | 'DELETE',
-  path: string,
-  params?: Record<string, any>,
-  body?: Record<string, any>,
-): void {
-  const request = {
-    method,
-    url: `${ANALYTICS_BASE}${path}`,
-    headers: {
-      ...(method === 'POST' ? { 'Content-Type': 'application/json' } : {}),
-      Authorization: 'Bearer [REDACTED]',
-    },
-    query: params || {},
-    ...(method === 'POST' ? { body: body || {} } : {}),
-  };
-  log.info(`scraper request=${JSON.stringify(request)}`, 'analytics');
-}
-
 // ─── Типы ─────────────────────────────────────────────────────────────────────
 
 export interface ChannelResponse {
@@ -330,14 +311,15 @@ async function analyticsGet<T = any>(
   throwOnError = false,
 ): Promise<T | null> {
   const apiKey = await getAnalyticsApiKey();
+  const startedAt = Date.now();
   try {
     const url = `${ANALYTICS_BASE}${path}`;
-    logAnalyticsRequest('GET', path, params);
     const response = await axios.get(url, {
       headers: { Authorization: `Bearer ${apiKey}` },
       params,
       timeout: 20000
     });
+    log.info(`[ScraperAnalytics] GET ${path} status=${response.status} elapsed_ms=${Date.now() - startedAt}`, 'analytics');
     return response.data as T;
   } catch (err: any) {
     const message = getAnalyticsErrorMessage('GET', path, err);
@@ -358,15 +340,13 @@ async function analyticsPost<T = any>(
   const startedAt = Date.now();
   try {
     const url = `${ANALYTICS_BASE}${path}`;
-    logAnalyticsRequest('POST', path, params, body);
-    log(`[ScraperAnalytics] → POST ${url} body=${JSON.stringify(body)}`, 'info');
     const response = await axios.post(url, body, {
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
       params,
       paramsSerializer: { indexes: null },
       timeout: timeoutMs,
     });
-    log(`[ScraperAnalytics] ← POST ${path} status=${response.status} response=${JSON.stringify(response.data)}`, 'info');
+    log.info(`[ScraperAnalytics] POST ${path} status=${response.status} elapsed_ms=${Date.now() - startedAt}`, 'analytics');
     return response.data as T;
   } catch (err: any) {
     const message = getAnalyticsErrorMessage('POST', path, err);
@@ -381,13 +361,14 @@ async function analyticsPost<T = any>(
 
 async function analyticsDelete(path: string): Promise<boolean> {
   const apiKey = await getAnalyticsApiKey();
+  const startedAt = Date.now();
   try {
     const url = `${ANALYTICS_BASE}${path}`;
-    logAnalyticsRequest('DELETE', path);
-    await axios.delete(url, {
+    const response = await axios.delete(url, {
       headers: { Authorization: `Bearer ${apiKey}` },
       timeout: 20000
     });
+    log.info(`[ScraperAnalytics] DELETE ${path} status=${response.status} elapsed_ms=${Date.now() - startedAt}`, 'analytics');
     return true;
   } catch (err: any) {
     log.warn(getAnalyticsErrorMessage('DELETE', path, err), 'analytics');

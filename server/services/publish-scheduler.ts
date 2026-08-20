@@ -192,6 +192,13 @@ export class PublishScheduler {
   private tokenExpirationMs = 30 * 60 * 1000; // 30 минут
   private tickCount = 0;
   private heartbeatEveryNTicks = 20; // console.log каждые 20 тиков = каждые ~10 минут
+
+  // SM-45 / SM-44 follow-up: machine-readable признак жизни планировщика.
+  // Время последнего УСПЕШНО ЗАВЕРШЁННОГО прохода (idle тоже успех). null пока
+  // первый проход не завершился успешно. Считается по ВРЕМЕНИ, а не по числу
+  // циклов: зависший цикл не двигает timestamp, и staleness виден сразу.
+  private lastSuccessfulPassAt: number | null = null;
+  readonly startedAt: number = Date.now();
   
   // Кэш для предотвращения повторной публикации (ЛИМИТИРОВАННЫЙ)
   private processedContentCache = new Map<string, Set<string>>(); // contentId -> Set<platform>
@@ -304,6 +311,16 @@ export class PublishScheduler {
   }
 
   /**
+   * SM-45: machine-readable признак жизни для health-проверки. Только данные,
+   * без приговора — порог и stale-логика вынесены в чистую функцию, чтобы её
+   * можно было тестировать с управляемыми часами. lastSuccessfulPassAt === null
+   * означает «первый проход ещё не завершился успешно».
+   */
+  getLivenessSnapshot(): { lastSuccessfulPassAt: number | null; startedAt: number } {
+    return { lastSuccessfulPassAt: this.lastSuccessfulPassAt, startedAt: this.startedAt };
+  }
+
+  /**
    * Останавливает планировщик публикаций
    */
   stop() {
@@ -407,6 +424,7 @@ export class PublishScheduler {
             'scheduler',
             'Цикл планировщика: запланированного контента нет',
           );
+          this.lastSuccessfulPassAt = Date.now();
           this.isProcessing = false;
           return;
         }
@@ -756,7 +774,10 @@ export class PublishScheduler {
             // Игнорируем ошибки уведомлений
           }
         }
-        
+
+        // SM-45: успешный проход (в т.ч. пустой) двигает признак жизни.
+        this.lastSuccessfulPassAt = Date.now();
+
       } catch (error: any) {
         log(`❌ API Error: ${error.response?.status || 'N/A'} - ${error.message}`, 'scheduler', 'error');
         // Тихо обрабатываем ошибки аутентификации

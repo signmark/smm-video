@@ -13,7 +13,14 @@ vi.mock('../services/directus-crud', () => ({
   directusCrud: { list: vi.fn() },
 }));
 vi.mock('axios', () => ({
-  default: { head: vi.fn() },
+  default: {
+    head: vi.fn(),
+    // SM-45: live-ready теперь импортирует publish-scheduler → directus.ts, и
+    // тот зовёт axios.create при загрузке модуля. Без create suite не грузится.
+    create: vi.fn().mockReturnValue({
+      interceptors: { request: { use: vi.fn() }, response: { use: vi.fn() } },
+    }),
+  },
 }));
 
 import { directusCrud } from '../services/directus-crud';

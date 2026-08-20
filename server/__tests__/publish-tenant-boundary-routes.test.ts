@@ -88,11 +88,12 @@ vi.mock('../services/beget-s3-video-service', () => ({ begetS3VideoService: {} }
 vi.mock('../services/stories-media-service', () => ({ default: class {} }));
 vi.mock('fluent-ffmpeg', () => ({ default: () => ({}) }));
 vi.mock('../utils/logger', () => {
-  const log = vi.fn();
-  log.debug = vi.fn();
-  log.info = vi.fn();
-  log.warn = vi.fn();
-  log.error = vi.fn();
+  const log = Object.assign(vi.fn(), {
+    debug: vi.fn(),
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+  });
   return { log, default: { log, info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() } };
 });
 

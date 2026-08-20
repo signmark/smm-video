@@ -138,6 +138,7 @@ class TelegramBotService {
    * Загружает все сохраненные сессии из БД при старте бота
    */
   private async loadAllSessionsFromDB(): Promise<void> {
+    const start = Date.now();
     try {
       const savedSessions = await telegramSessionStorage.getAllSessions();
       let loadedCount = 0;
@@ -146,7 +147,6 @@ class TelegramBotService {
       for (const dbSession of savedSessions) {
         // Удаляем старые сессии без refresh_token (они не смогут обновить токены)
         if (!dbSession.refresh_token) {
-          log.debug(`⚠️ Удаляю устаревшую сессию без refresh_token для chat_id ${dbSession.chat_id}`);
           await telegramSessionStorage.deleteSession(dbSession.chat_id);
           deletedCount++;
           continue;
@@ -167,15 +167,19 @@ class TelegramBotService {
       }
 
       if (loadedCount > 0) {
-        log.debug(`✅ Загружено ${loadedCount} актуальных сессий из БД при запуске бота`);
+        log.debug(`Загружено ${loadedCount} актуальных сессий из БД`);
 
         // КРИТИЧНО: Загружаем ВСЕ сессии из БД в DirectusAuthManager разом для proactive refresh
         // Это более эффективно чем upsertSession в цикле
         await directusAuthManager.loadSessionsFromDB();
-        log.debug(`✅ Сессии синхронизированы с DirectusAuthManager для автообновления`);
       }
+
+      // Агрегированная запись cleanup: count + duration
+      const duration = Date.now() - start;
       if (deletedCount > 0) {
-        log.debug(`🗑️ Удалено ${deletedCount} устаревших сессий без refresh_token`);
+        log.info(`Session cleanup: deleted ${deletedCount} stale sessions in ${duration}ms`);
+      } else {
+        log.debug(`Session cleanup: 0 stale sessions in ${duration}ms`);
       }
     } catch (error) {
       console.error('Ошибка загрузки сессий при старте бота:', error);
@@ -321,7 +325,7 @@ class TelegramBotService {
       console.error(`[GET-TOKEN] Error getting fresh token for user ${ctx.session.userId}:`, error);
 
       // При критической ошибке также очищаем сессию
-      log.debug(`[GET-TOKEN] Clearing session due to critical error for user ${ctx.session.userId}`);
+      console.error(`[GET-TOKEN] Clearing session due to critical error for user ${ctx.session.userId}`);
       ctx.session.userId = undefined;
       ctx.session.token = undefined;
       ctx.session.refreshToken = undefined;

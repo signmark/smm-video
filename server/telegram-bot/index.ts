@@ -3,7 +3,7 @@ import { message } from 'telegraf/filters';
 import axios from 'axios';
 import { telegramHttp, getTelegramAgent } from '../services/social-platforms/telegram-http';
 import { toSafeErrorDetails } from '../utils/safe-error';
-import { error as logError, logEvent } from '../utils/logger';
+import { error as logError, logEvent, log } from '../utils/logger';
 import { notifySubscriptionActivated } from '../services/subscription-notify';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -70,19 +70,19 @@ const getApiBaseUrl = () => {
 
   // 3. Fallback для локальной разработки
   if (process.env.NODE_ENV === 'production') {
-    console.warn('⚠️ [TELEGRAM-BOT] ВНИМАНИЕ: API_BASE_URL не задан в режиме продакшена!');
-    console.warn('   Кнопки Web App могут не работать без публичного HTTPS URL.');
+    log.warn('⚠️ [TELEGRAM-BOT] ВНИМАНИЕ: API_BASE_URL не задан в режиме продакшена!');
+    log.warn('   Кнопки Web App могут не работать без публичного HTTPS URL.');
   }
 
   return 'http://localhost:5000';
 };
 
 const API_BASE_URL = getApiBaseUrl();
-console.log(`🤖 [TELEGRAM-BOT] Используется API_BASE_URL: ${API_BASE_URL}`);
+log.info(`🤖 [TELEGRAM-BOT] Используется API_BASE_URL: ${API_BASE_URL}`);
 const DIRECTUS_URL = process.env.DIRECTUS_URL;
 
 if (!DIRECTUS_URL) {
-  console.error('❌ Ошибка: DIRECTUS_URL не задан в .env для Telegram бота');
+  log.error('❌ Ошибка: DIRECTUS_URL не задан в .env для Telegram бота');
 }
 
 class TelegramBotService {
@@ -124,9 +124,9 @@ class TelegramBotService {
             // Сохраняем в БД
             try {
               await this.saveSessionToDB(chatId, session);
-              console.log(`✅ Обновлен refresh_token в БД для пользователя ${userId} (chat ${chatId})`);
+              log.debug(`✅ Обновлен refresh_token в БД для пользователя ${userId} (chat ${chatId})`);
             } catch (error) {
-              console.error(`❌ Ошибка сохранения обновленного refresh_token для пользователя ${userId}:`, error);
+              log.error(`❌ Ошибка сохранения обновленного refresh_token для пользователя ${userId}:`, error);
             }
           }
         });
@@ -146,7 +146,7 @@ class TelegramBotService {
       for (const dbSession of savedSessions) {
         // Удаляем старые сессии без refresh_token (они не смогут обновить токены)
         if (!dbSession.refresh_token) {
-          console.log(`⚠️ Удаляю устаревшую сессию без refresh_token для chat_id ${dbSession.chat_id}`);
+          log.debug(`⚠️ Удаляю устаревшую сессию без refresh_token для chat_id ${dbSession.chat_id}`);
           await telegramSessionStorage.deleteSession(dbSession.chat_id);
           deletedCount++;
           continue;
@@ -167,18 +167,18 @@ class TelegramBotService {
       }
 
       if (loadedCount > 0) {
-        console.log(`✅ Загружено ${loadedCount} актуальных сессий из БД при запуске бота`);
+        log.info(`✅ Загружено ${loadedCount} актуальных сессий из БД при запуске бота`);
 
         // КРИТИЧНО: Загружаем ВСЕ сессии из БД в DirectusAuthManager разом для proactive refresh
         // Это более эффективно чем upsertSession в цикле
         await directusAuthManager.loadSessionsFromDB();
-        console.log(`✅ Сессии синхронизированы с DirectusAuthManager для автообновления`);
+        log.info(`✅ Сессии синхронизированы с DirectusAuthManager для автообновления`);
       }
       if (deletedCount > 0) {
-        console.log(`🗑️ Удалено ${deletedCount} устаревших сессий без refresh_token`);
+        log.info(`🗑️ Удалено ${deletedCount} устаревших сессий без refresh_token`);
       }
     } catch (error) {
-      console.error('Ошибка загрузки сессий при старте бота:', error);
+      log.error('Ошибка загрузки сессий при старте бота:', error);
     }
   }
 
@@ -235,13 +235,13 @@ class TelegramBotService {
             }
           });
 
-          console.log(`✅ Восстановлен refresh_token для пользователя ${session.userId} при загрузке сессии (proactive refresh активирован)`);
+          log.debug(`✅ Восстановлен refresh_token для пользователя ${session.userId} при загрузке сессии (proactive refresh активирован)`);
         }
 
         return session;
       }
     } catch (error) {
-      console.error(`Ошибка загрузки сессии из БД для chat_id ${chatId}:`, error);
+      log.error(`Ошибка загрузки сессии из БД для chat_id ${chatId}:`, error);
     }
 
     // Возвращаем пустую сессию если не удалось загрузить
@@ -266,7 +266,7 @@ class TelegramBotService {
         session_data: sessionData
       });
     } catch (error) {
-      console.error(`Ошибка сохранения сессии в БД для chat_id ${chatId}:`, error);
+      log.error(`Ошибка сохранения сессии в БД для chat_id ${chatId}:`, error);
     }
   }
 
@@ -279,7 +279,7 @@ class TelegramBotService {
    */
   private async getFreshToken(ctx: BotContext): Promise<string | null> {
     if (!ctx.session.userId) {
-      console.log('[GET-TOKEN] No userId in session');
+      log.debug('[GET-TOKEN] No userId in session');
       return null;
     }
 
@@ -288,11 +288,11 @@ class TelegramBotService {
       const freshToken = await directusAuthManager.getValidToken(ctx.session.userId);
 
       if (!freshToken) {
-        console.log(`[GET-TOKEN] Failed to get valid token for user ${ctx.session.userId} - refresh token expired`);
+        log.debug(`[GET-TOKEN] Failed to get valid token for user ${ctx.session.userId} - refresh token expired`);
 
         // КРИТИЧНО: Если токен протух и не может быть обновлен, очищаем сессию
         // чтобы пользователь мог заново авторизоваться через /login
-        console.log(`[GET-TOKEN] Clearing expired session for user ${ctx.session.userId}`);
+        log.debug(`[GET-TOKEN] Clearing expired session for user ${ctx.session.userId}`);
         ctx.session.userId = undefined;
         ctx.session.token = undefined;
         ctx.session.refreshToken = undefined;
@@ -307,7 +307,7 @@ class TelegramBotService {
 
       // Обновляем токен в сессии если он изменился
       if (ctx.session.token !== freshToken) {
-        console.log(`[GET-TOKEN] Token refreshed for user ${ctx.session.userId}`);
+        log.debug(`[GET-TOKEN] Token refreshed for user ${ctx.session.userId}`);
         ctx.session.token = freshToken;
 
         // Сохраняем обновлённый токен в БД
@@ -318,10 +318,10 @@ class TelegramBotService {
 
       return freshToken;
     } catch (error) {
-      console.error(`[GET-TOKEN] Error getting fresh token for user ${ctx.session.userId}:`, error);
+      log.error(`[GET-TOKEN] Error getting fresh token for user ${ctx.session.userId}:`, error);
 
       // При критической ошибке также очищаем сессию
-      console.log(`[GET-TOKEN] Clearing session due to critical error for user ${ctx.session.userId}`);
+      log.debug(`[GET-TOKEN] Clearing session due to critical error for user ${ctx.session.userId}`);
       ctx.session.userId = undefined;
       ctx.session.token = undefined;
       ctx.session.refreshToken = undefined;
@@ -363,7 +363,7 @@ class TelegramBotService {
         const isAvailable = await telegramSessionStorage.checkCollection();
 
         if (!isAvailable) {
-          console.warn('⚠️ БД недоступна, пропускаем синхронизацию сессий');
+          log.warn('⚠️ БД недоступна, пропускаем синхронизацию сессий');
           return;
         }
 
@@ -378,10 +378,10 @@ class TelegramBotService {
         }
 
         if (syncedCount > 0) {
-          console.log(`✅ Синхронизировано ${syncedCount} сессий с БД`);
+          log.info(`✅ Синхронизировано ${syncedCount} сессий с БД`);
         }
       } catch (error) {
-        console.error('Ошибка периодической синхронизации сессий:', error);
+        log.error('Ошибка периодической синхронизации сессий:', error);
       }
     }, 5 * 60 * 1000); // 5 минут
   }
@@ -402,13 +402,13 @@ class TelegramBotService {
           try {
             const freshToken = await directusAuthManager.getAuthToken(ctx.session.userId, true);
             if (freshToken && freshToken !== ctx.session.token) {
-              console.log(`🔄 Обновлен токен для пользователя ${ctx.session.userId} в Telegram боте`);
+              log.debug(`🔄 Обновлен токен для пользователя ${ctx.session.userId} в Telegram боте`);
               ctx.session.token = freshToken;
               // Сохраняем обновленный токен в БД
               await this.saveSessionToDB(chatId, ctx.session);
             }
           } catch (error) {
-            console.error('Ошибка автообновления токена в Telegram боте:', error);
+            log.error('Ошибка автообновления токена в Telegram боте:', error);
           }
         }
       }
@@ -422,7 +422,7 @@ class TelegramBotService {
     } catch (error: any) {
       // Игнорируем ошибки истекших callback запросов (возникают при перезапуске бота)
       if (!error.message?.includes('query is too old')) {
-        console.error('Error answering callback query:', error.message);
+        log.error('Error answering callback query:', error.message);
       }
     }
   }
@@ -519,9 +519,9 @@ class TelegramBotService {
         { command: 'autonomous_status', description: '📊 Статус автономного режима' },
         { command: 'help', description: '❓ Помощь' }
       ]);
-      console.log('✅ Команды бота успешно зарегистрированы в Telegram');
+      log.info('✅ Команды бота успешно зарегистрированы в Telegram');
     } catch (error) {
-      console.error('❌ Ошибка регистрации команд бота:', error);
+      log.error('❌ Ошибка регистрации команд бота:', error);
     }
   }
 
@@ -545,7 +545,7 @@ class TelegramBotService {
       } catch (error: any) {
         // Игнорируем ошибки истекших callback запросов
         if (!error.message?.includes('query is too old')) {
-          console.error('Error answering callback query:', error.message);
+          log.error('Error answering callback query:', error.message);
         }
       }
       await this.handleGenerateContent(ctx);
@@ -846,13 +846,13 @@ class TelegramBotService {
     // Обработчики для сохранения сгенерированного контента
     this.bot.action('save_generated_to_current', async (ctx) => {
       await this.safeAnswerCallback(ctx);
-      console.log('[ACTION] save_generated_to_current triggered');
-      console.log('[ACTION] currentCampaignId:', ctx.session.currentCampaignId);
-      console.log('[ACTION] lastGeneratedContent exists:', !!ctx.session.lastGeneratedContent);
-      console.log('[ACTION] lastGeneratedContent length:', ctx.session.lastGeneratedContent?.length);
+      log.debug('[ACTION] save_generated_to_current triggered');
+      log.debug(`[ACTION] currentCampaignId: ${String(ctx.session.currentCampaignId)}`);
+      log.debug(`[ACTION] lastGeneratedContent exists: ${String(!!ctx.session.lastGeneratedContent)}`);
+      log.debug(`[ACTION] lastGeneratedContent length: ${String(ctx.session.lastGeneratedContent?.length)}`);
 
       if (!ctx.session.currentCampaignId || !ctx.session.lastGeneratedContent) {
-        console.log('[ACTION] ERROR: Missing campaign or content');
+        log.debug('[ACTION] ERROR: Missing campaign or content');
         await ctx.reply('❌ Ошибка: нет активной кампании или сгенерированного контента');
         return;
       }
@@ -921,7 +921,7 @@ class TelegramBotService {
           expireDateStr,
         });
 
-        console.log(JSON.stringify({
+        log.debug(JSON.stringify({
           event: 'subscription.approve',
           source: 'telegram-bot',
           userId,
@@ -1006,7 +1006,7 @@ class TelegramBotService {
           await ctx.reply(successMsg).catch(() => {});
         });
       } catch (err: any) {
-        console.error('[sap] Ошибка:', err?.message);
+        log.error('[sap] Ошибка:', err?.message);
         await ctx.editMessageText(`❌ Ошибка: ${err?.message}`).catch(() => {
           ctx.reply(`❌ Ошибка: ${err?.message}`).catch(() => {});
         });
@@ -1074,7 +1074,7 @@ class TelegramBotService {
       // КРИТИЧНО: Получаем ГАРАНТИРОВАННО свежий токен через getFreshToken
       const webappToken = await this.getFreshToken(ctx);
       if (!webappToken) {
-        console.error('Failed to get fresh token for WebApp in handleStart');
+        log.error('Failed to get fresh token for WebApp in handleStart');
         return ctx.reply('❌ Ошибка получения токена. Пожалуйста, выполните /login заново');
       }
 
@@ -1111,9 +1111,9 @@ class TelegramBotService {
         }
 
         // Если freshToken === null, значит refresh_token протух
-        console.log('❌ Refresh token протух для userId:', ctx.session.userId);
+        log.debug(`❌ Refresh token протух для userId: ${String(ctx.session.userId)}`);
       } catch (error) {
-        console.log('❌ Ошибка при проверке токена:', error);
+        log.debug(`❌ Ошибка при проверке токена: ${String(error)}`);
       }
 
       // Токен или refresh_token протух - очищаем сессию для повторного логина
@@ -1154,7 +1154,7 @@ class TelegramBotService {
     // КРИТИЧНО: Получаем ГАРАНТИРОВАННО свежий токен через getFreshToken
     const webappToken = await this.getFreshToken(ctx);
     if (!webappToken) {
-      console.error('Failed to get fresh token for WebApp in handleHelp');
+      log.error('Failed to get fresh token for WebApp in handleHelp');
       return ctx.reply('❌ Ошибка получения токена. Пожалуйста, выполните /login заново');
     }
 
@@ -1184,7 +1184,7 @@ class TelegramBotService {
     // КРИТИЧНО: Получаем ГАРАНТИРОВАННО свежий токен через getFreshToken
     const webappToken = await this.getFreshToken(ctx);
     if (!webappToken) {
-      console.error('Failed to get fresh token for WebApp in handleMenu');
+      log.error('Failed to get fresh token for WebApp in handleMenu');
       return ctx.reply('❌ Ошибка получения токена. Пожалуйста, выполните /login заново');
     }
 
@@ -1239,7 +1239,7 @@ class TelegramBotService {
         }
       );
     } catch (error: any) {
-      console.error('Error fetching campaigns:', error);
+      log.error('Error fetching campaigns:', error);
       await ctx.reply(`❌ Ошибка при получении кампаний: ${error.message}`);
     }
   }
@@ -1354,7 +1354,7 @@ class TelegramBotService {
         ...Markup.inlineKeyboard(buttons)
       });
     } catch (error: any) {
-      console.error('[TG-BOT] Error fetching published posts:', error);
+      log.error('[TG-BOT] Error fetching published posts:', error);
       await ctx.reply(`❌ Ошибка при загрузке опубликованных постов: ${error.message}`);
     }
   }
@@ -1378,14 +1378,14 @@ class TelegramBotService {
 
       const allPosts = response.data.data || response.data;
 
-      console.log(`[TG-BOT] Получено постов: ${allPosts.length}`);
+      log.debug(`[TG-BOT] Получено постов: ${allPosts.length}`);
       if (allPosts.length > 0) {
-        console.log(`[TG-BOT] Пример структуры поста:`, JSON.stringify({
+        log.debug(`[TG-BOT] Пример структуры поста: ${JSON.stringify( JSON.stringify({
           id: allPosts[0].id,
           campaign_id: allPosts[0].campaign_id,
           status: allPosts[0].status,
           social_platforms: allPosts[0].social_platforms
-        }, null, 2));
+        }, null, 2))}`);
       }
 
       // Фильтруем только опубликованные посты
@@ -1393,7 +1393,7 @@ class TelegramBotService {
         const isPublished = post.status === 'published';
 
         if (isPublished) {
-          console.log(`[TG-BOT] Найден опубликованный пост: ${post.id}, status: ${post.status}`);
+          log.debug(`[TG-BOT] Найден опубликованный пост: ${post.id}, status: ${post.status}`);
         }
 
         return isPublished;
@@ -1459,7 +1459,7 @@ class TelegramBotService {
       });
 
     } catch (error: any) {
-      console.error('Error fetching published posts:', error);
+      log.error('Error fetching published posts:', error);
       await ctx.reply(`❌ Ошибка при получении опубликованных постов: ${error.message}`);
     }
   }
@@ -1476,18 +1476,18 @@ class TelegramBotService {
     // КРИТИЧНО: Получаем ГАРАНТИРОВАННО свежий токен через getFreshToken
     const webappToken = await this.getFreshToken(ctx);
     if (!webappToken) {
-      console.error('Failed to get fresh token for AI Assistant WebApp');
+      log.error('Failed to get fresh token for AI Assistant WebApp');
       return ctx.reply('❌ Ошибка получения токена. Пожалуйста, выполните /login заново');
     }
 
     // Используем переданный campaignId или из сессии
     const activeCampaignId = campaignId || ctx.session.currentCampaignId;
 
-    console.log('[AI-ASSISTANT] handleAssistant called:', {
+    log.debug(`[AI-ASSISTANT] handleAssistant called: ${JSON.stringify( {
       passedCampaignId: campaignId,
       sessionCampaignId: ctx.session.currentCampaignId,
       activeCampaignId: activeCampaignId
-    });
+    })}`);
 
     // URL с токеном для автоавторизации и ID кампании (если есть)
     let aiAssistantUrl = `${API_BASE_URL}/ai-assistant?token=${webappToken}`;
@@ -1832,7 +1832,7 @@ class TelegramBotService {
         await ctx.reply('Что делать дальше?', actionButtons);
       }
     } catch (error: any) {
-      console.error('Error handling photo:', error);
+      log.error('Error handling photo:', error);
       await ctx.reply(`❌ Ошибка при обработке фото: ${error.message}`);
     }
   }
@@ -1923,7 +1923,7 @@ class TelegramBotService {
       await this.askAssistant(ctx, transcribedText);
 
     } catch (error: any) {
-      console.error('Error handling voice message:', toSafeErrorDetails(error));
+      log.error('Error handling voice message:', toSafeErrorDetails(error));
       await ctx.reply(`❌ Ошибка при обработке голосового сообщения: ${this.describeFailure(error)}`);
     }
   }
@@ -1960,7 +1960,7 @@ class TelegramBotService {
         });
 
         // Ответ /auth/login целиком — это access_token и refresh_token в логе.
-        console.log('[LOGIN-DEBUG] Directus auth response received:', response.status);
+        log.debug(`[LOGIN-DEBUG] Directus auth response received: ${String(response.status)}`);
 
         token = response.data.data.access_token;
 
@@ -1982,7 +1982,7 @@ class TelegramBotService {
         // Получаем refreshToken из ответа для сохранения
         // КРИТИЧНО: В production refresh_token в response.data.data.refresh_token
         const refreshToken = isDev ? response.data.refresh_token : response.data.data.refresh_token;
-        console.log('[LOGIN-DEBUG] Extracted refresh_token:', refreshToken ? 'YES' : 'NO');
+        log.debug('[LOGIN-DEBUG] Extracted refresh_token:', refreshToken ? 'YES' : 'NO');
         if (refreshToken) {
           ctx.session.refreshToken = refreshToken;
 
@@ -2012,7 +2012,7 @@ class TelegramBotService {
             }
           });
 
-          console.log(`✅ Токен закеширован в ОБОИХ менеджерах для пользователя ${user.id} (proactive refresh активирован)`);
+          log.debug(`✅ Токен закеширован в ОБОИХ менеджерах для пользователя ${user.id} (proactive refresh активирован)`);
         }
 
         // КРИТИЧНО: Обновляем in-memory кэш сессий СРАЗУ после авторизации
@@ -2027,7 +2027,7 @@ class TelegramBotService {
             firstName: user.first_name,
             lastName: user.last_name
           });
-          console.log(`🔄 Обновлен токен для пользователя ${user.id} в Telegram боте`);
+          log.debug(`🔄 Обновлен токен для пользователя ${user.id} в Telegram боте`);
 
           // Сохраняем сессию в БД
           await this.saveSessionToDB(chatId, ctx.session);
@@ -2043,7 +2043,7 @@ class TelegramBotService {
         await ctx.reply('❌ Ошибка авторизации. Проверьте данные и попробуйте снова: /login');
       }
     } catch (error: any) {
-      console.error('Login error:', error);
+      log.error('Login error:', error);
       const errorMsg = error.response?.data?.message || error.response?.data?.error || error.message;
       await ctx.reply(`❌ Ошибка входа: ${errorMsg}\n\nПопробуйте снова: /login`);
     }
@@ -2079,7 +2079,7 @@ class TelegramBotService {
 
 Теперь вы можете генерировать контент для этой кампании.`);
     } catch (error: any) {
-      console.error('Error creating campaign:', error);
+      log.error('Error creating campaign:', error);
       await ctx.reply(`❌ Ошибка при создании кампании: ${error.message}`);
     }
   }
@@ -2111,11 +2111,11 @@ class TelegramBotService {
       ctx.session.lastGeneratedContent = content;
 
       // КРИТИЧНО: Явно сохраняем сессию в БД, иначе lastGeneratedContent потеряется
-      console.log('[CONTENT-GEN] Saving lastGeneratedContent to DB, length:', content.length);
+      log.debug(`[CONTENT-GEN] Saving lastGeneratedContent to DB, length: ${String(content.length)}`);
       if (ctx.chat?.id) {
         await this.saveSessionToDB(ctx.chat.id, ctx.session);
       }
-      console.log('[CONTENT-GEN] Session saved to DB');
+      log.debug('[CONTENT-GEN] Session saved to DB');
 
       // Используем sendLongMessage для обработки длинных текстов
       await this.sendLongMessage(ctx, `✅ <b>Контент сгенерирован:</b>\n\n${content}`, 'HTML');
@@ -2134,7 +2134,7 @@ class TelegramBotService {
 
       await ctx.reply('Что делать с этим контентом?', Markup.inlineKeyboard(buttons));
     } catch (error: any) {
-      console.error('Error generating content:', error);
+      log.error('Error generating content:', error);
       await ctx.reply(`❌ Ошибка при генерации контента: ${error.message}`);
     }
   }
@@ -2144,13 +2144,13 @@ class TelegramBotService {
    */
   private async saveGeneratedContentToCampaign(ctx: BotContext, campaignId: string) {
     try {
-      console.log('[SAVE-CONTENT] Starting content save process');
-      console.log('[SAVE-CONTENT] Campaign ID:', campaignId);
-      console.log('[SAVE-CONTENT] Has lastGeneratedContent:', !!ctx.session.lastGeneratedContent);
-      console.log('[SAVE-CONTENT] Content length:', ctx.session.lastGeneratedContent?.length);
+      log.debug('[SAVE-CONTENT] Starting content save process');
+      log.debug(`[SAVE-CONTENT] Campaign ID: ${String(campaignId)}`);
+      log.debug(`[SAVE-CONTENT] Has lastGeneratedContent: ${String(!!ctx.session.lastGeneratedContent)}`);
+      log.debug(`[SAVE-CONTENT] Content length: ${String(ctx.session.lastGeneratedContent?.length)}`);
 
       if (!ctx.session.lastGeneratedContent) {
-        console.log('[SAVE-CONTENT] ERROR: No content in session');
+        log.debug('[SAVE-CONTENT] ERROR: No content in session');
         await ctx.reply('❌ Ошибка: нет сгенерированного контента для сохранения');
         return;
       }
@@ -2165,12 +2165,12 @@ class TelegramBotService {
         content_type: 'post'
       };
 
-      console.log('[SAVE-CONTENT] Sending request to Directus proxy');
-      console.log('[SAVE-CONTENT] Post data:', JSON.stringify(postData, null, 2));
+      log.debug('[SAVE-CONTENT] Sending request to Directus proxy');
+      log.debug(`[SAVE-CONTENT] Post data: ${String(JSON.stringify(postData, null, 2))}`);
 
       const headers = await this.getAuthHeaders(ctx);
       if (!headers) {
-        console.log('[SAVE-CONTENT] ERROR: Failed to get auth headers');
+        log.debug('[SAVE-CONTENT] ERROR: Failed to get auth headers');
         return ctx.reply('❌ Ошибка авторизации. Пожалуйста, выполните /login заново');
       }
 
@@ -2182,29 +2182,29 @@ class TelegramBotService {
         }
       );
 
-      console.log('[SAVE-CONTENT] Response status:', response.status);
-      console.log('[SAVE-CONTENT] Response data:', JSON.stringify(response.data, null, 2));
+      log.debug(`[SAVE-CONTENT] Response status: ${String(response.status)}`);
+      log.debug(`[SAVE-CONTENT] Response data: ${String(JSON.stringify(response.data, null, 2))}`);
 
       const content = response.data.data || response.data;
 
       if (!content || !content.id) {
-        console.log('[SAVE-CONTENT] ERROR: No content ID in response');
+        log.debug('[SAVE-CONTENT] ERROR: No content ID in response');
         throw new Error('Не удалось получить ID созданного поста');
       }
 
-      console.log('[SAVE-CONTENT] Successfully created post with ID:', content.id);
+      log.debug(`[SAVE-CONTENT] Successfully created post with ID: ${String(content.id)}`);
 
       // Очищаем сохраненный контент после успешного сохранения
       const savedContent = ctx.session.lastGeneratedContent;
       ctx.session.lastGeneratedContent = undefined;
 
-      console.log('[SAVE-CONTENT] Cleared lastGeneratedContent from session');
+      log.debug('[SAVE-CONTENT] Cleared lastGeneratedContent from session');
 
       await ctx.replyWithHTML(`✅ <b>Контент сохранён как черновик!</b>\n\n<b>ID:</b> <code>${content.id}</code>\n\nВы можете найти его в списке постов кампании.`);
       await this.handleMenu(ctx);
     } catch (error: any) {
-      console.error('[SAVE-CONTENT] Error saving generated content:', error);
-      console.error('[SAVE-CONTENT] Error response:', error.response?.data);
+      log.error('[SAVE-CONTENT] Error saving generated content:', error);
+      log.error('[SAVE-CONTENT] Error response:', error.response?.data);
       await ctx.reply(`❌ Ошибка при сохранении контента: ${error.response?.data?.errors?.[0]?.message || error.message}`);
     }
   }
@@ -2247,7 +2247,7 @@ class TelegramBotService {
         }
       );
     } catch (error: any) {
-      console.error('Error fetching campaigns:', error);
+      log.error('Error fetching campaigns:', error);
       await ctx.reply(`❌ Ошибка при загрузке кампаний: ${error.message}`);
     }
   }
@@ -2289,7 +2289,7 @@ Return ONLY the improved English prompt, nothing else. No explanations.`,
       const improvedPrompt = response.data.content || response.data.text || userPrompt;
       return improvedPrompt.trim();
     } catch (error: any) {
-      console.error('Error improving prompt:', error);
+      log.error('Error improving prompt:', error);
       // Возвращаем оригинальный текст в случае ошибки
       return userPrompt;
     }
@@ -2304,9 +2304,9 @@ Return ONLY the improved English prompt, nothing else. No explanations.`,
 
       // Улучшаем промпт для генерации изображения
       const improvedPrompt = await this.improvePromptForImageGeneration(ctx, prompt);
-      console.log(`Original prompt: ${prompt}`);
-      console.log(`Improved prompt: ${improvedPrompt}`);
-      console.log(`Selected model: ${model}`);
+      log.debug(`Original prompt: ${prompt}`);
+      log.debug(`Improved prompt: ${improvedPrompt}`);
+      log.debug(`Selected model: ${model}`);
 
       // Шаг 2: Показываем сгенерированный промпт пользователю
       if (improvedPrompt && improvedPrompt !== prompt) {
@@ -2338,7 +2338,7 @@ Return ONLY the improved English prompt, nothing else. No explanations.`,
       );
 
       // Логируем полный ответ API для отладки
-      console.log('[TG-BOT] Image generation API response:', JSON.stringify(response.data, null, 2));
+      log.debug(`[TG-BOT] Image generation API response: ${String(JSON.stringify(response.data, null, 2))}`);
 
       // КРИТИЧНО: FAL.AI возвращает массив URL в data: ["https://..."]
       const imageUrl = response.data?.data?.[0] || // FAL.AI формат: {data: ["url"]}
@@ -2379,11 +2379,11 @@ Return ONLY the improved English prompt, nothing else. No explanations.`,
         // Очищаем выбранную модель после успешной генерации
         ctx.session.selectedImageModel = undefined;
       } else {
-        console.error('[TG-BOT] Failed to extract image URL from response:', response.data);
+        log.error('[TG-BOT] Failed to extract image URL from response:', response.data);
         await ctx.reply('✅ Изображение сгенерировано, но не удалось получить URL\n\n📋 Полный ответ сервера:\n' + JSON.stringify(response.data, null, 2).substring(0, 500));
       }
     } catch (error: any) {
-      console.error('Error generating image:', error);
+      log.error('Error generating image:', error);
       await ctx.reply(`❌ Ошибка при генерации изображения: ${error.message}`);
       // Очищаем выбранную модель в случае ошибки
       ctx.session.selectedImageModel = undefined;
@@ -2416,7 +2416,7 @@ Return ONLY the improved English prompt, nothing else. No explanations.`,
           timestamp: new Date()
         });
       } catch (saveError) {
-        console.error('⚠️ Failed to save user message to history:', saveError);
+        log.error('⚠️ Failed to save user message to history:', saveError);
         // Продолжаем работу, но логируем ошибку
       }
 
@@ -2467,7 +2467,7 @@ Return ONLY the improved English prompt, nothing else. No explanations.`,
           metadata: aiResponse.data ? { tools: aiResponse.data } : undefined
         });
       } catch (saveError) {
-        console.error('⚠️ Failed to save AI response to history:', saveError);
+        log.error('⚠️ Failed to save AI response to history:', saveError);
         // Продолжаем работу, но логируем ошибку
       }
 
@@ -2499,7 +2499,7 @@ Return ONLY the improved English prompt, nothing else. No explanations.`,
         await ctx.reply('Что бы вы хотели сделать дальше?', actionButtons);
       }
     } catch (error: any) {
-      console.error('Error asking assistant:', error);
+      log.error('Error asking assistant:', error);
       const errorMsg = error.response?.data?.message || error.message;
       await ctx.reply(`❌ Ошибка при обращении к ассистенту: ${errorMsg}`);
     }
@@ -2581,7 +2581,7 @@ Return ONLY the improved English prompt, nothing else. No explanations.`,
         }
       );
     } catch (error: any) {
-      console.error('Error showing campaign menu:', error);
+      log.error('Error showing campaign menu:', error);
       await ctx.reply(`❌ Ошибка: ${error.message}`);
     }
   }
@@ -2615,7 +2615,7 @@ Return ONLY the improved English prompt, nothing else. No explanations.`,
 
       await ctx.replyWithHTML(info, backButton);
     } catch (error: any) {
-      console.error('Error showing campaign info:', error);
+      log.error('Error showing campaign info:', error);
       await ctx.reply(`❌ Ошибка: ${error.message}`);
     }
   }
@@ -2649,12 +2649,12 @@ Return ONLY the improved English prompt, nothing else. No explanations.`,
       ctx.session.lastGeneratedCampaignId = campaignId;
 
       // КРИТИЧНО: Явно сохраняем сессию в БД, иначе данные потеряются при редактировании
-      console.log('[CONTENT-GEN] Saving session to DB with campaignId:', campaignId);
-      console.log('[CONTENT-GEN] Content length:', content.length);
+      log.debug(`[CONTENT-GEN] Saving session to DB with campaignId: ${String(campaignId)}`);
+      log.debug(`[CONTENT-GEN] Content length: ${String(content.length)}`);
       if (ctx.chat?.id) {
         await this.saveSessionToDB(ctx.chat.id, ctx.session);
       }
-      console.log('[CONTENT-GEN] Session saved to DB successfully');
+      log.debug('[CONTENT-GEN] Session saved to DB successfully');
 
       // Используем sendLongMessage для обработки длинных текстов (автоматическая разбивка)
       await this.sendLongMessage(ctx, `✅ <b>Контент сгенерирован:</b>\n\n${content}`, 'HTML');
@@ -2676,7 +2676,7 @@ Return ONLY the improved English prompt, nothing else. No explanations.`,
 
       await ctx.reply('Что делаем дальше?', actionButtons);
     } catch (error: any) {
-      console.error('Error generating content for campaign:', error);
+      log.error('Error generating content for campaign:', error);
       await ctx.reply(`❌ Ошибка при генерации контента: ${error.message}`);
     }
   }
@@ -2690,9 +2690,9 @@ Return ONLY the improved English prompt, nothing else. No explanations.`,
 
       // Улучшаем промпт для генерации изображения
       const improvedPrompt = await this.improvePromptForImageGeneration(ctx, prompt);
-      console.log(`Original prompt: ${prompt}`);
-      console.log(`Improved prompt: ${improvedPrompt}`);
-      console.log(`Selected model: ${model}`);
+      log.debug(`Original prompt: ${prompt}`);
+      log.debug(`Improved prompt: ${improvedPrompt}`);
+      log.debug(`Selected model: ${model}`);
 
       // Шаг 2: Показываем сгенерированный промпт пользователю
       if (improvedPrompt && improvedPrompt !== prompt) {
@@ -2725,7 +2725,7 @@ Return ONLY the improved English prompt, nothing else. No explanations.`,
       );
 
       // Логируем полный ответ API для отладки
-      console.log('[TG-BOT] Image generation API response for campaign:', JSON.stringify(imageResponse.data, null, 2));
+      log.debug(`[TG-BOT] Image generation API response for campaign: ${String(JSON.stringify(imageResponse.data, null, 2))}`);
 
       // КРИТИЧНО: FAL.AI возвращает массив URL в data: ["https://..."]
       const imageUrl = imageResponse.data?.data?.[0] || // FAL.AI формат: {data: ["url"]}
@@ -2779,11 +2779,11 @@ Return ONLY the improved English prompt, nothing else. No explanations.`,
         // Очищаем выбранную модель после успешной генерации
         ctx.session.selectedImageModel = undefined;
       } else {
-        console.error('[TG-BOT] Failed to extract image URL from campaign response:', imageResponse.data);
+        log.error('[TG-BOT] Failed to extract image URL from campaign response:', imageResponse.data);
         await ctx.reply('✅ Изображение сгенерировано, но не удалось получить URL\n\n📋 Полный ответ сервера:\n' + JSON.stringify(imageResponse.data, null, 2).substring(0, 500));
       }
     } catch (error: any) {
-      console.error('Error generating image for campaign:', error);
+      log.error('Error generating image for campaign:', error);
       await ctx.reply(`❌ Ошибка при генерации изображения: ${error.message}`);
       // Очищаем выбранную модель в случае ошибки
       ctx.session.selectedImageModel = undefined;
@@ -2826,7 +2826,7 @@ Return ONLY the improved English prompt, nothing else. No explanations.`,
         }
       );
     } catch (error: any) {
-      console.error('Error showing campaign content:', error);
+      log.error('Error showing campaign content:', error);
       await ctx.reply(`❌ Ошибка при получении постов: ${error.message}`);
     }
   }
@@ -2873,7 +2873,7 @@ Return ONLY the improved English prompt, nothing else. No explanations.`,
 
       await ctx.replyWithHTML(message, buttons);
     } catch (error: any) {
-      console.error('Error showing content detail:', error);
+      log.error('Error showing content detail:', error);
       await ctx.reply(`❌ Ошибка при получении поста: ${error.message}`);
     }
   }
@@ -2982,7 +2982,7 @@ Return ONLY the improved English prompt, nothing else. No explanations.`,
         ...Markup.inlineKeyboard(buttons)
       });
     } catch (error: any) {
-      console.error('Error showing published post detail:', error);
+      log.error('Error showing published post detail:', error);
       await ctx.reply(`❌ Ошибка при получении поста: ${error.message}`);
     }
   }
@@ -3012,7 +3012,7 @@ Return ONLY the improved English prompt, nothing else. No explanations.`,
 
       await ctx.reply('🎯 Выберите платформы для публикации:', platformButtons);
     } catch (error: any) {
-      console.error('Error showing publish options:', error);
+      log.error('Error showing publish options:', error);
       await ctx.reply(`❌ Ошибка: ${error.message}`);
     }
   }
@@ -3029,7 +3029,7 @@ Return ONLY the improved English prompt, nothing else. No explanations.`,
       const platformsObj: Record<string, boolean> = {};
       platforms.forEach(p => { platformsObj[p] = true; });
 
-      console.log(`[TG-BOT-PUBLISH] Sending publish request: contentId=${contentId}, platforms=${platforms.join(',')}, url=${API_BASE_URL}/api/publish/now`);
+      log.debug(`[TG-BOT-PUBLISH] Sending publish request: contentId=${contentId}, platforms=${platforms.join(',')}, url=${API_BASE_URL}/api/publish/now`);
 
       const response = await axios.post(
         `${API_BASE_URL}/api/publish/now`,
@@ -3037,7 +3037,7 @@ Return ONLY the improved English prompt, nothing else. No explanations.`,
         { headers, timeout: 60000 }
       );
 
-      console.log(`[TG-BOT-PUBLISH] Response status: ${response.status}, data: ${JSON.stringify(response.data)}`);
+      log.debug(`[TG-BOT-PUBLISH] Response status: ${response.status}, data: ${JSON.stringify(response.data)}`);
 
       const data = response.data;
 
@@ -3073,7 +3073,7 @@ Return ONLY the improved English prompt, nothing else. No explanations.`,
 
       await ctx.reply('Что делать дальше?', backButton);
     } catch (error: any) {
-      console.error('[TG-BOT-PUBLISH] Error:', error.response?.status, error.response?.data || error.message);
+      log.error('[TG-BOT-PUBLISH] Error:', error.response?.status, error.response?.data || error.message);
 
       if (error.response?.status === 409) {
         const msg = error.response?.data?.message || 'Контент уже опубликован на выбранных платформах';
@@ -3088,12 +3088,12 @@ Return ONLY the improved English prompt, nothing else. No explanations.`,
 
   private async saveGeneratedContent(ctx: BotContext) {
     try {
-      console.log('[SAVE-CONTENT] Starting save process');
-      console.log('[SAVE-CONTENT] lastGeneratedCampaignId:', ctx.session.lastGeneratedCampaignId);
-      console.log('[SAVE-CONTENT] Has content:', !!ctx.session.lastGeneratedContent);
+      log.debug('[SAVE-CONTENT] Starting save process');
+      log.debug(`[SAVE-CONTENT] lastGeneratedCampaignId: ${String(ctx.session.lastGeneratedCampaignId)}`);
+      log.debug(`[SAVE-CONTENT] Has content: ${String(!!ctx.session.lastGeneratedContent)}`);
 
       if (!ctx.session.lastGeneratedContent || !ctx.session.lastGeneratedCampaignId) {
-        console.log('[SAVE-CONTENT] ERROR: Missing content or campaign ID');
+        log.debug('[SAVE-CONTENT] ERROR: Missing content or campaign ID');
         return ctx.reply('❌ Нет сгенерированного контента для сохранения');
       }
 
@@ -3106,12 +3106,12 @@ Return ONLY the improved English prompt, nothing else. No explanations.`,
         content_type: 'text'
       };
 
-      console.log('[SAVE-CONTENT] Sending to Directus API:', JSON.stringify(postData, null, 2));
+      log.debug(`[SAVE-CONTENT] Sending to Directus API: ${String(JSON.stringify(postData, null, 2))}`);
 
       // КРИТИЧНО: Используем getAuthHeaders для гарантированно свежего токена
       const headers = await this.getAuthHeaders(ctx);
       if (!headers) {
-        console.log('[SAVE-CONTENT] ERROR: Failed to get auth headers');
+        log.debug('[SAVE-CONTENT] ERROR: Failed to get auth headers');
         return ctx.reply('❌ Ошибка авторизации. Пожалуйста, выполните /login заново');
       }
 
@@ -3121,8 +3121,8 @@ Return ONLY the improved English prompt, nothing else. No explanations.`,
         { headers }
       );
 
-      console.log('[SAVE-CONTENT] Response status:', response.status);
-      console.log('[SAVE-CONTENT] Response data:', JSON.stringify(response.data, null, 2));
+      log.debug(`[SAVE-CONTENT] Response status: ${String(response.status)}`);
+      log.debug(`[SAVE-CONTENT] Response data: ${String(JSON.stringify(response.data, null, 2))}`);
 
       const savedContent = response.data.data || response.data;
 
@@ -3148,7 +3148,7 @@ Return ONLY the improved English prompt, nothing else. No explanations.`,
       ctx.session.lastGeneratedContent = undefined;
       ctx.session.lastGeneratedCampaignId = undefined;
     } catch (error: any) {
-      console.error('Error saving content:', error);
+      log.error('Error saving content:', error);
       await ctx.reply(`❌ Ошибка при сохранении: ${error.message}`);
     }
   }
@@ -3167,7 +3167,7 @@ Return ONLY the improved English prompt, nothing else. No explanations.`,
         parse_mode: 'HTML'
       });
     } catch (error: any) {
-      console.error('Error starting scheduling:', error);
+      log.error('Error starting scheduling:', error);
       await ctx.reply(`❌ Ошибка: ${error.message}`);
     }
   }
@@ -3201,7 +3201,7 @@ Return ONLY the improved English prompt, nothing else. No explanations.`,
 
       await ctx.reply('🎯 Выберите платформы для планирования:', platformButtons);
     } catch (error: any) {
-      console.error('Error showing scheduling platforms:', error);
+      log.error('Error showing scheduling platforms:', error);
       await ctx.reply(`❌ Ошибка: ${error.message}`);
     }
   }
@@ -3264,7 +3264,7 @@ Return ONLY the improved English prompt, nothing else. No explanations.`,
 
       await ctx.reply('Что делать дальше?', backButton);
     } catch (error: any) {
-      console.error('Error scheduling content:', error);
+      log.error('Error scheduling content:', error);
       await ctx.reply(`❌ Ошибка при планировании: ${error.response?.data?.message || error.message}`);
     }
   }
@@ -3307,7 +3307,7 @@ Return ONLY the improved English prompt, nothing else. No explanations.`,
         }
       );
     } catch (error: any) {
-      console.error('Error showing campaigns for photo:', error);
+      log.error('Error showing campaigns for photo:', error);
       await ctx.reply(`❌ Ошибка при получении кампаний: ${error.message}`);
     }
   }
@@ -3363,7 +3363,7 @@ Return ONLY the improved English prompt, nothing else. No explanations.`,
 
       await ctx.reply('Что делать дальше?', actionButtons);
     } catch (error: any) {
-      console.error('Error saving photo to campaign:', error);
+      log.error('Error saving photo to campaign:', error);
       await ctx.reply(`❌ Ошибка при сохранении фото: ${error.message}`);
     }
   }
@@ -3377,14 +3377,14 @@ Return ONLY the improved English prompt, nothing else. No explanations.`,
   }
 
   public async launch() {
-    console.log('🔧 [TelegramBotService] Вызов this.bot.launch()...');
+    log.debug('🔧 [TelegramBotService] Вызов this.bot.launch()...');
 
     let startupError: Error | null = null;
 
     // bot.launch() в polling-режиме никогда не резолвится — запускаем в фоне
     this.bot.launch().catch((err: Error) => {
       startupError = err;
-      console.error('❌ Telegram bot crashed:', err.message);
+      log.error('❌ Telegram bot crashed:', err.message);
     });
 
     // Ждём 3 секунды — если не упал, значит успешно стартовал
@@ -3394,27 +3394,27 @@ Return ONLY the improved English prompt, nothing else. No explanations.`,
       throw startupError;
     }
 
-    console.log('✅ Telegram bot started successfully');
+    log.debug('✅ Telegram bot started successfully');
   }
 
   public async launchWebhook(domain: string) {
     try {
-      console.log('🔧 [TelegramBotService] Настройка webhook...');
+      log.debug('🔧 [TelegramBotService] Настройка webhook...');
 
       const webhookPath = '/telegram-webhook';
       const webhookUrl = `https://${domain}${webhookPath}`;
 
       // Устанавливаем webhook в Telegram
       await this.bot.telegram.setWebhook(webhookUrl);
-      console.log(`✅ Webhook установлен: ${webhookUrl}`);
+      log.debug(`✅ Webhook установлен: ${webhookUrl}`);
 
       // Возвращаем middleware для Express
       return this.bot.webhookCallback(webhookPath);
     } catch (error) {
-      console.error('❌ Error setting up webhook:', error);
-      console.error('❌ Error details:', error instanceof Error ? error.message : String(error));
+      log.error('❌ Error setting up webhook:', error);
+      log.error('❌ Error details:', error instanceof Error ? error.message : String(error));
       if (error instanceof Error && error.stack) {
-        console.error('❌ Stack trace:', error.stack);
+        log.error('❌ Stack trace:', error.stack);
       }
       throw error;
     }
@@ -3438,7 +3438,7 @@ Return ONLY the improved English prompt, nothing else. No explanations.`,
         ...options
       });
     } catch (error) {
-      console.error(`[TG-BOT] Ошибка отправки сообщения в чат ${chatId}:`, error);
+      log.error(`[TG-BOT] Ошибка отправки сообщения в чат ${chatId}:`, error);
       throw error;
     }
   }

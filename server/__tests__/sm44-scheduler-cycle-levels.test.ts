@@ -45,4 +45,12 @@ describe('SM-44 ч.3: пустой цикл планировщика молчи�
     // token_reset_failed — error.
     expect(SRC).toMatch(/'scheduler\.token_reset_failed',\s*\n\s*\{[^}]*\},\s*\n\s*'error'/);
   });
+
+  it('B2: cron.failed остаётся на error (мутация error→info красит)', () => {
+    // Точная структура logEvent для cron.failed: событие, поля, уроо, источник.
+    // Уровень обязан быть 'error' — если его сменить на 'info', тест краснеет.
+    expect(SRC).toMatch(/'cron\.failed',\s*\n\s*\{ operation: 'publish-scheduler', reason: [^}]+ \},\s*\n\s*'error',\s*\n\s*'scheduler',/);
+    // И явно: НЕ должно быть cron.failed на info.
+    expect(SRC).not.toMatch(/'cron\.failed',\s*\n\s*\{[^}]*\},\s*\n\s*'info',/);
+  });
 });

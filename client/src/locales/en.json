@@ -491,8 +491,8 @@
       "enterUrlPrompt": "Enter website URL and click \"Analyze\""
     },
     "channelValue": "entire channel: {{value}}",
-    "channelHint": "The first number counts this campaign's publications. The second counts the whole channel over the same period: posts of other campaigns in the same channel, our own posts whose id was not stored, and posts published manually.",
-    "channelBreakdownIntro": "What the channel figure is made of:",
+    "channelHint": "The number on the left counts this campaign's publications. The bracketed “entire channel” number counts every post in the channel over the same period: posts of other campaigns in the same channel, our own posts whose id was not stored, and posts published manually.",
+    "channelBreakdownIntro": "What the bracketed “entire channel” number is made of:",
     "channelBreakdownOwn": "{{value}} — this campaign “{{name}}”",
     "channelBreakdownOther": "{{value}} — campaign “{{name}}”",
     "channelBreakdownUnattributed": "{{value}} — posts with no campaign: published manually or with an unsaved post id"

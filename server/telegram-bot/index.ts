@@ -930,7 +930,7 @@ class TelegramBotService {
           ...(applied.ok ? { readback: applied.readback } : {}),
           ...('status' in applied ? { status: applied.status } : {}),
           ...('actual' in applied ? { actual: applied.actual } : {}),
-        }));
+        });
 
         if (!applied.ok) {
           // Владельцу — честный отказ вместо галочки. Молчаливое «успешно»

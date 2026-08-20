@@ -13,6 +13,8 @@
 import type { Request, Response } from 'express';
 import axios from 'axios';
 import { directusCrud } from '../services/directus-crud';
+import { getPublishScheduler } from '../services/publish-scheduler';
+import { classifySchedulerLiveness } from '../services/scheduler-liveness';
 import {
   classifyStorageOutcome,
   decideReadiness,
@@ -79,9 +81,26 @@ export async function readyHandler(_req: Request, res: Response) {
   // задержки и ручка отвечала бы дольше, чем ждёт монитор.
   const probes = await Promise.all([probeDirectus(), probeStorage()]);
   const verdict = decideReadiness(probes);
+
+  // SM-45: признак жизни планировщика (machine-readable, по времени). Порог
+  // 2 интервала цикла (30s) — при 3 пропавших проходах подряд уже stale.
+  const snapshot = getPublishScheduler().getLivenessSnapshot();
+  const liveness = classifySchedulerLiveness({
+    lastSuccessfulPassAt: snapshot.lastSuccessfulPassAt,
+    startedAt: snapshot.startedAt,
+    now: Date.now(),
+    staleThresholdMs: 2 * 30_000,
+    startupGraceMs: 90_000,
+  });
+
   res.status(verdict.httpStatus).json({
     status: verdict.ready ? 'ready' : 'not_ready',
     timestamp: new Date().toISOString(),
     dependencies: verdict.dependencies,
+    scheduler: {
+      status: liveness.status,
+      ...(liveness.ageMs !== null ? { ageMs: liveness.ageMs } : {}),
+      uptimeMs: liveness.uptimeMs,
+    },
   });
 }

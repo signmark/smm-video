@@ -87,7 +87,14 @@ vi.mock('../services/beget-s3-storage-aws', () => ({ BegetS3StorageAws: class {}
 vi.mock('../services/beget-s3-video-service', () => ({ begetS3VideoService: {} }));
 vi.mock('../services/stories-media-service', () => ({ default: class {} }));
 vi.mock('fluent-ffmpeg', () => ({ default: () => ({}) }));
-vi.mock('../utils/logger', () => ({ log: vi.fn(), default: { info: vi.fn(), error: vi.fn(), warn: vi.fn() } }));
+vi.mock('../utils/logger', () => {
+  const log = vi.fn();
+  log.debug = vi.fn();
+  log.info = vi.fn();
+  log.warn = vi.fn();
+  log.error = vi.fn();
+  return { log, default: { log, info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() } };
+});
 
 // Роутеры импортируем ПОСЛЕ моков.
 import facebookRouter from '../api/facebook-webhook-unified';

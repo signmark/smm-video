@@ -75,14 +75,14 @@ describe('подпись строки «Настройки публикации�
 
   it('ни одной площадки — не настроены', () => {
     expect(socialSummary([{ platform: 'telegram', view: notConfigured }]))
-      .toEqual({ completed: false, label: 'Соцсети не настроены' });
+      .toEqual({ completed: false, label: 'Соцсети не настроены', tone: 'none' });
   });
 
   it('всё в порядке — короткая подпись', () => {
     expect(socialSummary([
       { platform: 'telegram', view: { tone: 'ok', label: 'Связь есть' } },
       { platform: 'vk', view: notConfigured },
-    ])).toEqual({ completed: true, label: 'Соцсети настроены' });
+    ])).toEqual({ completed: true, label: 'Соцсети настроены', tone: 'ok' });
   });
 
   it('живой случай: пять работают, Telegram молчит — галочка остаётся, но называет виновника', () => {
@@ -128,9 +128,33 @@ describe('подпись строки «Настройки публикации�
     expect(r.hint).toContain('ни одна площадка не отвечает');
   });
 
+  it('отметка при неисправной сети жёлтая, а не зелёная', () => {
+    // Требование владельца 20.08: галочка остаётся, но зелёной быть не должна —
+    // зелёный читается как «всё хорошо», а связь у сети сломана.
+    const one = socialSummary([
+      { platform: 'telegram', view: { tone: 'fail', label: 'Нет связи' } },
+      { platform: 'vk', view: { tone: 'ok', label: 'Связь есть' } },
+    ]);
+    expect(one.tone).toBe('warn');
+    expect(one.alt).toBe('Ошибка связи у сети Telegram');
+
+    const many = socialSummary([
+      { platform: 'telegram', view: { tone: 'fail', label: 'Нет связи' } },
+      { platform: 'vk', view: { tone: 'fail', label: 'Нет связи' } },
+      { platform: 'instagram', view: { tone: 'ok', label: 'Связь есть' } },
+    ]);
+    expect(many.alt).toBe('Ошибка связи у нескольких сетей: Telegram, ВКонтакте');
+  });
+
+  it('когда всё в порядке, отметка зелёная и подсказки нет', () => {
+    const r = socialSummary([{ platform: 'vk', view: { tone: 'ok', label: 'Связь есть' } }]);
+    expect(r.tone).toBe('ok');
+    expect(r.alt).toBeUndefined();
+  });
+
   it('непроверенная площадка виновником не объявляется', () => {
     expect(socialSummary([
       { platform: 'telegram', view: { tone: 'unknown', label: 'Связь не проверяли' } },
-    ])).toEqual({ completed: true, label: 'Соцсети настроены' });
+    ])).toEqual({ completed: true, label: 'Соцсети настроены', tone: 'ok' });
   });
 });

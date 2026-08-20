@@ -834,6 +834,7 @@ export default function CampaignDetails() {
           return {
             completed: connected,
             label: connected ? "Соцсети настроены" : "Соцсети не настроены",
+            tone: (connected ? 'ok' : 'none') as 'ok' | 'warn' | 'none',
           };
         }
         const now = new Date();
@@ -1148,11 +1149,34 @@ export default function CampaignDetails() {
             className="py-4 hover:no-underline hover:bg-accent hover:text-accent-foreground"
           >
             <div className="flex items-center gap-3">
-              {getSectionCompletionStatus().socialMedia.completed ? (
-                <CheckCircle className="h-5 w-5 text-green-500" />
-              ) : (
-                <Circle className="h-5 w-5 text-gray-400" />
-              )}
+              {/* SM-41. Отметка при неисправной сети остаётся (галочка про
+                  заполненность), но зелёной быть не должна: зелёный читается
+                  как «всё хорошо». Жёлтая отметка и подсказка называют, у
+                  какой сети ошибка связи. */}
+              {(() => {
+                const summary: any = getSectionCompletionStatus().socialMedia;
+                if (summary.tone === 'warn') {
+                  return (
+                    <span
+                      title={summary.alt}
+                      aria-label={summary.alt}
+                      data-testid="icon-social-warn"
+                      className="inline-flex"
+                    >
+                      {summary.completed ? (
+                        <CheckCircle className="h-5 w-5 text-amber-500" />
+                      ) : (
+                        <Circle className="h-5 w-5 text-amber-500" />
+                      )}
+                    </span>
+                  );
+                }
+                return summary.completed ? (
+                  <CheckCircle className="h-5 w-5 text-green-500" />
+                ) : (
+                  <Circle className="h-5 w-5 text-gray-400" />
+                );
+              })()}
               <span>Настройки публикации</span>
               <span className="text-sm text-muted-foreground ml-auto">
                 {getSectionCompletionStatus().socialMedia.label}

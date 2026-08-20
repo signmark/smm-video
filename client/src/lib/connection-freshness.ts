@@ -108,6 +108,13 @@ export interface SocialSummary {
   label: string;
   /** Пояснение, за что стоит галочка. Появляется, когда есть неисправная площадка. */
   hint?: string;
+  /**
+   * Цвет отметки. Требование владельца: галочка при неисправной сети остаётся,
+   * но зелёной быть не должна — иначе она читается как «всё хорошо».
+   */
+  tone: 'ok' | 'warn' | 'none';
+  /** Текст всплывающей подсказки у отметки. Есть только у жёлтой. */
+  alt?: string;
 }
 
 export interface SummaryInput {
@@ -122,10 +129,10 @@ export interface SummaryInput {
  */
 export function socialSummary(items: SummaryInput[]): SocialSummary {
   const configured = items.filter((i) => i.view.tone !== 'unknown' || i.view.label !== 'Не настроено');
-  if (configured.length === 0) return { completed: false, label: 'Соцсети не настроены' };
+  if (configured.length === 0) return { completed: false, label: 'Соцсети не настроены', tone: 'none' };
 
   const broken = configured.filter((i) => i.view.tone === 'fail').map((i) => platformTitle(i.platform));
-  if (broken.length === 0) return { completed: true, label: 'Соцсети настроены' };
+  if (broken.length === 0) return { completed: true, label: 'Соцсети настроены', tone: 'ok' };
 
   const named = broken.slice(0, 2).join(', ');
   const rest = broken.length > 2 ? ` и ещё ${broken.length - 2}` : '';
@@ -138,6 +145,8 @@ export function socialSummary(items: SummaryInput[]): SocialSummary {
       completed: false,
       label: `Нет связи: ${named}${rest}`,
       hint: 'Доступы заполнены, но ни одна площадка не отвечает. Проверьте подключение.',
+      tone: 'warn',
+      alt: 'Ни одна настроенная сеть не отвечает',
     };
   }
 
@@ -147,5 +156,9 @@ export function socialSummary(items: SummaryInput[]): SocialSummary {
     // Требование владельца: человек должен понимать, за что стоит галочка.
     // Иначе отказ одной площадки читается как «всё сломалось».
     hint: 'Галочка стоит за заполненные доступы. Связь у каждой площадки проверяется отдельно.',
+    tone: 'warn',
+    alt: broken.length === 1
+      ? `Ошибка связи у сети ${broken[0]}`
+      : `Ошибка связи у нескольких сетей: ${broken.join(', ')}`,
   };
 }

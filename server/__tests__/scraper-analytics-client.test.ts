@@ -73,10 +73,42 @@ describe('scraper analytics client', () => {
         paramsSerializer: { indexes: null },
       }),
     );
-    expect(log.warn).toHaveBeenCalledWith(
-      'scraper request={"method":"POST","url":"http://analytics.test/api/v1/monitoring/scheduler/metrics-refresh","headers":{"Content-Type":"application/json","Authorization":"Bearer [REDACTED]"},"query":{"channel_ids":["channel-uuid"],"days":30,"force":true},"body":{}}',
+    // SM-44 ч.1: обычный исходящий запрос скрапера пишется в info (одна строка исхода),
+    // не в warn; тело ответа/body не выкладываются.
+    expect(log.warn).not.toHaveBeenCalledWith(expect.stringContaining('scraper request='), 'analytics');
+    expect(log.info).toHaveBeenCalledWith(
+      expect.stringContaining('] POST /api/v1/monitoring/scheduler/metrics-refresh status=200'),
       'analytics',
     );
+    expect(JSON.stringify(vi.mocked(log.info).mock.calls)).not.toContain('response=');
+  });
+
+  it('refreshChannelMetrics успешного запроса: РОВНО ОДНА info-строка исхода (агрегирует голый log и log.info); caller query-дубль краснит', async () => {
+    vi.mocked(axios.post).mockResolvedValue({
+      status: 200,
+      data: { status: 'completed', processed: 1, failed: 0, skipped: 0, duration_seconds: 0.5, errors: [] },
+    });
+
+    await refreshChannelMetrics({
+      channels: [{ id: 'channel-uuid', platform: 'telegram', platform_channel_id: '@channel' }],
+      days: 30,
+      force: true,
+    });
+
+    // Caller-врезка исторически была голым `log('metrics-refresh query: …', 'info')`,
+    // поэтому агрегируем И голые `log(...)` вызовы, И `log.info(...)` — иначе возврат
+    // той строки голым log останется зелёным (REJECT #35).
+    const baseLogCalls = vi.mocked(log).mock.calls;
+    const infoCalls = vi.mocked(log.info).mock.calls.filter((c) => c[1] === 'analytics');
+    const infoText = JSON.stringify([...baseLogCalls, ...infoCalls]);
+
+    const outcomeInfos = [...baseLogCalls, ...infoCalls].filter(
+      (c) => typeof c[0] === 'string' && c[0].includes('] POST /api/v1/monitoring/scheduler/metrics-refresh status='),
+    );
+    expect(outcomeInfos).toHaveLength(1);
+    // Нигде (ни голый log, ни log.info) нет caller query-дубля и тела ответа.
+    expect(infoText).not.toContain('metrics-refresh query:');
+    expect(infoText).not.toContain('response=');
   });
 
   it('surfaces authorization failures without exposing the key', async () => {
@@ -110,8 +142,11 @@ describe('scraper analytics client', () => {
 
     await expect(getMonitoredChannels({ page_size: 100 }, true))
       .rejects.toThrow('Analytics API отклонил ключ доступа (HTTP 401): Invalid API key');
+    // SM-44 ч.1: на упавшем запросе нет request-строки в warn — только ошибка уходит warn,
+    // без светящегося ключа.
+    expect(log.warn).not.toHaveBeenCalledWith(expect.stringContaining('scraper request='), 'analytics');
     expect(log.warn).toHaveBeenCalledWith(
-      'scraper request={"method":"GET","url":"http://analytics.test/api/v1/monitoring/channels","headers":{"Authorization":"Bearer [REDACTED]"},"query":{"page_size":100}}',
+      expect.stringContaining('Analytics API отклонил ключ доступа (HTTP 401): Invalid API key'),
       'analytics',
     );
   });
@@ -312,10 +347,10 @@ describe('scraper analytics client', () => {
     })).rejects.toThrow('Analytics API вернул HTTP 500 для POST /api/v1/monitoring/scheduler/metrics-refresh: Internal Server Error');
 
     expect(axios.post).toHaveBeenCalledTimes(1);
+    // SM-44 ч.1: запрос упал (500) — в warn идёт текст ошибки исхода, без request-дампов/тела/ключа.
+    expect(log.warn).not.toHaveBeenCalledWith(expect.stringContaining('channel_ids'), 'analytics');
     expect(log.warn).toHaveBeenCalledWith(
-      expect.stringContaining(
-        '"query":{"channel_ids":["telegram-uuid","vk-uuid"],"days":7,"force":true}',
-      ),
+      expect.stringContaining('Analytics API вернул HTTP 500 для POST /api/v1/monitoring/scheduler/metrics-refresh'),
       'analytics',
     );
     expect(JSON.stringify(vi.mocked(log.warn).mock.calls)).not.toContain('test-key');

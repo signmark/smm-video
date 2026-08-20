@@ -22,7 +22,8 @@
       "stopLabel": "Detener modo autónomo",
       "pendingLabel": "Abrir aprobación pendiente",
       "pauseLabel": "Pausar el modo autónomo",
-      "resumeLabel": "Reanudar el modo autónomo"
+      "resumeLabel": "Reanudar el modo autónomo",
+      "manageLabel": "Abrir los controles del modo autónomo"
     }
   },
   "topbar": {
@@ -47,7 +48,8 @@
       "quotaHint": "Haz clic para reiniciar",
       "offTitle": "Modo autónomo desactivado",
       "offHint": "Haz clic para iniciar ahora",
-      "pausedToast": "Modo autónomo en pausa, progreso guardado"
+      "pausedToast": "Modo autónomo en pausa, progreso guardado",
+      "stoppedToast": "El modo autónomo está apagado"
     },
     "pipelineDialog": {
       "title": "Iniciar el asistente autónomo",
@@ -71,6 +73,20 @@
           "badge": "Control máximo"
         }
       }
+    },
+    "manageDialog": {
+      "title": "Controles del modo autónomo",
+      "runningDescription": "El modo está en marcha. La pausa conserva el progreso, apagarlo lo reinicia.",
+      "pausedDescription": "El modo está en pausa. Al reanudar continúa desde el mismo punto.",
+      "pause": "Pausar",
+      "pausing": "Pausando...",
+      "resume": "Reanudar",
+      "resuming": "Reanudando...",
+      "disable": "Apagar",
+      "disableWarning": "Apagarlo reinicia los contadores de ciclos y publicaciones, y las publicaciones programadas de esta ejecución vuelven a borradores. No se podrá reanudar desde el mismo punto.",
+      "disableConfirm": "Sí, apagar",
+      "disabling": "Apagando...",
+      "cancel": "Cancelar"
     }
   },
   "ui": {

@@ -4,6 +4,20 @@ import { storage } from '../storage';
 import { directusCrud } from './directus-crud';
 import { mergePlatformStatus } from './publish-status-merge';
 import { publicationLockManager } from './publication-lock-manager';
+
+/**
+ * SM-20 Phase2 (B): статусы, при которых публикация вообще может выйти.
+ *
+ * Тот же набор, которым планировщик выбирает пачку. Вынесен отдельно, потому
+ * что теперь он проверяется дважды: при выборке и ещё раз непосредственно
+ * перед отправкой. Второй раз — из-за паузы: между выборкой пачки и отправкой
+ * человек может снять публикацию с очереди, и тогда отправлять её нельзя.
+ */
+export const PUBLISHABLE_STATUSES = ['scheduled', 'partial', 'pending', 'partially_published'] as const;
+
+export function isPublishableStatus(status: unknown): boolean {
+  return typeof status === 'string' && (PUBLISHABLE_STATUSES as readonly string[]).includes(status);
+}
 import { publicationTracker } from './publication-tracking';
 import { aiService } from './ai-service';
 import { getContentAggregateTimes, isSameStoredInstant, parseStoredInstant, resolvePublishFinalization } from '@shared/schedule-time';
@@ -726,6 +740,22 @@ export class PublishScheduler {
             const jobIndex = nextPublicationJob++;
             const { content, platforms } = publicationJobs[jobIndex];
             try {
+              // SM-20 Phase2 (B): пачка выбрана раньше, а отправляем сейчас.
+              // За это время пауза могла снять публикацию с очереди — тогда
+              // отправлять нельзя. Блокировки на этот момент уже наши, поэтому
+              // после успешной проверки пауза до строки не дотянется: она
+              // увидит занятую блокировку и оставит запись публикатору.
+              if (!(await this.isStillPublishable(content.id))) {
+                log(`⏹️ ${content.id}: снят с очереди во время подготовки — не публикуем`, 'scheduler');
+                for (const platform of platforms) {
+                  this.releasePlatformCache(content.id, platform);
+                  publicationTracker.releasePublication(content.id, platform);
+                }
+                await Promise.allSettled(
+                  platforms.map(platform => publicationLockManager.releaseLock(content.id, platform))
+                );
+                continue;
+              }
               await this.publishContentToPlatforms(content, platforms);
               publishedCount++;
             } catch (error: any) {
@@ -1756,6 +1786,29 @@ ${text}
       }
     }
     return healed;
+  }
+
+  /**
+   * Свежий статус публикации прямо перед отправкой.
+   *
+   * Отказ чтения считаем «публиковать нельзя»: пропущенная публикация выйдет
+   * следующим проходом, а лишняя — это пост, который человек уже снял.
+   */
+  private async isStillPublishable(contentId: string): Promise<boolean> {
+    try {
+      const rows = await directusCrud.list<any>('campaign_content', {
+        filter: { id: { _eq: contentId } },
+        fields: ['id', 'status'],
+        limit: 1,
+        useAdminToken: true,
+      });
+      const fresh = rows?.[0];
+      if (!fresh) return false;
+      return isPublishableStatus(fresh.status);
+    } catch (err: any) {
+      log(`⚠️ ${contentId}: не удалось перечитать статус перед публикацией: ${err?.message}`, 'scheduler', 'warn');
+      return false;
+    }
   }
 
   private async publishContentToPlatforms(content: any, platforms: string[]) {

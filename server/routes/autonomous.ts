@@ -77,7 +77,7 @@ router.post('/stop', async (req: Request, res: Response) => {
     const { campaignId } = req.body;
     if (!campaignId) return res.status(400).json({ error: 'campaignId обязателен' });
     if (!(await ensureCampaignAccess(req, res, String(campaignId)))) return;
-    const result = stopAutonomousExternal(campaignId);
+    const result = await stopAutonomousExternal(campaignId);
     return res.json(result);
   } catch (e: any) {
     return res.status(500).json({ error: e.message });
@@ -91,7 +91,7 @@ router.post('/pause', async (req: Request, res: Response) => {
     const { campaignId } = req.body;
     if (!campaignId) return res.status(400).json({ error: 'campaignId обязателен' });
     if (!(await ensureCampaignAccess(req, res, String(campaignId)))) return;
-    const result = pauseAutonomousExternal(campaignId);
+    const result = await pauseAutonomousExternal(campaignId);
     return res.json(result);
   } catch (e: any) {
     return res.status(500).json({ error: e.message });

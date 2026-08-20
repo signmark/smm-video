@@ -22,7 +22,8 @@
       "stopLabel": "Stop autonomous mode",
       "pendingLabel": "Open pending approval",
       "pauseLabel": "Pause autonomous mode",
-      "resumeLabel": "Resume autonomous mode"
+      "resumeLabel": "Resume autonomous mode",
+      "manageLabel": "Open autonomous mode controls"
     }
   },
   "topbar": {
@@ -46,7 +47,8 @@
       "quotaHint": "Click to restart",
       "offTitle": "Autonomous mode is off",
       "offHint": "Click to start now",
-      "pausedToast": "Autonomous mode paused, progress saved"
+      "pausedToast": "Autonomous mode paused, progress saved",
+      "stoppedToast": "Autonomous mode is off"
     },
     "pipelineDialog": {
       "title": "Start the autonomous assistant",
@@ -70,6 +72,20 @@
           "badge": "Maximum control"
         }
       }
+    },
+    "manageDialog": {
+      "title": "Autonomous mode controls",
+      "runningDescription": "The mode is running. Pausing keeps progress, turning it off resets progress.",
+      "pausedDescription": "The mode is paused. Resuming continues from the same point.",
+      "pause": "Pause",
+      "pausing": "Pausing...",
+      "resume": "Resume",
+      "resuming": "Resuming...",
+      "disable": "Turn off",
+      "disableWarning": "Turning it off resets the cycle and post counters, and this run's scheduled posts go back to drafts. Resuming from the same point will not be possible.",
+      "disableConfirm": "Yes, turn off",
+      "disabling": "Turning off...",
+      "cancel": "Cancel"
     }
   },
   "ui": {

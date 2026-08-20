@@ -142,13 +142,16 @@ describe('scraper analytics client', () => {
 
     await expect(getMonitoredChannels({ page_size: 100 }, true))
       .rejects.toThrow('Analytics API отклонил ключ доступа (HTTP 401): Invalid API key');
-    // SM-44 ч.1: на упавшем запросе нет request-строки в warn — только ошибка уходит warn,
+    // SM-44 ч.1: на упавшем запросе нет request-строки в warn и нет success-подобной
+    // info-строки исхода (запрос не дошёл до ответа) — только ошибка уходит warn,
     // без светящегося ключа.
     expect(log.warn).not.toHaveBeenCalledWith(expect.stringContaining('scraper request='), 'analytics');
+    expect(log.info).not.toHaveBeenCalledWith(expect.stringContaining('status='), 'analytics');
     expect(log.warn).toHaveBeenCalledWith(
       expect.stringContaining('Analytics API отклонил ключ доступа (HTTP 401): Invalid API key'),
       'analytics',
     );
+    expect(JSON.stringify(vi.mocked(log.warn).mock.calls)).not.toContain('test-key');
   });
 
   it('loads every page of monitored channels', async () => {
@@ -347,8 +350,10 @@ describe('scraper analytics client', () => {
     })).rejects.toThrow('Analytics API вернул HTTP 500 для POST /api/v1/monitoring/scheduler/metrics-refresh: Internal Server Error');
 
     expect(axios.post).toHaveBeenCalledTimes(1);
-    // SM-44 ч.1: запрос упал (500) — в warn идёт текст ошибки исхода, без request-дампов/тела/ключа.
+    // SM-44 ч.1: запрос упал (500) — в warn идёт текст ошибки исхода, без request-дампов/тела/ключа;
+    // info-строки успешного исхода не должно быть.
     expect(log.warn).not.toHaveBeenCalledWith(expect.stringContaining('channel_ids'), 'analytics');
+    expect(log.info).not.toHaveBeenCalledWith(expect.stringContaining('status='), 'analytics');
     expect(log.warn).toHaveBeenCalledWith(
       expect.stringContaining('Analytics API вернул HTTP 500 для POST /api/v1/monitoring/scheduler/metrics-refresh'),
       'analytics',

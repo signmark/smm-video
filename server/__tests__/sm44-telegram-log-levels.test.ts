@@ -157,7 +157,7 @@ describe('SM-44 ч.4: Telegram-bot log levels', () => {
       expect(debugMsgs[0].message).toContain('1');
     });
 
-    it('session sync with DirectusAuthManager writes debug', async () => {
+    it('loadSessionsFromDB called during startup', async () => {
       mockGetAllSessions.mockResolvedValue([
         { chat_id: 1, user_id: 'u1', token: 't1', refresh_token: 'rt1', email: 'a@b.c', first_name: 'A', last_name: 'B', session_data: {} },
       ]);
@@ -193,19 +193,21 @@ describe('SM-44 ч.4: Telegram-bot log levels', () => {
       const bot = await createBot();
       await new Promise(r => setTimeout(r, 50));
 
-      // Simulate getFreshToken call via ctx
+      // Actually call getFreshToken to trigger the catch path
       const ctx: any = {
         chat: { id: 42 },
         session: { userId: 'user-1', token: 'old-token', refreshToken: 'rt' },
       };
+      const result = await (bot as any).getFreshToken(ctx);
+      expect(result).toBeNull();
 
-      // getFreshToken is private, but we can test through the middleware
-      // For now, verify the error path exists in source
-      const criticalMsgs = logCalls.filter(c =>
-        c.message.includes('Clearing session due to critical error')
+      // Capture console.error calls for the critical cleanup message
+      const criticalMsgs = consoleCalls.filter(c =>
+        c.level === 'error' && c.args.some(a => typeof a === 'string' && a.includes('Clearing session due to critical error'))
       );
-      // If this fires, it must be error level
-      criticalMsgs.forEach(m => expect(m.level).toBe('error'));
+      // Must have exactly one non-empty occurrence
+      expect(criticalMsgs.length).toBe(1);
+      expect(criticalMsgs[0].args.some(a => typeof a === 'string' && a.includes('user-1'))).toBe(true);
     });
   });
 

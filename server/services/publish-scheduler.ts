@@ -403,7 +403,7 @@ export class PublishScheduler {
           logEvent(
             'cron.finished',
             { operation: 'publish-scheduler', count: 0, durationMs: Date.now() - cycleStartedAt },
-            'info',
+            'debug',
             'scheduler',
             'Цикл планировщика: запланированного контента нет',
           );
@@ -736,10 +736,15 @@ export class PublishScheduler {
         // AI-65. Итог цикла нужен не ради статистики: отсутствие этой строки
         // дольше ожидаемого интервала — единственный признак тихо умершего
         // крона. Ровно так когда-то незаметно умер VK-мониторинг.
+        // SM-44 ч.3: пустой проход (ничего не отправлено) — штатный idle, и
+        // «обработано 122, отправлено 0» каждые 30 секунд — шум. Уходим в debug;
+        // info остаётся только при ненулевом результате. frequency/lock/retry и
+        // publication semantics не меняются — меняется только уровень лога.
+        const cycleLevel: 'info' | 'debug' = publishedCount > 0 ? 'info' : 'debug';
         logEvent(
           'cron.finished',
           { operation: 'publish-scheduler', count: publishedCount, durationMs: Date.now() - cycleStartedAt },
-          'info',
+          cycleLevel,
           'scheduler',
           `Цикл планировщика: обработано ${processedCount}, отправлено на публикацию ${publishedCount}`,
         );

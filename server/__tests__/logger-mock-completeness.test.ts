@@ -29,21 +29,37 @@ interface LoggerMock {
   source: string;
 }
 
+/**
+ * Вид кавычек к делу не относится.
+ *
+ * Первая редакция сторожа искала подстроку с одинарными кавычками, и подмена
+ * вида vi.mock("../utils/logger", …) проходила мимо него незамеченной —
+ * сторож, который стережёт только половину написаний, хуже отсутствующего:
+ * он создаёт уверенность, что проверено всё.
+ */
+const MOCK_START = /vi\.mock\(\s*(['"`])\.\.\/utils\/logger\1/g;
+
+/** Разбор одного файла отделён от чтения каталога — иначе его нечем проверить. */
+export function collectLoggerMocksFrom(file: string, source: string): LoggerMock[] {
+  const found: LoggerMock[] = [];
+  const re = new RegExp(MOCK_START.source, 'g');
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(source)) !== null) {
+    // Двадцати строк хватает с запасом: фабрики подмены журнала короткие.
+    // Брать файл целиком нельзя — сторож увидит слово «debug» где-нибудь
+    // ниже по тексту и промолчит.
+    found.push({ file, source, block: source.slice(match.index).split('\n').slice(0, 20).join('\n') });
+  }
+  return found;
+}
+
 function collectLoggerMocks(): LoggerMock[] {
   const found: LoggerMock[] = [];
   for (const file of readdirSync(TESTS_DIR)) {
     // Себя сторож не читает: в тексте его сообщений об ошибке стоят те же
     // строки, которые он ищет, и он нашёл бы сам себя.
     if (!file.endsWith('.test.ts') || file === 'logger-mock-completeness.test.ts') continue;
-    const source = readFileSync(join(TESTS_DIR, file), 'utf-8');
-    let from = source.indexOf("vi.mock('../utils/logger'");
-    while (from !== -1) {
-      // Двадцати строк хватает с запасом: фабрики подмены журнала короткие.
-      // Брать файл целиком нельзя — сторож увидит слово «debug» где-нибудь
-      // ниже по тексту и промолчит.
-      found.push({ file, source, block: source.slice(from).split('\n').slice(0, 20).join('\n') });
-      from = source.indexOf("vi.mock('../utils/logger'", from + 1);
-    }
+    found.push(...collectLoggerMocksFrom(file, readFileSync(join(TESTS_DIR, file), 'utf-8')));
   }
   return found;
 }
@@ -74,7 +90,7 @@ function hasAllMethods(text: string): boolean {
   return REQUIRED_METHODS.every((method) => new RegExp(`\\b${method}\\s*[:=]`).test(text));
 }
 
-function isComplete(mock: LoggerMock): boolean {
+export function isComplete(mock: LoggerMock): boolean {
   // Подмена, переиспользующая настоящий модуль, полна по определению.
   if (mock.block.includes('importOriginal') || mock.block.includes('...actual')) return true;
 
@@ -114,6 +130,31 @@ describe('подмены журнала в тестах полны', () => {
         'log: Object.assign(vi.fn(), { debug: vi.fn(), info: vi.fn(), ' +
         'warn: vi.fn(), error: vi.fn() }).',
     ).toEqual([]);
+  });
+
+  it('подмена находится при любом виде кавычек', () => {
+    // M6: до этой правки двойные кавычки уводили неполную подмену от сторожа.
+    const cases: Array<[string, string]> = [
+      ["одинарные", "vi.mock('../utils/logger', () => ({ log: vi.fn() }));"],
+      ["двойные", 'vi.mock("../utils/logger", () => ({ log: vi.fn() }));'],
+      ["обратные", 'vi.mock(`../utils/logger`, () => ({ log: vi.fn() }));'],
+    ];
+
+    for (const [name, source] of cases) {
+      const mocks = collectLoggerMocksFrom(`пример-${name}.test.ts`, source);
+      expect(mocks, `подмена с кавычками «${name}» не найдена`).toHaveLength(1);
+      expect(isComplete(mocks[0]), `неполная подмена с кавычками «${name}» признана полной`).toBe(false);
+    }
+  });
+
+  it('полная подмена в двойных кавычках сторожа не тревожит', () => {
+    const source =
+      'vi.mock("../utils/logger", () => ({ log: Object.assign(vi.fn(), ' +
+      '{ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }));';
+    const mocks = collectLoggerMocksFrom('пример-полная.test.ts', source);
+
+    expect(mocks).toHaveLength(1);
+    expect(isComplete(mocks[0])).toBe(true);
   });
 
   it('подменённый log вызываем как функция, а не только как объект', () => {

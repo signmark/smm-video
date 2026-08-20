@@ -87,7 +87,7 @@ describe('scraper analytics client', () => {
     expect(JSON.stringify(vi.mocked(log.info).mock.calls)).not.toContain('response=');
   });
 
-  it('refreshChannelMetrics успешного запроса испускает РОВНО ОДНУ info-строку исхода (без caller query-дубля)', async () => {
+  it('refreshChannelMetrics успешного запроса: РОВНО ОДНА info-строка исхода (агрегирует голый log и log.info); caller query-дубль краснит', async () => {
     vi.mocked(axios.post).mockResolvedValue({
       status: 200,
       data: { status: 'completed', processed: 1, failed: 0, skipped: 0, duration_seconds: 0.5, errors: [] },
@@ -99,15 +99,21 @@ describe('scraper analytics client', () => {
       force: true,
     });
 
+    // Caller-врезка исторически была голым `log('metrics-refresh query: …', 'info')`,
+    // поэтому агрегируем И голые `log(...)` вызовы, И `log.info(...)` — иначе возврат
+    // той строки голым log останется зелёным (REJECT #35).
+    const baseLogCalls = vi.mocked(log).mock.calls;
     const infoCalls = vi.mocked(log.info).mock.calls.filter((c) => c[1] === 'analytics');
-    // Ровно одна штатная info-строка исхода на этот запрос.
-    expect(infoCalls).toHaveLength(1);
-    expect(infoCalls[0][0]).toEqual(
-      expect.stringContaining('] POST /api/v1/monitoring/scheduler/metrics-refresh status=200'),
+    const infoText = JSON.stringify([...baseLogCalls, ...infoCalls]);
+
+    // Ровно одна штатная info-строка исхода на этот запрос (по любому каналу).
+    const outcomeInfos = [...baseLogCalls, ...infoCalls].filter(
+      (c) => typeof c[0] === 'string' && c[0].includes('] POST /api/v1/monitoring/scheduler/metrics-refresh status='),
     );
-    // Caller-level query-дубль и тело ответа в info отсутствуют.
-    expect(infoCalls[0][0]).not.toContain('metrics-refresh query:');
-    expect(JSON.stringify(infoCalls)).not.toContain('response=');
+    expect(outcomeInfos).toHaveLength(1);
+    // Нигде (ни голый log, ни log.info) нет caller query-дубля и тела ответа.
+    expect(infoText).not.toContain('metrics-refresh query:');
+    expect(infoText).not.toContain('response=');
   });
 
   it('surfaces authorization failures without exposing the key', async () => {

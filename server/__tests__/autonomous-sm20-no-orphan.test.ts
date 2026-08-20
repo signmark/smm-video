@@ -111,7 +111,7 @@ describe('SM-20: одна цепочка одноразовых таймеров
     await s!.inFlight;
     expect(getAutonomousStateForTest('c2')?.hasFirstCycleTimer).toBe(true);
 
-    stopAutonomousExternal('c2');
+    await stopAutonomousExternal('c2');
     expect(getAutonomousStateForTest('c2')).toBeNull();
     // Таймеров больше нет.
     expect(vi.getTimerCount()).toBe(0);

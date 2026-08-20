@@ -233,11 +233,11 @@ describe('SM-20 B: пауза различает идущий цикл и про
     };
   }
 
-  it('пауза во время идущего цикла переводит режим в состояние «останавливаюсь»', () => {
+  it('пауза во время идущего цикла переводит режим в состояние «останавливаюсь»', async () => {
     const state = activeState({ cycleRunning: true });
     __registerAutonomousStateForTests(state);
 
-    const res: any = pauseAutonomousExternal(CAMPAIGN);
+    const res: any = await pauseAutonomousExternal(CAMPAIGN);
 
     expect(res.success).toBe(true);
     expect(res.cyclePausing).toBe(true);
@@ -246,11 +246,11 @@ describe('SM-20 B: пауза различает идущий цикл и про
     expect(state.cycleId).toBe(CYCLE);
   });
 
-  it('пауза в простое сразу даёт «на паузе», без промежуточного состояния', () => {
+  it('пауза в простое сразу даёт «на паузе», без промежуточного состояния', async () => {
     const state = activeState({ cycleRunning: false });
     __registerAutonomousStateForTests(state);
 
-    const res: any = pauseAutonomousExternal(CAMPAIGN);
+    const res: any = await pauseAutonomousExternal(CAMPAIGN);
 
     expect(res.success).toBe(true);
     expect(res.cyclePausing).toBe(false);
@@ -271,11 +271,11 @@ describe('SM-20 B: пауза различает идущий цикл и про
     expect(state.cycleId).toBe(CYCLE);
   });
 
-  it('повторная пауза отклоняется и не сбивает уже выставленную фазу', () => {
+  it('повторная пауза отклоняется и не сбивает уже выставленную фазу', async () => {
     const state = activeState({ cycleRunning: true, paused: true, phase: 'pausing' });
     __registerAutonomousStateForTests(state);
 
-    const res: any = pauseAutonomousExternal(CAMPAIGN);
+    const res: any = await pauseAutonomousExternal(CAMPAIGN);
 
     expect(res.success).toBe(false);
     expect(state.phase).toBe('pausing');

@@ -5,6 +5,7 @@ import { CampaignSelector } from "../CampaignSelector";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { autonomousControls, pauseResultToast } from "@/lib/autonomous-controls";
 import { useAuthStore } from "@/lib/store";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCampaignDetail } from "@/hooks/use-campaigns";
@@ -41,6 +42,10 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const [showModeDialog, setShowModeDialog] = useState(false);
+  // SM-20: окно управления активным режимом и подтверждение выключения.
+  // Выключение необратимо стирает прогресс, поэтому спрашиваем отдельно.
+  const [showManageDialog, setShowManageDialog] = useState(false);
+  const [confirmDisable, setConfirmDisable] = useState(false);
   const [selectedMode, setSelectedMode] = useState<PipelineMode>('full_auto');
   
   // Нормализуем location и скрываем селектор на Dashboard и списке кампаний
@@ -171,8 +176,11 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
       }
       return res.json();
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
+      toast(pauseResultToast(t('topbar.autonomous.stoppedToast'), data?.content));
       queryClient.invalidateQueries({ queryKey: ['/api/autonomous/status', selectedCampaignId] });
+      setShowManageDialog(false);
+      setConfirmDisable(false);
     },
     onError: (err: any) => {
       toast({
@@ -198,9 +206,13 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
       }
       return res.json();
     },
-    onSuccess: () => {
-      toast({ description: t('topbar.autonomous.pausedToast') });
+    onSuccess: (data: any) => {
+      // SM-20: пауза теперь ещё и снимает с очереди публикации этого запуска.
+      // Если снялось не всё — человек обязан узнать сразу, иначе он считает,
+      // что всё стоит, а пост выходит.
+      toast(pauseResultToast(t('topbar.autonomous.pausedToast'), data?.content));
       queryClient.invalidateQueries({ queryKey: ['/api/autonomous/status', selectedCampaignId] });
+      setShowManageDialog(false);
     },
     onError: (err: any) => {
       toast({
@@ -386,8 +398,12 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
                     variant="ghost"
                     size="icon"
                     onClick={() => {
+                      // SM-20: клик больше не выключает режим молча. Раньше одно
+                      // нажатие стирало прогресс без вопроса и без возможности
+                      // просто поставить на паузу — на это и жаловались.
                       if (isAutonomousActive) {
-                        stopAutonomous();
+                        setConfirmDisable(false);
+                        setShowManageDialog(true);
                       } else {
                         setShowModeDialog(true);
                       }
@@ -397,13 +413,13 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
                     disabled={isTogglingAutonomous || isStoppingAutonomous}
                     aria-label={
                       isAutonomousActive
-                        ? t('nav.autonomous.stopLabel')
+                        ? t('nav.autonomous.manageLabel')
                         : t('nav.autonomous.startLabel')
                     }
                     aria-pressed={isAutonomousActive}
                     title={
                       isAutonomousActive
-                        ? t('nav.autonomous.stopLabel')
+                        ? t('nav.autonomous.manageLabel')
                         : t('nav.autonomous.startLabel')
                     }
                   >
@@ -566,6 +582,118 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
     </header>
 
       {/* Диалог выбора режима автономного ассистента */}
+    {/* SM-20: окно управления активным режимом.
+
+        Раньше единственным действием над работающим режимом было выключение по
+        клику на значок — без вопроса и без промежуточного варианта. Здесь три
+        действия названы словами, а выключение, которое стирает прогресс,
+        требует отдельного подтверждения. */}
+    <Dialog
+      open={showManageDialog}
+      onOpenChange={(open) => {
+        setShowManageDialog(open);
+        if (!open) setConfirmDisable(false);
+      }}
+    >
+      <DialogContent className="sm:max-w-[420px]" data-testid="dialog-autonomous-manage">
+        <DialogHeader>
+          <DialogTitle>{t('topbar.manageDialog.title')}</DialogTitle>
+          <DialogDescription>
+            {isAutonomousPaused
+              ? t('topbar.manageDialog.pausedDescription')
+              : t('topbar.manageDialog.runningDescription')}
+          </DialogDescription>
+        </DialogHeader>
+
+        {(() => {
+          const controls = autonomousControls({
+            active: isAutonomousActive,
+            phase: isAutonomousPaused
+              ? 'paused'
+              : autonomousStatus?.status === 'pausing'
+              ? 'pausing'
+              : 'running',
+            pending: {
+              pause: isPausingAutonomous,
+              resume: isResumingAutonomous,
+              disable: isStoppingAutonomous,
+            },
+          });
+
+          return (
+            <div className="flex flex-col gap-2">
+              {controls.pause.visible && (
+                <Button
+                  variant="outline"
+                  onClick={() => pauseAutonomous()}
+                  disabled={controls.pause.disabled}
+                  data-testid="button-manage-pause"
+                >
+                  <Pause className="h-4 w-4 mr-2 text-amber-600" aria-hidden="true" />
+                  {controls.pause.busy
+                    ? t('topbar.manageDialog.pausing')
+                    : t('topbar.manageDialog.pause')}
+                </Button>
+              )}
+
+              {controls.resume.visible && (
+                <Button
+                  variant="outline"
+                  onClick={() => resumeAutonomous()}
+                  disabled={controls.resume.disabled}
+                  data-testid="button-manage-resume"
+                >
+                  <Play className="h-4 w-4 mr-2 text-emerald-600" aria-hidden="true" />
+                  {controls.resume.busy
+                    ? t('topbar.manageDialog.resuming')
+                    : t('topbar.manageDialog.resume')}
+                </Button>
+              )}
+
+              {controls.disable.visible && !confirmDisable && (
+                <Button
+                  variant="destructive"
+                  onClick={() => setConfirmDisable(true)}
+                  disabled={controls.disable.disabled}
+                  data-testid="button-manage-disable"
+                >
+                  {t('topbar.manageDialog.disable')}
+                </Button>
+              )}
+
+              {confirmDisable && (
+                <div className="rounded-md border border-destructive/40 p-3 space-y-2">
+                  <p className="text-sm text-muted-foreground">
+                    {t('topbar.manageDialog.disableWarning')}
+                  </p>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="destructive"
+                      onClick={() => stopAutonomous()}
+                      disabled={controls.disable.disabled}
+                      data-testid="button-manage-disable-confirm"
+                    >
+                      {controls.disable.busy
+                        ? t('topbar.manageDialog.disabling')
+                        : t('topbar.manageDialog.disableConfirm')}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => setConfirmDisable(false)}
+                      disabled={controls.disable.busy}
+                      data-testid="button-manage-disable-cancel"
+                    >
+                      {t('topbar.manageDialog.cancel')}
+                    </Button>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+      </DialogContent>
+    </Dialog>
+
     <Dialog open={showModeDialog} onOpenChange={setShowModeDialog}>
       <DialogContent className="sm:max-w-[520px]" data-testid="dialog-pipeline-mode">
         <DialogHeader>

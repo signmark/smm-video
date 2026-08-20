@@ -12,6 +12,8 @@ import { substituteSocialNetworks } from './social-prompt';
 export { substituteSocialNetworks };
 // SM-20 Phase2 (A): durable reservation ledger for cycle items.
 import { autonomousCycleLedger } from './autonomous-cycle-ledger';
+import { demoteRunScheduledContent, demotionOutcome, emptyCounts } from './autonomous-pause-content';
+import { directusDemotionDeps } from './autonomous-pause-deps';
 import { randomUUID } from 'crypto';
 
 const AUTONOMOUS_PERSIST_FILE = join(process.cwd(), 'data', 'autonomous-states.json');
@@ -397,6 +399,33 @@ export async function startAutonomousExternal(params: {
 }
 
 /**
+ * SM-20 Phase2 (B): снятие с очереди публикаций этого запуска.
+ *
+ * Общий кусок паузы и выключения. Без runId снимать нечего: запуск ни одной
+ * публикации не породил, а значит и принадлежности ни у чего нет.
+ */
+async function demoteOwnContent(state: AutonomousState) {
+  if (!state.runId) return demotionOutcome(emptyCounts());
+
+  const counts = await demoteRunScheduledContent(
+    { runId: state.runId, campaignId: state.campaignId, userId: state.userId },
+    directusDemotionDeps(),
+  );
+  const outcome = demotionOutcome(counts);
+
+  log(
+    `SM-20: снятие с очереди для запуска ${state.runId} — ` +
+      `своих ${counts.owned}, подходящих ${counts.eligible}, снято ${counts.demoted}, ` +
+      `уже публикуется ${counts.busy}, увели ${counts.contested}, дозакрыто ${counts.reconciled}, ` +
+      `отказов ${counts.failed}`,
+    'autonomous',
+    outcome.success ? 'info' : 'warn',
+  );
+
+  return { ...outcome, counts };
+}
+
+/**
  * Пауза (SM-20).
  *
  * Отличие от остановки принципиальное: стоп удаляет состояние и персистенцию,
@@ -405,7 +434,7 @@ export async function startAutonomousExternal(params: {
  * продолжить», для чего стоп не годится. Пауза снимает таймеры и оставляет
  * всё остальное нетронутым.
  */
-export function pauseAutonomousExternal(campaignId: string) {
+export async function pauseAutonomousExternal(campaignId: string) {
   const state = autonomousStates.get(campaignId);
   if (!state) return { success: false, error: 'Автономный режим не активен' };
   if (state.paused) return { success: false, error: 'Автономный режим уже на паузе' };
@@ -424,6 +453,12 @@ export function pauseAutonomousExternal(campaignId: string) {
   state.phase = cyclePausing ? 'pausing' : 'paused';
   saveAutonomousPersistence();
 
+  // SM-20 Phase2 (B): гашения таймеров мало. Уже запланированные публикации
+  // этого же запуска стоят в очереди и выйдут сами — именно это и увидел
+  // тестировщик. Снимаем их здесь, до ответа: человек должен узнать исход
+  // сразу, а не обнаружить вышедший пост через час.
+  const content = await demoteOwnContent(state);
+
   return {
     success: true,
     pausedAt: state.pausedAt.toISOString(),
@@ -431,6 +466,8 @@ export function pauseAutonomousExternal(campaignId: string) {
     postsCreated: state.postsCreated,
     /** true — цикл уже шёл: он дорабатывает текущий пост и встаёт сам. */
     cyclePausing,
+    /** Итог снятия публикаций с очереди; success=false означает «снято не всё». */
+    content,
   };
 }
 
@@ -464,7 +501,7 @@ export function resumeAutonomousExternal(campaignId: string) {
   };
 }
 
-export function stopAutonomousExternal(campaignId: string) {
+export async function stopAutonomousExternal(campaignId: string) {
   const state = autonomousStates.get(campaignId);
   if (!state) return { success: false, error: 'Автономный режим не активен' };
   if (state.timer) clearInterval(state.timer);
@@ -472,12 +509,19 @@ export function stopAutonomousExternal(campaignId: string) {
   // (setTimeout после восстановления) оставался и срабатывал уже на удалённом
   // состоянии.
   if (state.firstCycleTimer) clearTimeout(state.firstCycleTimer);
+  // SM-20 Phase2 (B): снимаем очередь ДО удаления состояния — после него
+  // неоткуда взять идентификатор запуска, и публикации остались бы висеть
+  // запланированными уже без всякого владельца.
+  const content = await demoteOwnContent(state);
+
   autonomousStates.delete(campaignId);
   deleteAutonomousPersistence(campaignId);
   return {
     success: true,
     cyclesCompleted: state.cyclesCompleted,
-    postsCreated: state.postsCreated
+    postsCreated: state.postsCreated,
+    /** Итог снятия публикаций с очереди; success=false означает «снято не всё». */
+    content,
   };
 }
 

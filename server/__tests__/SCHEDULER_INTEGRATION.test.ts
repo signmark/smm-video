@@ -124,7 +124,15 @@ describe('Integration: PublishScheduler Protection & Workflow', () => {
       }
     }));
 
-    vi.mocked(directusCrud.list).mockResolvedValueOnce(mockContent);
+    vi.mocked(directusCrud.list)
+      .mockResolvedValueOnce(mockContent)
+      // SM-20: перед самой отправкой планировщик перечитывает статус публикации
+      // (между отбором пачки и отправкой её могли снять с очереди). Здесь обе
+      // публикации по-прежнему запланированы, поэтому отдаём их как есть.
+      .mockImplementation(async (_collection: any, query: any) => {
+        const wanted = query?.filter?.id?._eq;
+        return mockContent.filter(item => item.id === wanted) as any;
+      });
 
     let activePublications = 0;
     let maxActivePublications = 0;

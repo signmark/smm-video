@@ -778,7 +778,6 @@ export async function refreshChannelMetrics(params: {
   const force = params.force ?? true;
   const channelIds = params.channels.map(c => c.id);
 
-  log(`[ScraperAnalytics] metrics-refresh query: channel_ids=${channelIds.join(',')}&days=${days}&force=${force}`, 'info');
   return analyticsPost<MetricsRefreshResponse>(
     '/api/v1/monitoring/scheduler/metrics-refresh',
     {},

@@ -85,6 +85,29 @@ describe('scraper analytics client', () => {
     expect(JSON.stringify(vi.mocked(log.info).mock.calls)).not.toContain('response=');
   });
 
+  it('refreshChannelMetrics успешного запроса испускает РОВНО ОДНУ info-строку исхода (без caller query-дубля)', async () => {
+    vi.mocked(axios.post).mockResolvedValue({
+      status: 200,
+      data: { status: 'completed', processed: 1, failed: 0, skipped: 0, duration_seconds: 0.5, errors: [] },
+    });
+
+    await refreshChannelMetrics({
+      channels: [{ id: 'channel-uuid', platform: 'telegram', platform_channel_id: '@channel' }],
+      days: 30,
+      force: true,
+    });
+
+    const infoCalls = vi.mocked(log.info).mock.calls.filter((c) => c[1] === 'analytics');
+    // Ровно одна штатная info-строка исхода на этот запрос.
+    expect(infoCalls).toHaveLength(1);
+    expect(infoCalls[0][0]).toEqual(
+      expect.stringContaining('] POST /api/v1/monitoring/scheduler/metrics-refresh status=200'),
+    );
+    // Caller-level query-дубль и тело ответа в info отсутствуют.
+    expect(infoCalls[0][0]).not.toContain('metrics-refresh query:');
+    expect(JSON.stringify(infoCalls)).not.toContain('response=');
+  });
+
   it('surfaces authorization failures without exposing the key', async () => {
     vi.mocked(axios.post).mockRejectedValue({
       message: 'Request failed with status code 401',

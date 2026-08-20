@@ -31,7 +31,13 @@ import { useAuth } from "@/hooks/use-auth";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { SocialMediaSettings } from "@/components/SocialMediaSettings";
-import { hasAnyPlatformConnected } from "@/lib/platform-connection";
+import { hasAnyPlatformConnected, getConnectedPlatformsMap } from "@/lib/platform-connection";
+import {
+  connectionView,
+  socialSummary,
+  platformTitle,
+  PLATFORM_TITLES,
+} from "@/lib/connection-freshness";
 import AutonomousSettings from "@/components/AutonomousSettings";
 import { TrendAnalysisSettings } from "@/components/TrendAnalysisSettings";
 import { ContentPlanDialog } from "@/components/ContentPlanApproval";
@@ -164,6 +170,31 @@ export default function CampaignDetails() {
   }, [campaignResponse, setSelectedCampaign]);
 
   const campaign = campaignResponse;
+
+  // SM-41. «Проверить сейчас»: сервер проверяет площадки по СОХРАНЁННЫМ
+  // настройкам (токенов в браузере нет) и кладёт исход рядом с настройками,
+  // поэтому он переживает закрытие окна.
+  const { mutate: checkConnections, isPending: isCheckingConnections } = useMutation({
+    mutationFn: async () => {
+      return apiRequest<any>(`/api/campaigns/${id}/social/check`, { method: "POST", data: {} });
+    },
+    onSuccess: (data: any) => {
+      const results = data?.results || {};
+      const failed = Object.entries(results)
+        .filter(([, v]: any) => v && v.ok === false)
+        .map(([platform]) => platformTitle(platform));
+      queryClient.invalidateQueries({ queryKey: campaignDetailKey(id) });
+      toast({
+        variant: failed.length ? "destructive" : "default",
+        description: failed.length
+          ? `Нет связи: ${failed.join(", ")}`
+          : "Связь есть со всеми настроенными площадками",
+      });
+    },
+    onError: () => {
+      toast({ variant: "destructive", description: "Не удалось проверить связь" });
+    },
+  });
 
   const { mutate: updateCampaign } = useMutation({
     mutationFn: async (values: { name?: string; link?: string }) => {
@@ -788,16 +819,34 @@ export default function CampaignDetails() {
       },
       socialMedia: (() => {
         // SM-24: «настроено» — это хотя бы одна реально подключённая площадка,
-        // а не любое непустое значение в объекте настроек. По старому правилу
-        // подпись держалась за производный флаг hasToken и за остатки вроде
-        // groupName, поэтому после стирания настроек продолжала утверждать
-        // «Соцсети настроены». Правило подключения — общее с бейджами и с
-        // панелью публикации (lib/platform-connection).
-        const connected = hasAnyPlatformConnected(campaign?.social_media_settings);
-        return {
-          completed: connected,
-          label: connected ? "Соцсети настроены" : "Соцсети не настроены",
-        };
+        // а не любое непустое значение в объекте настроек. Правило подключения
+        // общее с бейджами и с панелью публикации (lib/platform-connection).
+        //
+        // SM-41: подпись молчала про связь, а рядом в раскрытой панели горело
+        // красное «Нет связи» — человек видел два ответа и не понимал, какой
+        // правда. Галочка остаётся за заполненность (решение владельца: отказ
+        // одной сети её не гасит), но подпись обязана назвать неисправную
+        // площадку.
+        const settings: any = campaign?.social_media_settings;
+        const connectedMap = getConnectedPlatformsMap(settings);
+        if (!connectedMap) {
+          const connected = hasAnyPlatformConnected(settings);
+          return {
+            completed: connected,
+            label: connected ? "Соцсети настроены" : "Соцсети не настроены",
+          };
+        }
+        const now = new Date();
+        return socialSummary(
+          Object.keys(PLATFORM_TITLES).map((platform) => ({
+            platform,
+            view: connectionView(
+              settings?.[platform],
+              Boolean((connectedMap as any)[platform]),
+              now,
+            ),
+          })),
+        );
       })(),
       content: {
         completed: Boolean(campaignContent && campaignContent.length > 0),
@@ -1109,6 +1158,13 @@ export default function CampaignDetails() {
                 {getSectionCompletionStatus().socialMedia.label}
               </span>
             </div>
+            {/* SM-41. Появляется только когда какая-то площадка молчит: если всё
+                работает, объяснять галочку нечем и незачем. */}
+            {getSectionCompletionStatus().socialMedia.hint && (
+              <div className="text-xs text-muted-foreground mt-1 ml-8 text-left">
+                {getSectionCompletionStatus().socialMedia.hint}
+              </div>
+            )}
           </AccordionTrigger>
           <AccordionContent className="px-6 pt-2 pb-4">
             <div className="space-y-4">
@@ -1122,6 +1178,24 @@ export default function CampaignDetails() {
                   идентификаторы ваших аккаунтов или сообществ для каждой
                   платформы.
                 </p>
+                {/* SM-41. Проверка идёт только по нажатию: сама она не
+                    запускается никогда, иначе каждое открытие кампании
+                    стучится в шесть чужих сервисов. */}
+                <div className="flex items-center gap-3 mb-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={isCheckingConnections}
+                    onClick={() => checkConnections()}
+                    data-testid="button-check-connections"
+                  >
+                    {isCheckingConnections ? "Проверяем связь…" : "Проверить сейчас"}
+                  </Button>
+                  <span className="text-xs text-muted-foreground">
+                    Живая проверка всех площадок с сохранёнными доступами
+                  </span>
+                </div>
               </div>
               <SocialMediaSettings
                 campaignId={id}

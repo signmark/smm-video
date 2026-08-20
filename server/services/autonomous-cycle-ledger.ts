@@ -273,6 +273,67 @@ export class AutonomousCycleLedger {
     const filled = await this.fillItem(ref, ref.contentId);
     return filled ? 'filled' : 'still_reserved';
   }
+
+  /**
+   * SM-20 Phase2 (B): все слоты запуска, не только текущего цикла.
+   *
+   * Пауза обязана снять с очереди всё, что запланировал этот запуск, а не
+   * последний его цикл: между циклами публикации остаются в очереди, и человек,
+   * нажавший паузу, имеет в виду запуск целиком.
+   *
+   * Отдаём и владельца строки: границу арендатора проверяет вызывающий, и
+   * проверять её он должен по записанному в реестре, а не по тому, что лежит в
+   * состоянии в памяти.
+   */
+  async getRunItems(runId: string): Promise<Array<{
+    itemKey: string; itemIndex: number; cycleId: string | null;
+    campaignId: string | null; userId: string | null;
+    state: CycleItemState; contentId: string | null;
+  }> | null> {
+    try {
+      const resp = await directusApi.get(`/items/${LEDGER_COLLECTION}`, {
+        params: {
+          filter: { run_id: { _eq: runId } },
+          sort: ['cycle_id', 'item_index'],
+          limit: 1000,
+          fields: ['item_key', 'item_index', 'cycle_id', 'campaign_id', 'user_id', 'state', 'content_id'],
+        },
+        headers: ledgerAuthHeaders(),
+      });
+      const rows = resp?.data?.data || [];
+      return rows.map((r: any) => ({
+        itemKey: r.item_key,
+        itemIndex: Number(r.item_index),
+        cycleId: r.cycle_id || null,
+        campaignId: r.campaign_id || null,
+        userId: r.user_id || null,
+        state: r.state as CycleItemState,
+        contentId: r.content_id || null,
+      }));
+    } catch (err: any) {
+      log(`\u26d4 CycleLedger: getRunItems failed for ${runId}: ${err?.message}`, 'cycle-ledger');
+      return null;
+    }
+  }
+
+  /**
+   * CAS-закрытие слота по его ключу. Отдельно от setState, потому что паузе
+   * известен ключ строки, а не полный CycleItemRef: она пришла от реестра, а не
+   * от цикла, который этот ключ собирал.
+   */
+  async consumeByKey(itemKey: string): Promise<boolean> {
+    try {
+      const resp = await directusApi.patch(
+        `/items/${LEDGER_COLLECTION}`,
+        { query: { filter: { item_key: { _eq: itemKey }, state: { _eq: 'filled' } } }, data: { state: 'consumed' } },
+        { headers: ledgerAuthHeaders() },
+      );
+      return affectedCount(resp) > 0;
+    } catch (err: any) {
+      log(`\u26d4 CycleLedger: consumeByKey failed for ${itemKey}: ${err?.message}`, 'cycle-ledger');
+      return false;
+    }
+  }
 }
 
 export const autonomousCycleLedger = new AutonomousCycleLedger();

@@ -7,7 +7,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Label } from "@/components/ui/label";
 import RichTextEditor from "./RichTextEditor";
-import { ADAPT_COMING_SOON_NOTICE, adaptSaveState } from "@/lib/adapt-stub";
+import { adaptSaveState, savedPlatformTexts } from "@/lib/adapt-save";
 
 // Определение типов
 type SocialPlatform = 'instagram' | 'telegram' | 'vk' | 'facebook' | 'youtube';
@@ -15,6 +15,12 @@ type SocialPlatform = 'instagram' | 'telegram' | 'vk' | 'facebook' | 'youtube';
 interface SocialContentAdaptationDialogProps {
   contentId: string;
   originalContent: string;
+  /**
+   * SM-35. Уже сохранённые тексты по площадкам. Без них окно каждый раз
+   * открывалось бы с заново придуманной адаптацией, и правки человека
+   * пропадали бы у него на глазах.
+   */
+  savedPlatforms?: Record<string, any> | null;
   onClose: () => void;
 }
 
@@ -24,22 +30,39 @@ interface PlatformContent {
   isEdited: boolean;
 }
 
-export function SocialContentAdaptationDialog({ 
-  contentId, 
-  originalContent, 
-  onClose 
+export function SocialContentAdaptationDialog({
+  contentId,
+  originalContent,
+  savedPlatforms,
+  onClose
 }: SocialContentAdaptationDialogProps) {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<SocialPlatform>('instagram');
   const [isGenerating, setIsGenerating] = useState(false);
 
   // Состояние для каждой платформы
-  const [platformsContent, setPlatformsContent] = useState<{[key in SocialPlatform]: PlatformContent}>({
-    instagram: { content: adaptContentForPlatform('instagram', originalContent), isEnabled: true, isEdited: false },
-    telegram: { content: adaptContentForPlatform('telegram', originalContent), isEnabled: false, isEdited: false },
-    vk: { content: adaptContentForPlatform('vk', originalContent), isEnabled: false, isEdited: false },
-    facebook: { content: adaptContentForPlatform('facebook', originalContent), isEnabled: false, isEdited: false },
-    youtube: { content: adaptContentForPlatform('youtube', originalContent), isEnabled: false, isEdited: false }
+  const [platformsContent, setPlatformsContent] = useState<{[key in SocialPlatform]: PlatformContent}>(() => {
+    // SM-35. Сохранённый текст важнее заново придуманного: его писал человек.
+    // Площадка с сохранённым текстом сразу включена — иначе при сохранении она
+    // молча выпала бы из набора и текст перестал бы обновляться.
+    const saved = savedPlatformTexts(savedPlatforms);
+    const build = (platform: SocialPlatform, enabledByDefault: boolean): PlatformContent => {
+      const savedText = saved[platform];
+      return savedText
+        ? { content: savedText, isEnabled: true, isEdited: true }
+        : {
+            content: adaptContentForPlatform(platform, originalContent),
+            isEnabled: enabledByDefault,
+            isEdited: false,
+          };
+    };
+    return {
+      instagram: build('instagram', true),
+      telegram: build('telegram', false),
+      vk: build('vk', false),
+      facebook: build('facebook', false),
+      youtube: build('youtube', false),
+    };
   });
 
   // Мутация для сохранения адаптированного контента
@@ -99,10 +122,12 @@ export function SocialContentAdaptationDialog({
         return response.json();
       });
     },
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       toast({
-        title: "Успешно",
-        description: "Контент адаптирован для выбранных платформ",
+        title: "Сохранено",
+        // Говорим, что именно записано: «Сохранено площадок: 2» полезнее, чем
+        // «контент адаптирован», особенно когда часть площадок пропущена.
+        description: data?.message || "Тексты по площадкам сохранены",
       });
       onClose();
     },
@@ -234,19 +259,6 @@ export function SocialContentAdaptationDialog({
           <DialogTitle>Адаптация контента для социальных сетей</DialogTitle>
         </DialogHeader>
 
-        {/*
-          Заглушка (решение владельца 19.08): сохранение текстов по площадкам
-          ещё не сделано, реализация — SM-35. Предупреждение стоит ДО вкладок:
-          человек должен узнать об этом прежде, чем напишет текст под три
-          площадки, а не после нажатия «Сохранить».
-        */}
-        <div
-          className="mt-4 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
-          data-testid="adapt-coming-soon"
-        >
-          {ADAPT_COMING_SOON_NOTICE}
-        </div>
-
         <div className="mt-4">
           <div className="grid grid-cols-4 gap-2 mb-4">
             {(['instagram', 'telegram', 'vk', 'facebook'] as SocialPlatform[]).map(platform => (
@@ -307,7 +319,7 @@ export function SocialContentAdaptationDialog({
           <Button
             onClick={() => saveAdaptedContent()}
             disabled={saveState.disabled}
-            title={saveState.disabled && !isSaving ? ADAPT_COMING_SOON_NOTICE : undefined}
+            title={saveState.disabled && !isSaving ? 'Выберите хотя бы одну площадку' : undefined}
             data-testid="button-save-adaptation"
           >
             {isSaving ? (

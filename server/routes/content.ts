@@ -12,31 +12,10 @@ import { toSafeErrorDetails } from '../utils/safe-error';
 import { substituteSocialNetworks } from '../services/social-prompt';
 import { ensureIsoWithTimezone } from '@shared/schedule-time';
 import axios from 'axios';
+import { mergeAdaptedPlatforms, adaptSaveMessage } from '../services/adapt-merge';
 
 import { buildCacheKey, getFromCache, setToCache, invalidateContentCache } from '../utils/content-cache';
 export { invalidateContentCache };
-
-/**
- * AI-128 (2026-08-19): решение, можно ли запустить адаптацию контента.
- * Чистая функция, тестируется напрямую. Раньше маршрут /adapt возвращал success:true
- * даже когда сервис не настроен и никакого вызова не происходило. Теперь решение
- * «адаптация возможна/нет» вынесено отдельно — поведение маршрута отражает реальный исход.
- */
-export function contentAdaptationReadiness(
-  n8nUrl: string | undefined,
-  n8nApiKey: string | undefined,
-): { canAdapt: true } | { canAdapt: false; reason: string } {
-  if (!n8nUrl || !n8nApiKey) {
-    return {
-      canAdapt: false,
-      // Заглушка (решение владельца 19.08): сохранение текстов по площадкам ещё
-      // не сделано, реализация — SM-35. Человеку говорим то же самое, что и в
-      // интерфейсе, чтобы два разных ответа не противоречили друг другу.
-      reason: 'Сохранение текстов по площадкам скоро появится. Работа не запускалась, ваш текст не изменён.',
-    };
-  }
-  return { canAdapt: true };
-}
 
 // Creation timestamps are owned by Directus. SMM panel requests must never
 // provide or overwrite them, including through generic POST/PATCH/PUT routes.
@@ -959,46 +938,53 @@ ${originalText}
   });
 
   // POST /api/content/:id/adapt
+  //
+  // SM-35. Маршрут сохраняет тексты по площадкам сам. Раньше он отправлял
+  // задание в n8n, а n8n из продукта выведен: тексты, написанные человеком под
+  // каждую соцсеть, не доезжали никуда.
   app.post("/api/content/:id/adapt", authenticateUser, async (req, res) => {
     try {
       const { id } = req.params;
       const { socialPlatforms } = req.body;
       const token = req.user?.token;
       const userId = req.user?.id;
-      
+      if (!token || !userId) return res.status(401).json({ error: "Не авторизован" });
+
       const contentResponse = await directusApi.get(`/items/campaign_content/${id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
-      
+
       const content = contentResponse.data.data;
       if (!content) return res.status(404).json({ error: "Content not found" });
 
-      const n8nUrl = process.env.N8N_URL;
-      const n8nApiKey = process.env.N8N_API_KEY;
-
-      // AI-128: раньше этот маршрут возвращал success:true и «Content adaptation started»
-      // даже когда сервиса адаптации нет (N8N_URL/N8N_API_KEY отсутствуют — то есть исходящего
-      // вызова не было вовсе, а человеку врали, что адаптация запущена). Теперь — реальный
-      // исход: успех только если можно запустить (webhook реально отправился).
-      const readiness = contentAdaptationReadiness(n8nUrl, n8nApiKey);
-      if (!readiness.canAdapt) {
-        return res.status(503).json({ success: false, error: readiness.reason });
+      // Пишем не то, что пришло, а слияние: интерфейс присылает полный объект
+      // площадки с пустыми postId/postUrl и статусом «ожидает», и запись «как
+      // есть» превратила бы опубликованный пост в неопубликованный.
+      const merged = mergeAdaptedPlatforms(content.social_platforms, socialPlatforms);
+      if (!merged.saved.length) {
+        return res.status(400).json({ success: false, error: adaptSaveMessage(merged) });
       }
 
-      await axios.post(`${n8nUrl}/webhook/0b4d5ad4-00bf-420a-b107-5f09a9ae913c`, {
-        contentId: id,
-        campaignId: content.campaign_id,
-        userId,
-        platforms: Object.keys(socialPlatforms),
-        content: socialPlatforms,
-        title: content.title
+      await directusApi.patch(`/items/campaign_content/${id}`, {
+        social_platforms: merged.next,
       }, {
-        headers: { 'X-N8N-Authorization': n8nApiKey }
+        headers: { Authorization: `Bearer ${token}` }
       });
-      
-      res.json({ success: true, message: "Content adaptation started" });
-    } catch (error) {
-      res.status(500).json({ error: "Failed to adapt content" });
+
+      invalidateContentCache(userId, content.campaign_id);
+      log(`[adapt] ${id}: сохранены тексты площадок ${merged.saved.join(', ')}`, 'content');
+
+      // Успех объявляем ТОЛЬКО после подтверждённой записи.
+      res.json({
+        success: true,
+        message: adaptSaveMessage(merged),
+        saved: merged.saved,
+        skipped: merged.skipped,
+        socialPlatforms: merged.next,
+      });
+    } catch (error: any) {
+      log(`[adapt] Не удалось сохранить тексты для ${req.params.id}: ${error.message}`, 'content', 'error');
+      res.status(500).json({ success: false, error: "Не удалось сохранить тексты по площадкам" });
     }
   });
 

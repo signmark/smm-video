@@ -17,6 +17,7 @@
  */
 import { useQuery } from '@tanstack/react-query';
 import { useAuthStore } from '@/lib/store';
+import type { FeatureAccessMap } from '@shared/feature-access';
 
 export interface UserProfile {
   id: string;
@@ -26,6 +27,12 @@ export interface UserProfile {
   is_smm_admin: boolean;
   plan?: string;
   expire_date?: string | null;
+  /**
+   * SM-36. Что доступно этому человеку — решает сервер. Интерфейс больше не
+   * сравнивает почту с записанной в код строкой и не знает правила вовсе.
+   * Поле необязательное: старый ответ сервера не должен ронять страницу.
+   */
+  features?: Partial<FeatureAccessMap>;
 }
 
 export function profileQueryKey(userId: string | null | undefined): readonly [string, string] {

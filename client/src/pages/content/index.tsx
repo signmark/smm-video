@@ -250,11 +250,14 @@ export default function ContentPage() {
   const { t } = useTranslation();
   const { limits, effectivePlan, isExpired } = usePlan();
 
-  // Feature flag: стиль доступен только для signmark@gmail.com.
+  // SM-36. Доступность возможности решает сервер и присылает в профиле.
+  // Здесь, как и на странице кампании, раньше стояло сравнение почты с
+  // записанной в код строкой — второе такое место, и оба разъезжались бы при
+  // любом изменении правила.
   // Профиль берём из единого каноника useUserProfile (task #84), а не своим
-  // useQuery — иначе getRace по свежести с usePlan давала двойнойfetch.
+  // useQuery — иначе гонка по свежести с usePlan давала двойной запрос.
   const { data: userProfile } = useUserProfile();
-  const isStyleFeatureEnabled = userProfile?.email === 'signmark@gmail.com';
+  const isStyleFeatureEnabled = Boolean(userProfile?.features?.styleAnalysis);
 
   const { data: imageGenUsage } = useQuery<{
     count: number; limit: number | null; remaining: number | null; month: string;

@@ -79,10 +79,13 @@ export default function CampaignDetails() {
   const queryClient = useQueryClient();
   const { user } = useAuth();
 
-  // Feature flag: стиль доступен только для signmark@gmail.com.
+  // SM-36. Доступность возможности решает сервер и присылает в профиле.
+  // Раньше здесь стояло сравнение почты с записанной в код строкой: правило
+  // жило в интерфейсе, из-за чего владелец не видел блок под вторым адресом,
+  // а серверный маршрут анализа не был закрыт вообще ничем.
   // Профиль — единый каноник useUserProfile (task #84), а не свой useQuery.
   const { data: userProfile } = useUserProfile();
-  const isStyleFeatureEnabled = userProfile?.email === 'signmark@gmail.com';
+  const isStyleFeatureEnabled = Boolean(userProfile?.features?.styleAnalysis);
   const [isSearchingKeywords, setIsSearchingKeywords] = useState(false);
   const [suggestedKeywords, setSuggestedKeywords] = useState<
     SuggestedKeyword[]

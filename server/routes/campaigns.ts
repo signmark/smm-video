@@ -1,4 +1,5 @@
 import { Express, Request, Response } from 'express';
+import { userHasFeature } from '../services/feature-access-server';
 import { authenticateUser } from '../middleware/user-auth';
 import { directusApi } from '../directus';
 import { log, logEvent } from '../utils/logger';
@@ -1059,6 +1060,13 @@ ${campaignBusinessContext ? `КОНТЕКСТ БИЗНЕСА:\n${campaignBusines
       const token = req.user?.token;
 
       if (!userId || !token) return res.status(401).json({ error: 'Не авторизован' });
+
+      // SM-36. Раньше маршрут выполнял работу для любого вошедшего: доступ
+      // прятала только страница, а спрятанная кнопка — не защита. Правило то
+      // же самое, что и в интерфейсе, и живёт оно в одном месте.
+      if (!(await userHasFeature(userId, 'styleAnalysis'))) {
+        return res.status(403).json({ error: 'Анализ стиля доступен на тарифе «Профессиональный»' });
+      }
 
       if (!posts || typeof posts !== 'string' || posts.length < 50) {
         return res.status(400).json({ error: 'Минимум 50 символов текста для анализа' });

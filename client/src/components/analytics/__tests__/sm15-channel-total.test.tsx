@@ -17,7 +17,7 @@ vi.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string, vars?: Record<string, any>) => {
       const dictionary: Record<string, string> = {
-        'analytics.channelValue': 'по каналу {{value}}',
+        'analytics.channelValue': 'весь канал: {{value}}',
         'analytics.channelHint': 'Первое число — публикации кампании.',
         'analytics.channelBreakdownIntro': 'Из чего складывается число по каналу:',
         'analytics.channelBreakdownOwn': '{{value}} — эта кампания «{{name}}»',
@@ -75,6 +75,19 @@ describe('SM-15: вторая цифра объясняет себя нажат�
     expect(trigger.tagName).toBe('BUTTON');
     // Объяснение доступно и с клавиатуры, и программе чтения с экрана.
     expect(trigger).toHaveAttribute('aria-label');
+  });
+
+  // SM-42, ревью владельца 20.08: «нет 1го и 2го числа, только цифры и цифры
+  // в скобках». Вторая цифра не должна быть голой «(189)» — она обязана нести
+  // подпись, какое это число, иначе человек не отличает кампанию от канала.
+  it('вторая цифра видимо подписана как число по каналу, а не голая в скобках', () => {
+    render(<ChannelTotal own={100} channel={147} metric="views" attribution={ATTRIBUTION} />);
+
+    const trigger = screen.getByTestId('channel-total');
+    expect(trigger.textContent).toContain('147');
+    expect(trigger.textContent).toContain('весь канал');
+    // Никаких голых скобок с просто числом.
+    expect(trigger.textContent).not.toMatch(/^\s*\(\s*\d/);
   });
 
   it('когда цифры совпадают — второй цифры нет вовсе', () => {

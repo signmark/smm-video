@@ -39,4 +39,24 @@ describe('SM-43: TooltipContent рендерится в портале (document
     expect(container.contains(content)).toBe(false);
     expect(document.body.contains(content)).toBe(true);
   });
+
+  it('слой подсказки выше диалога (z-50), иначе подсказка внутри модалки уедет под окно', () => {
+    render(
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button type="button" data-testid="trigger">пункт</button>
+          </TooltipTrigger>
+          <TooltipContent data-testid="tooltip-content">Подсказка</TooltipContent>
+        </Tooltip>
+      </TooltipProvider>,
+    );
+
+    fireEvent.mouseEnter(screen.getByTestId('trigger'));
+    fireEvent.focus(screen.getByTestId('trigger'));
+
+    // Диалоги (ui/dialog.tsx) используют z-50, тост — z-[100]. Подсказка должна
+    // встать выше диалога, но ниже тоста: z-[60]. Проверяем по классу.
+    expect(screen.getByTestId('tooltip-content').className).toContain('z-[60]');
+  });
 });

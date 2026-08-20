@@ -3948,6 +3948,7 @@ export default function ContentPage() {
         <SocialContentAdaptationDialog
           contentId={currentContent.id}
           originalContent={currentContent.content}
+          savedPlatforms={(currentContent as any).social_platforms}
           onClose={() => {
             setIsAdaptDialogOpen(false);
             // Используем null, так как это явное обнуление, а не обновление содержимого

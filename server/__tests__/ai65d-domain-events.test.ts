@@ -191,22 +191,27 @@ describe('AI-65: события приходят по итогу публика�
 });
 
 describe('AI-65: цикл планировщика отчитывается о себе', () => {
-  it('прогон без работы тоже отчитывается — иначе оповещение «крон замолчал» ложное', async () => {
-    // Это не придирка: если молчать на пустой доске, оповещение будет срабатывать
-    // каждую ночь, его отключат, и вместе с ним пропадёт настоящий сигнал.
+  it('пустой проход не пишет info-шум, но двигает машинный признак жизни', async () => {
+    // SM-44 ч.3 + SM-45: idle-проход больше не порождает info cron.finished
+    // (журнал молчит), но timestamp последнего УСПЕШНОГО прохода двигается —
+    // это и есть новая машинная замена «крон замолчал».
     vi.mocked(directusCrud.list).mockResolvedValue([] as any);
+    // @ts-ignore сбрасываем к начальному «проходов ещё не было»
+    scheduler.lastSuccessfulPassAt = null;
 
     const events = await captureEvents(async () => {
       await scheduler.checkScheduledContent();
     });
 
-    const finished = events.filter((e) => e.event === 'cron.finished');
-    expect(finished).toHaveLength(1);
-    expect(finished[0].count).toBe(0);
+    // Idle — это завершённый проход: info-шума быть не должно.
+    expect(events.filter((e) => e.event === 'cron.finished')).toHaveLength(0);
     expect(events.filter((e) => e.event === 'cron.failed')).toHaveLength(0);
+    // А машинный признак жизни — обновился.
+    // @ts-ignore
+    expect(scheduler.getLivenessSnapshot().lastSuccessfulPassAt).not.toBeNull();
   });
 
-  it('цикл с контентом оставляет cron.finished с длительностью', async () => {
+  it('цикл с контентом без публикаций сейчас — тоже отчитывается только признаком жизни', async () => {
     vi.mocked(directusCrud.list).mockResolvedValue([
       {
         id: 'future-1', status: 'scheduled', user_id: 'u-1', campaign_id: 'camp-1',
@@ -214,15 +219,17 @@ describe('AI-65: цикл планировщика отчитывается о �
         social_platforms: { telegram: { status: 'pending', scheduledAt: new Date(Date.now() + 3600_000).toISOString() } },
       },
     ] as any);
+    // @ts-ignore
+    scheduler.lastSuccessfulPassAt = null;
 
     const events = await captureEvents(async () => {
       await scheduler.checkScheduledContent();
     });
 
-    const finished = events.filter((e) => e.event === 'cron.finished');
-    expect(finished).toHaveLength(1);
-    expect(finished[0].operation).toBe('publish-scheduler');
-    expect(typeof finished[0].durationMs).toBe('number');
-    expect(finished[0].count).toBe(0);
+    // publishedCount=0 → cron.finished уходит в debug, на info его нет.
+    expect(events.filter((e) => e.event === 'cron.finished')).toHaveLength(0);
+    expect(events.filter((e) => e.event === 'cron.failed')).toHaveLength(0);
+    // @ts-ignore
+    expect(scheduler.getLivenessSnapshot().lastSuccessfulPassAt).not.toBeNull();
   });
 });

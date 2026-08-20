@@ -413,14 +413,14 @@ export class PublishScheduler {
         
         if (allContent.length === 0) {
           log(`📭 No content found - check if content has status scheduled/partial/pending`, 'scheduler', 'debug');
-          // AI-65. Прогон, не нашедший работы, — тоже завершённый прогон. Если
-          // молчать здесь, оповещение «крон замолчал» будет срабатывать каждый
-          // раз, когда на доске просто нет запланированного контента, и его
-          // очень быстро отключат — а вместе с ним и настоящий сигнал.
+          // AI-65. Прогон, не нашедший работы, — тоже завершённый проход.
+          // SM-44 ч.3: пустой проход — штатный idle, «журнал молчит, когда никто
+          // ничего не делает»; живость теперь читается из lastSuccessfulPassAt
+          // (SM-45), а не из info-строки. Уходим в debug.
           logEvent(
             'cron.finished',
             { operation: 'publish-scheduler', count: 0, durationMs: Date.now() - cycleStartedAt },
-            'info',
+            'debug',
             'scheduler',
             'Цикл планировщика: запланированного контента нет',
           );
@@ -751,13 +751,15 @@ export class PublishScheduler {
           )
         );
 
-        // AI-65. Итог цикла нужен не ради статистики: отсутствие этой строки
-        // дольше ожидаемого интервала — единственный признак тихо умершего
-        // крона. Ровно так когда-то незаметно умер VK-мониторинг.
+        // AI-65. Итог цикла — завершённый проход (живость теперь в
+        // lastSuccessfulPassAt/SM-45, а не в этой строке). SM-44 ч.3: пустой
+        // проход (ничего не отправлено) уходит в debug, info только при
+        // ненулевом результате. frequency/lock/retry/publication — неизменны.
+        const cycleLevel: 'info' | 'debug' = publishedCount > 0 ? 'info' : 'debug';
         logEvent(
           'cron.finished',
           { operation: 'publish-scheduler', count: publishedCount, durationMs: Date.now() - cycleStartedAt },
-          'info',
+          cycleLevel,
           'scheduler',
           `Цикл планировщика: обработано ${processedCount}, отправлено на публикацию ${publishedCount}`,
         );

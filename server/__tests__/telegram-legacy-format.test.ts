@@ -29,7 +29,7 @@ vi.mock('dns/promises', () => ({
 }));
 
 
-vi.mock('../utils/logger', () => ({ log: vi.fn() }));
+vi.mock('../utils/logger', () => ({ log: Object.assign(vi.fn(), { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }));
 
 vi.mock('../utils/telegram-html', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../utils/telegram-html')>();

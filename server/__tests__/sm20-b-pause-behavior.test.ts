@@ -39,7 +39,7 @@ vi.mock('../services/directus-crud', () => ({
 }));
 
 vi.mock('../utils/logger', () => ({
-  log: vi.fn(), debug: vi.fn(), error: vi.fn(), warn: vi.fn(),
+  log: Object.assign(vi.fn(), { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }), debug: vi.fn(), error: vi.fn(), warn: vi.fn(),
 }));
 
 import { directusApi } from '../directus';

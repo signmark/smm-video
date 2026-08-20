@@ -13,7 +13,7 @@ import { validateVkToken } from '../services/social-api-validator';
 // route-теста, потому что это правка сервиса, а не маршрутов.
 
 vi.mock('axios');
-vi.mock('../utils/logger', () => ({ log: vi.fn() }));
+vi.mock('../utils/logger', () => ({ log: Object.assign(vi.fn(), { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }) }));
 
 const USERS_GET = 'https://api.vk.com/method/users.get';
 const GROUPS_GET_BY_ID = 'https://api.vk.com/method/groups.getById';

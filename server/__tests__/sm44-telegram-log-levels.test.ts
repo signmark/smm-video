@@ -62,17 +62,20 @@ vi.mock('telegraf', () => ({
 const logCalls: Array<{ level: string; message: string }> = [];
 
 vi.mock('../utils/logger', () => ({
-  log: {
-    debug: (msg: string) => logCalls.push({ level: 'debug', message: msg }),
-    info: (msg: string) => logCalls.push({ level: 'info', message: msg }),
-    warn: (msg: string) => logCalls.push({ level: 'warn', message: msg }),
-    error: (msg: string, err?: any) => logCalls.push({ level: 'error', message: msg }),
-  },
+  log: Object.assign(
+    vi.fn((msg: string, source?: string, level?: string) => logCalls.push({ level: level || 'info', message: msg })),
+    {
+      debug: vi.fn((msg: string) => logCalls.push({ level: 'debug', message: msg })),
+      info: vi.fn((msg: string) => logCalls.push({ level: 'info', message: msg })),
+      warn: vi.fn((msg: string) => logCalls.push({ level: 'warn', message: msg })),
+      error: vi.fn((msg: string, err?: any) => logCalls.push({ level: 'error', message: msg })),
+    }
+  ),
   logEvent: vi.fn(),
-  error: (msg: string, err?: any) => logCalls.push({ level: 'error', message: msg }),
-  warn: (msg: string) => logCalls.push({ level: 'warn', message: msg }),
-  info: (msg: string) => logCalls.push({ level: 'info', message: msg }),
-  debug: (msg: string) => logCalls.push({ level: 'debug', message: msg }),
+  error: vi.fn((msg: string, err?: any) => logCalls.push({ level: 'error', message: msg })),
+  warn: vi.fn((msg: string) => logCalls.push({ level: 'warn', message: msg })),
+  info: vi.fn((msg: string) => logCalls.push({ level: 'info', message: msg })),
+  debug: vi.fn((msg: string) => logCalls.push({ level: 'debug', message: msg })),
 }));
 
 describe('SM-44 ч.4: Telegram-bot log levels', () => {

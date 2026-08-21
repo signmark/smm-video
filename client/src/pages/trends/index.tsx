@@ -22,6 +22,7 @@ import { ContentGenerationPanel } from "@/components/ContentGenerationPanel";
 import { SocialNetworkSelectorDialog } from "@/components/SocialNetworkSelectorDialog";
 import { SourcesSearchDialog } from "@/components/SourcesSearchDialog";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 import { getSentimentEmoji, getSentimentCategory, formatNumber } from "@/lib/trends-utils";
 import { BulkSourcesImportDialog } from "@/components/BulkSourcesImportDialog";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -1734,14 +1735,6 @@ export default function Trends() {
     isTrendsError
   });
 
-  if (isLoadingUser || isLoadingCampaigns) {
-    return (
-      <div className="flex justify-center p-8">
-        <Loader2 className="h-8 w-8 animate-spin" />
-      </div>
-    );
-  }
-
   return (
     <div className="p-6">
       <div className="flex justify-between items-center bg-background pb-4">
@@ -1818,6 +1811,13 @@ export default function Trends() {
       )}
 
       <div className="space-y-6">
+        {(isLoadingUser || isLoadingCampaigns) ? (
+          <div className="space-y-4" data-testid="trends-loading-placeholder" role="status">
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-32 w-full" />
+            <Skeleton className="h-24 w-full" />
+          </div>
+        ) : null}
         {isValidCampaignSelected && (
           <div className="flex items-start gap-3 p-4 rounded-lg border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30">
             <Globe className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />

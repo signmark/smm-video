@@ -9,10 +9,10 @@
  * дополнительно ловила TikTok «token is invalid or not found in the request»
  * в телеграммную ветку.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { classifyPublishFailure } from '../services/publish-scheduler';
+import { classifyPublishFailure, isMalformedPlatformEntry, getPublishScheduler } from '../services/publish-scheduler';
 import { isPlatformTerminal } from '../services/publication-terminal-state';
 
 const SRC = readFileSync(join(__dirname, '..', 'services', 'publish-scheduler.ts'), 'utf-8');
@@ -63,6 +63,38 @@ describe('AI-49: terminal-площадка не пересматривается
   });
 });
 
+describe('AI-49 v3: битая форма площадки — fail-close + ограниченный warn', () => {
+  it('isMalformedPlatformEntry: только non-object / отсутствие / массив', () => {
+    expect(isMalformedPlatformEntry(null)).toBe(true);
+    expect(isMalformedPlatformEntry(undefined)).toBe(true);
+    expect(isMalformedPlatformEntry('x')).toBe(true);
+    expect(isMalformedPlatformEntry(1)).toBe(true);
+    expect(isMalformedPlatformEntry([1])).toBe(true);
+    // Легитимные объекты-площадки (в т.ч. terminal-статусы) НЕ битые.
+    expect(isMalformedPlatformEntry({ status: 'failed' })).toBe(false);
+    expect(isMalformedPlatformEntry({ status: 'published' })).toBe(false);
+    expect(isMalformedPlatformEntry({ status: 'pending' })).toBe(false);
+    expect(isMalformedPlatformEntry({})).toBe(false);
+  });
+
+  it('warn о битой форме — с cooldown в час на content+platform', () => {
+    const scheduler = getPublishScheduler();
+    // @ts-ignore чистый стейт коoldown'а
+    scheduler.malformedPlatformWarnedAt = new Map();
+    const logSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    scheduler.warnMalformedPlatformOnce('c1', 'telegram');
+    scheduler.warnMalformedPlatformOnce('c1', 'telegram'); // повтор — молчит
+    expect(logSpy).toHaveBeenCalledTimes(1);
+    const firstArg = String(logSpy.mock.calls[0][0]);
+    expect(firstArg).toContain('c1');
+    expect(firstArg).toContain('telegram');
+    // машиночитаемый маркер; сам entry/токен/content НЕ печатается.
+    expect(firstArg).toContain('неверная форма записи площадки');
+    logSpy.mockRestore();
+  });
+});
+
 describe('AI-49: production-сторож — мутация «вернуть подстроку/рецидив» красит', () => {
   it('в планировщике есть предикат «нет retryable площадок → пропустить»', () => {
     expect(SRC).toMatch(/hasRetryablePlatform\s*=.*isPlatformTerminal/);
@@ -82,5 +114,16 @@ describe('AI-49: production-сторож — мутация «вернуть п�
     const fn = SRC.slice(SRC.indexOf('export function classifyPublishFailure'), SRC.indexOf('export class PublishScheduler'));
     expect(fn).toContain("includes('chat not found')");
     expect(fn).not.toMatch(/includes\('not found'\)/);
+  });
+
+  it('v3: битая форма подсвечивается warn с машиночитаемым маркером, не содержимым', () => {
+    expect(SRC).toMatch(/isMalformedPlatformEntry\(platformData\)/);
+    expect(SRC).toMatch(/warnMalformedPlatformOnce\(content\.id, platformName\)/);
+    expect(SRC).toMatch(/malformed_platform_entry/);
+    // Производственный комментарий fail-close рядом с предикатом.
+    const predIdx = SRC.indexOf('hasRetryablePlatform');
+    const predWindow = SRC.slice(Math.max(0, predIdx - 700), predIdx);
+    expect(predWindow).toContain('fail-close');
+    expect(predWindow).toContain('не должна вызвать outbound');
   });
 });

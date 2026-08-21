@@ -131,36 +131,25 @@ export function CampaignsGrid({
     );
   });
 
-  if (isLoading) {
-    return (
-      <div className="space-y-6">
-        {/* Header skeleton */}
-        <div className="flex justify-between items-center">
-          <div className="h-8 w-[120px] bg-muted animate-pulse rounded" />
-          <div className="h-10 w-[140px] bg-muted animate-pulse rounded" />
-        </div>
-        
-        {/* Search skeleton */}
-        <div className="h-10 w-full max-w-sm bg-muted animate-pulse rounded" />
-        
-        {/* Table skeleton */}
-        <CampaignsSkeleton />
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Header - visible during loading too, чтобы каркас раздела не пропадал */}
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-semibold tracking-tight">{t('campaigns.title')}</h1>
-        <Button onClick={onCreateNew} data-testid="button-open-create-campaign-dialog">
+        <Button onClick={onCreateNew} data-testid="button-open-create-campaign-dialog" disabled={isLoading}>
           <Plus className="mr-2 h-4 w-4" />
           {t('campaigns.create')}
         </Button>
       </div>
 
-      {campaigns.length === 0 ? (
+      {isLoading ? (
+        <div className="space-y-6" data-testid="campaigns-loading-placeholder" role="status">
+          {/* Search skeleton */}
+          <div className="h-10 w-full max-w-sm bg-muted animate-pulse rounded" />
+          {/* Table skeleton */}
+          <CampaignsSkeleton />
+        </div>
+      ) : (campaigns.length === 0 ? (
         <EmptyState onCreateNew={onCreateNew} />
       ) : (
         <>
@@ -351,7 +340,7 @@ export function CampaignsGrid({
             </div>
           )}
         </>
-      )}
+      ))}
     </div>
   );
 }

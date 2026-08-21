@@ -428,7 +428,7 @@ export default function ScheduledPublications() {
                     className="ml-2 text-xs px-2 py-0.5 bg-muted rounded-full"
                     data-testid="scheduled-all-count"
                   >
-                    {scheduledError ? '—' : scheduledCounts.total}
+                    {scheduledError ? '—' : scheduledLoading ? '…' : scheduledCounts.total}
                   </span>
                 </div>
               </SelectItem>
@@ -465,7 +465,7 @@ export default function ScheduledPublications() {
           <div className="flex items-center">
             <h3 className="text-lg font-semibold">{t('publishing.scheduled.upcoming')}</h3>
             <Badge variant="outline" className="ml-2" data-testid="scheduled-upcoming-count">
-              {scheduledError ? '—' : upcomingContent.length}
+              {scheduledError ? '—' : scheduledLoading ? '…' : upcomingContent.length}
             </Badge>
           </div>
         </div>

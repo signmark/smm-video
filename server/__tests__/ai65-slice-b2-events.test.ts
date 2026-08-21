@@ -1,13 +1,16 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+
+import { emitPublishScheduled, emitCronStarted } from '../utils/logger';
 
 /**
  * AI-65 срез B2 (task #65): события publish.scheduled и cron.started эмитятся через
  * ЕДИНЫЕ точки emitPublishScheduled / emitCronStarted. publish.scheduled отвечает на
  * «когда публикация поставлена в расписание» — основной случай из ВСЕХ точек постановки
  * (пользователь); поле `kind` отличает его от «остался в расписании после неудачной попытки».
- * cron.started — живость планировщика. Source-guard: обход единой точки краснит.
+ * cron.started — живость планировщика. Наблюдение не должно уметь ронять систему: обе точки
+ * переживают любую ошибку внутри журналирования.
  */
 
 const P = (p: string) => readFileSync(join(__dirname, p), 'utf-8');
@@ -59,5 +62,24 @@ describe('AI-65 срез B2: publish.scheduled / cron.started через еди�
     const emitIdx = s.indexOf("emitPublishScheduled(String(content.id)", guardIdx);
     expect(guardIdx).toBeGreaterThan(-1);
     expect(emitIdx).toBeGreaterThan(guardIdx);
+  });
+});
+
+describe('AI-65 срез B2: наблюдение не должно уметь ронять систему', () => {
+  it('emitPublishScheduled и emitCronStarted оборачивают logEvent в try/catch — ошибка журналирования не роняет проход', () => {
+    const s = P('../utils/logger.ts');
+    const a = s.indexOf('export function emitPublishScheduled(');
+    const b = s.indexOf('export function emitCronStarted(');
+    // Обе функции содержат try { logEvent... } catch { }.
+    const aBlock = s.slice(a, b);
+    expect(aBlock).toMatch(/try \{/);
+    expect(aBlock).toMatch(/catch \{/);
+    expect(aBlock).toContain("logEvent('publish.scheduled'");
+    const bBlock = s.slice(b, b + 240);
+    expect(bBlock).toMatch(/try \{/);
+    expect(bBlock).toMatch(/catch \{/);
+    expect(bBlock).toContain("logEvent('cron.started'");
+    // Явный комментарий — принцип «наблюдение не должно уметь ломать систему».
+    expect(aBlock).toContain('Наблюдение не должно уметь ронять систему');
   });
 });

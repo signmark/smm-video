@@ -418,17 +418,26 @@ export function emitPublishScheduled(
   contentId: string,
   opts: { campaignId?: string; kind?: 'initially_scheduled' | 'rescheduled_after_failure' } = {},
 ): void {
-  logEvent('publish.scheduled', {
-    contentId,
-    ...(opts.campaignId ? { campaignId: opts.campaignId } : {}),
-    kind: opts.kind ?? 'initially_scheduled',
-    at: new Date().toISOString(),
-  }, 'info', 'publish');
+  try {
+    logEvent('publish.scheduled', {
+      contentId,
+      ...(opts.campaignId ? { campaignId: opts.campaignId } : {}),
+      kind: opts.kind ?? 'initially_scheduled',
+      at: new Date().toISOString(),
+    }, 'info', 'publish');
+  } catch {
+    // Наблюдение не должно уметь ронять систему: ошибка внутри журналирования
+    // не прерывает проход планировщика/публикации (AI-65 срез B2 v3).
+  }
 }
 
 /** ЕДИНАЯ точка эмиссии «период планировщика начался» (cron.started). */
 export function emitCronStarted(tick: number, at = new Date().toISOString()): void {
-  logEvent('cron.started', { tick, at }, 'info', 'scheduler');
+  try {
+    logEvent('cron.started', { tick, at }, 'info', 'scheduler');
+  } catch {
+    // Наблюдение не должно уметь ронять систему (см. emitPublishScheduled).
+  }
 }
 
 /**

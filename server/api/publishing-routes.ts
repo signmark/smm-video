@@ -506,7 +506,6 @@ export function registerPublishingRoutes(app: Express): void {
           log(`[stories-publish] Generated story image: ${storyGeneratedImageUrl}`, 'api');
           // Update content object with generated image URL for all platforms
           content.image_url = storyGeneratedImageUrl;
-          content.storyGeneratedImageUrl = storyGeneratedImageUrl;
         } else {
           log(`[stories-publish] Could not generate story image, using original`, 'api');
         }

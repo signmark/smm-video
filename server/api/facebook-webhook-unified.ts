@@ -12,7 +12,7 @@ import { authorizeCampaignAccess } from '../services/campaign-access';
 import { assertContentBelongsToRequester } from '../services/content-access';
 import { resolvePlatformToken } from '../services/campaign-token-resolver';
 import { requireWebhookSecret } from '../middleware/webhook-auth';
-import { parseStoredInstant } from '@shared/schedule-time';
+import type { CampaignContent } from '@shared/schema';
 
 const router = Router();
 
@@ -136,31 +136,27 @@ router.post('/', authenticateUser, async (req, res) => {
     
     // Конвертируем данные контента в формат, понятный сервису
     // Требуемые поля для типа CampaignContent из shared/schema.ts
-    const campaignContent = {
+    const campaignContent: CampaignContent = {
       id: content.id,
-      userId: content.user_id,
-      campaignId: content.campaign_id,
+      user_id: content.user_id,
+      campaign_id: content.campaign_id,
       content: content.content,
-      contentType: content.content_type || 'text',
+      content_type: content.content_type || 'text',
       title: content.title,
-      imageUrl: content.image_url,
-      socialPlatforms: content.social_platforms,
-      // Добавляем все обязательные поля для типа CampaignContent
-      createdAt: content.date_created ? new Date(content.date_created) : new Date(),
+      image_url: content.image_url,
+      social_platforms: content.social_platforms,
+      created_at: content.date_created ? new Date(content.date_created).toISOString() : new Date().toISOString(),
       keywords: content.keywords || [],
       additionalImages: content.additional_images || [],
-      videoUrl: content.video_url || null,
+      video_url: content.video_url || null,
       additionalMedia: content.additional_media || [],
       status: content.status || 'draft',
-      scheduledAt: parseStoredInstant(content.scheduled_at),
+      scheduled_at: content.scheduled_at || null,
       tags: content.tags || [],
-      author: content.author || null,
       metadata: content.metadata || {},
-      // Добавляем недостающие поля, которые требуются по схеме
       prompt: content.prompt || '',
       hashtags: content.hashtags || [],
-      links: content.links || [],
-      publishedAt: content.published_at ? new Date(content.published_at) : null
+      published_at: content.published_at || null,
     };
     
     // Публикуем контент с помощью сервиса Facebook

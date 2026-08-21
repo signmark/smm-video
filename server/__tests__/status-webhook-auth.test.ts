@@ -17,7 +17,7 @@ import express from 'express';
 const H = vi.hoisted(() => ({
   axiosGet: vi.fn(async () => ({ data: { data: { id: 'c-1', campaign_id: 'camp-1', social_platforms: {} } } })),
   axiosPatch: vi.fn(async () => ({ data: { data: {} } })),
-  getAdminToken: vi.fn(() => 'admin-token'),
+  getAdminAuthToken: vi.fn(async () => 'admin-token'),
   updatePublicationStatus: vi.fn(async () => ({ id: 'c-1' })),
 }));
 
@@ -41,8 +41,8 @@ vi.mock('../utils/logger', () => {
 });
 
 vi.mock('../services/directus-auth-manager', () => ({
-  DirectusAuthManager: { getAdminToken: H.getAdminToken },
-  directusAuthManager: { getValidToken: vi.fn(async () => 'admin-token') },
+  DirectusAuthManager: { getAdminToken: H.getAdminAuthToken },
+  directusAuthManager: { getValidToken: vi.fn(async () => 'admin-token'), getAdminAuthToken: H.getAdminAuthToken },
 }));
 
 vi.mock('../services/social-platforms/facebook-service', () => ({

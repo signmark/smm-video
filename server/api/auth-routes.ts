@@ -15,6 +15,32 @@ import { refreshDirectusSession } from '../services/directus-refresh-service';
 import { downgradeExpiredPlan } from '../services/plan-expiry';
 
 /**
+ * AI-65 срез B1: cooldown для auth.token_expired. /api/auth/check поллится
+ * интерфейсом регулярно; если токен протух и вкладка открыта, событие уходило бы
+ * на каждый опрос. Пишем один раз на переход «жив → протух» (раз в cooldown на
+ * пользователя), а не на каждую проверку.
+ */
+const tokenExpiredLoggedAt = new Map<string, number>();
+const TOKEN_EXPIRED_COOLDOWN_MS = 60 * 60 * 1000; // 1 час
+
+function shouldLogTokenExpired(userId: string): boolean {
+  const now = Date.now();
+  const last = tokenExpiredLoggedAt.get(userId);
+  if (last !== undefined && now - last < TOKEN_EXPIRED_COOLDOWN_MS) {
+    // Протухание и так уже в журнале — на каждый полл не дублируем.
+    return false;
+  }
+  // Ограничиваем размер карты, чтобы не росла вечно на потоке разных user'ов.
+  if (tokenExpiredLoggedAt.size > 1000) {
+    for (const [k, ts] of tokenExpiredLoggedAt) {
+      if (now - ts >= TOKEN_EXPIRED_COOLDOWN_MS) tokenExpiredLoggedAt.delete(k);
+    }
+  }
+  tokenExpiredLoggedAt.set(userId, now);
+  return true;
+}
+
+/**
  * Регистрирует маршруты для авторизации
  * @param app Express приложение
  */
@@ -50,6 +76,17 @@ export function registerAuthRoutes(app: Express): void {
       if (payload.exp) {
         const now = Math.floor(Date.now() / 1000);
         if (now >= payload.exp) {
+          // AI-65 срез B1: токен протух — событие один раз на переход (cooldown),
+          // а не на каждый полл /api/auth/check при открытой вкладке.
+          if (shouldLogTokenExpired(payload.id)) {
+            logEvent(
+              'auth.token_expired',
+              { userId: payload.id },
+              'warn',
+              'auth',
+              'Токен истек',
+            );
+          }
           return res.status(401).json({
             valid: false,
             error: 'Токен истек',
@@ -325,6 +362,16 @@ export function registerAuthRoutes(app: Express): void {
       const userData = userResponse.data.data;
       log(`Успешная авторизация пользователя ${userData.id}`, 'auth');
 
+      // AI-65 срез B1: машиночитаемое событие успешного входа (userId устойчив,
+      // без токена/пароля — по нему строятся алерты «кто и когда вошёл»).
+      logEvent(
+        'auth.login',
+        { userId: userData.id },
+        'info',
+        'auth',
+        'Пользователь вошёл',
+      );
+
       // Проверяем, является ли пользователь администратором
       const isAdmin = await isUserAdmin(req, token);
       log(`Пользователь ${userData.id}: статус администратора = ${isAdmin}`, 'auth');
@@ -373,6 +420,15 @@ export function registerAuthRoutes(app: Express): void {
       
       // Обрабатываем ошибку авторизации
       if (error.response?.status === 401) {
+        // AI-65 срез B1: неудачный вход — по журналу должно быть видно, что кто-то
+        // не смог войти. Машиночитатьющий reason без email/пароля (allowlist их не пропустит).
+        logEvent(
+          'auth.login_failed',
+          { reason: 'invalid_credentials' },
+          'warn',
+          'auth',
+          'Неудачная попытка входа',
+        );
         return res.status(401).json({ 
           error: 'Неверные учетные данные',
           message: 'Неверный email или пароль'

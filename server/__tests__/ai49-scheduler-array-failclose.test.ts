@@ -82,9 +82,10 @@ describe('AI-49 v4: битая форма (массив) площадки fail-c
     expect(String(warn.mock.calls[0][0])).toContain('arr-1');
   });
 
-  it('mixed: массив + pending-объект → массив fail-close (warn), pending остаётся eligible', async () => {
-    const adapterSpy = vi.spyOn(scheduler as any, 'publishToTelegramDirect');
-    adapterSpy.mockResolvedValue({ platform: 'telegram', success: true });
+  it('mixed: массив + pending-объект → массив fail-close (warn), адаптер получает ровно pending', async () => {
+    const publishSpy = vi.spyOn(scheduler as any, 'publishContentToPlatforms');
+    publishSpy.mockResolvedValue(undefined);
+    const acquireSpy = vi.mocked(publicationLockManager.acquireLock);
 
     vi.mocked(directusCrud.list).mockResolvedValueOnce([
       {
@@ -95,16 +96,43 @@ describe('AI-49 v4: битая форма (массив) площадки fail-c
         },
       },
     ] as any)
-    // isStillPublishable перечитывает статус перед отправкой — вернём pending.
+    // isStillPublishable перечитывает статус перед отправкой.
     .mockResolvedValueOnce([{ id: 'mix-1', status: 'partially_published' }] as any);
 
     await scheduler.checkScheduledContent();
 
-    // pending-площадка остаётся eligible → до цикла публикации доходит запись,
-    // но адаптер под телеграм вызывается только для pending-объекта.
-    // (Массивник не должен породить вызов адаптера — это и есть проверка.)
+    // Битую vk предупредили, но в адаптер она НЕ попала — ровно pending telegram.
     const warn = vi.mocked(log.warn as any);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(String(warn.mock.calls[0][0])).toContain('vk');
+    expect(publishSpy).toHaveBeenCalled();
+    const publishedPlatforms = publishSpy.mock.calls[0][1] as string[];
+    expect(publishedPlatforms).toEqual(['telegram']);
+    expect(publishedPlatforms).not.toContain('vk');
+  });
+
+  it('запись с null-площадкой не роняет проход: следующая запись обрабатывается, heartbeat движется', async () => {
+    const publishSpy = vi.spyOn(scheduler as any, 'publishContentToPlatforms');
+    publishSpy.mockResolvedValue(undefined);
+
+    // Первая запись — битая (vk: null бросает до guard, если guard ниже).
+    // Вторая — пустая (idle-проход), чтобы по её завершению двигался heartbeat.
+    vi.mocked(directusCrud.list).mockResolvedValueOnce([
+      {
+        id: 'null-1', status: 'partially_published', user_id: 'u-1', campaign_id: 'camp-1',
+        social_platforms: { vk: null as any, telegram: { status: 'pending' } },
+      },
+      { id: 'null-2', status: 'scheduled', user_id: 'u-1', campaign_id: 'camp-1', social_platforms: {} },
+    ] as any);
+
+    // @ts-ignore сброс heartbeat
+    scheduler.lastSuccessfulPassAt = null;
+    await scheduler.checkScheduledContent();
+
+    // Проход не упал: heartbeat обновился (успешный проход зафиксирован).
+    // Это доказывает, что null-площадка изолирована guard'ом и не роняет весь
+    // проход (иначе бы общий catch поймал и heartbeat остался null).
+    // @ts-ignore
+    expect(scheduler.getLivenessSnapshot().lastSuccessfulPassAt).not.toBeNull();
   });
 });

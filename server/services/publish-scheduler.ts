@@ -575,6 +575,14 @@ export class PublishScheduler {
           const contentTypeForFilter = content.content_type as string | undefined;
 
           for (const [platformName, platformData] of Object.entries(platforms)) {
+            // task #49 (v5): битая форма площадки (non-object/array) никогда не
+            // получает lock и не попадает в adapter list — даже при mixed записи,
+            // где соседняя pending-площадка сделала запись eligible на record-level.
+            if (isMalformedPlatformEntry(platformData)) {
+              log(`  ⏭️ ${content.id}:${platformName} SKIP - malformed platform entry`, 'scheduler', 'debug');
+              continue;
+            }
+
             // Молча пропускаем несовместимые платформы (например, YouTube для text-image)
             if (!isPlatformCompatible(platformName, contentTypeForFilter)) continue;
 

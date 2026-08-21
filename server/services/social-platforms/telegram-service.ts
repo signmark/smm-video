@@ -7,7 +7,7 @@ import axios from 'axios';
 import FormData from 'form-data';
 import log from '../../utils/logger';
 import { toTelegramHtml } from '../../utils/telegram-html';
-import { telegramAxios } from './telegram-http';
+import { telegramAxios, trackTelegramCall } from './telegram-http';
 
 export interface TelegramSettings {
   token: string;
@@ -156,10 +156,12 @@ class TelegramService {
   async deletePost(settings: TelegramSettings, messageId: number): Promise<boolean> {
     try {
       const tg = await telegramAxios(settings.token);
-      const res = await tg.post('/deleteMessage', {
+      const res = await trackTelegramCall('deleteMessage', () =>
+        tg.post('/deleteMessage', {
         chat_id: settings.chatId,
         message_id: messageId
-      });
+      })
+      );
       return res.data?.ok === true;
     } catch {
       return false;
@@ -200,7 +202,9 @@ class TelegramService {
         };
         if (captionFits) videoParams.caption = cleanText;
 
-        const resp = await tg.post(`/sendVideo`, videoParams);
+        const resp = await trackTelegramCall('sendVideo', () =>
+          tg.post('/sendVideo', videoParams)
+        );
         res = resp.data;
         messageId = res.result?.message_id;
 
@@ -213,13 +217,15 @@ class TelegramService {
           const text = cleanText.length <= MAX
             ? cleanText
             : cleanText.slice(0, cleanText.lastIndexOf(' ', MAX - 1)) + '…';
-          const textResp = await tg.post(`/sendMessage`, {
+          const textResp = await trackTelegramCall('sendMessage', () =>
+            tg.post('/sendMessage', {
             chat_id: chatId,
             text,
             parse_mode: 'HTML',
             reply_to_message_id: messageId,
             disable_web_page_preview: true
-          });
+          })
+          );
           if (!textResp.data?.ok) {
             log.warn(`[${opId}] [Telegram] sendMessage с текстом (после видео) не прошёл: ${textResp.data?.description}`);
           }
@@ -245,10 +251,12 @@ class TelegramService {
               ? { caption: cleanText, parse_mode: 'HTML' }
               : {}),
           }));
-          const resp = await tg.post(`/sendMediaGroup`, {
+          const resp = await trackTelegramCall('sendMediaGroup', () =>
+            tg.post('/sendMediaGroup', {
             chat_id: chatId,
             media,
-          });
+          })
+          );
           res = resp.data;
 
           if (!res.ok) {
@@ -266,13 +274,15 @@ class TelegramService {
           const text = cleanText.length <= MAX
             ? cleanText
             : cleanText.slice(0, boundary > 0 ? boundary : MAX - 1) + '…';
-          const textResp = await tg.post(`/sendMessage`, {
+          const textResp = await trackTelegramCall('sendMessage', () =>
+            tg.post('/sendMessage', {
             chat_id: chatId,
             text,
             parse_mode: 'HTML',
             reply_to_message_id: messageId,
             disable_web_page_preview: true,
-          });
+          })
+          );
           if (!textResp.data?.ok) {
             log.warn(`[${opId}] [Telegram] sendMessage с текстом после медиагруппы не прошёл: ${textResp.data?.description}`);
           }
@@ -291,7 +301,9 @@ class TelegramService {
         };
         if (captionFits) params.caption = cleanText;
 
-        const resp = await tg.post(`/sendPhoto`, params);
+        const resp = await trackTelegramCall('sendPhoto', () =>
+          tg.post('/sendPhoto', params)
+        );
         res = resp.data;
         messageId = res.result?.message_id;
 
@@ -306,13 +318,15 @@ class TelegramService {
             ? cleanText
             : cleanText.slice(0, cleanText.lastIndexOf(' ', MAX - 1)) + '…';
 
-          const textResp = await tg.post(`/sendMessage`, {
+          const textResp = await trackTelegramCall('sendMessage', () =>
+            tg.post('/sendMessage', {
             chat_id: chatId,
             text,
             parse_mode: 'HTML',
             reply_to_message_id: messageId,
             disable_web_page_preview: true
-          });
+          })
+          );
           if (!textResp.data?.ok) {
             log.warn(`[${opId}] [Telegram] sendMessage с текстом не прошёл: ${textResp.data?.description}`);
           } else {
@@ -320,11 +334,13 @@ class TelegramService {
           }
         }
       } else {
-        const resp = await tg.post(`/sendMessage`, {
+        const resp = await trackTelegramCall('sendMessage', () =>
+          tg.post('/sendMessage', {
           chat_id: chatId,
           text: cleanText,
           parse_mode: 'HTML'
-        });
+        })
+        );
         res = resp.data;
         messageId = res.result?.message_id;
       }

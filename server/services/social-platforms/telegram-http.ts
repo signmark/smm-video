@@ -33,7 +33,7 @@ import * as dns from 'dns/promises';
 import * as tls from 'tls';
 import * as https from 'https';
 import axios, { AxiosInstance } from 'axios';
-import { log } from '../../utils/logger';
+import { log, classifyExternalError } from '../../utils/logger';
 
 /**
  * Операционализация failover-сигнала: кроме warn-лога, шлём событие в
@@ -222,6 +222,101 @@ export async function telegramAxios(token: string): Promise<AxiosInstance> {
  */
 export async function telegramHttp(): Promise<AxiosInstance> {
   return axios.create({ httpsAgent: getTelegramAgent() });
+}
+
+/**
+ * AI-65 срез D: единая обёртка исходящего вызова Telegram.
+ *
+ * Каждый `tg.post('/sendMessage', ...)` и аналогичные в `telegram-service.ts`
+ * проходят через этот helper вместо сырого axios. Helper:
+ *   — замеряет длительность;
+ *   — эмитит `external.response` или `external.timeout` через `log.external`
+ *     (та же точка, что использует срез C для apify/deepseek/claude);
+ *   — внутренний try/catch вокруг `log.external` гарантирует, что падающее
+ *     журналирование не оборвёт публикацию.
+ *
+ * reason берётся из `classifyExternalError` — стабильная машинная причина
+ * (auth | rate_limited | server_5xx | timeout | network | error), а не сырой
+ * текст ошибки.
+ *
+ * Использование:
+ *   const res = await trackTelegramCall('sendMessage', () => tg.post('/sendMessage', params));
+ *
+ * ЗАЧЕМ: единая точка наблюдения за Telegram API — фильтры в журнале
+ * работают так же, как для остальных внешних систем.
+ *
+ * ОГРАНИЧЕНИЯ:
+ *   — сам axios-вызов НЕ оборачивается: падение axios пробрасывается дальше
+ *     как обычно, вызывающий код решает, что с ним делать;
+ *   — `log.external` обёрнут в try/catch (как и в срезе C) — наблюдение не
+ *     роняет вызов.
+ */
+export async function trackTelegramCall<T>(operation: string, fn: () => Promise<T>): Promise<T> {
+  const startedAt = Date.now();
+  try {
+    const result = await fn();
+    // Telegram API отвечает HTTP 200 даже на бизнес-ошибки: тело содержит
+    // `{"ok": false, "description": "..."}`. axios не бросает, и без этой
+    // проверки журнал писал бы «ok» для провалившейся публикации.
+    // reason намеренно стабильное слово `api_error`, а не `description`
+    // — фильтры в журнале должны работать на машиночитаемых терминах,
+    // иначе описание провала разных методов смешается в одну кучу.
+    if (isTelegramApiError(result)) {
+      try {
+        log.external({
+          system: 'telegram',
+          operation,
+          status: 'error',
+          durationMs: Date.now() - startedAt,
+          reason: 'api_error',
+        });
+      } catch {
+        /* наблюдение не должно ронять вызов */
+      }
+    } else {
+      try {
+        log.external({
+          system: 'telegram',
+          operation,
+          status: 'ok',
+          durationMs: Date.now() - startedAt,
+        });
+      } catch {
+        /* наблюдение не должно ронять вызов */
+      }
+    }
+    return result;
+  } catch (err) {
+    const reason = classifyExternalError(err);
+    try {
+      log.external({
+        system: 'telegram',
+        operation,
+        status: reason === 'timeout' ? 'timeout' : 'error',
+        durationMs: Date.now() - startedAt,
+        reason,
+      });
+    } catch {
+      /* наблюдение не должно ронять вызов */
+    }
+    throw err;
+  }
+}
+
+/**
+ * Telegram API вернул HTTP 200, но в теле `ok: false`. Это не сетевой сбой —
+ * axios не бросает. Возвращаем true, чтобы обёртка записала в журнал
+ * `status: 'error', reason: 'api_error'` вместо ложного «ok».
+ *
+ * Сам текст `description` НЕ возвращаем — вызывающий код уже разбирает
+ * `res.data.ok` и пишет предупреждение с подробностями.
+ */
+function isTelegramApiError(result: unknown): boolean {
+  if (!result || typeof result !== 'object') return false;
+  const data = (result as { data?: unknown }).data;
+  if (!data || typeof data !== 'object') return false;
+  const ok = (data as { ok?: unknown }).ok;
+  return ok === false;
 }
 
 /**

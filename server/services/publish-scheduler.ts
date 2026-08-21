@@ -395,6 +395,10 @@ export class PublishScheduler {
       this.isProcessing = true;
       this.tickCount++;
       const cycleStartedAt = Date.now();
+
+      // AI-65 срез B2: стабильное машинное событие ОДНОГО запуска периода (cron.started),
+      // эмитится через единый logEvent — по нему строятся оповещения «крон замолчал».
+      logEvent('cron.started', { tick: this.tickCount, at: new Date().toISOString() }, 'info', 'scheduler');
       
       // Heartbeat каждые ~10 минут — видно в production-логах
       if (this.tickCount % this.heartbeatEveryNTicks === 1) {
@@ -1054,6 +1058,11 @@ export class PublishScheduler {
         status: finalContentStatus,
         social_platforms: allPlatforms
       }, { useAdminToken: true });
+      // AI-65 срез B2: контент (пере)запланирован к будущей попытке публикации —
+      // стабильное машинное событие через единый logEvent (publish.scheduled).
+      if (finalContentStatus === 'scheduled') {
+        logEvent('publish.scheduled', { contentId: content.id, campaignId: content.campaign_id, at: new Date().toISOString() }, 'info', 'scheduler');
+      }
       // Сбрасываем кеш — статус контента изменился
       if (content.user_id) invalidateContentCache(content.user_id, content.campaign_id);
     } catch (updateErr: any) {

@@ -553,7 +553,13 @@ export class PublishScheduler {
           // форма не должна вызвать outbound). Ретриабельные/unattempted площадки
           // (pending/scheduled/publishing/quota_exceeded/неизвестный статус)
           // остаются eligible — запись не пропускаем.
-          const hasRetryablePlatform = platformNames.some((name) => !isPlatformTerminal(platforms[name]));
+          // task #49 (v3): площадка ждёт продолжения, только если она И не
+          // terminal, И не битая. isPlatformTerminal пропускает массивы
+          // (typeof [] === 'object'), поэтому битую форму ловим вторым условием —
+          // иначе запись с площадкой-массивом дойдёт до цикла и адаптера.
+          const hasRetryablePlatform = platformNames.some((name) =>
+            !isPlatformTerminal(platforms[name]) && !isMalformedPlatformEntry(platforms[name])
+          );
           if (!hasRetryablePlatform) {
             log(`⏭️ Skipping ${content.id}: no retryable platforms (all terminal)`, 'scheduler', 'debug');
             continue;

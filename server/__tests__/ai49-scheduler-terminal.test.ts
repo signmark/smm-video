@@ -70,11 +70,28 @@ describe('AI-49 v3: битая форма площадки — fail-close + ог
     expect(isMalformedPlatformEntry('x')).toBe(true);
     expect(isMalformedPlatformEntry(1)).toBe(true);
     expect(isMalformedPlatformEntry([1])).toBe(true);
+    expect(isMalformedPlatformEntry([])).toBe(true); // пустой массив — тоже битая форма
     // Легитимные объекты-площадки (в т.ч. terminal-статусы) НЕ битые.
     expect(isMalformedPlatformEntry({ status: 'failed' })).toBe(false);
     expect(isMalformedPlatformEntry({ status: 'published' })).toBe(false);
     expect(isMalformedPlatformEntry({ status: 'pending' })).toBe(false);
     expect(isMalformedPlatformEntry({})).toBe(false);
+  });
+
+  it('массив — битая форма: НЕ terminal по isPlatformTerminal, но НЕ retryable по предикату', () => {
+    // isPlatformTerminal пропускает массив (typeof [] === 'object'), поэтому
+    // битую форму обязан ловить isMalformedPlatformEntry в предикате отбора —
+    // иначе запись с площадкой-массивом дойдёт до цикла/адаптера.
+    expect(isPlatformTerminal([])).toBe(false);
+    expect(isMalformedPlatformEntry([])).toBe(true);
+  });
+
+  it('пустой объект {} — НЕ битый и НЕ terminal: остаётся eligible (статус неизвестен = ещё не пробовали)', () => {
+    // Защитимое прочтение: нет статуса — значит платформу ещё не пробовали
+    // публиковать, запись остаётся в разборе. Явно фиксируем, чтобы читатель
+    // не счёл это недосмотром.
+    expect(isMalformedPlatformEntry({})).toBe(false);
+    expect(isPlatformTerminal({})).toBe(false);
   });
 
   it('warn о битой форме — с cooldown в час на content+platform', () => {
@@ -97,7 +114,8 @@ describe('AI-49 v3: битая форма площадки — fail-close + ог
 
 describe('AI-49: production-сторож — мутация «вернуть подстроку/рецидив» красит', () => {
   it('в планировщике есть предикат «нет retryable площадок → пропустить»', () => {
-    expect(SRC).toMatch(/hasRetryablePlatform\s*=.*isPlatformTerminal/);
+    expect(SRC).toMatch(/hasRetryablePlatform = platformNames\.some/);
+    expect(SRC).toMatch(/!isPlatformTerminal\(platforms\[name\]\) && !isMalformedPlatformEntry\(platforms\[name\]\)/);
     expect(SRC).toMatch(/no retryable platforms \(all terminal\)/);
   });
 

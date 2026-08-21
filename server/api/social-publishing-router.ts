@@ -6,7 +6,7 @@
 
 import express from 'express';
 import axios from 'axios';
-import { log, logEvent } from '../utils/logger';
+import { log, logEvent, emitPublishScheduled } from '../utils/logger';
 import { authMiddleware } from '../middleware/auth';
 import { publicationLockManager } from '../services/publication-lock-manager';
 import * as instagramCarouselHandler from './instagram-carousel-webhook';
@@ -292,6 +292,8 @@ router.post('/stories/publish', authMiddleware, async (req, res) => {
           'Authorization': `Bearer ${userToken}`
         }
       });
+      // AI-65 срез B2: stories поставлены в расписание — единая точка.
+      emitPublishScheduled(contentId, { campaignId: storyContent?.campaign_id, kind: 'initially_scheduled' });
 
 
       const webhookPromises: Promise<any>[] = [];
@@ -539,6 +541,8 @@ router.post('/publish/now', authMiddleware, async (req, res) => {
         },
         adminToken
       );
+      // AI-65 срез B2: «Опубликовать сейчас» перевело в расписание — единая точка.
+      emitPublishScheduled(contentId, { campaignId: (req as any).body?.campaignId, kind: 'initially_scheduled' });
 
       if (!updatedContent) {
         log(`[Social Publishing] Ошибка при сохранении выбранных платформ для контента ${contentId}`);

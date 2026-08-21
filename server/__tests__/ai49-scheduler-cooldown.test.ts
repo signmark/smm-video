@@ -22,7 +22,7 @@ vi.mock('axios', () => ({
 }));
 vi.mock('../utils/logger', () => {
   const log = Object.assign(vi.fn(), { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() });
-  return { log, logEvent: vi.fn(), default: { log, info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() } };
+  return { log, logEvent: vi.fn(), emitPublishScheduled: vi.fn(), emitCronStarted: vi.fn(), default: { log, info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() } };
 });
 vi.mock('../utils/content-cache', () => ({ invalidateContentCache: vi.fn() }));
 vi.mock('../services/directus-crud', () => ({

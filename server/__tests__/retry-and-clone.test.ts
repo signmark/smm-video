@@ -49,6 +49,9 @@ vi.mock('../middleware/user-auth', () => ({
 
 vi.mock('../utils/logger', () => ({
   log: Object.assign(vi.fn(), { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
+  logEvent: vi.fn(),
+  emitPublishScheduled: vi.fn(),
+  emitCronStarted: vi.fn(),
 }));
 
 /**

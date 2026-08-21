@@ -405,6 +405,42 @@ export function logEvent(
 }
 
 /**
+ * AI-65 срез B2: ЕДИНАЯ точка эмиссии события «публикация поставлена в расписание»
+ * (publish.scheduled). Отвечает на вопрос «когда пост попал в расписание» — основной
+ * случай это запланированный пользователем пост; вызовы из всех точек постановки.
+ *
+ * Поле `kind` отличает смысл, чтобы под одним именем не смешались два разных события:
+ *   - 'initially_scheduled' — пользователь поставил пост в расписание (главный случай);
+ *   - 'rescheduled_after_failure' — планировщик переносит пост на следующую попытку
+ *     (остался в расписании после неудачной попытки).
+ */
+export function emitPublishScheduled(
+  contentId: string,
+  opts: { campaignId?: string; kind?: 'initially_scheduled' | 'rescheduled_after_failure' } = {},
+): void {
+  try {
+    logEvent('publish.scheduled', {
+      contentId,
+      ...(opts.campaignId ? { campaignId: opts.campaignId } : {}),
+      kind: opts.kind ?? 'initially_scheduled',
+      at: new Date().toISOString(),
+    }, 'info', 'publish');
+  } catch {
+    // Наблюдение не должно уметь ронять систему: ошибка внутри журналирования
+    // не прерывает проход планировщика/публикации (AI-65 срез B2 v3).
+  }
+}
+
+/** ЕДИНАЯ точка эмиссии «период планировщика начался» (cron.started). */
+export function emitCronStarted(tick: number, at = new Date().toISOString()): void {
+  try {
+    logEvent('cron.started', { tick, at }, 'info', 'scheduler');
+  } catch {
+    // Наблюдение не должно уметь ронять систему (см. emitPublishScheduled).
+  }
+}
+
+/**
  * Ограниченный по времени сброс вывода перед завершением процесса.
  *
  * ЗАЧЕМ. Когда stdout уходит в конвейер (docker json-file — именно такой

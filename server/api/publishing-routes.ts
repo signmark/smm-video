@@ -1356,7 +1356,7 @@ export function registerPublishingRoutes(app: Express): void {
             content = {
               id: contentData.id,
               userId: contentData.user_id,
-              createdAt: contentData.date_created ? new Date(contentData.date_created) : null,
+              createdAt: contentData.created_at ? new Date(contentData.created_at) : null,
               campaign_id: contentData.campaign_id,
               campaignId: contentData.campaign_id,
               title: contentData.title,

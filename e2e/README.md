@@ -35,6 +35,16 @@ docker cp ./schema.yaml smm-e2e-directus-e2e-1:/tmp/s.yaml
 docker exec smm-e2e-directus-e2e-1 sh -c 'cd /directus && node cli.js schema apply --yes /tmp/s.yaml'
 ```
 
+**⚠ Важно:** после `schema apply` необходимо перезапустить Directus, иначе
+новые/изменённые коллекции и поля не подхватываются рантаймом, и API отвечает
+404 или возвращает устаревшую структуру. Перезапуск:
+
+```bash
+docker restart smm-e2e-directus-e2e-1
+# дождаться готовности:
+until curl -sf http://127.0.0.1:8155/server/health > /dev/null 2>&1; do sleep 1; done
+```
+
 ## Грабли, которые стоили времени
 
 **1. Снапшот боевой схемы не применяется как есть.** В `directus_settings.key`

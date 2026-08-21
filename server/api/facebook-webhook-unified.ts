@@ -146,7 +146,7 @@ router.post('/', authenticateUser, async (req, res) => {
       imageUrl: content.image_url,
       socialPlatforms: content.social_platforms,
       // Добавляем все обязательные поля для типа CampaignContent
-      createdAt: content.date_created ? new Date(content.date_created) : new Date(),
+      createdAt: content.created_at || null,
       keywords: content.keywords || [],
       additionalImages: content.additional_images || [],
       videoUrl: content.video_url || null,

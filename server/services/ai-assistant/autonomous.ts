@@ -679,7 +679,7 @@ export async function executeAutonomousAction(action: string, request: AIAssista
           success: true, 
           data: { 
             contentCount: content?.length || 0,
-            lastUpdate: (content?.[0] as any)?.date_created 
+            lastUpdate: (content?.[0] as any)?.created_at 
           }
         };
 

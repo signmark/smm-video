@@ -269,7 +269,7 @@ forceUpdateStatusRouter.get('/publish/content-status/:contentId', authenticateUs
         status: content.status,
         content: content.content,
         imageUrl: content.image_url,
-        createdAt: content.date_created
+        createdAt: content.created_at
       }
     });
     

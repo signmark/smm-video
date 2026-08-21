@@ -18,7 +18,7 @@ async function getCampaignsForCollection(): Promise<Array<{
 }>> {
   try {
     const campaigns = await directusCrud.list('user_campaigns', {
-      fields: ['id', 'user_id', 'date_updated', 'date_created'],
+      fields: ['id', 'user_id', 'updated_at', 'created_at'],
       limit: -1,
       useAdminToken: true
     }) as any[];
@@ -28,7 +28,7 @@ async function getCampaignsForCollection(): Promise<Array<{
     return campaigns.map((c: any) => ({
       campaignId: c.id,
       userId: c.user_id,
-      lastActivity: c.date_updated ? new Date(c.date_updated) : (c.date_created ? new Date(c.date_created) : null)
+      lastActivity: c.updated_at ? new Date(c.updated_at) : (c.created_at ? new Date(c.created_at) : null)
     }));
   } catch (err: any) {
     log(`[DailyScheduler] Ошибка получения кампаний: ${err.message}`, 'error');

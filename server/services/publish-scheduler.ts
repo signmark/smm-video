@@ -557,6 +557,8 @@ export class PublishScheduler {
           // terminal, И не битая. isPlatformTerminal пропускает массивы
           // (typeof [] === 'object'), поэтому битую форму ловим вторым условием —
           // иначе запись с площадкой-массивом дойдёт до цикла и адаптера.
+          // Пустой объект {} — не битый и не terminal: статус неизвестен = ещё
+          // не пробовали, запись остаётся eligible (явная граница форм).
           const hasRetryablePlatform = platformNames.some((name) =>
             !isPlatformTerminal(platforms[name]) && !isMalformedPlatformEntry(platforms[name])
           );

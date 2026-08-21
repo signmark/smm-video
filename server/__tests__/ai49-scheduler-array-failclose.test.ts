@@ -48,6 +48,7 @@ const scheduler = getPublishScheduler();
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.useRealTimers(); // сбрасываем возможную утечку fake-time из другого теста
   process.env.DIRECTUS_URL = 'http://directus.test';
   // @ts-ignore
   scheduler.processedContentCache.clear();

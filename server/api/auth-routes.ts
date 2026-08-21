@@ -50,6 +50,14 @@ export function registerAuthRoutes(app: Express): void {
       if (payload.exp) {
         const now = Math.floor(Date.now() / 1000);
         if (now >= payload.exp) {
+          // AI-65 срез B1: токен протух — видно, когда это происходит.
+          logEvent(
+            'auth.token_expired',
+            { userId: payload.id },
+            'warn',
+            'auth',
+            'Токен истек',
+          );
           return res.status(401).json({
             valid: false,
             error: 'Токен истек',
@@ -325,6 +333,16 @@ export function registerAuthRoutes(app: Express): void {
       const userData = userResponse.data.data;
       log(`Успешная авторизация пользователя ${userData.id}`, 'auth');
 
+      // AI-65 срез B1: машиночитаемое событие успешного входа (userId устойчив,
+      // без токена/пароля — по нему строятся алерты «кто и когда вошёл»).
+      logEvent(
+        'auth.login',
+        { userId: userData.id },
+        'info',
+        'auth',
+        'Пользователь вошёл',
+      );
+
       // Проверяем, является ли пользователь администратором
       const isAdmin = await isUserAdmin(req, token);
       log(`Пользователь ${userData.id}: статус администратора = ${isAdmin}`, 'auth');
@@ -373,6 +391,15 @@ export function registerAuthRoutes(app: Express): void {
       
       // Обрабатываем ошибку авторизации
       if (error.response?.status === 401) {
+        // AI-65 срез B1: неудачный вход — по журналу должно быть видно, что кто-то
+        // не смог войти. Машиночитатьющий reason без email/пароля (allowlist их не пропустит).
+        logEvent(
+          'auth.login_failed',
+          { reason: 'invalid_credentials' },
+          'warn',
+          'auth',
+          'Неудачная попытка входа',
+        );
         return res.status(401).json({ 
           error: 'Неверные учетные данные',
           message: 'Неверный email или пароль'

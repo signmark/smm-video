@@ -8,7 +8,7 @@ import {
   consumeResetToken,
   invalidateUserResetTokens,
 } from '../utils/password-reset-tokens';
-import { log } from '../utils/logger';
+import { log, logEvent } from '../utils/logger';
 
 const RESET_TOKEN_TTL_SEC = 3600; // 1 час
 
@@ -163,6 +163,15 @@ export function registerPasswordResetRoutes(app: Express) {
 
       // Пароль сменился — гасим все остальные выданные ссылки пользователя.
       invalidateUserResetTokens(userId);
+
+      // AI-65 срез B1: пароль использован для сброса — видно, когда доступ меняется.
+      logEvent(
+        'auth.password_reset_used',
+        { userId },
+        'info',
+        'auth',
+        'Пароль изменён через восстановление доступа',
+      );
 
       // Уведомление о смене пароля: если сброс запросил не владелец аккаунта,
       // письмо — единственный сигнал, по которому он это заметит.

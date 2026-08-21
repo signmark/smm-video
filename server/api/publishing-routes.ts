@@ -9,7 +9,7 @@ import { getPublishScheduler } from '../services/publish-scheduler';
 import { getCanonicalScheduledAt, parseStoredInstant } from '@shared/schedule-time';
 // Определяем тип SocialPlatform локально
 type SocialPlatform = 'instagram' | 'facebook' | 'telegram' | 'vk' | 'youtube';
-import { log, logEvent } from '../utils/logger';
+import { log, logEvent, emitPublishScheduled } from '../utils/logger';
 import { invalidateContentCache } from '../utils/content-cache';
 import { resolvePublishingToken } from '../services/publishing-token';
 import { assertContentBelongsToRequester } from '../services/content-access';
@@ -1246,6 +1246,8 @@ export function registerPublishingRoutes(app: Express): void {
         data: { status: 'scheduled', social_platforms: updatedPlatforms },
         headers: { Authorization: `Bearer ${token}` }
       });
+      // AI-65 срез B2: публикация поставлена в расписание (пользователь) — единая точка.
+      emitPublishScheduled(contentId, { campaignId: (req as any).body?.campaignId, kind: 'initially_scheduled' });
 
       // Сбрасываем кеш и запускаем планировщик
       invalidateContentCache(userId, item.campaign_id);
@@ -1489,6 +1491,8 @@ export function registerPublishingRoutes(app: Express): void {
           });
           
           log(`Планирование контента ${contentId} через API успешно`, 'api');
+          // AI-65 срез B2: публикация поставлена в расписание — единая точка (API-путь).
+          emitPublishScheduled(contentId, { campaignId: (req as any).body?.campaignId, kind: 'initially_scheduled' });
           
           // Также обновляем через storage для синхронизации кэша
           try {
@@ -1497,6 +1501,8 @@ export function registerPublishingRoutes(app: Express): void {
               scheduledAt: new Date(canonicalScheduledAt),
               socialPlatforms: mergedSocialPlatforms // Используем объединенные платформы для согласованности с API
             }, token);
+            // AI-65 срез B2: единая точка (storage-путь синхронизации).
+            emitPublishScheduled(contentId, { campaignId: (req as any).body?.campaignId, kind: 'initially_scheduled' });
             
             log(`Контент ${contentId} также обновлен через storage`, 'api');
           } catch (storageError: any) {

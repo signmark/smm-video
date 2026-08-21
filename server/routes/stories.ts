@@ -1,5 +1,5 @@
 import express from 'express';
-import { logEvent } from '../utils/logger';
+import { logEvent, emitPublishScheduled } from '../utils/logger';
 import axios from 'axios';
 import { authenticateUser } from '../middleware/user-auth';
 import { directusApi } from '../directus';
@@ -1132,6 +1132,8 @@ router.post('/publish', authenticateUser, async (req, res) => {
     }, {
       headers: { 'Authorization': req.headers.authorization }
     });
+    // AI-65 срез B2: stories запланирована — единая точка.
+    emitPublishScheduled(contentId, { campaignId: story?.campaign_id, kind: 'initially_scheduled' });
 
     // Determine media type using service
     const mediaType = StoriesMediaService.getMediaType(story);

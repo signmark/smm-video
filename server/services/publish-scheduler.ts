@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { log, logEvent } from '../utils/logger';
+import { log, logEvent, emitPublishScheduled, emitCronStarted } from '../utils/logger';
 import { storage } from '../storage';
 import { directusCrud } from './directus-crud';
 import { mergePlatformStatus } from './publish-status-merge';
@@ -395,6 +395,9 @@ export class PublishScheduler {
       this.isProcessing = true;
       this.tickCount++;
       const cycleStartedAt = Date.now();
+
+      // AI-65 срез B2: стабильное машинное событие ОДНОГО запуска периода через единый emitCronStarted.
+      emitCronStarted(this.tickCount);
       
       // Heartbeat каждые ~10 минут — видно в production-логах
       if (this.tickCount % this.heartbeatEveryNTicks === 1) {
@@ -1054,6 +1057,11 @@ export class PublishScheduler {
         status: finalContentStatus,
         social_platforms: allPlatforms
       }, { useAdminToken: true });
+      // AI-65 срез B2: контент остался в расписании после попытки (перенос на следующую
+      // попытку) — единая точка с явным kind, чтобы не смешать с первоначальной постановкой.
+      if (finalContentStatus === 'scheduled') {
+        emitPublishScheduled(String(content.id), { campaignId: content.campaign_id, kind: 'rescheduled_after_failure' });
+      }
       // Сбрасываем кеш — статус контента изменился
       if (content.user_id) invalidateContentCache(content.user_id, content.campaign_id);
     } catch (updateErr: any) {

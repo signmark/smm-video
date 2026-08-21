@@ -120,9 +120,12 @@ export function registerTokenRoutes(app: Express) {
           data: { 
             data: { 
               id: payload.id, 
-              email: payload.email || 'unknown@email.com' 
-            } 
-          } 
+              email: payload.email || 'unknown@email.com',
+              first_name: payload.first_name,
+              last_name: payload.last_name,
+              role: payload.role
+            } as { id: string; email: string; first_name?: string; last_name?: string; role?: string | { name?: string } }
+          }
         };
         
         if (response.data?.data?.id) {
@@ -143,7 +146,7 @@ export function registerTokenRoutes(app: Express) {
                 email: response.data.data.email,
                 firstName: response.data.data.first_name,
                 lastName: response.data.data.last_name,
-                role: response.data.data.role?.name || response.data.data.role
+                role: typeof response.data.data.role === "object" ? response.data.data.role?.name : response.data.data.role
               },
               permissions: {
                 campaignContent: hasAccessToContent,
@@ -159,7 +162,7 @@ export function registerTokenRoutes(app: Express) {
                 email: response.data.data.email,
                 firstName: response.data.data.first_name,
                 lastName: response.data.data.last_name,
-                role: response.data.data.role?.name || response.data.data.role
+                role: typeof response.data.data.role === "object" ? response.data.data.role?.name : response.data.data.role
               },
               permissions: {
                 campaignContent: false,

@@ -1439,7 +1439,7 @@ export async function handleGetAnalytics(request: AIAssistantRequest, parameters
       filter: { campaign_id: { _eq: request.campaignId } }
     });
 
-    const trends = await directusCrud.list('campaign_trends', {
+    const trends = await directusCrud.list('campaign_trend_topics', {
       authToken: request.authToken,
       filter: { campaign_id: { _eq: request.campaignId } }
     });
@@ -1637,7 +1637,7 @@ export async function handleAnalyzeTrends(request: AIAssistantRequest, parameter
       };
     }
 
-    const trends = await directusCrud.list('campaign_trends', {
+    const trends = await directusCrud.list('campaign_trend_topics', {
       authToken: request.authToken,
       filter: { campaign_id: { _eq: request.campaignId } },
       sort: ['-collected_at'],
@@ -1670,7 +1670,7 @@ ${sources.slice(0, 3).map((s: any) => `• ${s?.name || 'Без названия
 **Статистика:**
 🔹 Найдено трендов: ${trends.length}
 🔹 Активных источников: ${sources.length}
-🔹 Последний сбор: ${(trends[0] as any)?.date_created ? new Date((trends[0] as any).date_created).toLocaleString('ru-RU') : 'Не проводился'}
+🔹 Последний сбор: ${(trends[0] as any)?.created_at ? new Date((trends[0] as any).created_at).toLocaleString('ru-RU') : 'Не проводился'}
 
 **AI-анализ:**
 ${analysis}

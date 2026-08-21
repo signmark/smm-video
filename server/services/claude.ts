@@ -1,5 +1,25 @@
 import axios from 'axios';
 import * as logger from '../utils/logger';
+
+/**
+ * AI-65 срез C: локальный классификатор сбоев — дубль classifyExternalError
+ * из logger.ts. Не импортируем, чтобы не сломать тесты с частичным моком.
+ */
+function classifyClaudeError(err: any): 'auth' | 'rate_limited' | 'server_5xx' | 'timeout' | 'network' | 'error' {
+  if (!err) return 'error';
+  const code = String(err.code || '');
+  if (code === 'ECONNABORTED' || /timeout/i.test(String(err.message || ''))) return 'timeout';
+  if (code === 'ECONNRESET' || code === 'ENOTFOUND' || code === 'ECONNREFUSED' || code === 'EAI_AGAIN') return 'network';
+  const status = err.response?.status;
+  if (typeof status === 'number') {
+    if (status === 401 || status === 403) return 'auth';
+    if (status === 429) return 'rate_limited';
+    if (status >= 500 && status < 600) return 'server_5xx';
+  }
+  return 'error';
+}
+
+
 import { apiKeyService } from './api-keys';
 import { GlobalApiKeysService } from './global-api-keys';
 import { ApiServiceName } from './api-keys';
@@ -585,7 +605,9 @@ ${text}
   private async makeRequest(requestData: ClaudeRequest): Promise<ClaudeResponse> {
     const maxRetries = 3;
     const baseDelay = 1000; // 1 секунда
-    
+
+    // AI-65 срез C: единая обёртка для всех внешних вызовов claude
+    const startedAt = Date.now();
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         if (!this.apiKey) {
@@ -649,9 +671,12 @@ ${text}
           logger.log(`Claude API успешно ответил с попытки ${attempt}`, 'claude');
         }
         
+        try { logger.log.external({ system: 'claude', operation: 'messages', status: 'ok', durationMs: Date.now() - startedAt }); } catch { /* наблюдение не должно ронять вызов */ }
         return response.data;
         
       } catch (error) {
+        const reason = classifyClaudeError(error);
+        try { logger.log.external({ system: 'claude', operation: 'messages', status: reason === 'timeout' ? 'timeout' : 'error', durationMs: Date.now() - startedAt, reason }); } catch { /* наблюдение не должно ронять вызов */ }
         if (axios.isAxiosError(error) && error.response) {
           const status = error.response.status;
           logger.error(`Claude API error: ${status}`, 'claude');

@@ -2,6 +2,28 @@ import axios from 'axios';
 import { apiKeyService } from './api-keys';
 import { log } from '../utils/logger';
 
+/**
+ * AI-65 срез C: стабильная машинная причина сбоя внешнего вызова.
+ * Локальный дубликат classifyExternalError из utils/logger, чтобы не тянуть
+ * новый экспорт из logger (это сохраняет совместимость с тестами, мокающими
+ * logger). Возвращает один из фиксированных ключей.
+ */
+function classifyApifyError(err: any): 'auth' | 'rate_limited' | 'server_5xx' | 'timeout' | 'network' | 'error' {
+  if (!err) return 'error';
+  const code = String(err.code || '');
+  if (code === 'ECONNABORTED' || /timeout/i.test(String(err.message || ''))) return 'timeout';
+  if (code === 'ECONNRESET' || code === 'ENOTFOUND' || code === 'ECONNREFUSED' || code === 'EAI_AGAIN') return 'network';
+  const status = err.response?.status;
+  if (typeof status === 'number') {
+    if (status === 401 || status === 403) return 'auth';
+    if (status === 429) return 'rate_limited';
+    if (status >= 500 && status < 600) return 'server_5xx';
+  }
+  return 'error';
+}
+
+
+
 interface ApifyRunResponse {
   id: string;
   actId: string;
@@ -65,6 +87,7 @@ export class ApifyService {
       throw new Error('Apify API key not initialized');
     }
 
+    const startedAt = Date.now();
     try {
       log(`Starting Instagram scraper for username: ${username}`, 'apify');
 
@@ -79,16 +102,24 @@ export class ApifyService {
         data: requestData
       }), 'apify');
 
-      const response = await axios.post(
-        `${this.baseUrl}/acts/zuzka~instagram-post-scraper/runs`,
-        requestData,
-        {
-          headers: {
-            'Authorization': `Bearer ${this.apiKey}`,
-            'Content-Type': 'application/json'
+      let response;
+      try {
+        response = await axios.post(
+          `${this.baseUrl}/acts/zuzka~instagram-post-scraper/runs`,
+          requestData,
+          {
+            headers: {
+              'Authorization': `Bearer ${this.apiKey}`,
+              'Content-Type': 'application/json'
+            }
           }
-        }
-      );
+        );
+        try { log.external({ system: 'apify', operation: 'runActor', status: 'ok', durationMs: Date.now() - startedAt }); } catch { /* наблюдение не должно ронять вызов */ }
+      } catch (err) {
+        const reason = classifyApifyError(err);
+        try { log.external({ system: 'apify', operation: 'runActor', status: reason === 'timeout' ? 'timeout' : 'error', durationMs: Date.now() - startedAt, reason }); } catch { /* наблюдение не должно ронять вызов */ }
+        throw err;
+      }
 
       log('Apify API Response status: ' + response.status, 'apify');
 
@@ -109,17 +140,26 @@ export class ApifyService {
       throw new Error('Apify API key not initialized');
     }
 
+    const startedAt = Date.now();
     try {
       log(`Checking status for run ${runId}`, 'apify');
-      const response = await axios.get(
-        `${this.baseUrl}/actor-runs/${runId}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${this.apiKey}`,
-            'Content-Type': 'application/json'
+      let response;
+      try {
+        response = await axios.get(
+          `${this.baseUrl}/actor-runs/${runId}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${this.apiKey}`,
+              'Content-Type': 'application/json'
+            }
           }
-        }
-      );
+        );
+        try { log.external({ system: 'apify', operation: 'getRunStatus', status: 'ok', durationMs: Date.now() - startedAt }); } catch { /* наблюдение не должно ронять вызов */ }
+      } catch (err) {
+        const reason = classifyApifyError(err);
+        try { log.external({ system: 'apify', operation: 'getRunStatus', status: reason === 'timeout' ? 'timeout' : 'error', durationMs: Date.now() - startedAt, reason }); } catch { /* наблюдение не должно ронять вызов */ }
+        throw err;
+      }
 
       log(`Run ${runId} status: ${response.data.status}`, 'apify');
       return response.data.status;
@@ -137,17 +177,26 @@ export class ApifyService {
       throw new Error('Apify API key not initialized');
     }
 
+    const startedAt = Date.now();
     try {
       log(`Fetching results for run ${runId}`, 'apify');
-      const response = await axios.get(
-        `${this.baseUrl}/actor-runs/${runId}/dataset/items`,
-        {
-          headers: {
-            'Authorization': `Bearer ${this.apiKey}`,
-            'Content-Type': 'application/json'
+      let response;
+      try {
+        response = await axios.get(
+          `${this.baseUrl}/actor-runs/${runId}/dataset/items`,
+          {
+            headers: {
+              'Authorization': `Bearer ${this.apiKey}`,
+              'Content-Type': 'application/json'
+            }
           }
-        }
-      );
+        );
+        try { log.external({ system: 'apify', operation: 'getRunResults', status: 'ok', durationMs: Date.now() - startedAt }); } catch { /* наблюдение не должно ронять вызов */ }
+      } catch (err) {
+        const reason = classifyApifyError(err);
+        try { log.external({ system: 'apify', operation: 'getRunResults', status: reason === 'timeout' ? 'timeout' : 'error', durationMs: Date.now() - startedAt, reason }); } catch { /* наблюдение не должно ронять вызов */ }
+        throw err;
+      }
 
       const results = response.data as ApifyRunResult;
       log(`Retrieved ${results.items.length} items from run ${runId}`, 'apify');

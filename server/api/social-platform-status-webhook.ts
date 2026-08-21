@@ -7,7 +7,7 @@
 import { Router, Request, Response } from 'express';
 import axios from 'axios';
 import log from '../utils/logger';
-import { DirectusAuthManager } from '../services/directus-auth-manager';
+import { directusAuthManager } from '../services/directus-auth-manager';
 import { requireWebhookSecret } from '../middleware/webhook-auth';
 
 const router = Router();
@@ -189,7 +189,7 @@ router.post('/update-status/:platform', requireWebhookSecret('status-webhook'), 
   try {
     // Токен строго свой, серверный. Фолбэк на `req.body.token` убран: он позволял
     // вызывающему подсунуть собственный токен Directus и работать им.
-    const token = DirectusAuthManager.getAdminToken();
+    const token = await directusAuthManager.getAdminAuthToken();
 
     if (!token) {
       log.error(`[${requestId}] Нет токена администратора Directus — обновление статуса невозможно`);

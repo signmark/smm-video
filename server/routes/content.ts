@@ -22,7 +22,7 @@ export { invalidateContentCache };
 const IMMUTABLE_CONTENT_FIELDS = new Set([
   'createdAt',
   'created_at',
-  'date_created',
+  'created_at',
 ]);
 
 /**
@@ -698,7 +698,7 @@ export function registerContentRoutes(app: Express) {
       const deletedIds = [];
       
       for (const group of duplicateGroups) {
-        group.sort((a, b) => new Date(a.date_created || 0).getTime() - new Date(b.date_created || 0).getTime());
+        group.sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
         const [keep, ...toDelete] = group;
         for (const post of toDelete) {
           await directusApi.delete(`/items/campaign_content/${post.id}`, {

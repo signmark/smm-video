@@ -2228,8 +2228,7 @@ export const TOOL_IMPLEMENTATIONS = {
         website_url: params.websiteUrl || null,
         industry: params.industry || null,
         status: 'active',
-        date_created: new Date().toISOString(),
-        date_updated: new Date().toISOString()
+
       };
       
       const campaign = await directusCrud.create('user_campaigns', campaignData, directusAuth(request.authToken));
@@ -2701,8 +2700,6 @@ ${titleInstruction}`;
             content: generatedContent,
             content_type: 'text',
             status: 'draft',
-            source: 'ai_generated',
-            date_created: new Date().toISOString()
           }, { useAdminToken: true });
         } catch (err: any) {
           // Узко: RECORD_NOT_UNIQUE на preallocated id = контент уже материализован
@@ -2783,7 +2780,7 @@ ${titleInstruction}`;
       return {
         contentCount: content?.length || 0,
         trendsCount: trends?.length || 0,
-        lastActivity: (content?.[0] as any)?.date_created || null
+        lastActivity: (content?.[0] as any)?.created_at || null
       };
     } catch (error) {
       return { error: `Ошибка получения аналитики: ${error}` };

@@ -183,7 +183,7 @@ lastTelegramRouter.get('/last-telegram-publication', async (req: Request, res: R
       const response = await axios.get(`${DIRECTUS_URL}/items/campaign_content`, {
         params: {
           limit: 50,
-          sort: '-date_created'
+          sort: '-created_at'
         },
         headers: {
           'Authorization': `Bearer ${adminToken}`
@@ -396,7 +396,7 @@ lastTelegramRouter.post('/fix-all-telegram-urls', async (req: Request, res: Resp
       const response = await axios.get(`${DIRECTUS_URL}/items/campaign_content`, {
         params: {
           limit: 100,
-          sort: '-date_created'
+          sort: '-created_at'
         },
         headers: {
           'Authorization': `Bearer ${adminToken}`

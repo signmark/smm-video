@@ -11,6 +11,7 @@ import { invalidateContentCache } from '../utils/content-cache';
 import {
   resolveStuckContent,
   isPermanentPublishError,
+  isPlatformTerminal,
   getStaleDays,
 } from './publication-terminal-state';
 import { notifyPublished } from './notification-bus';
@@ -182,14 +183,28 @@ export function classifyPublishFailure(error: unknown): string {
       text.includes('authexpired') || text.includes('срок действия')) return 'token_expired';
   if (text.includes('does not have permission') || text.includes('forbidden') ||
       text.includes('нет прав')) return 'forbidden';
-  if (text.includes('not found') || text.includes('chat not found') ||
-      text.includes('не найден')) return 'not_found';
+  // task #49: точная форма «chat not found», а не голое «not found» — у TikTok
+  // «token is invalid or not found in the request» иначе ложно попадает сюда.
+  if (text.includes('chat not found') || text.includes('не найден')) return 'not_found';
   if (text.includes('quota') || text.includes('rate limit') ||
       text.includes('too many requests') || text.includes('лимит')) return 'rate_limit';
   if (text.includes('временно отключ') || text.includes('не поддерживает')) return 'platform_disabled';
   if (text.includes('timeout') || text.includes('etimedout') ||
       text.includes('econnaborted')) return 'timeout';
   return 'platform_error';
+}
+
+/**
+ * task #49 (v3): битая/отсутствующая форма записи площадки.
+ *
+ * В предикате eligible-отбора запись площадки, которая не объект (или отсутствует),
+ * считается terminal — намеренно fail-close: неизвестная форма не должна привести
+ * к outbound. В отличие от легитимных terminal-статусов (`failed`/`published`/…),
+ * битая форма — это аномалия данных, и её надо не молча глотать, а один раз
+ * подсветить warn'ом.
+ */
+export function isMalformedPlatformEntry(entry: unknown): boolean {
+  return entry == null || typeof entry !== 'object' || Array.isArray(entry);
 }
 
 /**
@@ -519,6 +534,37 @@ export class PublishScheduler {
             }
             continue;
           }
+
+          // task #49 (v4): подсветим битую форму площадки ОГРАНИЧЕННЫМ warn'ом
+          // через переиспользованный bounded cooldown shouldLogTerminalError
+          // (ключ — стабильная строка 'malformed_platform_entry', не сам entry).
+          for (const [platformName, platformData] of Object.entries(platforms)) {
+            if (isMalformedPlatformEntry(platformData)) {
+              if (this.shouldLogTerminalError(content.id, platformName, 'malformed_platform_entry')) {
+                log.warn(`[SCHEDULER] ${content.id}:${platformName} — неверная форма записи площадки (публикация для неё пропущена)`, 'scheduler');
+              }
+            }
+          }
+
+          // task #49: если НИ ОДНА площадка не ждёт продолжения (все terminal:
+          // published/failed/cancelled/postUrl) — пересматривать и логировать
+          // нечего. Битый/отсутствующий entry тоже terminal (fail-close: неизвестная
+          // форма не должна вызвать outbound). Ретриабельные/unattempted площадки
+          // (pending/scheduled/publishing/quota_exceeded/неизвестный статус)
+          // остаются eligible — запись не пропускаем.
+          // task #49 (v3): площадка ждёт продолжения, только если она И не
+          // terminal, И не битая. isPlatformTerminal пропускает массивы
+          // (typeof [] === 'object'), поэтому битую форму ловим вторым условием —
+          // иначе запись с площадкой-массивом дойдёт до цикла и адаптера.
+          // Пустой объект {} — не битый и не terminal: статус неизвестен = ещё
+          // не пробовали, запись остаётся eligible (явная граница форм).
+          const hasRetryablePlatform = platformNames.some((name) =>
+            !isPlatformTerminal(platforms[name]) && !isMalformedPlatformEntry(platforms[name])
+          );
+          if (!hasRetryablePlatform) {
+            log(`⏭️ Skipping ${content.id}: no retryable platforms (all terminal)`, 'scheduler', 'debug');
+            continue;
+          }
           
           log(`🔎 Processing ${content.id}: platforms=${platformNames.join(', ')}`, 'scheduler', 'debug');
           
@@ -529,6 +575,14 @@ export class PublishScheduler {
           const contentTypeForFilter = content.content_type as string | undefined;
 
           for (const [platformName, platformData] of Object.entries(platforms)) {
+            // task #49 (v5): битая форма площадки (non-object/array) никогда не
+            // получает lock и не попадает в adapter list — даже при mixed записи,
+            // где соседняя pending-площадка сделала запись eligible на record-level.
+            if (isMalformedPlatformEntry(platformData)) {
+              log(`  ⏭️ ${content.id}:${platformName} SKIP - malformed platform entry`, 'scheduler', 'debug');
+              continue;
+            }
+
             // Молча пропускаем несовместимые платформы (например, YouTube для text-image)
             if (!isPlatformCompatible(platformName, contentTypeForFilter)) continue;
 
@@ -584,16 +638,12 @@ export class PublishScheduler {
               }
             }
             
-            // Пропускаем платформы с failed статусом (логируем только критические)
+            // Пропускаем платформы с failed статусом. Причина отказа уже
+            // зафиксирована в errorCode и была залогирована в момент перехода в
+            // failed — повторная печать (в т.ч. по подстроке «not found», куда
+            // ложно попадал TikTok) лишь шумит месяцами (task #49).
             if (data.status === 'failed') {
               log(`  ⏭️ ${content.id}:${platformName} SKIP - status=failed`, 'scheduler', 'debug');
-              // Логируем только критические ошибки конфигурации и не чаще
-              // раза в час на одну и ту же запись (AI-102).
-              if (data.error && (data.error.includes('CRITICAL') || data.error.includes('not found'))) {
-                if (this.shouldLogTerminalError(content.id, platformName, data.error)) {
-                  log(`❌ ${platformName} ${content.id}: ${data.error}`, 'scheduler');
-                }
-              }
               continue;
             }
 

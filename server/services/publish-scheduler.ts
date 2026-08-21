@@ -397,7 +397,7 @@ export class PublishScheduler {
       const cycleStartedAt = Date.now();
 
       // AI-65 срез B2: стабильное машинное событие ОДНОГО запуска периода через единый emitCronStarted.
-      emitCronStarted(this.tickCount);
+      try { emitCronStarted(this.tickCount); } catch { /* наблюдение не роняет проход */ }
       
       // Heartbeat каждые ~10 минут — видно в production-логах
       if (this.tickCount % this.heartbeatEveryNTicks === 1) {
@@ -1060,7 +1060,7 @@ export class PublishScheduler {
       // AI-65 срез B2: контент остался в расписании после попытки (перенос на следующую
       // попытку) — единая точка с явным kind, чтобы не смешать с первоначальной постановкой.
       if (finalContentStatus === 'scheduled') {
-        emitPublishScheduled(String(content.id), { campaignId: content.campaign_id, kind: 'rescheduled_after_failure' });
+        try { emitPublishScheduled(String(content.id), { campaignId: content.campaign_id, kind: 'rescheduled_after_failure' }); } catch { /* наблюдение не роняет проход */ }
       }
       // Сбрасываем кеш — статус контента изменился
       if (content.user_id) invalidateContentCache(content.user_id, content.campaign_id);

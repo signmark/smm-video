@@ -557,12 +557,88 @@ export const log: {
   error: typeof error;
   warn: typeof warn;
   debug: typeof debug;
+  external: (args: {
+    system: string;
+    operation: string;
+    status: 'ok' | 'error' | 'timeout' | string;
+    durationMs: number;
+    reason?: string;
+  }) => void;
 } = logMessage as any;
 
 log.info = info;
 log.error = error;
 log.warn = warn;
 log.debug = debug;
+
+/**
+ * AI-65 срез C: единая точка эмиссии external.response/external.timeout.
+ *
+ * Использовать: в обёртке try/catch вокруг вызова:
+ *   const startedAt = Date.now();
+ *   try {
+ *     const result = await axios.post(...);
+ *     try { log.external({ system, operation, status: "ok", durationMs: Date.now() - startedAt }); } catch {}
+ *     return result;
+ *   } catch (err) {
+ *     const reason = classifyExternalError(err);
+ *     try { log.external({ system, operation, status: reason === "timeout" ? "timeout" : "error", durationMs: Date.now() - startedAt, reason }); } catch {}
+ *     throw err;
+ *   }
+ *
+ * ЗАЧЕМ:
+ *   Стабильная машинная причина сбоя внешнего HTTP в журнале, не зависящая
+ *   от текста ошибки (который у разных провайдеров разный).
+ *
+ * ОГРАНИЧЕНИЯ:
+ *   — внутренние ошибки не должны ронять поток: внутренний try/catch.
+ *   — reason приходит из classifyExternalError — фиксированный набор.
+ */
+log.external = (args: {
+  system: string;
+  operation: string;
+  status: 'ok' | 'error' | 'timeout' | string;
+  durationMs: number;
+  reason?: string;
+}): void => {
+  try {
+    const isTimeout = args.status === "timeout";
+    const event = isTimeout ? "external.timeout" : "external.response";
+    const level: LogLevel = args.status === "ok" ? "info" : "warn";
+    logEvent(
+      event,
+      {
+        system: args.system,
+        operation: args.operation,
+        status: args.status,
+        durationMs: args.durationMs,
+        ...(args.reason ? { reason: args.reason } : {}),
+      },
+      level,
+      args.system,
+    );
+  } catch {
+    /* наблюдение не должно ронять поток */
+  }
+};
+
+/**
+ * AI-65 срез C: стабильная машинная причина сбоя внешнего вызова.
+ * Возвращает короткий ключ из фиксированного набора — не сырой текст.
+ */
+export function classifyExternalError(err: any): 'auth' | 'rate_limited' | 'server_5xx' | 'timeout' | 'network' | 'error' {
+  if (!err) return 'error';
+  const code = String(err.code || '');
+  if (code === 'ECONNABORTED' || /timeout/i.test(String(err.message || ''))) return 'timeout';
+  if (code === 'ECONNRESET' || code === 'ENOTFOUND' || code === 'ECONNREFUSED' || code === 'EAI_AGAIN') return 'network';
+  const status = err.response?.status;
+  if (typeof status === 'number') {
+    if (status === 401 || status === 403) return 'auth';
+    if (status === 429) return 'rate_limited';
+    if (status >= 500 && status < 600) return 'server_5xx';
+  }
+  return 'error';
+}
 
 // Экспортируем все функции как единый объект для удобства использования
 export default {

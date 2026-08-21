@@ -2,6 +2,27 @@ import axios from 'axios';
 import { apiKeyService } from './api-keys';
 import { log } from '../utils/logger';
 
+/**
+ * AI-65 срез C: локальный классификатор сбоев — дубль classifyExternalError
+ * из logger.ts. Не импортируем из logger, чтобы не сломать тесты, мокающие
+ * только функцию `log`.
+ */
+function classifyDeepseekError(err: any): 'auth' | 'rate_limited' | 'server_5xx' | 'timeout' | 'network' | 'error' {
+  if (!err) return 'error';
+  const code = String(err.code || '');
+  if (code === 'ECONNABORTED' || /timeout/i.test(String(err.message || ''))) return 'timeout';
+  if (code === 'ECONNRESET' || code === 'ENOTFOUND' || code === 'ECONNREFUSED' || code === 'EAI_AGAIN') return 'network';
+  const status = err.response?.status;
+  if (typeof status === 'number') {
+    if (status === 401 || status === 403) return 'auth';
+    if (status === 429) return 'rate_limited';
+    if (status >= 500 && status < 600) return 'server_5xx';
+  }
+  return 'error';
+}
+
+
+
 export interface DeepSeekConfig {
   apiKey: string;
   model?: string;
@@ -80,6 +101,8 @@ export class DeepSeekService {
     top_p?: number;
     stop?: string[];
   } = {}): Promise<string> {
+    // AI-65 срез C: единая обёртка для всех внешних вызовов deepseek
+    const startedAt = Date.now();
     try {
       // Используем DeepSeek Chat - самую современную модель по умолчанию
       const model = options.model || 'deepseek-chat';
@@ -126,8 +149,10 @@ export class DeepSeekService {
       content = content.replace(/\n?\s*---+\s*$/g, ''); // --- в конце
       content = content.trim(); // Убираем лишние пробелы
       
+      try { log.external({ system: 'deepseek', operation: 'chat', status: 'ok', durationMs: Date.now() - startedAt }); } catch { /* наблюдение не должно ронять вызов */ }
       return content;
     } catch (error: any) {
+      try { log.external({ system: 'deepseek', operation: 'chat', status: classifyDeepseekError(error) === 'timeout' ? 'timeout' : 'error', durationMs: Date.now() - startedAt, reason: classifyDeepseekError(error) }); } catch { /* наблюдение не должно ронять вызов */ }
       console.error('Error calling DeepSeek API:', error);
       
       // Проверяем, содержит ли сообщение об ошибке "Invalid API key"

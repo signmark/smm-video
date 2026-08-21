@@ -1,9 +1,13 @@
+// AI-65 срез C: прямых HTTP-вызовов нет; все внешние обращения идут через
+// `apifyService` (Instagram scraper) и `directusApi` (наша БД, не внешняя).
+// Журналирование external.response/external.timeout обеспечено обёрткой
+// в services/apify.ts — добавлять ничего не нужно.
+
 import { storage } from '../storage';
 import type { ContentSource, InsertTrendTopic, InsertCampaignTrendTopic } from '@shared/schema';
 import { directusApi } from '../lib/directus';
 import crypto from 'crypto';
 import { apifyService } from './apify';
-import axios from 'axios';
 
 export class ContentCrawler {
   async crawlInstagram(source: ContentSource, campaignId: number, userId: string): Promise<InsertTrendTopic[]> {

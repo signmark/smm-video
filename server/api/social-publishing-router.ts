@@ -177,14 +177,14 @@ router.post('/stories/publish', authMiddleware, async (req, res) => {
     const { contentId, platforms, generatedImageUrl, generatedVideoUrl, useGeneratedImage, useGeneratedVideo, scheduledAt } = req.body;
 
     log('[PUBLISH] === НАЧАЛО ПУБЛИКАЦИИ STORIES ===');
-    log('[PUBLISH] Запрос на публикацию:', {
+    log('[PUBLISH] Запрос на публикацию: ' + JSON.stringify({
       contentId,
       platforms,
       generatedImageUrl: generatedImageUrl ? 'есть' : 'нет',
       generatedVideoUrl: generatedVideoUrl ? 'есть' : 'нет',
       useGeneratedImage,
       useGeneratedVideo
-    });
+    }));
     log('[PUBLISH] Полный body запроса:', JSON.stringify(req.body, null, 2));
     log('[PUBLISH] Полный body запроса:', JSON.stringify(req.body, null, 2));
 
@@ -1409,7 +1409,7 @@ router.post('/publish/auto-update-status', authMiddleware, async (req, res) => {
     })}`);
 
     // Проверяем, действительно ли все выбранные платформы опубликованы
-    const socialPlatforms = content.socialPlatforms || {};
+    const socialPlatforms: Record<string, { selected?: boolean; status?: string; error?: string }> = content.socialPlatforms || {};
 
     // Получаем список выбранных платформ
     const selectedPlatforms = Object.entries(socialPlatforms)

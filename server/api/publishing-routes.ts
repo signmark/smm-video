@@ -480,6 +480,9 @@ export function registerPublishingRoutes(app: Express): void {
       }
       
       // Получаем настройки кампании
+      if (!content.campaignId) {
+        return res.status(400).json({ success: false, error: 'Missing campaignId' });
+      }
       const campaign = await storage.getCampaignById(content.campaignId, req.user?.token);
       if (!campaign) {
         log(`Кампания ${content.campaignId} не найдена при попытке публикации контента`, 'api');
@@ -595,10 +598,14 @@ export function registerPublishingRoutes(app: Express): void {
                 throw new Error('YouTube настройки не найдены в кампании');
               }
               
+              const publishUserId = userId || content.user_id;
+              if (!publishUserId) {
+                throw new Error('Cannot determine user ID for YouTube publication');
+              }
               result = await youtubeService.publishContent(
                 content,
                 { youtube: youtubeSettings },
-                userId || content.user_id
+                publishUserId
               );
               
               log(`YouTube: Результат публикации - ${JSON.stringify(result)}`, 'api');
@@ -835,6 +842,9 @@ export function registerPublishingRoutes(app: Express): void {
       }
 
       // Получаем кампанию
+      if (!content.campaignId) {
+        return res.status(400).json({ success: false, error: 'Missing campaignId' });
+      }
       const campaign = await storage.getCampaignById(content.campaignId, req.user?.token);
       if (!campaign) {
         log(`Кампания ${content.campaignId} не найдена при попытке публикации контента ${contentId}`, 'api');

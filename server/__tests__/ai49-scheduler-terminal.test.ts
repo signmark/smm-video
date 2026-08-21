@@ -47,6 +47,20 @@ describe('AI-49: terminal-площадка не пересматривается
     expect(isPlatformTerminal({ status: 'quota_exceeded' })).toBe(false);
     expect(isPlatformTerminal({ status: 'совсем-новый-статус' })).toBe(false);
   });
+
+  // AI-49 / замечание @Clause_Dev_Hermi: в НОВОМ назначении (предикат
+  // eligible-отбора) «битая/неожиданная форма площадки → terminal» означает,
+  // что вся публикация молча перестаёт быть eligible. По проду таких записей
+  // сегодня ноль (штатный путь пишет объект со статусом pending/scheduled),
+  // но решение стоит закрепить явно: если кто-то ослабит isPlatformTerminal
+  // под разбор зависших — этот тест вернёт дефект отбора, а не промолчит.
+  it('битая/неожиданная форма площадки считается terminal — запись не eligible', () => {
+    expect(isPlatformTerminal(null)).toBe(true);
+    expect(isPlatformTerminal(undefined)).toBe(true);
+    expect(isPlatformTerminal('telegram')).toBe(true); // строка вместо объекта
+    expect(isPlatformTerminal(42)).toBe(true);
+    expect(isPlatformTerminal(true)).toBe(true);
+  });
 });
 
 describe('AI-49: production-сторож — мутация «вернуть подстроку/рецидив» красит', () => {

@@ -382,7 +382,7 @@ async function generateAIAlternativeQueries(originalKeywords: string[], platform
         // Если JSON обрезан — пробуем извлечь строки вручную
         const stringMatches = jsonMatch[0].match(/"([^"]+)"/g);
         if (stringMatches && stringMatches.length > 0) {
-          const queries = stringMatches.map(s => s.replace(/"/g, ''));
+          const queries = stringMatches.map((s: string) => s.replace(/"/g, ''));
           console.log(`[AI Fallback] Извлечено ${queries.length} запросов из обрезанного JSON: ${queries.join(', ')}`);
           return queries.slice(0, 13);
         }
@@ -996,7 +996,7 @@ export function registerTrendsRoutes(app: Express) {
       }
 
       // Если каналов 0 — генерируем альтернативные запросы через ИИ и повторяем поиск (только для НЕ retry задач)
-      if (channels.length === 0 && task?.keywords?.length > 0 && campaignId && !task?.isAiRetry) {
+      if (channels.length === 0 && (task?.keywords?.length ?? 0) > 0 && campaignId && !task?.isAiRetry) {
         console.log(`[TG FindGroups Webhook] 🔄 0 каналов — генерирую альтернативные запросы через ИИ`);
         try {
           const altQueries = await generateAIAlternativeQueries(task.keywords, 'telegram');
@@ -1024,7 +1024,7 @@ export function registerTrendsRoutes(app: Express) {
       }
 
       // AI-фильтрация релевантности перед сохранением
-      if (channels.length > 0 && task?.keywords?.length > 0) {
+      if (channels.length > 0 && task && (task.keywords?.length ?? 0) > 0) {
         try {
           const { filterByRelevance } = await import('../services/ai-relevance-filter');
           const filterResult = await filterByRelevance(channels, task.keywords, 'telegram');
@@ -1096,7 +1096,7 @@ export function registerTrendsRoutes(app: Express) {
       }
 
       // Если групп 0 — генерируем альтернативные запросы через ИИ и повторяем поиск (только для НЕ retry задач)
-      if (groups.length === 0 && task?.keywords?.length > 0 && campaignId && !task?.isAiRetry) {
+      if (groups.length === 0 && (task?.keywords?.length ?? 0) > 0 && campaignId && !task?.isAiRetry) {
         console.log(`[VK FindGroups Webhook] 🔄 0 групп — генерирую альтернативные запросы через ИИ`);
         try {
           const altQueries = await generateAIAlternativeQueries(task.keywords, 'vk');
@@ -1142,7 +1142,7 @@ export function registerTrendsRoutes(app: Express) {
       }
 
       // AI-фильтрация релевантности перед сохранением
-      if (groups.length > 0 && task?.keywords?.length > 0) {
+      if (groups.length > 0 && task && (task.keywords?.length ?? 0) > 0) {
         try {
           const { filterByRelevance } = await import('../services/ai-relevance-filter');
           const filterResult = await filterByRelevance(groups, task.keywords, 'vk');
@@ -1242,7 +1242,7 @@ export function registerTrendsRoutes(app: Express) {
       const p = pendingCommentUrls.get(v.toLowerCase());
       if (p) { pendingCommentUrls.delete(v.toLowerCase()); return p.trendId; }
     }
-    const found = await directusCrud.list('campaign_trend_topics', {
+    const found = await directusCrud.list<{ id?: string }>('campaign_trend_topics', {
       filter: { urlPost: { _in: urlVariants(postUrl) } },
       limit: 1,
       useAdminToken: true

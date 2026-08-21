@@ -36,7 +36,8 @@ async function getContentData(contentId: string, token: string): Promise<any> {
     );
     return response.data.data;
   } catch (error) {
-    log.error(`Ошибка при получении данных контента ${contentId}: ${error.message}`);
+    const errMsg = error instanceof Error ? error.message : String(error);
+    log.error(`Ошибка при получении данных контента ${contentId}: ${errMsg}`);
     return null;
   }
 }
@@ -89,7 +90,8 @@ async function updateContentStatus(contentId: string, updates: any, token: strin
       const failedPlatforms = [];
       
       // Проходим по всем платформам из JSON
-      for (const [platform, data] of Object.entries(updatedPlatforms)) {
+      for (const [platform, raw] of Object.entries(updatedPlatforms)) {
+        const data = raw as { status?: string; published_at?: string };
         if (data.status === 'published') {
           publishedPlatforms.push(platform);
         } else if (data.status === 'pending' || data.status === 'scheduled') {
@@ -130,7 +132,8 @@ async function updateContentStatus(contentId: string, updates: any, token: strin
           );
           log.info(`Статус контента ${contentId} успешно обновлен на 'published'`);
         } catch (updateError) {
-          log.error(`Ошибка при обновлении общего статуса контента ${contentId}: ${updateError.message}`);
+          const errMsg = updateError instanceof Error ? updateError.message : String(updateError);
+          log.error(`Ошибка при обновлении общего статуса контента ${contentId}: ${errMsg}`);
         }
       } else if (allSelectedPublished && hasErrors && !hasPending) {
         // Если все выбранные платформы обработаны, но есть ошибки - статус остается как есть
@@ -145,7 +148,8 @@ async function updateContentStatus(contentId: string, updates: any, token: strin
     
     return true;
   } catch (error) {
-    log.error(`Ошибка при обновлении статуса контента ${contentId}: ${error.message}`);
+    const errMsg = error instanceof Error ? error.message : String(error);
+    log.error(`Ошибка при обновлении статуса контента ${contentId}: ${errMsg}`);
     return false;
   }
 }
@@ -238,7 +242,7 @@ router.post('/update-status/:platform', requireWebhookSecret('status-webhook'), 
     }
 
     // 5. Подготавливаем данные для обновления
-    const updates = {
+    const updates: Record<string, unknown> = {
       social_platforms: updatedSocialPlatforms
     };
     
@@ -257,7 +261,8 @@ router.post('/update-status/:platform', requireWebhookSecret('status-webhook'), 
     // Все платформы, указанные в JSON - значит их надо обрабатывать
     
     // Проходим по всем платформам и собираем статистику
-    for (const [platform, data] of Object.entries(updatedSocialPlatforms)) {
+    for (const [platform, raw] of Object.entries(updatedSocialPlatforms)) {
+      const data = raw as { status?: string; postUrl?: string; [k: string]: unknown };
       // Все платформы заносим в общий список
       platformsArray.push(platform);
       
@@ -371,11 +376,13 @@ router.post('/update-status/:platform', requireWebhookSecret('status-webhook'), 
       allPlatformsPreserved
     });
   } catch (error) {
-    log.error(`[${requestId}] Критическая ошибка при обновлении статуса: ${error.message}`);
-    log.error(error.stack);
+    const errMsg = error instanceof Error ? error.message : String(error);
+    const errStack = error instanceof Error ? error.stack : undefined;
+    log.error(`[${requestId}] Критическая ошибка при обновлении статуса: ${errMsg}`);
+    if (errStack) log.error(errStack);
     
     return res.status(500).json({
-      error: `Ошибка при обновлении статуса: ${error.message}`,
+      error: `Ошибка при обновлении статуса: ${errMsg}`,
       success: false
     });
   }

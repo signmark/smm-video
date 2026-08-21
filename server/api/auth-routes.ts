@@ -275,7 +275,8 @@ export function registerAuthRoutes(app: Express): void {
           refreshToken = loginResponse.data?.data?.refresh_token || null;
           log(`Auto-login after registration successful for: ${email}`, 'auth');
         } catch (loginErr) {
-          log.warn(`Auto-login after registration failed (non-critical): ${loginErr?.message || loginErr}`, 'auth');
+          const loginErrMsg = loginErr instanceof Error ? loginErr.message : String(loginErr);
+          log.warn(`Auto-login after registration failed (non-critical): ${loginErrMsg}`, 'auth');
         }
 
         return res.status(201).json({
@@ -475,6 +476,9 @@ export function registerAuthRoutes(app: Express): void {
       }
       if (result.status === 'unavailable') {
         return res.status(503).json({ code: 'AUTH_VALIDATION_UNAVAILABLE', error: 'Authentication service is unavailable' });
+      }
+      if (result.status !== 'success') {
+        return res.status(500).json({ code: 'AUTH_REFRESH_UNKNOWN', error: 'Unexpected refresh result' });
       }
 
       directusAuthManager.upsertSession({

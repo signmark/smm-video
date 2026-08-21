@@ -41,9 +41,10 @@ export const register = (app: express.Express) => {
         content = contentResponse.data.data;
         log(`Контент получен: ${JSON.stringify(content.title || 'Без заголовка')}`);
       } catch (error) {
-        log(`Ошибка при получении контента: ${error.message}`);
-        if (error.response) {
-          log(`Детали ошибки: ${JSON.stringify(error.response.data)}`);
+        const err = error as { message?: string; response?: { data?: unknown } };
+        log(`Ошибка при получении контента: ${err.message ?? String(error)}`);
+        if (err.response) {
+          log(`Детали ошибки: ${JSON.stringify(err.response.data)}`);
         }
         return res.status(500).json({ 
           success: false, 
@@ -137,9 +138,10 @@ export const register = (app: express.Express) => {
             log(`Ошибка: Ответ без ID контейнера`);
           }
         } catch (error) {
-          log(`Ошибка при создании контейнера: ${error.message}`);
-          if (error.response) {
-            log(`Детали ошибки: ${JSON.stringify(error.response.data)}`);
+          const err = error as { message?: string; response?: { data?: unknown } };
+          log(`Ошибка при создании контейнера: ${err.message ?? String(error)}`);
+          if (err.response) {
+            log(`Детали ошибки: ${JSON.stringify(err.response.data)}`);
           }
         }
         
@@ -186,13 +188,14 @@ export const register = (app: express.Express) => {
           });
         }
       } catch (error) {
-        log(`Ошибка при создании контейнера карусели: ${error.message}`);
-        if (error.response) {
-          log(`Детали ошибки: ${JSON.stringify(error.response.data)}`);
+        const err = error as { message?: string; response?: { data?: unknown } };
+        log(`Ошибка при создании контейнера карусели: ${err.message ?? String(error)}`);
+        if (err.response) {
+          log(`Детали ошибки: ${JSON.stringify(err.response.data)}`);
         }
         return res.status(500).json({ 
           success: false, 
-          error: `Ошибка при создании контейнера карусели: ${error.message}` 
+          error: `Ошибка при создании контейнера карусели: ${err.message ?? String(error)}` 
         });
       }
       
@@ -242,7 +245,8 @@ export const register = (app: express.Express) => {
               });
             }
           } catch (error) {
-            log(`Ошибка при получении ссылки: ${error.message}`);
+            const err = error as { message?: string };
+            log(`Ошибка при получении ссылки: ${err.message ?? String(error)}`);
             
             return res.status(200).json({
               success: true,
@@ -258,21 +262,23 @@ export const register = (app: express.Express) => {
           });
         }
       } catch (error) {
-        log(`Ошибка при публикации карусели: ${error.message}`);
-        if (error.response) {
-          log(`Детали ошибки: ${JSON.stringify(error.response.data)}`);
+        const err = error as { message?: string; response?: { data?: unknown } };
+        log(`Ошибка при публикации карусели: ${err.message ?? String(error)}`);
+        if (err.response) {
+          log(`Детали ошибки: ${JSON.stringify(err.response.data)}`);
         }
         return res.status(500).json({ 
           success: false, 
-          error: `Ошибка при публикации карусели: ${error.message}` 
+          error: `Ошибка при публикации карусели: ${err.message ?? String(error)}` 
         });
       }
       
     } catch (e) {
-      log(`Общая ошибка в Instagram Carousel API: ${e.message}`);
+      const err = e as { message?: string };
+      log(`Общая ошибка в Instagram Carousel API: ${err.message ?? String(e)}`);
       return res.status(500).json({ 
         success: false, 
-        error: `Внутренняя ошибка сервера: ${e.message}` 
+        error: `Внутренняя ошибка сервера: ${err.message ?? String(e)}` 
       });
     }
   });

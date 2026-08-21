@@ -21,20 +21,44 @@
  */
 import { describe, expect, it } from 'vitest';
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
- * Замерено ЭТИМ ЖЕ тестом, а не грепом. Планка опущена 468 -> 447: убраны все 21 ошибка
- * TS2304 «Cannot find name» — это были не придирки типов, а живые ReferenceError.
+ * Читаем планку из файла, а не из хардкода. Формат файла:
+ *   config=tsconfig.server-full.json
+ *   count=276
  *
- * Разница принципиальная и уже стоила нам неверной планки в соседнем храповике:
- * `grep -c` считает СТРОКИ с совпадением, а ошибка tsc занимает несколько строк
- * (сообщение переносится). Планка, снятая грепом, оказалась бы завышенной, и
- * храповик молча пропускал бы регрессии.
+ * Тот же файл читает `scripts/tsc-ratchet.sh`, так что тест и гейт используют
+ * одно и то же число. Менять планку — один коммит в одном месте.
  */
-const BASELINE = 276; // AI-38 срезы 2a и 2b: типизация тестов и server/api, -112 ошибок
-
 const ROOT = join(__dirname, '..', '..');
+const BASELINE_FILE = join(ROOT, 'scripts', 'tsc-ratchet.baseline');
+const TSCONFIG = 'tsconfig.server-full.json';
+
+function readBaseline(): number {
+  const raw = readFileSync(BASELINE_FILE, 'utf-8');
+  let config = '';
+  let count = '';
+  for (const line of raw.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const eq = trimmed.indexOf('=');
+    if (eq < 1) throw new Error(`Испорченная планка ${BASELINE_FILE}: строка без '=': ${trimmed}`);
+    const key = trimmed.slice(0, eq);
+    const value = trimmed.slice(eq + 1);
+    if (key === 'config') config = value;
+    else if (key === 'count') count = value;
+    else throw new Error(`Испорченная планка ${BASELINE_FILE}: неизвестное поле '${key}'`);
+  }
+  if (!config || !count) throw new Error(`Испорченная планка ${BASELINE_FILE}: нужны оба поля config= и count=`);
+  if (config !== TSCONFIG) throw new Error(`Планка снята конфигурацией '${config}', а тест гоняет '${TSCONFIG}'`);
+  const n = Number(count);
+  if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n)) throw new Error(`Испорченная планка ${BASELINE_FILE}: count='${count}' не целое неотрицательное число`);
+  return n;
+}
+
+const BASELINE = readBaseline();
 
 function countServerTypeErrors(): { count: number; sample: string[] } {
   let output = '';
@@ -46,9 +70,10 @@ function countServerTypeErrors(): { count: number; sample: string[] } {
       encoding: 'utf-8',
       stdio: ['ignore', 'pipe', 'pipe'],
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     // tsc выходит с ненулевым кодом, когда ошибки есть, — это ожидаемо.
-    output = `${err.stdout ?? ''}${err.stderr ?? ''}`;
+    const e = err as { stdout?: string; stderr?: string };
+    output = `${e.stdout ?? ''}${e.stderr ?? ''}`;
   }
   const lines = output.split('\n').filter((l) => /error TS\d+:/.test(l));
   return { count: lines.length, sample: lines.slice(0, 5) };

@@ -245,8 +245,6 @@ export class PublishScheduler {
    */
   private terminalErrorLoggedAt = new Map<string, number>();
   private terminalErrorCooldownMs = 60 * 60 * 1000;
-  // task #49 (v3): cooldown для warn о битой форме площадки (content:platform).
-  private malformedPlatformWarnedAt = new Map<string, number>();
   private maxCacheSize = 1000; // Максимум 1000 элементов в кэше
   private cacheCleanupInterval = 2 * 60 * 60 * 1000; // очищаем кэш каждые 2 часа
   private lastCacheCleanup = Date.now();
@@ -537,13 +535,14 @@ export class PublishScheduler {
             continue;
           }
 
-          // task #49 (v3): подсветим битую форму площадки БАЛАНСИРОВАННЫМ warn'ом
-          // (не debug-молчанием) — чтобы аномалия данных была видна, но не тянула
-          // содержимое записи. Легитимные terminal-статусы (failed/published/…)
-          // warn НЕ получают. Ключ cooldown'а — стабильная строка, не сам entry.
+          // task #49 (v4): подсветим битую форму площадки ОГРАНИЧЕННЫМ warn'ом
+          // через переиспользованный bounded cooldown shouldLogTerminalError
+          // (ключ — стабильная строка 'malformed_platform_entry', не сам entry).
           for (const [platformName, platformData] of Object.entries(platforms)) {
             if (isMalformedPlatformEntry(platformData)) {
-              this.warnMalformedPlatformOnce(content.id, platformName);
+              if (this.shouldLogTerminalError(content.id, platformName, 'malformed_platform_entry')) {
+                log.warn(`[SCHEDULER] ${content.id}:${platformName} — неверная форма записи площадки (публикация для неё пропущена)`, 'scheduler');
+              }
             }
           }
 
@@ -1207,26 +1206,6 @@ export class PublishScheduler {
     }
     this.terminalErrorLoggedAt.set(key, now);
     return true;
-  }
-
-  /**
-   * task #49 (v3): битая/отсутствующая форма площадки — fail-close + ограниченный
-   * warn. Ключ cooldown'а — стабильная строка (не сам entry, чтобы не тянуть
-   * содержимое и не менять ключ при смене данных). Первый случай виден на
-   * info/warn, повтор в пределах часа молчит.
-   */
-  warnMalformedPlatformOnce(contentId: string, platform: string): void {
-    const key = `${contentId}:${platform}:malformed_platform_entry`;
-    const now = Date.now();
-    const last = this.malformedPlatformWarnedAt.get(key);
-    if (last !== undefined && now - last < this.terminalErrorCooldownMs) return;
-    if (this.malformedPlatformWarnedAt.size > this.maxCacheSize) {
-      for (const [k, ts] of this.malformedPlatformWarnedAt) {
-        if (now - ts >= this.terminalErrorCooldownMs) this.malformedPlatformWarnedAt.delete(k);
-      }
-    }
-    this.malformedPlatformWarnedAt.set(key, now);
-    log.warn(`[SCHEDULER] ${contentId}:${platform} — неверная форма записи площадки (публикация для неё пропущена)`, 'scheduler');
   }
 
   /**

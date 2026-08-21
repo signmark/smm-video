@@ -94,21 +94,15 @@ describe('AI-49 v3: битая форма площадки — fail-close + ог
     expect(isPlatformTerminal({})).toBe(false);
   });
 
-  it('warn о битой форме — с cooldown в час на content+platform', () => {
+  it('bounded warn переиспользует shouldLogTerminalError: раз в час на content+platform', () => {
     const scheduler = getPublishScheduler();
-    // @ts-ignore чистый стейт коoldown'а
-    scheduler.malformedPlatformWarnedAt = new Map();
-    const logSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
-    scheduler.warnMalformedPlatformOnce('c1', 'telegram');
-    scheduler.warnMalformedPlatformOnce('c1', 'telegram'); // повтор — молчит
-    expect(logSpy).toHaveBeenCalledTimes(1);
-    const firstArg = String(logSpy.mock.calls[0][0]);
-    expect(firstArg).toContain('c1');
-    expect(firstArg).toContain('telegram');
-    // машиночитаемый маркер; сам entry/токен/content НЕ печатается.
-    expect(firstArg).toContain('неверная форма записи площадки');
-    logSpy.mockRestore();
+    // @ts-ignore чистый стейт cooldown'а
+    scheduler.terminalErrorLoggedAt = new Map();
+    const marker = 'malformed_platform_entry';
+    expect(scheduler.shouldLogTerminalError('c1', 'telegram', marker)).toBe(true);
+    expect(scheduler.shouldLogTerminalError('c1', 'telegram', marker)).toBe(false); // повтор — молчит
+    // другой content/platform — независимый ключ
+    expect(scheduler.shouldLogTerminalError('c2', 'telegram', marker)).toBe(true);
   });
 });
 
@@ -136,11 +130,11 @@ describe('AI-49: production-сторож — мутация «вернуть п�
 
   it('v3: битая форма подсвечивается warn с машиночитаемым маркером, не содержимым', () => {
     expect(SRC).toMatch(/isMalformedPlatformEntry\(platformData\)/);
-    expect(SRC).toMatch(/warnMalformedPlatformOnce\(content\.id, platformName\)/);
+    expect(SRC).toMatch(/shouldLogTerminalError\(content\.id, platformName, 'malformed_platform_entry'\)/);
     expect(SRC).toMatch(/malformed_platform_entry/);
     // Производственный комментарий fail-close рядом с предикатом.
     const predIdx = SRC.indexOf('hasRetryablePlatform');
-    const predWindow = SRC.slice(Math.max(0, predIdx - 700), predIdx);
+    const predWindow = SRC.slice(Math.max(0, predIdx - 900), predIdx);
     expect(predWindow).toContain('fail-close');
     expect(predWindow).toContain('не должна вызвать outbound');
   });

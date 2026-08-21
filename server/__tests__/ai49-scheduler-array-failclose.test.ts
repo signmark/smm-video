@@ -53,8 +53,8 @@ beforeEach(() => {
   scheduler.processedContentCache.clear();
   // @ts-ignore
   scheduler.isProcessing = false;
-  // @ts-ignore сбрасываем cooldown malformed-warn
-  scheduler.malformedPlatformWarnedAt = new Map();
+  // @ts-ignore сбрасываем cooldown (reused shouldLogTerminalError/terminalErrorLoggedAt)
+  scheduler.terminalErrorLoggedAt = new Map();
 });
 
 describe('AI-49 v4: битая форма (массив) площадки fail-close на уровне планировщика', () => {

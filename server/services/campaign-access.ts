@@ -1,5 +1,6 @@
 import { directusApi } from '../directus';
 import { adminTokenManager } from './admin-token-manager';
+import { enrichRequestContext } from '../utils/request-context';
 
 export class CampaignAccessError extends Error {
   constructor(
@@ -90,7 +91,12 @@ export async function authorizeCampaignAccess(
       // шире ожидаемого, изоляция всё равно устоит.
       const ownerId = typeof campaign.user_id === 'object' ? campaign.user_id?.id : campaign.user_id;
       const creatorId = typeof campaign.user_created === 'object' ? campaign.user_created?.id : campaign.user_created;
-      if (isAdmin || ownerId === userId || creatorId === userId) return campaign;
+      if (isAdmin || ownerId === userId || creatorId === userId) {
+        // AI-65: кампания в журнал только ПОСЛЕ подтверждения доступа (чужой ввод из URL
+        // не должен попадать в лог, пока authorizeCampaignAccess не убедился, что кампания есть и доступ есть).
+        enrichRequestContext({ campaignId });
+        return campaign;
+      }
       throw new CampaignAccessError(404, 'CAMPAIGN_NOT_FOUND');
     }
   } catch (error: any) {
@@ -118,6 +124,8 @@ export async function authorizeCampaignAccess(
     });
     const campaign = response.data?.data;
     if (!campaign) throw new CampaignAccessError(404, 'CAMPAIGN_NOT_FOUND');
+    // AI-65: admin-путь тоже подтверждает доступ — тогда кампания попадает в журнал.
+    enrichRequestContext({ campaignId });
     return campaign;
   } catch (error: any) {
     if (error instanceof CampaignAccessError) throw error;

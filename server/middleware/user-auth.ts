@@ -3,6 +3,7 @@ import { directusApiManager } from '../directus';
 import { validateDirectusSession } from '../services/directus-session-validator';
 import { adminTokenManager } from '../services/admin-token-manager';
 import { log } from '../utils/logger';
+import { enrichRequestContext } from '../utils/request-context';
 
 const adminStatusCache = new Map<string, { is_smm_admin: boolean; cachedAt: number }>();
 const ADMIN_CACHE_TTL = 30 * 1000;
@@ -93,6 +94,7 @@ export const authenticateUser = async (req: Request, res: Response, next: NextFu
           is_smm_admin: true
         };
         (req as any).userId = realAdminId;
+        enrichRequestContext({ userId: realAdminId }); // AI-65: кто сделал запрос (наш санкционированный admin)
         next();
         return;
       }
@@ -147,6 +149,7 @@ export const authenticateUser = async (req: Request, res: Response, next: NextFu
           is_smm_admin: isAdmin
         };
         (req as any).userId = userId;
+        enrichRequestContext({ userId }); // AI-65: в журнал идёт, чей это запрос (после успешной проверки сессии)
 
         const expiresAt = payload.exp ? payload.exp * 1000 : Date.now() + (15 * 60 * 1000);
         directusApiManager.cacheAuthToken(userId, token, Math.floor((expiresAt - Date.now()) / 1000));

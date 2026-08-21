@@ -17,6 +17,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import request from 'supertest';
 import express from 'express';
 
+/** Narrow structural types matching production response shapes. */
+type DirectusListResp = { data: { data: Record<string, unknown>[] | Record<string, unknown> | null } };
+type DirectusItemResp = { data: { data: Record<string, unknown> } };
+type DirectusDeleteResp = { data: Record<string, unknown> };
+type CampaignResult = { id: string; [key: string]: unknown };
+type AxiosListResp = { data: { data: Record<string, unknown>[] | Record<string, unknown> | null } };
+type AxiosPatchResp = { data: { data: Record<string, unknown> } };
+/** Config shape matching AxiosRequestConfig.params */
+type MockConfig = { params?: Record<string, unknown>; headers?: Record<string, string> };
+
 const H = vi.hoisted(() => {
   class CampaignAccessError extends Error {
     constructor(public readonly status: 404 | 503, public readonly code: string) {
@@ -25,16 +35,16 @@ const H = vi.hoisted(() => {
   }
   return {
     CampaignAccessError,
-    authorizeCampaignAccess: vi.fn(async () => { throw new CampaignAccessError(404, 'CAMPAIGN_NOT_FOUND'); }),
-    listAccessibleCampaignIds: vi.fn(async () => [] as string[]),
-    directusGet: vi.fn(async () => ({ data: { data: [] } })),
-    directusPost: vi.fn(async () => ({ data: { data: { id: 'new' } } })),
-    directusPatch: vi.fn(async () => ({ data: { data: {} } })),
-    directusDelete: vi.fn(async () => ({ data: {} })),
-    axiosGet: vi.fn(async () => ({ data: { data: [] } })),
-    axiosPatch: vi.fn(async () => ({ data: { data: {} } })),
-    getAdminTokenPublic: vi.fn(async () => 'admin-token'),
-    analyzeWebsiteKeywords: vi.fn(async () => [{ keyword: 'k' }]),
+    authorizeCampaignAccess: vi.fn(async (): Promise<CampaignResult> => { throw new CampaignAccessError(404, 'CAMPAIGN_NOT_FOUND'); }),
+    listAccessibleCampaignIds: vi.fn(async (): Promise<string[]> => []),
+    directusGet: vi.fn(async (_url?: string, _config?: MockConfig): Promise<DirectusListResp> => ({ data: { data: [] } })),
+    directusPost: vi.fn(async (_url?: string, _data?: unknown): Promise<DirectusItemResp> => ({ data: { data: { id: 'new' } } })),
+    directusPatch: vi.fn(async (_url?: string, _data?: unknown): Promise<DirectusItemResp> => ({ data: { data: {} } })),
+    directusDelete: vi.fn(async (_url?: string): Promise<DirectusDeleteResp> => ({ data: {} })),
+    axiosGet: vi.fn(async (_url?: string, _config?: MockConfig): Promise<AxiosListResp> => ({ data: { data: [] } })),
+    axiosPatch: vi.fn(async (_url?: string, _data?: unknown): Promise<AxiosPatchResp> => ({ data: { data: {} } })),
+    getAdminTokenPublic: vi.fn(async (): Promise<string> => 'admin-token'),
+    analyzeWebsiteKeywords: vi.fn(async (): Promise<Array<{ keyword: string }>> => [{ keyword: 'k' }]),
   };
 });
 
@@ -110,7 +120,7 @@ const FOREIGN = 'campaign-of-another-tenant';
 
 /** Фильтр, с которым хендлер реально пошёл в Directus. */
 const lastDirectusFilter = () => {
-  const call = H.directusGet.mock.calls.at(-1) as any[] | undefined;
+  const call = H.directusGet.mock.calls.at(-1);
   return call?.[1]?.params?.filter;
 };
 
@@ -183,7 +193,7 @@ describe('GET /api/sources — точка входа инцидента', () => 
   });
 
   it('со своим campaignId данные отдаются', async () => {
-    H.authorizeCampaignAccess.mockResolvedValueOnce({ id: 'own-1' } as any);
+    H.authorizeCampaignAccess.mockResolvedValueOnce({ id: 'own-1' });
     H.directusGet.mockResolvedValueOnce({ data: { data: [{ id: 's1' }] } });
 
     const res = await authed(request(analyticsApp).get('/api/sources').query({ campaignId: 'own-1' }));
@@ -213,7 +223,7 @@ describe('POST /api/sources — запись в чужую кампанию', ()
   });
 
   it('своя кампания — источник создаётся', async () => {
-    H.authorizeCampaignAccess.mockResolvedValueOnce({ id: 'own-1' } as any);
+    H.authorizeCampaignAccess.mockResolvedValueOnce({ id: 'own-1' });
 
     const res = await authed(request(analyticsApp).post('/api/sources'))
       .send({ name: 'x', url: 'https://x.io', type: 'telegram', campaignId: 'own-1' });
@@ -267,7 +277,7 @@ describe('GET /api/campaign-trends — ходит админским токен�
   });
 
   it('своя кампания — тренды отдаются', async () => {
-    H.authorizeCampaignAccess.mockResolvedValueOnce({ id: 'own-1' } as any);
+    H.authorizeCampaignAccess.mockResolvedValueOnce({ id: 'own-1' });
     H.axiosGet.mockResolvedValueOnce({ data: { data: [{ id: 't1', title: 't' }] } });
 
     const res = await authed(request(analyticsApp).get('/api/campaign-trends').query({ campaignId: 'own-1' }));
@@ -301,25 +311,25 @@ describe('PATCH /api/campaign-trends/:id/bookmark', () => {
 
   it('свой тренд — закладка сохраняется', async () => {
     H.axiosGet.mockResolvedValueOnce({ data: { data: { id: 'tr-1', campaign_id: 'own-1' } } });
-    H.authorizeCampaignAccess.mockResolvedValueOnce({ id: 'own-1' } as any);
+    H.authorizeCampaignAccess.mockResolvedValueOnce({ id: 'own-1' });
 
     const res = await bookmark('tr-1');
 
     expect(res.status).toBe(200);
     expect(res.body.data.isBookmarked).toBe(true);
-    const [, payload] = H.axiosPatch.mock.calls.at(-1) as any[];
-    expect(payload).toEqual({ is_bookmarked: true });
+    const patchCall1 = H.axiosPatch.mock.calls.at(-1);
+    expect(patchCall1?.[1]).toEqual({ is_bookmarked: true });
   });
 
   it('снятие закладки тоже проходит', async () => {
     H.axiosGet.mockResolvedValueOnce({ data: { data: { id: 'tr-1', campaign_id: 'own-1' } } });
-    H.authorizeCampaignAccess.mockResolvedValueOnce({ id: 'own-1' } as any);
+    H.authorizeCampaignAccess.mockResolvedValueOnce({ id: 'own-1' });
 
     const res = await bookmark('tr-1', { isBookmarked: false });
 
     expect(res.status).toBe(200);
-    const [, payload] = H.axiosPatch.mock.calls.at(-1) as any[];
-    expect(payload).toEqual({ is_bookmarked: false });
+    const patchCall2 = H.axiosPatch.mock.calls.at(-1);
+    expect(patchCall2?.[1]).toEqual({ is_bookmarked: false });
   });
 
   it('без поля isBookmarked → 400, запись не выполняется', async () => {
@@ -357,7 +367,7 @@ describe('Ключевые слова', () => {
   });
 
   it('GET /api/keywords/:campaignId со своей кампанией отдаёт голый массив', async () => {
-    H.authorizeCampaignAccess.mockResolvedValueOnce({ id: 'own-1' } as any);
+    H.authorizeCampaignAccess.mockResolvedValueOnce({ id: 'own-1' });
     H.directusGet.mockResolvedValueOnce({ data: { data: [{ id: 'k1', keyword: 'кофе' }] } });
 
     const res = await authed(request(campaignsApp).get('/api/keywords/own-1'));
@@ -379,7 +389,7 @@ describe('Ключевые слова', () => {
 
   it('DELETE /api/keywords/:id для своего слова — удаление выполняется', async () => {
     H.directusGet.mockResolvedValueOnce({ data: { data: { id: 'kw-1', campaign_id: 'own-1' } } });
-    H.authorizeCampaignAccess.mockResolvedValueOnce({ id: 'own-1' } as any);
+    H.authorizeCampaignAccess.mockResolvedValueOnce({ id: 'own-1' });
 
     const res = await authed(request(campaignsApp).delete('/api/keywords/kw-1'));
 
@@ -397,7 +407,7 @@ describe('Ключевые слова', () => {
   });
 
   it('POST /api/campaigns/:campaignId/keywords в свою кампанию работает', async () => {
-    H.authorizeCampaignAccess.mockResolvedValueOnce({ id: 'own-1' } as any);
+    H.authorizeCampaignAccess.mockResolvedValueOnce({ id: 'own-1' });
 
     const res = await authed(request(campaignsApp).post('/api/campaigns/own-1/keywords'))
       .send({ url: 'https://x.io' });

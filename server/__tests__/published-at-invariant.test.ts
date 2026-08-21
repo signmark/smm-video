@@ -18,15 +18,19 @@ import express from 'express';
 
 // ─── Моки границ ──────────────────────────────────────────────────────────────
 
+/** Narrow structural types for mock return values. */
+type ContentRecord = { id?: string; status?: string; publishedAt?: string | Date | null; [k: string]: unknown };
+type DirectusItemResp = { data: { data: Record<string, unknown> } };
+
 const H = vi.hoisted(() => ({
-  crudList: vi.fn(),
-  crudUpdate: vi.fn(async () => ({})),
-  axiosGet: vi.fn(),
-  axiosPatch: vi.fn(async () => ({ data: { data: {} } })),
-  axiosPost: vi.fn(async () => ({ data: {} })),
-  storageGetById: vi.fn(),
-  storageUpdate: vi.fn(async () => ({})),
-  getAdminToken: vi.fn(() => 'admin-token'),
+  crudList: vi.fn(async (): Promise<ContentRecord[]> => []),
+  crudUpdate: vi.fn(async (_collection: string, _id: string, _data: ContentRecord): Promise<DirectusItemResp> => ({ data: { data: {} } })),
+  axiosGet: vi.fn(async (_url: string, _config?: Record<string, unknown>): Promise<DirectusItemResp> => ({ data: { data: {} } })),
+  axiosPatch: vi.fn(async (_url: string, _data?: ContentRecord): Promise<DirectusItemResp> => ({ data: { data: {} } })),
+  axiosPost: vi.fn(async (_url: string, _data?: ContentRecord): Promise<{ data: unknown }> => ({ data: {} })),
+  storageGetById: vi.fn(async (_id: string): Promise<ContentRecord | null> => null),
+  storageUpdate: vi.fn(async (_id: string, _data: ContentRecord): Promise<ContentRecord> => ({})),
+  getAdminToken: vi.fn((): string => 'admin-token'),
 }));
 
 vi.mock('axios', () => {
@@ -124,16 +128,16 @@ const publishedWithDate = (postUrl: string, publishedAt: string) => ({
 });
 
 /** Прогоняет приватный updateContentStatus планировщика на заданном состоянии. */
-async function runSchedulerSync(freshContent: Record<string, any>) {
+async function runSchedulerSync(freshContent: ContentRecord) {
   H.crudList.mockResolvedValue([freshContent]);
   const scheduler = new PublishScheduler();
   await (scheduler as any).updateContentStatus(freshContent.id);
-  return H.crudUpdate.mock.calls[0]?.[2] as Record<string, any> | undefined;
+  return H.crudUpdate.mock.calls[0]?.[2] as ContentRecord | undefined;
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
-  H.crudUpdate.mockResolvedValue({});
+  H.crudUpdate.mockResolvedValue({ data: { data: {} } });
   H.axiosPatch.mockResolvedValue({ data: { data: {} } });
   H.getAdminToken.mockReturnValue('admin-token');
   process.env.DIRECTUS_URL = 'http://directus.test';
@@ -158,7 +162,7 @@ describe('PublishScheduler.updateContentStatus — published_at не теряе�
     expect(updateData?.status).toBe('published');
     // Ключевое: дата обязана быть, иначе запись выпадает из разрезов по времени.
     expect(updateData?.published_at).toBeTruthy();
-    const written = new Date(updateData!.published_at).getTime();
+    const written = new Date(String(updateData!.published_at)).getTime();
     expect(Number.isFinite(written)).toBe(true);
     expect(written).toBeGreaterThanOrEqual(before);
   });
@@ -191,7 +195,7 @@ describe('PublishScheduler.updateContentStatus — published_at не теряе�
     });
 
     expect(updateData?.status).toBe('published');
-    expect(new Date(updateData!.published_at).toISOString()).toBe(real);
+    expect(new Date(String(updateData!.published_at)).toISOString()).toBe(real);
   });
 
   it('берёт самую позднюю дату среди платформ', async () => {
@@ -208,7 +212,7 @@ describe('PublishScheduler.updateContentStatus — published_at не теряе�
       },
     });
 
-    expect(new Date(updateData!.published_at).toISOString()).toBe(late);
+    expect(new Date(String(updateData!.published_at)).toISOString()).toBe(late);
   });
 
   it('частично опубликованный контент дату НЕ получает', async () => {
@@ -265,7 +269,7 @@ describe('POST /api/publish/mark-as-published — статус и дата од�
     // Раньше дата ставилась отдельным axios-патчем под токеном случайной сессии,
     // и при её отсутствии контент оставался published без даты.
     expect(updates.publishedAt).toBeTruthy();
-    expect(Number.isFinite(new Date(updates.publishedAt).getTime())).toBe(true);
+    expect(Number.isFinite(new Date(String(updates.publishedAt)).getTime())).toBe(true);
   });
 
   it('не сдвигает уже существующую дату публикации', async () => {
@@ -275,7 +279,7 @@ describe('POST /api/publish/mark-as-published — статус и дата од�
     await request(makeApp()).post('/api/publish/mark-as-published/c-2').send({});
 
     const [, updates] = H.storageUpdate.mock.calls[0];
-    expect(new Date(updates.publishedAt).toISOString()).toBe(existing.toISOString());
+    expect(new Date(String(updates.publishedAt)).toISOString()).toBe(existing.toISOString());
   });
 
   it('не зависит от наличия активных сессий Directus', async () => {
@@ -322,8 +326,8 @@ describe('вебхук статусов платформ — общий стат
       .send({ contentId: 'c-1', status: 'published', postUrl: 'https://t.me/c/1' });
 
     const publishedPatches = H.axiosPatch.mock.calls
-      .map(([, body]) => body as Record<string, any>)
-      .filter((body) => body && body.status === 'published');
+      .map(([, body]) => body)
+      .filter((body): body is ContentRecord => !!body && body.status === 'published');
 
     expect(publishedPatches.length).toBeGreaterThan(0);
     for (const body of publishedPatches) {

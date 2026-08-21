@@ -116,23 +116,76 @@ describe('AI-49 v4: битая форма (массив) площадки fail-c
     publishSpy.mockResolvedValue(undefined);
 
     // Первая запись — битая (vk: null бросает до guard, если guard ниже).
-    // Вторая — пустая (idle-проход), чтобы по её завершению двигался heartbeat.
+    // Вторая — валидный pending, чтобы по ней адаптер реально вызвался.
     vi.mocked(directusCrud.list).mockResolvedValueOnce([
       {
         id: 'null-1', status: 'partially_published', user_id: 'u-1', campaign_id: 'camp-1',
         social_platforms: { vk: null as any, telegram: { status: 'pending' } },
       },
-      { id: 'null-2', status: 'scheduled', user_id: 'u-1', campaign_id: 'camp-1', social_platforms: {} },
-    ] as any);
+      { id: 'valid-2', status: 'partially_published', user_id: 'u-1', campaign_id: 'camp-1', social_platforms: { telegram: { status: 'pending' } } },
+    ] as any)
+    .mockResolvedValueOnce([{ id: 'null-1', status: 'partially_published' }] as any)
+    .mockResolvedValueOnce([{ id: 'valid-2', status: 'partially_published' }] as any);
 
     // @ts-ignore сброс heartbeat
     scheduler.lastSuccessfulPassAt = null;
     await scheduler.checkScheduledContent();
 
     // Проход не упал: heartbeat обновился (успешный проход зафиксирован).
-    // Это доказывает, что null-площадка изолирована guard'ом и не роняет весь
-    // проход (иначе бы общий catch поймал и heartbeat остался null).
     // @ts-ignore
     expect(scheduler.getLivenessSnapshot().lastSuccessfulPassAt).not.toBeNull();
+    // Валидная следующая запись реально дошла до адаптера (не потеряна из-за null).
+    expect(publishSpy).toHaveBeenCalled();
+  });
+
+  it('mixed guard: scalar и null — 0 acquireLock для malformed, адаптер ровно pending', async () => {
+    for (const [label, malformed] of [['scalar', 'str'], ['null', null]] as const) {
+      const publishSpy = vi.spyOn(scheduler as any, 'publishContentToPlatforms');
+      publishSpy.mockResolvedValue(undefined);
+      const acquireSpy = vi.mocked(publicationLockManager.acquireLock);
+      const warn = vi.mocked(log.warn as any);
+      warn.mockClear();
+      acquireSpy.mockClear();
+
+      vi.mocked(directusCrud.list)
+        .mockResolvedValueOnce([{
+          id: `shape-${label}`, status: 'partially_published', user_id: 'u-1', campaign_id: 'camp-1',
+          social_platforms: { vk: malformed as any, telegram: { status: 'pending' } },
+        }] as any)
+        .mockResolvedValueOnce([{ id: `shape-${label}`, status: 'partially_published' }] as any);
+
+      await scheduler.checkScheduledContent();
+
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0][0])).toContain('vk');
+      expect(acquireSpy.mock.calls.some((c) => c[1] === 'vk')).toBe(false);
+      const platforms = publishSpy.mock.calls[0][1] as string[];
+      expect(platforms).toEqual(['telegram']);
+    }
+  });
+
+  it('scheduler-level cooldown: same content+platform в пределах часа → один warn', async () => {
+    const publishSpy = vi.spyOn(scheduler as any, 'publishContentToPlatforms');
+    publishSpy.mockResolvedValue(undefined);
+    const warn = vi.mocked(log.warn as any);
+
+    const rows = [{
+      id: 'cd-1', status: 'partially_published', user_id: 'u-1', campaign_id: 'camp-1',
+      social_platforms: { vk: [] as any, telegram: { status: 'pending' } },
+    }] as any;
+
+    // Два прохода одной записи в пределах часа.
+    vi.mocked(directusCrud.list)
+      .mockResolvedValueOnce(rows)
+      .mockResolvedValueOnce([{ id: 'cd-1', status: 'partially_published' }] as any)
+      .mockResolvedValueOnce(rows)
+      .mockResolvedValueOnce([{ id: 'cd-1', status: 'partially_published' }] as any);
+
+    await scheduler.checkScheduledContent();
+    const warnAfterFirst = warn.mock.calls.length;
+    await scheduler.checkScheduledContent();
+
+    expect(warnAfterFirst).toBe(1);
+    expect(warn.mock.calls.length).toBe(1); // второй проход в cooldown'е — молчит
   });
 });

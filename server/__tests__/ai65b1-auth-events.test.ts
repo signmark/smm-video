@@ -111,6 +111,22 @@ describe('AI-65 срез B1: события входа', () => {
     expect(te!.level).toBe('warn');
   });
 
+  it('повторный полл /api/auth/check в пределах часа не дублирует auth.token_expired', async () => {
+    const payload = Buffer.from(JSON.stringify({ id: 'u-dedup', exp: 1 })).toString('base64');
+    const expired = `x.${payload}.y`;
+
+    const res1 = await request(app).get('/api/auth/check').set('Authorization', `Bearer ${expired}`);
+    expect(res1.status).toBe(401);
+    const te1 = events().filter((e) => e.event === 'auth.token_expired');
+    expect(te1).toHaveLength(1);
+
+    // Тот же протухший токен снова — cooldown, события НЕ добавляется.
+    const res2 = await request(app).get('/api/auth/check').set('Authorization', `Bearer ${expired}`);
+    expect(res2.status).toBe(401);
+    const te2 = events().filter((e) => e.event === 'auth.token_expired');
+    expect(te2).toHaveLength(1); // по-прежнему одно
+  });
+
   it('смена пароля даёт auth.password_reset_used с userId', async () => {
     process.env.APP_SIGNING_SECRET = 'test-secret';
     const ts = Math.floor(Date.now() / 1000) - 30;

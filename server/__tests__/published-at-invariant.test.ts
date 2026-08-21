@@ -30,7 +30,7 @@ const H = vi.hoisted(() => ({
   axiosPost: vi.fn(async (_url: string, _data?: ContentRecord): Promise<{ data: unknown }> => ({ data: {} })),
   storageGetById: vi.fn(async (_id: string): Promise<ContentRecord | null> => null),
   storageUpdate: vi.fn(async (_id: string, _data: ContentRecord): Promise<ContentRecord> => ({})),
-  getAdminToken: vi.fn((): string => 'admin-token'),
+  getAdminAuthToken: vi.fn(async (): Promise<string> => 'admin-token'),
 }));
 
 vi.mock('axios', () => {
@@ -74,6 +74,7 @@ vi.mock('../services/directus-auth-manager', () => ({
   DirectusAuthManager: { getAdminToken: H.getAdminToken },
   directusAuthManager: {
     getValidToken: vi.fn(async () => 'admin-token'),
+    getAdminAuthToken: H.getAdminAuthToken,
     getAllActiveSessions: vi.fn(() => []),
   },
 }));
@@ -139,7 +140,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   H.crudUpdate.mockResolvedValue({ data: { data: {} } });
   H.axiosPatch.mockResolvedValue({ data: { data: {} } });
-  H.getAdminToken.mockReturnValue('admin-token');
+  H.getAdminAuthToken.mockResolvedValue('admin-token');
   process.env.DIRECTUS_URL = 'http://directus.test';
 });
 

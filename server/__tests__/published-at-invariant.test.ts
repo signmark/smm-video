@@ -19,14 +19,14 @@ import express from 'express';
 // ─── Моки границ ──────────────────────────────────────────────────────────────
 
 const H = vi.hoisted(() => ({
-  crudList: vi.fn(),
-  crudUpdate: vi.fn(async () => ({})),
-  axiosGet: vi.fn(),
-  axiosPatch: vi.fn(async () => ({ data: { data: {} } })),
-  axiosPost: vi.fn(async () => ({ data: {} })),
-  storageGetById: vi.fn(),
-  storageUpdate: vi.fn(async () => ({})),
-  getAdminToken: vi.fn(() => 'admin-token'),
+  crudList: vi.fn(async (_filter?: any): Promise<any[]> => []),
+  crudUpdate: vi.fn(async (_collection: string, _id: string, _data: Record<string, any>): Promise<any> => ({})),
+  axiosGet: vi.fn(async (_url: string, _config?: any): Promise<any> => ({})),
+  axiosPatch: vi.fn(async (_url: string, _data?: any): Promise<any> => ({ data: { data: {} } })),
+  axiosPost: vi.fn(async (_url: string, _data?: any): Promise<any> => ({ data: {} })),
+  storageGetById: vi.fn(async (..._args: any[]): Promise<any> => null),
+  storageUpdate: vi.fn(async (_id: string, _data: Record<string, any>): Promise<any> => ({})),
+  getAdminToken: vi.fn((): string => 'admin-token'),
 }));
 
 vi.mock('axios', () => {

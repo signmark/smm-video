@@ -25,16 +25,16 @@ const H = vi.hoisted(() => {
   }
   return {
     CampaignAccessError,
-    authorizeCampaignAccess: vi.fn(async () => { throw new CampaignAccessError(404, 'CAMPAIGN_NOT_FOUND'); }),
-    listAccessibleCampaignIds: vi.fn(async () => [] as string[]),
-    directusGet: vi.fn(async () => ({ data: { data: [] } })),
-    directusPost: vi.fn(async () => ({ data: { data: { id: 'new' } } })),
-    directusPatch: vi.fn(async () => ({ data: { data: {} } })),
-    directusDelete: vi.fn(async () => ({ data: {} })),
-    axiosGet: vi.fn(async () => ({ data: { data: [] } })),
-    axiosPatch: vi.fn(async () => ({ data: { data: {} } })),
-    getAdminTokenPublic: vi.fn(async () => 'admin-token'),
-    analyzeWebsiteKeywords: vi.fn(async () => [{ keyword: 'k' }]),
+    authorizeCampaignAccess: vi.fn(async (): Promise<any> => { throw new CampaignAccessError(404, 'CAMPAIGN_NOT_FOUND'); }),
+    listAccessibleCampaignIds: vi.fn(async (): Promise<string[]> => []),
+    directusGet: vi.fn(async (): Promise<any> => ({ data: { data: [] } })),
+    directusPost: vi.fn(async (): Promise<any> => ({ data: { data: { id: 'new' } } })),
+    directusPatch: vi.fn(async (): Promise<any> => ({ data: { data: {} } })),
+    directusDelete: vi.fn(async (): Promise<any> => ({ data: {} })),
+    axiosGet: vi.fn(async (): Promise<any> => ({ data: { data: [] } })),
+    axiosPatch: vi.fn(async (): Promise<any> => ({ data: { data: {} } })),
+    getAdminTokenPublic: vi.fn(async (): Promise<string> => 'admin-token'),
+    analyzeWebsiteKeywords: vi.fn(async (): Promise<Array<{ keyword: string }>> => [{ keyword: 'k' }]),
   };
 });
 

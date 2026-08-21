@@ -22,7 +22,7 @@ export { invalidateContentCache };
 const IMMUTABLE_CONTENT_FIELDS = new Set([
   'createdAt',
   'created_at',
-  'created_at',
+  'date_created',
 ]);
 
 /**

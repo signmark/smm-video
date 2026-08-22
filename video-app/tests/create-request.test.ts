@@ -1,32 +1,13 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildCreateRequest } from '../client/src/lib/create-request.ts';
+import { buildCreateRequest, CREATE_FORM_DEFAULTS } from '../client/src/lib/create-request.ts';
 
 const CLIP_DURATION_MODELS = new Set(['kling', 'kling-pro', 'seedance', 'seedance2', 'kling-t2v', 'kling-pro-t2v', 'luma', 'seedance-t2v', 'seedance2-t2v', 'happy-horse']);
 
-/** Default form state — all panels collapsed, user typed only a topic. */
+/** Default form state — uses the same source of truth as Create.tsx. */
 function defaults(overrides?: Record<string, unknown>) {
   return {
-    inputMode: 'topic',
-    topic: 'Продвижение продукта',
-    customScenario: '',
-    landingUrl: '',
-    additionalDetails: '',
-    title: '',
-    format: '9:16',
-    duration: 30,
-    language: 'ru',
-    animationModel: 'wan',
-    heygenAvatar: 'default',
-    subtitleStyle: 'karaoke',
-    voice: 'alloy',
-    clipDuration: 10,
-    subtitleFont: 'DejaVu Sans',
-    subtitleSize: 'medium',
-    subtitleColor: '#ffffff',
-    musicStyle: 'ambient',
-    musicVolume: 0.18,
-    scriptMode: 'standard',
+    ...CREATE_FORM_DEFAULTS,
     clipDurationModels: CLIP_DURATION_MODELS,
     ...overrides,
   };
@@ -34,7 +15,7 @@ function defaults(overrides?: Record<string, unknown>) {
 
 describe('buildCreateRequest', () => {
   it('defaults: panels closed, topic mode — minimal body', () => {
-    const body = buildCreateRequest(defaults() as any);
+    const body = buildCreateRequest(defaults({ topic: 'Продвижение продукта' }) as any);
     assert.equal(body.topic, 'Продвижение продукта');
     assert.equal(body.title, 'Продвижение продукта'); // falls back to topic
     assert.equal(body.format, '9:16');
@@ -96,13 +77,15 @@ describe('buildCreateRequest', () => {
     assert.equal(body.customScenario, 'Ролик про новый продукт с демонстрацией функций');
   });
 
-  it('mutation: changing default musicStyle breaks the test', () => {
-    const body = buildCreateRequest(defaults() as any);
+  it('mutation: changing CREATE_FORM_DEFAULTS.musicStyle breaks this test', () => {
+    // This test uses the shared constant, not a local copy.
+    // If someone changes the default in create-request.ts, this test fails.
+    const body = buildCreateRequest(defaults({ topic: 'test' }) as any);
     assert.equal(body.musicStyle, 'ambient');
   });
 
   it('subtitle fields omitted when style is none', () => {
-    const body = buildCreateRequest(defaults({ subtitleStyle: 'none' }) as any);
+    const body = buildCreateRequest(defaults({ subtitleStyle: 'none', topic: 'test' }) as any);
     assert.equal(body.subtitleStyle, 'none');
     assert.equal(body.subtitleFont, undefined);
     assert.equal(body.subtitleSize, undefined);
@@ -110,16 +93,16 @@ describe('buildCreateRequest', () => {
   });
 
   it('musicVolume omitted when musicStyle is none', () => {
-    const body = buildCreateRequest(defaults({ musicStyle: 'none' }) as any);
+    const body = buildCreateRequest(defaults({ musicStyle: 'none', topic: 'test' }) as any);
     assert.equal(body.musicStyle, 'none');
     assert.equal(body.musicVolume, undefined);
   });
 
   it('heygenAvatar included only for heygen-avatar model', () => {
-    const bodyHeygen = buildCreateRequest(defaults({ animationModel: 'heygen-avatar', heygenAvatar: 'anna' }) as any);
+    const bodyHeygen = buildCreateRequest(defaults({ animationModel: 'heygen-avatar', heygenAvatar: 'anna', topic: 'test' }) as any);
     assert.equal(bodyHeygen.heygenAvatar, 'anna');
 
-    const bodyWan = buildCreateRequest(defaults({ animationModel: 'wan' }) as any);
+    const bodyWan = buildCreateRequest(defaults({ animationModel: 'wan', topic: 'test' }) as any);
     assert.equal(bodyWan.heygenAvatar, undefined);
   });
 
@@ -128,16 +111,17 @@ describe('buildCreateRequest', () => {
       inputMode: 'url',
       landingUrl: 'https://example.com',
       title: '',
+      topic: 'test',
     }) as any);
     assert.equal(body.landingUrl, 'https://example.com');
     assert.equal(body.topic, 'Промо-видео'); // defaultTitle for url mode
   });
 
   it('additionalDetails included only when non-empty', () => {
-    const bodyWith = buildCreateRequest(defaults({ additionalDetails: 'Красный фон' }) as any);
+    const bodyWith = buildCreateRequest(defaults({ additionalDetails: 'Красный фон', topic: 'test' }) as any);
     assert.equal(bodyWith.additionalDetails, 'Красный фон');
 
-    const bodyWithout = buildCreateRequest(defaults({ additionalDetails: '  ' }) as any);
+    const bodyWithout = buildCreateRequest(defaults({ additionalDetails: '  ', topic: 'test' }) as any);
     assert.equal(bodyWithout.additionalDetails, undefined);
   });
 });

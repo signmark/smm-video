@@ -54,6 +54,30 @@ export interface CreateRequestBody {
   scriptMode?: 'viral';
 }
 
+/** Default form state — used by Create.tsx useState and by tests. */
+export const CREATE_FORM_DEFAULTS: Omit<CreateRequestInput, 'clipDurationModels'> = {
+  inputMode: 'topic',
+  topic: '',
+  customScenario: '',
+  landingUrl: '',
+  additionalDetails: '',
+  title: '',
+  format: '9:16',
+  duration: 30,
+  language: 'ru',
+  animationModel: 'wan',
+  heygenAvatar: 'default',
+  subtitleStyle: 'karaoke',
+  voice: 'alloy',
+  clipDuration: 10,
+  subtitleFont: 'DejaVu Sans',
+  subtitleSize: 'medium',
+  subtitleColor: '#ffffff',
+  musicStyle: 'ambient',
+  musicVolume: 0.18,
+  scriptMode: 'standard',
+};
+
 export function buildCreateRequest(input: CreateRequestInput): CreateRequestBody {
   const {
     inputMode, topic, customScenario, landingUrl, additionalDetails,

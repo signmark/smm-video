@@ -61,8 +61,8 @@ describe('isRunningStatus', () => {
     assert.equal(isRunningStatus('error'), false);
   });
 
-  it('RUNNING_STATUSES has exactly 3 entries', () => {
-    assert.equal(RUNNING_STATUSES.size, 3);
+  it('RUNNING_STATUSES has exactly 5 entries', () => {
+    assert.equal(RUNNING_STATUSES.size, 5);
   });
 });
 

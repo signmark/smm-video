@@ -1069,7 +1069,7 @@ router.post('/videos/:id/resume', async (req, res) => {
         status: 'error',
         error: err?.message ?? String(err),
         progressMessage: `Ошибка resume: ${err?.message ?? String(err)}`,
-      }).catch(() => {});
+      }).catch((e) => console.error('[resume] Failed to record pipeline error:', e));
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -1269,7 +1269,7 @@ router.post('/videos/:id/generate', async (req, res) => {
         status: 'error',
         error: err?.message ?? String(err),
         progressMessage: `Ошибка: ${err?.message ?? String(err)}`,
-      }).catch(() => {});
+      }).catch((e) => console.error('[video-gen] Failed to record pipeline error:', e));
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

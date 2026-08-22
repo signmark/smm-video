@@ -32,7 +32,7 @@ export const SORT_OPTIONS: { value: SortOrder; label: string }[] = [
 ];
 
 /** Statuses where the machine is actively working (polling + spinner). */
-export const RUNNING_STATUSES = new Set(['generating_script', 'generating_images', 'assembling']);
+export const RUNNING_STATUSES = new Set(['generating_script', 'searching_stock', 'generating_images', 'animating', 'assembling']);
 
 export function isRunningStatus(status: string): boolean {
   return RUNNING_STATUSES.has(status);

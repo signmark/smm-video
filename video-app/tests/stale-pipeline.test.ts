@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { findStuckProjects, PIPELINE_ACTIVE_STATUSES } from '../server/db.ts';
+import { RUNNING_STATUSES, isActiveFilter } from '../client/src/lib/project-filter.ts';
 
 describe('findStuckProjects', () => {
   const mk = (id: string, status: string) => ({ id, status } as { id: string; status: string });
@@ -80,5 +81,44 @@ describe('findStuckProjects', () => {
     const projects = [mk('1', 'idle')];
     const result = findStuckProjects(projects);
     assert.equal(result.length, 0);
+  });
+});
+
+describe('server/client status list parity', () => {
+  it('PIPELINE_ACTIVE_STATUSES and RUNNING_STATUSES contain the same statuses', () => {
+    // WHY these must match:
+    // - Server PIPELINE_ACTIVE_STATUSES = "pipeline is alive, reset on restart"
+    // - Client RUNNING_STATUSES = "show spinner, poll server for updates"
+    // These are the same question from two sides: polling makes sense only while
+    // the pipeline is alive. If they diverge, the client either polls dead projects
+    // (wastes requests) or misses live ones (card looks frozen).
+    const serverSet = new Set(PIPELINE_ACTIVE_STATUSES);
+    const clientSet = RUNNING_STATUSES;
+    assert.equal(serverSet.size, clientSet.size, `Server has ${serverSet.size} statuses, client has ${clientSet.size}`);
+    for (const s of serverSet) {
+      assert.ok(clientSet.has(s), `Server status '${s}' missing from client RUNNING_STATUSES`);
+    }
+    for (const s of clientSet) {
+      assert.ok(serverSet.has(s), `Client status '${s}' missing from server PIPELINE_ACTIVE_STATUSES`);
+    }
+  });
+
+  it('both lists have exactly 5 entries', () => {
+    assert.equal(PIPELINE_ACTIVE_STATUSES.length, 5);
+    assert.equal(RUNNING_STATUSES.size, 5);
+  });
+
+  it('isActiveFilter is intentionally wider than RUNNING_STATUSES', () => {
+    // isActiveFilter = "not done, not error" — includes idle and script_ready
+    // where no pipeline runs but the project is not finished either.
+    // This is intentional: the "В работе" filter bucket shows all unfinished
+    // projects, not just those with an active pipeline.
+    assert.ok(isActiveFilter('idle'), 'idle should be in active filter (unfinished, no pipeline)');
+    assert.ok(isActiveFilter('script_ready'), 'script_ready should be in active filter (waiting for user)');
+    assert.ok(!isActiveFilter('done'), 'done should NOT be in active filter');
+    assert.ok(!isActiveFilter('error'), 'error should NOT be in active filter');
+    // idle and script_ready are in isActiveFilter but NOT in RUNNING_STATUSES
+    assert.ok(!RUNNING_STATUSES.has('idle'), 'idle should NOT be in RUNNING_STATUSES (no pipeline)');
+    assert.ok(!RUNNING_STATUSES.has('script_ready'), 'script_ready should NOT be in RUNNING_STATUSES (no pipeline)');
   });
 });

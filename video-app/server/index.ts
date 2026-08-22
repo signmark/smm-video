@@ -5,6 +5,19 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import { loadKeysFromDirectus } from './load-keys.js';
 
+// ── Global crash handlers ─────────────────────────────────────────────────────
+// Registered BEFORE any async work (loadKeysFromDirectus, DB queries) so that
+// unhandled errors during startup are logged instead of dying silently.
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL] Uncaught exception:', err);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[FATAL] Unhandled rejection:', reason);
+  process.exit(1);
+});
+
 // Load API keys from Directus before anything else
 await loadKeysFromDirectus();
 
@@ -72,19 +85,6 @@ app.use(express.static(distPath, { setHeaders: noCache }));
 app.get('*', (_req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.sendFile(path.join(distPath, 'index.html'));
-});
-
-// ── Global crash handlers ─────────────────────────────────────────────────────
-// Without these, the process dies silently on unhandled errors and the container
-// restarts with no trace in the logs. Docker shows exit code 1 but no reason.
-process.on('uncaughtException', (err) => {
-  console.error('[FATAL] Uncaught exception:', err);
-  process.exit(1);
-});
-
-process.on('unhandledRejection', (reason) => {
-  console.error('[FATAL] Unhandled rejection:', reason);
-  process.exit(1);
 });
 
 app.listen(PORT, '0.0.0.0', () => {

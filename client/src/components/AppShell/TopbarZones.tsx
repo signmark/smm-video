@@ -18,11 +18,16 @@
  * затирая onClick от Radix Slot (тот, что закрывает меню). Результат:
  * URL меняется, но dropdown остаётся открытым (правка ревью 22.08).
  *
- * Решение: каждый DropdownMenu контролируется через `open` state +
- * `onOpenChange`. NavMenuItem в onSelect делает setOpen(false) И
- * навигацию. Это надёжнее, чем onSelect без preventDefault (который
- * Radix всё равно оставлял открытым, потому что wouter useState +
- * React rerender происходили в одном тике).
+ * Контролируемое решение через `open` state + `onOpenChange` ПРОБОВАЛ —
+ * оно ломается иначе: focus management Radix иногда переоткрывал меню
+ * сразу после navigate. Поэтому DropdownMenu здесь uncontrolled,
+ * а навигация — в onSelect (Radix сам закрывает).
+ *
+ * Если позже понадобится якорь для среднего/Ctrl+клика — НЕЛЬЗЯ
+ * вернуть `<DropdownMenuItem asChild><Link>`: Link всё так же затирает
+ * onClick Slot. Работает `<DropdownMenuItem asChild>` поверх обычного
+ * `<a href>` со своим onClick (Radix Slot мерджит обработчики, ломается
+ * именно wouter-Link).
  */
 import { useTranslation } from 'react-i18next';
 import { useLocation } from 'wouter';

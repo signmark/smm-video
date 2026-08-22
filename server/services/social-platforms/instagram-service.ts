@@ -5,6 +5,7 @@
  */
 
 import axios from 'axios';
+import { trackExternalCall } from '../../utils/external-call';
 import FormData from 'form-data';
 import { randomUUID } from 'crypto';
 import log, { logEvent } from '../../utils/logger';
@@ -18,11 +19,11 @@ import { describePlatformError } from './platform-error';
  */
 async function proxyVideoForInstagram(videoUrl: string, opId: string): Promise<string> {
   log.info(`[${opId}] [Instagram] Скачиваем видео для проксирования: ${videoUrl.substring(0, 80)}`);
-  const resp = await axios.get(videoUrl, {
+  const resp = await trackExternalCall('instagram', 'container.status', () => axios.get(videoUrl, {
     responseType: 'arraybuffer',
     timeout: 120000,
     maxContentLength: 500 * 1024 * 1024
-  });
+  }));
   const buffer = Buffer.from(resp.data);
   const contentType = (resp.headers['content-type'] as string) || 'video/mp4';
   log.info(`[${opId}] [Instagram] Видео скачано (${(buffer.length / 1024 / 1024).toFixed(1)} MB), загружаем в Cloudinary...`);
@@ -38,11 +39,11 @@ async function proxyVideoForInstagram(videoUrl: string, opId: string): Promise<s
     form.append('upload_preset', uploadPreset);
     form.append('resource_type', 'video');
     form.append('folder', 'instagram-reels');
-    const res = await axios.post(
+    const res = await trackExternalCall('instagram', 'media.create', () => axios.post(
       `https://api.cloudinary.com/v1_1/${cloudName}/video/upload`,
       form,
       { headers: form.getHeaders(), timeout: 180000, maxContentLength: 500 * 1024 * 1024, maxBodyLength: 500 * 1024 * 1024 }
-    );
+    ));
     if (res.data?.secure_url) {
       log.info(`[${opId}] [Instagram] Видео загружено в Cloudinary: ${res.data.secure_url}`);
       return res.data.secure_url;
@@ -154,7 +155,7 @@ class InstagramService {
       const uploadPreset = process.env.CLOUDINARY_UPLOAD_PRESET || 'My Unsigned Preset';
 
       log.info(`[${opId}] [Instagram] Cloudinary proxy: ${imageUrl.substring(0, 80)}`);
-      const imgRes = await axios.get(imageUrl, { responseType: 'arraybuffer', timeout: 60000 });
+      const imgRes = await trackExternalCall('instagram', 'permalink', () => axios.get(imageUrl, { responseType: 'arraybuffer', timeout: 60000 }));
       const buffer = Buffer.from(imgRes.data);
       const contentType = (imgRes.headers['content-type'] as string) || 'image/jpeg';
       const dataUri = `data:${contentType};base64,${buffer.toString('base64')}`;
@@ -164,11 +165,11 @@ class InstagramService {
       form.append('upload_preset', uploadPreset);
       form.append('folder', 'instagram-images');
 
-      const res = await axios.post(
+      const res = await trackExternalCall('instagram', 'media.publish', () => axios.post(
         `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
         form,
         { headers: form.getHeaders(), timeout: 60000 }
-      );
+      ));
       if (res.data?.secure_url) {
         log.info(`[${opId}] [Instagram] Cloudinary URL: ${res.data.secure_url}`);
         return res.data.secure_url;
@@ -345,9 +346,9 @@ class InstagramService {
    */
   async deletePost(postId: string, token: string): Promise<boolean> {
     try {
-      const res = await axios.delete(`${this.graphBase}/${this.apiVersion}/${postId}`, {
+      const res = await trackExternalCall('instagram', 'media.delete', () => axios.delete(`${this.graphBase}/${this.apiVersion}/${postId}`, {
         params: { access_token: token }
-      });
+      }));
       return res.data?.success === true;
     } catch {
       return false;

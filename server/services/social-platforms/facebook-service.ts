@@ -4,6 +4,7 @@
  */
 
 import axios from 'axios';
+import { trackExternalCall } from '../../utils/external-call';
 import log from '../../utils/logger';
 import { CampaignContent, SocialPlatform, SocialPublication } from '@shared/schema';
 import { TokenValidationResult } from './base-service';
@@ -27,12 +28,16 @@ class FacebookService {
 
     try {
       // 1. Проверяем сам токен через debug_token или просто /me
-      const response = await axios.get(`https://graph.facebook.com/${this.apiVersion}/debug_token`, {
-        params: {
-          input_token: token,
-          access_token: token // Для проверки токена нужен сам токен или app token
-        }
-      });
+      const response = await trackExternalCall(
+        'facebook',
+        'debug_token',
+        () => axios.get(`https://graph.facebook.com/${this.apiVersion}/debug_token`, {
+          params: {
+            input_token: token,
+            access_token: token // Для проверки токена нужен сам токен или app token
+          }
+        })
+      );
 
       const data = response.data.data;
       if (!data.is_valid) {
@@ -41,9 +46,13 @@ class FacebookService {
 
       // 2. Если есть pageId, проверяем доступ к странице
       if (pageId) {
-        const pagesRes = await axios.get(`https://graph.facebook.com/${this.apiVersion}/me/accounts`, {
-          params: { access_token: token }
-        });
+        const pagesRes = await trackExternalCall(
+          'facebook',
+          'me.accounts',
+          () => axios.get(`https://graph.facebook.com/${this.apiVersion}/me/accounts`, {
+            params: { access_token: token }
+          })
+        );
         const hasPage = pagesRes.data.data.some((p: any) => p.id === pageId);
         if (!hasPage) {
           return { isValid: false, error: `Нет доступа к странице ${pageId}` };
@@ -105,9 +114,13 @@ class FacebookService {
 
       let pagesResponse;
       try {
-        pagesResponse = await axios.get(pagesUrl, {
-          params: { access_token: accessToken }
-        });
+        pagesResponse = await trackExternalCall(
+          'facebook',
+          'me.accounts.user',
+          () => axios.get(pagesUrl, {
+            params: { access_token: accessToken }
+          })
+        );
       } catch (axiosError: any) {
         log.error(`[${operationId}] [Facebook] Ошибка Axios: ${axiosError.message}`);
 
@@ -200,11 +213,15 @@ class FacebookService {
 
         log.info(`[${operationId}] [Facebook] Отправка запроса на ${apiUrl}`);
 
-        const response = await axios.post(apiUrl, formData, {
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded'
-          }
-        });
+        const response = await trackExternalCall(
+          'facebook',
+          'feed.post.urlsearch',
+          () => axios.post(apiUrl, formData, {
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded'
+            }
+          })
+        );
 
         if (!response.data?.id) {
           throw new Error('Нет ID в ответе API (URLSearchParams)');
@@ -234,12 +251,16 @@ class FacebookService {
 
         const apiUrl = `https://graph.facebook.com/${this.apiVersion}/${pageId}/feed`;
 
-        const response = await axios.post(apiUrl, null, {
-          params: {
-            message: text,
-            access_token: token
-          }
-        });
+        const response = await trackExternalCall(
+          'facebook',
+          'feed.post.params',
+          () => axios.post(apiUrl, null, {
+            params: {
+              message: text,
+              access_token: token
+            }
+          })
+        );
 
         if (!response.data?.id) {
           throw new Error('Нет ID в ответе API (axios params)');
@@ -319,11 +340,15 @@ class FacebookService {
 
         log.info(`[${operationId}] [Facebook] Отправка запроса на ${apiUrl}`);
 
-        const response = await axios.post(apiUrl, formData, {
-          headers: {
-            'Content-Type': 'application/x-www-form-urlencoded'
-          }
-        });
+        const response = await trackExternalCall(
+          'facebook',
+          'photos.post.urlsearch',
+          () => axios.post(apiUrl, formData, {
+            headers: {
+              'Content-Type': 'application/x-www-form-urlencoded'
+            }
+          })
+        );
 
         if (!response.data?.id) {
           throw new Error('Нет ID в ответе API (URLSearchParams)');
@@ -353,14 +378,18 @@ class FacebookService {
 
         const apiUrl = `https://graph.facebook.com/${this.apiVersion}/${pageId}/photos`;
 
-        const response = await axios.post(apiUrl, null, {
-          params: {
-            url: imageUrl,
-            caption: text,
-            access_token: token,
-            published: true
-          }
-        });
+        const response = await trackExternalCall(
+          'facebook',
+          'photos.post.params',
+          () => axios.post(apiUrl, null, {
+            params: {
+              url: imageUrl,
+              caption: text,
+              access_token: token,
+              published: true
+            }
+          })
+        );
 
         if (!response.data?.id) {
           throw new Error('Нет ID в ответе API (axios params)');
@@ -416,12 +445,16 @@ class FacebookService {
       // Конвертируем ID, удаляя префикс (если требуется)
       const cleanPostId = postId.includes('_') ? postId : `${pageId}_${postId}`;
 
-      const response = await axios.get(`https://graph.facebook.com/${this.apiVersion}/${cleanPostId}`, {
-        params: {
-          fields: 'permalink_url',
-          access_token: token
-        }
-      });
+      const response = await trackExternalCall(
+        'facebook',
+        'post.permalink',
+        () => axios.get(`https://graph.facebook.com/${this.apiVersion}/${cleanPostId}`, {
+          params: {
+            fields: 'permalink_url',
+            access_token: token
+          }
+        })
+      );
 
       if (response.data && response.data.permalink_url) {
         return response.data.permalink_url;
@@ -443,9 +476,13 @@ class FacebookService {
    */
   async deletePost(postId: string, token: string): Promise<boolean> {
     try {
-      const res = await axios.delete(`https://graph.facebook.com/${this.apiVersion}/${postId}`, {
-        params: { access_token: token }
-      });
+      const res = await trackExternalCall(
+        'facebook',
+        'post.delete',
+        () => axios.delete(`https://graph.facebook.com/${this.apiVersion}/${postId}`, {
+          params: { access_token: token }
+        })
+      );
       return res.data?.success === true;
     } catch {
       return false;

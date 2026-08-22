@@ -6,6 +6,7 @@
  */
 
 import axios from 'axios';
+import { trackExternalCall, isVkApiError } from '../../utils/external-call';
 import FormData from 'form-data';
 import { log } from '../../utils/logger';
 import { formatVkErrorMessage, createVkApiError } from '../../utils/vk-error';
@@ -56,13 +57,13 @@ export class VKStoriesService {
 
     try {
       // Проверяем токен через users.get
-      const response = await axios.post('https://api.vk.com/method/users.get', 
+      const response = await trackExternalCall('vk', 'users.get', () => axios.post('https://api.vk.com/method/users.get', 
         new URLSearchParams({
           access_token: token,
           v: VK_API_VERSION
         }),
         { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-      );
+      ), { isApiError: isVkApiError });
 
       if (response.data.error) {
         return { isValid: false, error: response.data.error.error_msg };
@@ -71,14 +72,14 @@ export class VKStoriesService {
       // Если есть groupId, проверяем доступ к группе
       if (groupId) {
         const cleanId = groupId.replace('club', '').replace('-', '');
-        const groupsRes = await axios.post('https://api.vk.com/method/groups.getById', 
+        const groupsRes = await trackExternalCall('vk', 'groups.getById', () => axios.post('https://api.vk.com/method/groups.getById', 
           new URLSearchParams({
             group_id: cleanId,
             access_token: token,
             v: VK_API_VERSION
           }),
           { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-        );
+        ), { isApiError: isVkApiError });
         if (groupsRes.data.error) {
           return { isValid: false, error: `Нет доступа к группе ${groupId}: ${groupsRes.data.error.error_msg}` };
         }
@@ -243,7 +244,7 @@ export class VKStoriesService {
     const method = isVideo ? 'stories.getVideoUploadServer' : 'stories.getPhotoUploadServer';
     const cleanGroupId = groupId.replace('club', '').replace('-', '');
     
-    const response = await axios.post(
+    const response = await trackExternalCall('vk', 'stories.getUploadServer', () => axios.post(
       `https://api.vk.com/method/${method}`,
       new URLSearchParams({
         group_id: cleanGroupId,
@@ -252,7 +253,7 @@ export class VKStoriesService {
         v: VK_API_VERSION,
       }),
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-    );
+    ), { isApiError: isVkApiError });
     
     if (response.data.error) {
       throw new Error(`VK API Error: ${response.data.error.error_msg}`);
@@ -265,7 +266,7 @@ export class VKStoriesService {
    * Скачивает медиа файл
    */
   private async downloadMedia(url: string): Promise<Buffer> {
-    const response = await axios.get(url, { responseType: 'arraybuffer' });
+    const response = await trackExternalCall('vk', 'fetch.media', () => axios.get(url, { responseType: 'arraybuffer' }), { isApiError: isVkApiError });
     log(`Скачано ${(response.data.length / 1024 / 1024).toFixed(2)} MB`, LOG_PREFIX);
     return Buffer.from(response.data);
   }
@@ -287,11 +288,11 @@ export class VKStoriesService {
       contentType: isVideo ? 'video/mp4' : 'image/jpeg',
     });
     
-    const response = await axios.post(uploadUrl, form, {
+    const response = await trackExternalCall('vk', 'upload.stories', () => axios.post(uploadUrl, form, {
       headers: form.getHeaders(),
       maxContentLength: Infinity,
       maxBodyLength: Infinity,
-    });
+    }), { isApiError: isVkApiError });
     
     log(`VK Upload response keys: ${Object.keys(response.data || {}).join(', ')}, error=${response.data?.error ? JSON.stringify(response.data.error) : 'нет'}`, LOG_PREFIX);
     
@@ -353,7 +354,7 @@ export class VKStoriesService {
     accessToken: string,
     uploadResult: string
   ): Promise<{ storyId: string; storyUrl: string; ownerId: string }> {
-    const response = await axios.post(
+    const response = await trackExternalCall('vk', 'stories.save', () => axios.post(
       'https://api.vk.com/method/stories.save',
       new URLSearchParams({
         upload_results: uploadResult,
@@ -361,7 +362,7 @@ export class VKStoriesService {
         v: VK_API_VERSION,
       }),
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-    );
+    ), { isApiError: isVkApiError });
     
     log(`VK stories.save response: ${JSON.stringify(response.data)}`, LOG_PREFIX);
     

@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { trackExternalCall } from '../../utils/external-call';
 import { log } from '../../utils/logger';
 import { BaseSocialService, TokenValidationResult } from './base-service';
 
@@ -16,9 +17,13 @@ export class YouTubeService extends BaseSocialService {
 
     try {
       // Проверяем токен через Google Token Info API
-      const response = await axios.get(`https://oauth2.googleapis.com/tokeninfo`, {
-        params: { access_token: token }
-      });
+      const response = await trackExternalCall(
+        'youtube',
+        'token.validate',
+        () => axios.get(`https://oauth2.googleapis.com/tokeninfo`, {
+          params: { access_token: token }
+        })
+      );
 
       // Проверяем наличие нужных scope для YouTube
       const scope = response.data.scope || '';

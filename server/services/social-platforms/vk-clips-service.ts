@@ -6,6 +6,7 @@
  */
 
 import axios from 'axios';
+import { trackExternalCall, isVkApiError } from '../../utils/external-call';
 import FormData from 'form-data';
 import { log } from '../../utils/logger';
 import { formatVkErrorMessage, createVkApiError } from '../../utils/vk-error';
@@ -74,13 +75,13 @@ export class VKClipsService extends BaseSocialService {
 
     try {
       // Проверяем токен через users.get
-      const response = await axios.post('https://api.vk.com/method/users.get', 
+      const response = await trackExternalCall('vk', 'users.get', () => axios.post('https://api.vk.com/method/users.get', 
         new URLSearchParams({
           access_token: token,
           v: VK_API_VERSION
         }),
         { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-      );
+      ), { isApiError: isVkApiError });
 
       if (response.data.error) {
         return { isValid: false, error: response.data.error.error_msg };
@@ -89,14 +90,14 @@ export class VKClipsService extends BaseSocialService {
       // Если есть groupId, проверяем доступ к группе
       if (groupId) {
         const cleanId = groupId.replace('club', '').replace('-', '');
-        const groupsRes = await axios.post('https://api.vk.com/method/groups.getById', 
+        const groupsRes = await trackExternalCall('vk', 'groups.getById', () => axios.post('https://api.vk.com/method/groups.getById', 
           new URLSearchParams({
             group_id: cleanId,
             access_token: token,
             v: VK_API_VERSION
           }),
           { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-        );
+        ), { isApiError: isVkApiError });
         if (groupsRes.data.error) {
           return { isValid: false, error: `Нет доступа к группе ${groupId}: ${groupsRes.data.error.error_msg}` };
         }
@@ -282,7 +283,7 @@ export class VKClipsService extends BaseSocialService {
     
     log(`Запрашиваю clips.getUploadServer для группы ${cleanGroupId}`, LOG_PREFIX);
     
-    const response = await axios.post(
+    const response = await trackExternalCall('vk', 'clips.getUploadServer', () => axios.post(
       'https://api.vk.com/method/clips.getUploadServer',
       new URLSearchParams({
         group_id: cleanGroupId,
@@ -290,7 +291,7 @@ export class VKClipsService extends BaseSocialService {
         v: VK_API_VERSION,
       }),
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-    );
+    ), { isApiError: isVkApiError });
     
     log(`VK clips.getUploadServer response: hasUploadUrl=${!!response.data?.response?.upload_url}, error=${response.data?.error ? JSON.stringify(response.data.error) : 'нет'}`, LOG_PREFIX);
     
@@ -346,11 +347,11 @@ export class VKClipsService extends BaseSocialService {
       params.description = description.substring(0, 2048);
     }
     
-    const response = await axios.post(
+    const response = await trackExternalCall('vk', 'clips.save', () => axios.post(
       'https://api.vk.com/method/clips.save',
       new URLSearchParams(params),
       { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-    );
+    ), { isApiError: isVkApiError });
     
     log(`VK clips.save response: ${JSON.stringify(response.data)}`, LOG_PREFIX);
     
@@ -377,11 +378,11 @@ export class VKClipsService extends BaseSocialService {
    */
   private async downloadVideo(url: string): Promise<Buffer> {
     log(`Скачиваю видео: ${url}`, LOG_PREFIX);
-    const response = await axios.get(url, { 
+    const response = await trackExternalCall('vk', 'fetch.video', () => axios.get(url, { 
       responseType: 'arraybuffer',
       timeout: 120000,
       maxContentLength: 200 * 1024 * 1024
-    });
+    }), { isApiError: isVkApiError });
     const sizeMB = (response.data.length / 1024 / 1024).toFixed(2);
     log(`Скачано ${sizeMB} MB`, LOG_PREFIX);
     return Buffer.from(response.data);
@@ -401,12 +402,12 @@ export class VKClipsService extends BaseSocialService {
       contentType: 'video/mp4',
     });
     
-    const response = await axios.post(uploadUrl, form, {
+    const response = await trackExternalCall('vk', 'upload.clips', () => axios.post(uploadUrl, form, {
       headers: form.getHeaders(),
       maxContentLength: Infinity,
       maxBodyLength: Infinity,
       timeout: 300000
-    });
+    }), { isApiError: isVkApiError });
     
     log(`VK Clips Upload response keys: ${Object.keys(response.data || {}).join(', ')}, error=${response.data?.error ? JSON.stringify(response.data.error) : 'нет'}`, LOG_PREFIX);
     
@@ -448,7 +449,7 @@ export class VKClipsService extends BaseSocialService {
       log(`Fallback: Публикуем как video.save для группы ${cleanGroupId}`, LOG_PREFIX);
       
       // 1. Получаем upload URL через video.save
-      const saveResponse = await axios.post(
+      const saveResponse = await trackExternalCall('vk', 'video.save', () => axios.post(
         'https://api.vk.com/method/video.save',
         new URLSearchParams({
           group_id: cleanGroupId,
@@ -460,7 +461,7 @@ export class VKClipsService extends BaseSocialService {
           v: VK_API_VERSION,
         }),
         { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-      );
+      ), { isApiError: isVkApiError });
       
       if (saveResponse.data.error) {
         throw new Error(`video.save Error: ${saveResponse.data.error.error_msg}`);
@@ -479,12 +480,12 @@ export class VKClipsService extends BaseSocialService {
         contentType: 'video/mp4',
       });
       
-      await axios.post(uploadUrl, form, {
+      await trackExternalCall('vk', 'upload.clips.alt', () => axios.post(uploadUrl, form, {
         headers: form.getHeaders(),
         maxContentLength: Infinity,
         maxBodyLength: Infinity,
         timeout: 300000
-      });
+      }), { isApiError: isVkApiError });
       
       const videoId = String(saveData.video_id);
       const ownerId = String(saveData.owner_id);

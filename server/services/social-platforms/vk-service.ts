@@ -4,6 +4,7 @@
  */
 
 import axios from 'axios';
+import { trackExternalCall, isVkApiError } from '../../utils/external-call';
 import FormData from 'form-data';
 import log from '../../utils/logger';
 import { formatVkErrorMessage, createVkApiError, isVkEnrichedError } from '../../utils/vk-error';
@@ -147,7 +148,7 @@ class VkService {
   async autoDetectGroupId(token: string, opId: string): Promise<string | null> {
     try {
       log.info(`[${opId}] [VK] groupId не задан — пытаемся определить автоматически`);
-      const resp = await axios.get(`${this.apiBase}/groups.get`, {
+      const resp = await trackExternalCall('vk', 'groups.get', () => axios.get(`${this.apiBase}/groups.get`, {
         params: {
           filter: 'admin',
           fields: 'id,name',
@@ -156,7 +157,7 @@ class VkService {
           v: this.apiVersion,
         },
         timeout: 10000,
-      });
+      }), { isApiError: isVkApiError });
 
       if (resp.data?.error) {
         log.warn(`[${opId}] [VK] groups.get error: ${resp.data.error.error_msg}`);
@@ -197,9 +198,9 @@ class VkService {
         serverParams.group_id = cleanGroupId;
       }
 
-      const serverRes = await axios.post(`${this.apiBase}/photos.getWallUploadServer`, new URLSearchParams(serverParams), {
+      const serverRes = await trackExternalCall('vk', 'photos.getWallUploadServer', () => axios.post(`${this.apiBase}/photos.getWallUploadServer`, new URLSearchParams(serverParams), {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-      });
+      }), { isApiError: isVkApiError });
       if (serverRes.data?.error) {
         throw createVkApiError('photos.getWallUploadServer', serverRes.data.error, serverRes.data, serverRes.status);
       }
@@ -207,7 +208,7 @@ class VkService {
       if (!uploadUrl) throw new Error('Не получен upload_url от VK');
 
       // Скачиваем картинку и заливаем на сервер VK
-      const imgRes = await axios.get(resolvedImageUrl, { responseType: 'arraybuffer', timeout: 60000 });
+      const imgRes = await trackExternalCall('vk', 'fetch.image', () => axios.get(resolvedImageUrl, { responseType: 'arraybuffer', timeout: 60000 }), { isApiError: isVkApiError });
       const imgBuffer = Buffer.from(imgRes.data);
       const contentType = (imgRes.headers['content-type'] as string) || 'image/jpeg';
       const ext = contentType.includes('png') ? 'png' : 'jpg';
@@ -215,9 +216,9 @@ class VkService {
       const form = new FormData();
       form.append('photo', imgBuffer, { filename: `photo.${ext}`, contentType });
 
-      const uploadRes = await axios.post(uploadUrl, form, {
+      const uploadRes = await trackExternalCall('vk', 'upload.wallPhoto', () => axios.post(uploadUrl, form, {
         headers: form.getHeaders(), timeout: 120000
-      });
+      }), { isApiError: isVkApiError });
       const uploadData = uploadRes.data;
       if (uploadData?.error) {
         throw new Error(`VK upload server: ${uploadData.error}`);
@@ -239,9 +240,9 @@ class VkService {
         saveParams.group_id = String(groupId).replace(/^-/, '');
       }
 
-      const saveRes = await axios.post(`${this.apiBase}/photos.saveWallPhoto`, new URLSearchParams(saveParams), {
+      const saveRes = await trackExternalCall('vk', 'photos.saveWallPhoto', () => axios.post(`${this.apiBase}/photos.saveWallPhoto`, new URLSearchParams(saveParams), {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-      });
+      }), { isApiError: isVkApiError });
       if (saveRes.data?.error) {
         throw createVkApiError('photos.saveWallPhoto', saveRes.data.error, saveRes.data, saveRes.status);
       }
@@ -281,9 +282,9 @@ class VkService {
     try {
       const cleanGroupId = String(settings.groupId || '').replace(/^-/, '');
       const ownerId = cleanGroupId ? `-${cleanGroupId}` : undefined;
-      const res = await axios.get(`${this.apiBase}/wall.delete`, {
+      const res = await trackExternalCall('vk', 'wall.delete', () => axios.get(`${this.apiBase}/wall.delete`, {
         params: { owner_id: ownerId, post_id: postId, access_token: settings.token, v: this.apiVersion }
-      });
+      }), { isApiError: isVkApiError });
       return res.data?.response === 1;
     } catch {
       return false;
@@ -305,9 +306,9 @@ class VkService {
         saveParams.group_id = String(groupId).replace(/^-/, '');
       }
 
-      const saveRes = await axios.post(`${this.apiBase}/video.save`, new URLSearchParams(saveParams), {
+      const saveRes = await trackExternalCall('vk', 'video.save', () => axios.post(`${this.apiBase}/video.save`, new URLSearchParams(saveParams), {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-      });
+      }), { isApiError: isVkApiError });
 
       const vkErr = saveRes.data?.error;
       if (vkErr) {
@@ -325,19 +326,19 @@ class VkService {
 
       // Скачиваем видео и загружаем на сервер VK
       log.info(`[${opId}] [VK] Скачиваем видео для загрузки...`);
-      const vidRes = await axios.get(videoUrl, { responseType: 'arraybuffer', timeout: 180000, maxContentLength: 500 * 1024 * 1024 });
+      const vidRes = await trackExternalCall('vk', 'fetch.video', () => axios.get(videoUrl, { responseType: 'arraybuffer', timeout: 180000, maxContentLength: 500 * 1024 * 1024 }), { isApiError: isVkApiError });
       const vidBuffer = Buffer.from(vidRes.data);
 
       const form = new FormData();
       form.append('video_file', vidBuffer, { filename: 'video.mp4', contentType: 'video/mp4' });
 
       log.info(`[${opId}] [VK] Загружаем видео (${(vidBuffer.length / 1024 / 1024).toFixed(1)} MB) на VK...`);
-      const uploadRes = await axios.post(uploadUrl, form, {
+      const uploadRes = await trackExternalCall('vk', 'upload.video', () => axios.post(uploadUrl, form, {
         headers: form.getHeaders(),
         timeout: 300000,
         maxContentLength: Infinity,
         maxBodyLength: Infinity
-      });
+      }), { isApiError: isVkApiError });
 
       // VK upload-сервер возвращает JSON — проверяем его.
       // Если не проверять, невалидный аттачмент молча теряется в wall.post → только текст.
@@ -404,9 +405,9 @@ class VkService {
     }
 
     const bodyParams = new URLSearchParams(postData);
-    const postRes = await axios.post(`${this.apiBase}/wall.post`, bodyParams, {
+    const postRes = await trackExternalCall('vk', 'wall.post', () => axios.post(`${this.apiBase}/wall.post`, bodyParams, {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-    });
+    }), { isApiError: isVkApiError });
 
     if (postRes.data?.error) {
       const e = postRes.data.error;

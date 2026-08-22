@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, FormEvent } from 'react';
 import { navigate } from '../App';
 import { API } from '../api';
 import { ChevronDown, ChevronUp, Settings, Music, Type, Play, Square, SkipForward, Volume2, Loader2, Sparkles, AlertTriangle, Check } from 'lucide-react';
-import { buildCreateRequest, CREATE_FORM_DEFAULTS } from '../lib/create-request';
+import { buildCreateRequest, CREATE_FORM_DEFAULTS, CLIP_DURATION_MODELS } from '../lib/create-request';
 
 function SubtitleStylePreview({ style, color = '#ffffff' }: { style: string; color?: string }) {
   const frame: React.CSSProperties = {
@@ -403,7 +403,6 @@ const SUBTITLE_STYLES = [
 
 type SubtitleStyleValue = typeof SUBTITLE_STYLES[number]['value'];
 
-const CLIP_DURATION_MODELS = new Set(['kling', 'kling-pro', 'seedance', 'seedance2', 'kling-t2v', 'kling-pro-t2v', 'luma', 'seedance-t2v', 'seedance2-t2v', 'happy-horse']);
 
 const SUBTITLE_FONTS = [
   { value: 'DejaVu Sans',      label: 'Стандартный', desc: 'Округлый sans-serif' },

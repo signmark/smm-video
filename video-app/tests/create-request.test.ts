@@ -1,13 +1,14 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildCreateRequest, CREATE_FORM_DEFAULTS } from '../client/src/lib/create-request.ts';
+import { buildCreateRequest, CREATE_FORM_DEFAULTS, CLIP_DURATION_MODELS } from '../client/src/lib/create-request.ts';
 
-const CLIP_DURATION_MODELS = new Set(['kling', 'kling-pro', 'seedance', 'seedance2', 'kling-t2v', 'kling-pro-t2v', 'luma', 'seedance-t2v', 'seedance2-t2v', 'happy-horse']);
 
 /** Default form state — uses the same source of truth as Create.tsx. */
 function defaults(overrides?: Record<string, unknown>) {
   return {
     ...CREATE_FORM_DEFAULTS,
+    // Not part of CREATE_FORM_DEFAULTS: the real default is HEYGEN_AVATARS[0] in Create.tsx.
+    heygenAvatar: 'Abigail Sofa Front',
     clipDurationModels: CLIP_DURATION_MODELS,
     ...overrides,
   };

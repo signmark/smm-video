@@ -6,6 +6,10 @@
  * this function maps it to the API contract.
  */
 
+/** Models that support explicit clip duration. Single source of truth: the
+ *  create screen and the tests both read this set. */
+export const CLIP_DURATION_MODELS = new Set(['kling', 'kling-pro', 'seedance', 'seedance2', 'kling-t2v', 'kling-pro-t2v', 'luma', 'seedance-t2v', 'seedance2-t2v', 'happy-horse']);
+
 export interface CreateRequestInput {
   /** 'topic' | 'custom' | 'url' */
   inputMode: 'topic' | 'custom' | 'url';
@@ -55,7 +59,7 @@ export interface CreateRequestBody {
 }
 
 /** Default form state — used by Create.tsx useState and by tests. */
-export const CREATE_FORM_DEFAULTS: Omit<CreateRequestInput, 'clipDurationModels'> = {
+export const CREATE_FORM_DEFAULTS: Omit<CreateRequestInput, 'clipDurationModels' | 'heygenAvatar'> = {
   inputMode: 'topic',
   topic: '',
   customScenario: '',
@@ -66,7 +70,6 @@ export const CREATE_FORM_DEFAULTS: Omit<CreateRequestInput, 'clipDurationModels'
   duration: 30,
   language: 'ru',
   animationModel: 'wan',
-  heygenAvatar: 'default',
   subtitleStyle: 'karaoke',
   voice: 'alloy',
   clipDuration: 10,

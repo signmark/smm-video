@@ -438,7 +438,8 @@ router.get('/videos/:id/thumbnail', async (req, res) => {
         return res.status(404).json({ error: 'Video file missing' });
       }
       // Write to temp file first, then rename atomically
-      const tmpPath = thumbPath + '.tmp.' + process.pid;
+      // Extension must be .jpg so ffmpeg detects the format
+      const tmpPath = thumbPath.replace(/\.jpg$/, `.${Date.now()}-${Math.random().toString(36).slice(2)}.jpg`);
       try {
         await execFileAsync('ffmpeg', [
           '-i', project.videoPath,

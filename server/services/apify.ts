@@ -1,28 +1,8 @@
 import axios from 'axios';
 import { apiKeyService } from './api-keys';
 import { log } from '../utils/logger';
-
-/**
- * AI-65 срез C: стабильная машинная причина сбоя внешнего вызова.
- * Локальный дубликат classifyExternalError из utils/logger, чтобы не тянуть
- * новый экспорт из logger (это сохраняет совместимость с тестами, мокающими
- * logger). Возвращает один из фиксированных ключей.
- */
-function classifyApifyError(err: any): 'auth' | 'rate_limited' | 'server_5xx' | 'timeout' | 'network' | 'error' {
-  if (!err) return 'error';
-  const code = String(err.code || '');
-  if (code === 'ECONNABORTED' || /timeout/i.test(String(err.message || ''))) return 'timeout';
-  if (code === 'ECONNRESET' || code === 'ENOTFOUND' || code === 'ECONNREFUSED' || code === 'EAI_AGAIN') return 'network';
-  const status = err.response?.status;
-  if (typeof status === 'number') {
-    if (status === 401 || status === 403) return 'auth';
-    if (status === 429) return 'rate_limited';
-    if (status >= 500 && status < 600) return 'server_5xx';
-  }
-  return 'error';
-}
-
-
+import { classifyExternalError } from '../utils/classify-external-error';
+export { classifyExternalError };
 
 interface ApifyRunResponse {
   id: string;
@@ -116,7 +96,7 @@ export class ApifyService {
         );
         try { log.external({ system: 'apify', operation: 'runActor', status: 'ok', durationMs: Date.now() - startedAt }); } catch { /* наблюдение не должно ронять вызов */ }
       } catch (err) {
-        const reason = classifyApifyError(err);
+        const reason = classifyExternalError(err);
         try { log.external({ system: 'apify', operation: 'runActor', status: reason === 'timeout' ? 'timeout' : 'error', durationMs: Date.now() - startedAt, reason }); } catch { /* наблюдение не должно ронять вызов */ }
         throw err;
       }
@@ -156,7 +136,7 @@ export class ApifyService {
         );
         try { log.external({ system: 'apify', operation: 'getRunStatus', status: 'ok', durationMs: Date.now() - startedAt }); } catch { /* наблюдение не должно ронять вызов */ }
       } catch (err) {
-        const reason = classifyApifyError(err);
+        const reason = classifyExternalError(err);
         try { log.external({ system: 'apify', operation: 'getRunStatus', status: reason === 'timeout' ? 'timeout' : 'error', durationMs: Date.now() - startedAt, reason }); } catch { /* наблюдение не должно ронять вызов */ }
         throw err;
       }
@@ -193,7 +173,7 @@ export class ApifyService {
         );
         try { log.external({ system: 'apify', operation: 'getRunResults', status: 'ok', durationMs: Date.now() - startedAt }); } catch { /* наблюдение не должно ронять вызов */ }
       } catch (err) {
-        const reason = classifyApifyError(err);
+        const reason = classifyExternalError(err);
         try { log.external({ system: 'apify', operation: 'getRunResults', status: reason === 'timeout' ? 'timeout' : 'error', durationMs: Date.now() - startedAt, reason }); } catch { /* наблюдение не должно ронять вызов */ }
         throw err;
       }

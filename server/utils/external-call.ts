@@ -4,7 +4,8 @@
  * Назначение — единая точка журналирования для всех исходящих обращений
  * к соцсетям и другим внешним системам. Каждый вызов оставляет в журнале
  * систему, операцию, исход, длительность и причину отказа устойчивым
- * словом. Словарь причин — общий для всех систем (см. `classifyExternalError`).
+ * словом. Словарь причин — общий для всех систем (см. `classifyExternalError`
+ * в `utils/classify-external-error`).
  *
  * ЗАЧЕМ:
  * — фильтры в журнале работают на машиночитаемых терминах, одинаковых
@@ -24,29 +25,32 @@
  * — Cloudinary upload (вспомогательный сервис, не платформа) НЕ оборачивается
  *   этой обёрткой — это инфраструктура.
  */
-import { log, classifyExternalError } from './logger';
+import { log } from './logger';
+import {
+  classifyExternalError,
+  type ExternalErrorReason,
+} from './classify-external-error';
 
 /**
  * Обёртка для одного исходящего HTTP-вызова.
  *
- * @param system    имя системы ('vk' | 'instagram' | 'facebook' | 'youtube' |
- *                  'threads' | 'tiktok'). Используется в журнале.
- * @param operation короткое имя операции ('wall.post', 'media_publish' и т.д.).
- * @param fn        функция, выполняющая axios-вызов и возвращающая ответ.
- * @param options.isApiError  опциональный детектор «бизнес-провала» в теле
- *                  успешного HTTP-ответа. Если возвращает true, в журнал
- *                  пишется `status: 'error', reason: 'api_error'`.
- *                  Без детектора обёртка доверяет axios — если он бросил,
- *                  это ошибка; если не бросил, это успех.
+ * ЗАЧЕМ сигнатура `(...args: any[]) => Promise<T>`: некоторые моки в тестах
+ * передают аргументы в `trackExternalCall` через bind/call/apply или
+ * подменяют вызываемую функцию с переменной арностью. Свободный список
+ * `...args` сохраняет типобезопасность возврата и не ломает моков.
  *
- * Возвращает: Promise<T> — то, что вернул `fn`. Никаких преобразований.
- *
- * Бросает: ту же ошибку, что бросил `fn` (если бросил).
+ * @param system   имя платформы (vk, tiktok, instagram, facebook, threads, youtube).
+ * @param operation имя операции (wall.post, media.publish, ...).
+ * @param fn       функция, делающая запрос (обычно `() => axios.post(...)`).
+ * @param options.isApiError  опциональный детектор «бизнес-провала» в теле.
+ *                            Если он возвращает true, в журнал идёт
+ *                            status:'error', reason:'api_error' вместо
+ *                            status:'ok'.
  */
 export async function trackExternalCall<T>(
   system: string,
   operation: string,
-  fn: () => Promise<T>,
+  fn: (...args: any[]) => Promise<T>,
   options?: { isApiError?: (result: unknown) => boolean }
 ): Promise<T> {
   const startedAt = Date.now();
@@ -83,7 +87,7 @@ export async function trackExternalCall<T>(
     }
     return result;
   } catch (err) {
-    const reason = safeClassify(err);
+    const reason = classifyExternalError(err);
     try {
       log.external({
         system,
@@ -97,36 +101,6 @@ export async function trackExternalCall<T>(
     }
     throw err;
   }
-}
-
-// Если classifyExternalError не экспортирован (например, тест замокал модуль
-// logger и забыл про этот экспорт), fallback на 'error' — лучше плохая
-// причина в журнале, чем падение обёртки, которая роняет публикацию.
-// Используем typeof через обёртку, чтобы избежать падения на этапе импорта,
-// когда vitest уже подменил модуль.
-function safeClassify(err: unknown): 'auth' | 'rate_limited' | 'server_5xx' | 'timeout' | 'network' | 'error' {
-  // Сначала пытаемся использовать общий классификатор из logger.ts.
-  // typeof null/undefined безопасен в JS.
-  try {
-    if (typeof classifyExternalError === 'function') {
-      return classifyExternalError(err);
-    }
-  } catch {
-    // vitest иногда бросает ошибку прямо из моков при попытке доступа к
-    // undefined-экспортам. Проглатываем — fallback ниже.
-  }
-  // Локальный fallback: повторяем логику classifyExternalError без зависимости.
-  if (!err) return 'error';
-  const code = String((err as any).code || '');
-  if (code === 'ECONNABORTED' || /timeout/i.test(String((err as any).message || ''))) return 'timeout';
-  if (code === 'ECONNRESET' || code === 'ENOTFOUND' || code === 'ECONNREFUSED' || code === 'EAI_AGAIN') return 'network';
-  const status = (err as any)?.response?.status;
-  if (typeof status === 'number') {
-    if (status === 401 || status === 403) return 'auth';
-    if (status === 429) return 'rate_limited';
-    if (status >= 500 && status < 600) return 'server_5xx';
-  }
-  return 'error';
 }
 
 /**
@@ -176,3 +150,6 @@ export function isInstagramReelsApiError(result: unknown): boolean {
   if (!data || typeof data !== 'object') return false;
   return Boolean((data as { error?: unknown }).error);
 }
+
+export type { ExternalErrorReason };
+export { classifyExternalError };

@@ -1,24 +1,7 @@
 import axios from 'axios';
 import * as logger from '../utils/logger';
-
-/**
- * AI-65 срез C: локальный классификатор сбоев — дубль classifyExternalError
- * из logger.ts. Не импортируем, чтобы не сломать тесты с частичным моком.
- */
-function classifyClaudeError(err: any): 'auth' | 'rate_limited' | 'server_5xx' | 'timeout' | 'network' | 'error' {
-  if (!err) return 'error';
-  const code = String(err.code || '');
-  if (code === 'ECONNABORTED' || /timeout/i.test(String(err.message || ''))) return 'timeout';
-  if (code === 'ECONNRESET' || code === 'ENOTFOUND' || code === 'ECONNREFUSED' || code === 'EAI_AGAIN') return 'network';
-  const status = err.response?.status;
-  if (typeof status === 'number') {
-    if (status === 401 || status === 403) return 'auth';
-    if (status === 429) return 'rate_limited';
-    if (status >= 500 && status < 600) return 'server_5xx';
-  }
-  return 'error';
-}
-
+import { classifyExternalError } from '../utils/classify-external-error';
+export { classifyExternalError };
 
 import { apiKeyService } from './api-keys';
 import { GlobalApiKeysService } from './global-api-keys';
@@ -675,7 +658,7 @@ ${text}
         return response.data;
         
       } catch (error) {
-        const reason = classifyClaudeError(error);
+        const reason = classifyExternalError(error);
         try { logger.log.external({ system: 'claude', operation: 'messages', status: reason === 'timeout' ? 'timeout' : 'error', durationMs: Date.now() - startedAt, reason }); } catch { /* наблюдение не должно ронять вызов */ }
         if (axios.isAxiosError(error) && error.response) {
           const status = error.response.status;

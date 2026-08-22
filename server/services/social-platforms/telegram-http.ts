@@ -33,7 +33,8 @@ import * as dns from 'dns/promises';
 import * as tls from 'tls';
 import * as https from 'https';
 import axios, { AxiosInstance } from 'axios';
-import { log, classifyExternalError } from '../../utils/logger';
+import { log } from '../../utils/logger';
+import { classifyExternalError } from '../../utils/classify-external-error';
 
 /**
  * Операционализация failover-сигнала: кроме warn-лога, шлём событие в

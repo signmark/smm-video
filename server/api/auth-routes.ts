@@ -3,6 +3,7 @@
  */
 
 import { Request, Response, Express } from 'express';
+import { getRequiredServiceUrl } from "../config/service-urls";
 import axios from 'axios';
 import { directusApiManager } from '../directus';
 import { directusAuthManager } from '../services/directus-auth-manager';
@@ -438,7 +439,7 @@ export function registerAuthRoutes(app: Express): void {
 
       // Directus недоступен (404) — проверьте DIRECTUS_URL в .env
       if (error.response?.status === 404) {
-        const directusUrl = process.env.DIRECTUS_URL || '(не задан)';
+        const directusUrl = getRequiredServiceUrl('DIRECTUS_URL');
         return res.status(503).json({ 
           error: 'Directus недоступен',
           message: `Сервер Directus не отвечает по адресу ${directusUrl}. Проверьте DIRECTUS_URL в .env и убедитесь, что Directus запущен.`

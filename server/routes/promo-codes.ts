@@ -1,9 +1,10 @@
 import { Router, Request, Response } from 'express';
 import { validatePromoCode } from '../services/promo-validation';
 
+import { getRequiredServiceUrl } from "../config/service-urls";
 const router = Router();
 
-const DIRECTUS_URL = process.env.DIRECTUS_URL || 'https://directus.roboflow.space';
+const DIRECTUS_URL = getRequiredServiceUrl('DIRECTUS_URL');
 const ADMIN_TOKEN = process.env.DIRECTUS_STATIC_TOKEN;
 
 type PromoType = 'discount' | 'extra_days' | 'pro_upgrade';

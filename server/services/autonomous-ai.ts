@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { getRequiredServiceUrl } from "../config/service-urls";
 import { directusCrud } from './directus-crud';
 import { toolErrorText, hasUsableTopic } from './autonomous-topic-guard';
 import { geminiDirect } from './gemini-direct';
@@ -172,7 +173,7 @@ async function getAutonomousDbToken(): Promise<string> {
   if (_autonomousDbTokenCache && _autonomousDbTokenCache.expiresAt > Date.now()) {
     return _autonomousDbTokenCache.token;
   }
-  const directusUrl = process.env.DIRECTUS_URL || 'https://directus.roboflow.space';
+  const directusUrl = getRequiredServiceUrl('DIRECTUS_URL');
   const email = process.env.DIRECTUS_ADMIN_EMAIL;
   const password = process.env.DIRECTUS_ADMIN_PASSWORD;
   if (!email || !password) throw new Error('DIRECTUS_ADMIN_EMAIL / DIRECTUS_ADMIN_PASSWORD не заданы');
@@ -1411,7 +1412,7 @@ function getJwtExp(token?: string): number | null {
   }
 }
 
-const DIRECTUS_BASE_URL = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
+const DIRECTUS_BASE_URL = getRequiredServiceUrl('DIRECTUS_URL');
 const TOKEN_REFRESH_THRESHOLD_SEC = 120; // рефрешим если до истечения < 2 минут
 
 // ============================================================================

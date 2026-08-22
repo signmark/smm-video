@@ -8,6 +8,7 @@
  */
 
 import axios from 'axios';
+import { getRequiredServiceUrl } from "../../config/service-urls";
 import { trackExternalCall, isTiktokApiError } from '../../utils/external-call';
 import { BaseSocialService, TokenValidationResult } from './base-service';
 import { CampaignContent, SocialMediaSettings } from '@shared/schema';
@@ -327,7 +328,7 @@ export class TikTokService extends BaseSocialService {
 
     let videoUrl = options.videoUrl;
     if (!videoUrl.startsWith('http')) {
-      const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
+      const directusUrl = getRequiredServiceUrl('DIRECTUS_URL');
       videoUrl = `${directusUrl}/assets/${videoUrl}`;
     }
 

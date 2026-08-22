@@ -12,6 +12,7 @@ import { useQuery } from "@tanstack/react-query";
 import { api } from "@/lib/api-client";
 import { getConnectedPlatformsMap, CONNECTABLE_PLATFORMS, type ConnectablePlatform } from "@/lib/platform-connection";
 import { extractUnconnectedMentions } from "@/lib/disconnected-mention-detector";
+import { BRAND } from "@/lib/brand";
 import { platformNames } from "@/lib/social-platforms";
 import {
   Loader2, Save, Bot, Pencil, Users, Share2, Target, Shuffle,
@@ -145,8 +146,8 @@ const PROMPT_TEMPLATES: PromptTemplate[] = [
 Темы для ротации: автоматизация рутины, кейсы клиентов, сравнение ручной работы vs инструмента, лайфхаки для SMM, тренды digital-маркетинга, ошибки которых стоит избегать.
 
 Запрещено: «в современном мире», «не секрет что», «уникальный», восклицательные знаки через каждое предложение, списки из 10+ пунктов.`,
-      alwaysInclude: `Попробуй сервис бесплатно: https://smm.omemo.tech — 14 дней без карты.`,
-      signature: `— Команда omemo.tech | smm.omemo.tech`,
+      alwaysInclude: `Попробуй сервис бесплатно: ${BRAND.appUrl} — 14 дней без карты.`,
+      signature: `— Команда ${BRAND.productUrl} | ${BRAND.appUrl}`,
       useEditorPass: true, humanize: true, adaptForPlatforms: true, autoSelectPlatforms: true, randomKeywords: true,
     },
   },
@@ -734,7 +735,7 @@ export default function AutonomousSettings({ campaignId, initialSettings, onSett
           id="auto-always-include"
           data-testid="input-auto-always-include"
           rows={3}
-          placeholder="Например: Попробуй сервис бесплатно: https://smm.omemo.tech — 14 дней без карты."
+          placeholder={`Например: Попробуй сервис бесплатно: ${BRAND.appUrl} — 14 дней без карты.`}
           value={values.alwaysInclude || ""}
           onChange={updateValue("alwaysInclude")}
         />
@@ -749,7 +750,7 @@ export default function AutonomousSettings({ campaignId, initialSettings, onSett
           id="auto-signature"
           data-testid="input-auto-signature"
           rows={2}
-          placeholder="Например: — Команда omemo.tech | https://omemo.tech"
+          placeholder={`Например: — Команда ${BRAND.productUrl} | ${BRAND.appUrl}`}
           value={values.signature || ""}
           onChange={updateValue("signature")}
         />

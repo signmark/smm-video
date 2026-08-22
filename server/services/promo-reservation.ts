@@ -26,6 +26,7 @@
  */
 
 import { log } from '../utils/logger';
+import { getRequiredServiceUrl } from "../config/service-urls";
 import type { PromoRecord } from './promo-validation';
 
 const COLLECTION = 'promo_reservations';
@@ -73,7 +74,7 @@ function occupancySignature(occupied: Set<number>): string {
 }
 
 function directusUrl(): string {
-  return process.env.DIRECTUS_URL || '';
+  return getRequiredServiceUrl('DIRECTUS_URL');
 }
 
 function adminToken(): string {

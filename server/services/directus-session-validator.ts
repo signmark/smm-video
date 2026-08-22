@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { getRequiredServiceUrl } from "../config/service-urls";
 
 export type DirectusSessionValidation = 'valid' | 'invalid' | 'unavailable';
 
@@ -26,7 +27,7 @@ async function isExplicitInvalid403(response: Response): Promise<boolean> {
 }
 
 async function validateUpstream(token: string, fetchImpl: typeof fetch): Promise<DirectusSessionValidation> {
-  const directusUrl = (process.env.DIRECTUS_URL || 'https://directus.nplanner.ru').replace(/\/$/, '');
+  const directusUrl = (getRequiredServiceUrl('DIRECTUS_URL')).replace(/\/$/, '');
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), VALIDATION_TIMEOUT_MS);
   const startedAt = Date.now();

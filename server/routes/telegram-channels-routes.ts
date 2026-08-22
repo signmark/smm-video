@@ -3,6 +3,7 @@ import { authorizeCampaignAccess, CampaignAccessError } from '../services/campai
 import axios from 'axios';
 import { globalApiKeysService } from '../services/global-api-keys';
 import { ApiServiceName } from '../services/api-keys';
+import { getRequiredServiceUrl } from "../config/service-urls";
 import { directusApiManager } from '../directus.js';
 import { directusCrud } from '../services/directus-crud';
 import { geminiProxyService } from '../services/gemini-proxy';
@@ -18,7 +19,7 @@ export function registerTelegramChannelsRoutes(app: Express) {
 
     const token = authHeader.substring(7);
     try {
-      const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
+      const directusUrl = getRequiredServiceUrl('DIRECTUS_URL');
       const finalUrl = directusUrl.endsWith('/') ? directusUrl : directusUrl + '/';
 
       const response = await axios.get(`${finalUrl}users/me`, {
@@ -45,7 +46,7 @@ export function registerTelegramChannelsRoutes(app: Express) {
   // Получить все категории
   app.get('/api/telegram-channels/categories', authenticateRequest, async (req: Request & { userToken?: string }, res: Response) => {
     try {
-      const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
+      const directusUrl = getRequiredServiceUrl('DIRECTUS_URL');
       const finalUrl = directusUrl.endsWith('/') ? directusUrl : directusUrl + '/';
 
       const response = await axios.get(`${finalUrl}items/telegram_categories`, {
@@ -79,7 +80,7 @@ export function registerTelegramChannelsRoutes(app: Express) {
       const { categoryName } = req.params;
       const { limit = 30, offset = 0, language, sortBy = 'subscribers' } = req.query;
 
-      const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
+      const directusUrl = getRequiredServiceUrl('DIRECTUS_URL');
       const finalUrl = directusUrl.endsWith('/') ? directusUrl : directusUrl + '/';
 
       // Сначала получаем ID категории
@@ -153,7 +154,7 @@ export function registerTelegramChannelsRoutes(app: Express) {
     try {
       const { limit = 20, language } = req.query;
 
-      const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
+      const directusUrl = getRequiredServiceUrl('DIRECTUS_URL');
       const finalUrl = directusUrl.endsWith('/') ? directusUrl : directusUrl + '/';
 
       const filters: any = {
@@ -201,7 +202,7 @@ export function registerTelegramChannelsRoutes(app: Express) {
         });
       }
 
-      const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
+      const directusUrl = getRequiredServiceUrl('DIRECTUS_URL');
       const finalUrl = directusUrl.endsWith('/') ? directusUrl : directusUrl + '/';
 
       const response = await axios.get(`${finalUrl}items/telegram_channels`, {
@@ -257,7 +258,7 @@ export function registerTelegramChannelsRoutes(app: Express) {
       console.log(`🤖 [Smart Search] Ключевые слова:`, keywords);
       console.log(`🔑 [Smart Search] User token provided:`, !!req.userToken);
 
-      const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
+      const directusUrl = getRequiredServiceUrl('DIRECTUS_URL');
       const finalUrl = directusUrl.endsWith('/') ? directusUrl : directusUrl + '/';
       console.log(`🌐 [Smart Search] Directus URL:`, directusUrl);
 

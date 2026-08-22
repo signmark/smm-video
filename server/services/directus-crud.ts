@@ -7,6 +7,7 @@
  * 3. Не дублировать логику авторизации - она централизована здесь
  */
 import axios, { AxiosRequestConfig } from 'axios';
+import { getRequiredServiceUrl } from "../config/service-urls";
 import { DirectusAuthResult, DirectusRequestOptions } from './directus-types';
 import { adminTokenManager } from './admin-token-manager';
 import { logEvent } from '../utils/logger';
@@ -91,7 +92,7 @@ export class DirectusCrud {
   constructor() {
     const isProduction = process.env.NODE_ENV === 'production' || process.env.ENV === 'production';
     // ВАЖНО: В Replit или локально в проде используем внешний URL, если не задан DIRECTUS_URL
-    this.directusUrl = process.env.DIRECTUS_URL || (isProduction ? 'https://directus.nplanner.ru' : 'https://directus.nplanner.ru');
+    this.directusUrl = getRequiredServiceUrl('DIRECTUS_URL');
 
     // Убеждаемся, что URL не содержит лишних слэшей в конце
     this.directusUrl = this.directusUrl.replace(/\/$/, '');

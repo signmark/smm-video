@@ -5,6 +5,7 @@
  */
 
 import express from 'express';
+import { getRequiredServiceUrl } from "../config/service-urls";
 import axios from 'axios';
 import { log, logEvent, emitPublishScheduled } from '../utils/logger';
 import { authMiddleware } from '../middleware/auth';
@@ -209,7 +210,7 @@ router.post('/stories/publish', authMiddleware, async (req, res) => {
     }
 
     // Получаем Stories контент из Directus
-    const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
+    const directusUrl = getRequiredServiceUrl('DIRECTUS_URL');
 
     // Используем пользовательский токен (согласно архитектуре: UI uses user tokens for all API requests)
     const userToken = req.headers.authorization?.replace('Bearer ', '');
@@ -465,7 +466,7 @@ router.post('/publish/now', authMiddleware, async (req, res) => {
     // 🎯 Фильтруем платформы по совместимости с типом контента
     try {
       const { filterCompatiblePlatforms, getIncompatibilityReason } = await import('../utils/content-type-platform-map');
-      const directusUrl = process.env.DIRECTUS_URL || 'https://directus.roboflow.space';
+      const directusUrl = getRequiredServiceUrl('DIRECTUS_URL');
       const adminTk = process.env.DIRECTUS_STATIC_TOKEN || '';
       const contentResp = await axios.get(`${directusUrl}/items/campaign_content/${contentId}?fields=content_type`, {
         headers: { Authorization: `Bearer ${adminTk}` }
@@ -1706,7 +1707,7 @@ router.get('/publish/diagnose', devOnly, authMiddleware, async (req, res) => {
       hasAnyToken: !!(directusToken || serviceToken || adminToken)
     },
     directus: {
-      url: process.env.DIRECTUS_URL || 'NOT SET'
+      url: getRequiredServiceUrl('DIRECTUS_URL')
     }
   };
 

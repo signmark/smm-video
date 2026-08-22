@@ -5,6 +5,7 @@
  */
 
 import express from 'express';
+import { getRequiredServiceUrl } from "../config/service-urls";
 import { log } from '../utils/logger';
 import { authMiddleware } from '../middleware/auth';
 import { socialPublishingService } from '../services/social/index';
@@ -52,7 +53,7 @@ router.post('/clips/publish', authMiddleware, async (req, res) => {
       });
     }
     
-    const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
+    const directusUrl = getRequiredServiceUrl('DIRECTUS_URL');
     
     const contentResponse = await axios.get(`${directusUrl}/items/campaign_content/${contentId}`, {
       headers: { 'Authorization': `Bearer ${userToken}` }
@@ -214,7 +215,7 @@ router.post('/clips/publish/:platform', authMiddleware, async (req, res) => {
       });
     }
     
-    const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
+    const directusUrl = getRequiredServiceUrl('DIRECTUS_URL');
     
     const contentResponse = await axios.get(`${directusUrl}/items/campaign_content/${contentId}`, {
       headers: { 'Authorization': `Bearer ${userToken}` }

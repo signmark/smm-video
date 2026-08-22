@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import { getRequiredServiceUrl } from "../config/service-urls";
 import { directusApiManager } from '../directus';
 import { validateDirectusSession } from '../services/directus-session-validator';
 import { adminTokenManager } from '../services/admin-token-manager';
@@ -26,7 +27,7 @@ async function fetchAdminStatus(userId: string): Promise<boolean> {
       log.error('[user-auth] fetchAdminStatus: не удалось получить служебный токен');
       return false;
     }
-    const directusUrl = (process.env.DIRECTUS_URL || '').replace(/\/$/, '');
+    const directusUrl = (getRequiredServiceUrl('DIRECTUS_URL')).replace(/\/$/, '');
     const url = `${directusUrl}/users/${userId}?fields=is_smm_admin`;
     log.debug(`[user-auth] fetchAdminStatus: GET ${url}`);
     const resp = await fetch(url, {

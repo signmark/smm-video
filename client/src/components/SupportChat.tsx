@@ -13,6 +13,7 @@ import {
   Clock
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { BRAND } from "@/lib/brand";
 import { useAuthStore } from "@/lib/store";
 import { apiRequest } from "@/lib/queryClient";
 
@@ -90,7 +91,7 @@ export function SupportChat() {
       const supportResponse: SupportMessage = {
         id: (Date.now() + 1).toString(),
         type: 'support',
-        content: 'Спасибо за ваше сообщение! Мы получили ваш запрос и ответим в ближайшее время. Вы также можете связаться с нами напрямую через:\n\n📧 Email: support@omemo.tech\n💬 Telegram: @smm_manager_support',
+        content: 'Спасибо за ваше сообщение! Мы получили ваш запрос и ответим в ближайшее время. Вы также можете связаться с нами напрямую через:\n\n📧 Email: ${BRAND.supportEmail}\n💬 Telegram: @${BRAND.supportTelegramHandle}',
         timestamp: new Date(),
         status: 'sent'
       };
@@ -114,7 +115,7 @@ export function SupportChat() {
 
       toast({
         title: "Ошибка отправки",
-        description: "Не удалось отправить сообщение. Попробуйте снова или свяжитесь с нами напрямую: support@omemo.tech",
+        description: `Не удалось отправить сообщение. Попробуйте снова или свяжитесь с нами напрямую: ${BRAND.supportEmail}`,
         variant: "destructive"
       });
     } finally {

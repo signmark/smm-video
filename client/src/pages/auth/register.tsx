@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useLocation } from "wouter";
 import { useAuthStore } from "@/lib/store";
+import { LEGAL_PATHS } from "@/lib/brand";
 import {
   Loader2, ArrowLeft, ArrowRight, CheckCircle2,
   User, Briefcase, Rocket, Share2, Check
@@ -366,9 +367,9 @@ export default function Register() {
 
                   <div className="space-y-3 pt-1 text-sm text-gray-700 border-t border-gray-100 mt-2">
                     {[
-                      { name: "termsAccepted" as const, label: "Я принимаю условия оферты.", link: "/smmniap_static/terms.html", linkLabel: "Публичная оферта" },
-                      { name: "privacyAccepted" as const, label: "Ознакомлен(а) с политикой конфиденциальности.", link: "/smmniap_static/privacy.html", linkLabel: "Политика" },
-                      { name: "personalDataAccepted" as const, label: "Даю согласие на обработку персональных данных.", link: "/smmniap_static/privacy.html", linkLabel: "Подробнее" },
+                      { name: "termsAccepted" as const, label: "Я принимаю условия оферты.", link: LEGAL_PATHS.terms, linkLabel: "Публичная оферта" },
+                      { name: "privacyAccepted" as const, label: "Ознакомлен(а) с политикой конфиденциальности.", link: LEGAL_PATHS.privacy, linkLabel: "Политика" },
+                      { name: "personalDataAccepted" as const, label: "Даю согласие на обработку персональных данных.", link: LEGAL_PATHS.privacy, linkLabel: "Подробнее" },
                     ].map(({ name, label, link, linkLabel }) => (
                       <FormField key={name} control={registerForm.control} name={name} render={({ field }) => (
                         <FormItem className="space-y-1">

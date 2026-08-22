@@ -3,6 +3,7 @@
  */
 
 import { Application, Request, Response } from 'express';
+import { getRequiredServiceUrl } from "./config/service-urls";
 import { globalApiKeysService } from './services/global-api-keys';
 import { log } from './utils/logger';
 import { directusCrud } from './services/directus-crud';
@@ -53,7 +54,7 @@ export async function isUserAdmin(req: Request, directusToken?: string): Promise
 
     log.debug('Проверка прав администратора', 'admin');
 
-    const directusUrl = (process.env.DIRECTUS_URL || '').replace(/\/$/, '');
+    const directusUrl = (getRequiredServiceUrl('DIRECTUS_URL')).replace(/\/$/, '');
 
     // Пробуем через пользовательский токен (/users/me)
     try {

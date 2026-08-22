@@ -3,6 +3,7 @@
  */
 
 import { Router } from 'express';
+import { getRequiredServiceUrl } from "../config/service-urls";
 import { TikTokOAuth, TikTokConfig } from '../utils/tiktok-oauth';
 import { authMiddleware } from '../middleware/auth';
 import axios from 'axios';
@@ -44,7 +45,7 @@ async function getTikTokConfig(): Promise<TikTokConfig | null> {
 
   // Приоритет 2: Directus api_keys
   try {
-    const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
+    const directusUrl = getRequiredServiceUrl('DIRECTUS_URL');
     const token = process.env.DIRECTUS_STATIC_TOKEN;
 
     const response = await axios.get(`${directusUrl}/items/api_keys`, {
@@ -265,7 +266,7 @@ async function saveTikTokTokens(
   tokens: { accessToken: string; refreshToken: string; expiresIn: number; openId: string },
   creatorInfo: { creatorNickname: string; creatorUsername: string; creatorAvatarUrl: string }
 ): Promise<void> {
-  const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
+  const directusUrl = getRequiredServiceUrl('DIRECTUS_URL');
   const directusToken = process.env.DIRECTUS_STATIC_TOKEN;
 
   const data = {
@@ -364,7 +365,7 @@ router.get('/tiktok/accounts', authMiddleware, async (req, res) => {
       return res.status(401).json({ error: 'Пользователь не авторизован' });
     }
 
-    const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
+    const directusUrl = getRequiredServiceUrl('DIRECTUS_URL');
     const directusToken = process.env.DIRECTUS_STATIC_TOKEN;
 
     const response = await axios.get(`${directusUrl}/items/social_accounts`, {
@@ -402,7 +403,7 @@ router.delete('/tiktok/accounts/:accountId', authMiddleware, async (req, res) =>
       return res.status(401).json({ error: 'Пользователь не авторизован' });
     }
 
-    const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
+    const directusUrl = getRequiredServiceUrl('DIRECTUS_URL');
     const directusToken = process.env.DIRECTUS_STATIC_TOKEN;
 
     // Проверяем что аккаунт принадлежит пользователю
@@ -455,7 +456,7 @@ router.post('/tiktok/sync-settings', authMiddleware, async (req, res) => {
     if (!userId) return res.status(401).json({ error: 'Пользователь не авторизован' });
     if (!campaignId) return res.status(400).json({ error: 'campaignId обязателен' });
 
-    const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
+    const directusUrl = getRequiredServiceUrl('DIRECTUS_URL');
 
     // Читаем social_accounts через токен пользователя — пользователь видит свои записи
     const accountsResp = await axios.get(`${directusUrl}/items/social_accounts`, {
@@ -547,7 +548,7 @@ router.get('/tiktok/creator-info/:accountId', authMiddleware, async (req, res) =
       return res.status(401).json({ error: 'Пользователь не авторизован' });
     }
 
-    const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
+    const directusUrl = getRequiredServiceUrl('DIRECTUS_URL');
     const directusToken = process.env.DIRECTUS_STATIC_TOKEN;
 
     // Получаем аккаунт
@@ -623,7 +624,7 @@ router.post('/tiktok/test-publish', authMiddleware, async (req, res) => {
       return res.status(400).json({ error: 'campaignId и videoUrl обязательны' });
     }
 
-    const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
+    const directusUrl = getRequiredServiceUrl('DIRECTUS_URL');
     const directusToken = process.env.DIRECTUS_STATIC_TOKEN;
 
     // Ищем подключённый TikTok-аккаунт для кампании
@@ -713,7 +714,7 @@ router.post('/tiktok/test-post', authMiddleware, async (req, res) => {
     if (!userId) return res.status(401).json({ error: 'Не авторизован' });
     if (!videoUrl) return res.status(400).json({ error: 'videoUrl обязателен' });
 
-    const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
+    const directusUrl = getRequiredServiceUrl('DIRECTUS_URL');
 
     // Берём TikTok аккаунт через пользовательский токен
     const accountsResp = await axios.get(`${directusUrl}/items/social_accounts`, {

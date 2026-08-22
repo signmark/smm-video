@@ -4,6 +4,7 @@
  */
 
 import axios from 'axios';
+import { getRequiredServiceUrl } from "../../config/service-urls";
 import { trackExternalCall, isVkApiError } from '../../utils/external-call';
 import FormData from 'form-data';
 import log from '../../utils/logger';
@@ -61,7 +62,7 @@ class VkService {
     if (/^https?:\/\//i.test(imageUrl)) return imageUrl;
     if (imageUrl.startsWith('//')) return `https:${imageUrl}`;
 
-    const directusUrl = (process.env.DIRECTUS_URL || '').replace(/\/$/, '');
+    const directusUrl = (getRequiredServiceUrl('DIRECTUS_URL')).replace(/\/$/, '');
     if (directusUrl && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(imageUrl)) {
       return `${directusUrl}/assets/${imageUrl}`;
     }

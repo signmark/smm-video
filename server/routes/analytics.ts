@@ -1,4 +1,5 @@
 import { Express, Request, Response } from 'express';
+import { getRequiredServiceUrl } from "../config/service-urls";
 import { authenticateUser } from '../middleware/user-auth';
 import { directusApi } from '../directus';
 import { directusCrud } from '../services/directus-crud';
@@ -395,7 +396,7 @@ export function registerAnalyticsRoutes(app: Express) {
       log(`[Analytics Route] Запрос трендов кампании ${campaignId} (user ${userId}, period=${periodRaw || 'all'}, limit=${unlimited ? 'all' : effectiveLimit})`, 'info');
 
       const adminToken = await directusCrud.getAdminTokenPublic();
-      const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
+      const directusUrl = getRequiredServiceUrl('DIRECTUS_URL');
 
       const baseParams: Record<string, any> = {
         'filter[campaign_id][_eq]': campaignId,
@@ -497,7 +498,7 @@ export function registerAnalyticsRoutes(app: Express) {
       }
 
       const adminToken = await directusCrud.getAdminTokenPublic();
-      const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
+      const directusUrl = getRequiredServiceUrl('DIRECTUS_URL');
 
       let trend: any;
       try {

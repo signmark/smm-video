@@ -32,6 +32,7 @@
  * перед повтором). Task B — отдельный таск, не этот.
  */
 import axios from 'axios';
+import { getRequiredServiceUrl } from "../config/service-urls";
 import { log } from '../utils/logger';
 
 /**
@@ -77,7 +78,7 @@ function adminHeaders(): Record<string, string> {
 }
 
 function directusUrl(): string {
-  return process.env.DIRECTUS_URL || '';
+  return getRequiredServiceUrl('DIRECTUS_URL');
 }
 
 /**

@@ -1,4 +1,5 @@
 import './load-env';
+import { validateRequiredServiceUrls } from "./config/service-urls";
 import express, { type Request, Response, NextFunction } from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
@@ -1167,6 +1168,12 @@ app.use('/video-app', (req, res, next) => {
         log(`Error serving static files: ${staticError instanceof Error ? staticError.message : 'Unknown error'}`);
       }
     }
+
+    // AI-89: проверяем обязательные URL внешних сервисов ДО открытия
+    // порта. Если что-то не задано — приложение падает с понятным
+    // сообщением (см. config/service-urls.ts). Тихий уход в чужой
+    // Directus был бы data corruption, fail-fast лучше.
+    validateRequiredServiceUrls();
 
     // Всегда используем PORT из окружения или 5000
     const PORT = parseInt(process.env.PORT || "5000", 10);

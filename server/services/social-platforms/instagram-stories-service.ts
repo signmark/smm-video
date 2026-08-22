@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { getRequiredServiceUrl } from "../../config/service-urls";
 import { trackExternalCall } from '../../utils/external-call';
 import { log, logEvent } from '../../utils/logger';
 
@@ -61,7 +62,7 @@ export async function publishInstagramStory(
   adminToken: string,
   overrides?: { imageUrl?: string; videoUrl?: string }
 ): Promise<InstagramStoryResult> {
-  const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
+  const directusUrl = getRequiredServiceUrl('DIRECTUS_URL');
 
   if (!adminToken) {
     return { success: false, error: 'Нет токена для доступа к Directus' };

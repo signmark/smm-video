@@ -7,6 +7,8 @@
  * это bootstrap-вывод, как logToConsole в самом logger.ts.
  */
 
+import { getRequiredServiceUrl } from "../config/service-urls";
+
 export interface EnvironmentConfig {
   adminEmail: string;
   adminPassword: string;
@@ -27,12 +29,12 @@ export function detectEnvironment(): EnvironmentConfig {
   const envVariable = process.env.ENV || process.env.NODE_ENV || 'production';
   const environment = envVariable === 'development' ? 'development' : 'production';
 
-  // URL Directus в зависимости от окружения
-  // Поддерживаем оба имени переменной: DIRECTUS_URL (его задаёт прод — /root/docker-compose.yml)
-  // и DIRECTUS_INTERNAL_URL (legacy-имя из архивных compose-файлов, см. docs/DEPLOYMENT.md)
-  const directusUrl = process.env.DIRECTUS_URL ||
-    process.env.DIRECTUS_INTERNAL_URL ||
-    (environment === 'development' ? 'http://localhost:8055' : 'https://directus.nplanner.ru');
+  // URL Directus. AI-89: переменная обязательна — validateRequiredServiceUrls()
+  // в server/index.ts уже проверила её на старте, поэтому здесь бросаем
+  // с понятным сообщением, если она вдруг не задана (например, в тестах
+  // без мока env). Старая цепочка (DIRECTUS_INTERNAL_URL, dev/prod-фоллбэки)
+  // убрана: они создавали риск тихого ухода в чужой Directus.
+  const directusUrl = getRequiredServiceUrl('DIRECTUS_URL');
 
   if (!_logged) {
     console.log(`[ENV-DETECTOR] Detected environment: ${environment}, Directus URL: ${directusUrl}`);

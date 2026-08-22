@@ -1,4 +1,5 @@
 import { trendsCallbackUrl } from '../middleware/webhook-auth';
+import { getRequiredServiceUrl } from "../config/service-urls";
 import axios from 'axios';
 import { directusCrud } from './directus-crud';
 import { log } from '../utils/logger';
@@ -423,7 +424,7 @@ async function getCampaignSources(
 }> {
   const result: any = { telegram: [], vk: [], youtube: [], instagram: [] };
   try {
-    const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
+    const directusUrl = getRequiredServiceUrl('DIRECTUS_URL');
     const adminToken = process.env.DIRECTUS_STATIC_TOKEN;
 
     // Строим URL для прямого запроса к Directus

@@ -9,7 +9,8 @@
  * сумма к списанию считается здесь и больше нигде.
  */
 
-const DIRECTUS_URL = process.env.DIRECTUS_URL || 'https://directus.roboflow.space';
+import { getRequiredServiceUrl } from "../config/service-urls";
+const DIRECTUS_URL = getRequiredServiceUrl('DIRECTUS_URL');
 const ADMIN_TOKEN =
   process.env.DIRECTUS_STATIC_TOKEN;
 

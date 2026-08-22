@@ -1,4 +1,5 @@
 import { directusApi } from '../directus';
+import { getRequiredServiceUrl } from "../config/service-urls";
 import { log, logEvent } from '../utils/logger';
 import axios from 'axios';
 import {
@@ -245,7 +246,7 @@ export class AnalyticsService {
       return;
     }
 
-    const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
+    const directusUrl = getRequiredServiceUrl('DIRECTUS_URL');
 
     let socialSettings = campaign.social_media_settings || {};
     if (typeof socialSettings === 'string') {
@@ -549,7 +550,7 @@ export class AnalyticsService {
     const adminToken = process.env.DIRECTUS_STATIC_TOKEN || '';
     if (!adminToken) return { success: false, message: 'Нет токена для Directus' };
 
-    const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
+    const directusUrl = getRequiredServiceUrl('DIRECTUS_URL');
 
     try {
       const campaignResp = await axios.get(`${directusUrl}/items/user_campaigns/${campaignId}`, {

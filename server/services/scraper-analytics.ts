@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { getRequiredServiceUrl } from "../config/service-urls";
 import { SCRAPER_BASE, getScraperApiKey } from './trend-collector';
 import { log } from '../utils/logger';
 
@@ -432,7 +433,7 @@ export async function persistAnalyticsChannelId(
 ): Promise<void> {
   if (!campaignId || !channelId) return;
 
-  const directusUrl = process.env.DIRECTUS_URL || 'https://directus.nplanner.ru';
+  const directusUrl = getRequiredServiceUrl('DIRECTUS_URL');
   try {
     const currentResponse = await axios.get(
       `${directusUrl}/items/user_campaigns/${campaignId}`,

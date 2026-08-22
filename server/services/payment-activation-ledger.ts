@@ -21,6 +21,7 @@
  */
 
 import { log } from '../utils/logger';
+import { getRequiredServiceUrl } from "../config/service-urls";
 
 const COLLECTION = 'payment_activations';
 
@@ -31,7 +32,7 @@ const STALE_CLAIM_MS = 15 * 60 * 1000;
 const READINESS_TTL_MS = 60 * 1000;
 
 function directusUrl(): string {
-  return process.env.DIRECTUS_URL || '';
+  return getRequiredServiceUrl('DIRECTUS_URL');
 }
 
 function adminToken(): string {

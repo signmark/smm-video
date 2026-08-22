@@ -9,6 +9,7 @@ import { directusCrud } from './directus-crud';
 import { directusAuthManager } from './directus-auth-manager';
 import { ApiServiceName } from './api-keys';
 import axios from 'axios';
+import { getRequiredServiceUrl } from "../config/service-urls";
 
 /**
  * Интерфейс для хранения кэша глобальных API ключей
@@ -955,7 +956,10 @@ export class GlobalApiKeysService {
         return false;
       }
 
-      const directusUrl = process.env.DIRECTUS_URL || process.env.VITE_DIRECTUS_URL || 'https://directus.roboflow.space';
+      // AI-89: VITE_DIRECTUS_URL — клиентская переменная для Vite, на сервере
+      // её быть не должно. Если DIRECTUS_URL не задана — fail-fast
+      // (validateRequiredServiceUrls() на старте).
+      const directusUrl = getRequiredServiceUrl('DIRECTUS_URL');
       
       const response = await axios.patch(
         `${directusUrl}/items/global_api_keys/9`, // ID записи YouTube в базе

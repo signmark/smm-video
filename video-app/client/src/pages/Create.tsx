@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, FormEvent } from 'react';
 import { navigate } from '../App';
 import { API } from '../api';
+import { ChevronDown, ChevronUp, Settings, Music, Type } from 'lucide-react';
 
 function SubtitleStylePreview({ style, color = '#ffffff' }: { style: string; color?: string }) {
   const frame: React.CSSProperties = {
@@ -483,6 +484,9 @@ export default function Create() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [directorBrief, setDirectorBrief] = useState('');
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showSubtitles, setShowSubtitles] = useState(false);
+  const [showMusic, setShowMusic] = useState(false);
   const [directorLoading, setDirectorLoading] = useState(false);
   const [directorRationale, setDirectorRationale] = useState('');
   const [directorError, setDirectorError] = useState('');
@@ -930,6 +934,30 @@ export default function Create() {
           />
         </Field>
 
+        {/* Collapsible: Advanced generation settings */}
+        <div style={{ border: '1.5px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
+          <button
+            type="button"
+            onClick={() => setShowAdvanced((v) => !v)}
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '12px 16px', border: 'none', cursor: 'pointer',
+              background: 'var(--bg-card2)', color: 'var(--text)',
+              transition: 'background 0.15s',
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-card)'}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'var(--bg-card2)'}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Settings size={16} style={{ color: 'var(--accent-light)' }} />
+              <span style={{ fontSize: 14, fontWeight: 600 }}>Настройки генерации</span>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>(модель, голос, язык)</span>
+            </div>
+            {showAdvanced ? <ChevronUp size={16} style={{ color: 'var(--text-muted)' }} /> : <ChevronDown size={16} style={{ color: 'var(--text-muted)' }} />}
+          </button>
+          {showAdvanced && (
+            <div style={{ padding: '16px', display: 'flex', flexDirection: 'column', gap: 20, borderTop: '1px solid var(--border)', background: 'var(--bg-card)' }}>
+
         {/* Script mode toggle */}
         <Field label="Режим сценария">
           <div style={{ display: 'flex', gap: 0, borderRadius: 'var(--radius-sm)', overflow: 'hidden', border: '1.5px solid var(--border)' }}>
@@ -1175,6 +1203,33 @@ export default function Create() {
           </div>
         </Field>
 
+            </div>
+          )}
+        </div>
+
+        {/* Collapsible: Music */}
+        <div style={{ border: '1.5px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
+          <button
+            type="button"
+            onClick={() => setShowMusic((v) => !v)}
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '12px 16px', border: 'none', cursor: 'pointer',
+              background: 'var(--bg-card2)', color: 'var(--text)',
+              transition: 'background 0.15s',
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-card)'}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'var(--bg-card2)'}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Music size={16} style={{ color: 'var(--accent-light)' }} />
+              <span style={{ fontSize: 14, fontWeight: 600 }}>Фоновая музыка</span>
+            </div>
+            {showMusic ? <ChevronUp size={16} style={{ color: 'var(--text-muted)' }} /> : <ChevronDown size={16} style={{ color: 'var(--text-muted)' }} />}
+          </button>
+          {showMusic && (
+            <div style={{ padding: '16px', borderTop: '1px solid var(--border)', background: 'var(--bg-card)' }}>
+
         <Field label="Фоновая музыка" hint="Стиль музыки, которая будет подмешана под озвучку. Ищется в Jamendo (бесплатный сток) или генерируется AI.">
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
             {MUSIC_STYLES.map((m) => {
@@ -1281,6 +1336,33 @@ export default function Create() {
           )}
         </Field>
 
+            </div>
+          )}
+        </div>
+
+        {/* Collapsible: Subtitles */}
+        <div style={{ border: '1.5px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
+          <button
+            type="button"
+            onClick={() => setShowSubtitles((v) => !v)}
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '12px 16px', border: 'none', cursor: 'pointer',
+              background: 'var(--bg-card2)', color: 'var(--text)',
+              transition: 'background 0.15s',
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-card)'}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'var(--bg-card2)'}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Type size={16} style={{ color: 'var(--accent-light)' }} />
+              <span style={{ fontSize: 14, fontWeight: 600 }}>Субтитры</span>
+            </div>
+            {showSubtitles ? <ChevronUp size={16} style={{ color: 'var(--text-muted)' }} /> : <ChevronDown size={16} style={{ color: 'var(--text-muted)' }} />}
+          </button>
+          {showSubtitles && (
+            <div style={{ padding: '16px', borderTop: '1px solid var(--border)', background: 'var(--bg-card)' }}>
+
         <Field label="Субтитры" hint="Как текст будет появляться на видео">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {SUBTITLE_STYLES.map((s) => {
@@ -1359,6 +1441,10 @@ export default function Create() {
             </Field>
           </>
         )}
+
+            </div>
+          )}
+        </div>
 
         {error && (
           <div style={{ padding: '12px 16px', borderRadius: 'var(--radius-sm)', background: '#2d0a0a', border: '1px solid #7f1d1d', color: '#fca5a5', fontSize: 14 }}>

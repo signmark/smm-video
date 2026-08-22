@@ -1,0 +1,942 @@
+[
+  {
+    "collection": "autonomous_cycle_items",
+    "fields": [
+      "campaign_id",
+      "content_id",
+      "cycle_id",
+      "id",
+      "item_index",
+      "item_key",
+      "run_id",
+      "state",
+      "user_id"
+    ]
+  },
+  {
+    "collection": "autonomous_sessions",
+    "fields": [
+      "auth_token",
+      "auto_schedule",
+      "campaign_id",
+      "consecutive_aborted_cycles",
+      "cycle_id",
+      "cycles_completed",
+      "id",
+      "interval_hours",
+      "is_active",
+      "last_abort_reason",
+      "last_cycle_at",
+      "launch_command",
+      "paused",
+      "paused_at",
+      "phase",
+      "pipeline_mode",
+      "platforms",
+      "posts_created",
+      "posts_per_cycle",
+      "refresh_token",
+      "run_id",
+      "started_at",
+      "user_id",
+      "with_images"
+    ]
+  },
+  {
+    "collection": "business_questionnaire",
+    "fields": [
+      "brand_image",
+      "business_description",
+      "business_values",
+      "campaign_id",
+      "company_features",
+      "company_name",
+      "competitive_advantages",
+      "contact_info",
+      "created_at",
+      "customer_results",
+      "id",
+      "main_directions",
+      "marketing_expectations",
+      "product_beliefs",
+      "products_services",
+      "target_audience"
+    ]
+  },
+  {
+    "collection": "campaign_content",
+    "fields": [
+      "additional_images",
+      "additional_media",
+      "campaign_id",
+      "content",
+      "content_type",
+      "created_at",
+      "id",
+      "image_url",
+      "keywords",
+      "metadata",
+      "prompt",
+      "published_at",
+      "scheduled_at",
+      "social_platforms",
+      "status",
+      "title",
+      "user_id",
+      "video_url"
+    ]
+  },
+  {
+    "collection": "campaign_content_sources",
+    "fields": [
+      "InstUsername",
+      "TgId",
+      "campaign_id",
+      "created_at",
+      "description",
+      "followersCount",
+      "id",
+      "isBusinessAccount",
+      "is_active",
+      "name",
+      "postsCount",
+      "profilePicUrl",
+      "sentiment_analysis",
+      "status",
+      "type",
+      "url",
+      "verified",
+      "vkId"
+    ]
+  },
+  {
+    "collection": "campaign_keywords",
+    "fields": [
+      "campaign_id",
+      "date_created",
+      "id",
+      "keyword",
+      "last_checked",
+      "mentions_count",
+      "trend_score"
+    ]
+  },
+  {
+    "collection": "campaign_trend_topics",
+    "fields": [
+      "accountUrl",
+      "campaign_id",
+      "comments",
+      "created_at",
+      "description",
+      "id",
+      "is_bookmarked",
+      "media_analysis",
+      "media_links",
+      "post",
+      "raw_source_data",
+      "reactions",
+      "reposts",
+      "sentiment_analysis",
+      "sourceType",
+      "source_id",
+      "title",
+      "trendScore",
+      "type",
+      "urlPost",
+      "views"
+    ]
+  },
+  {
+    "collection": "directus_access",
+    "fields": [
+      "id",
+      "policy",
+      "role",
+      "sort",
+      "user"
+    ]
+  },
+  {
+    "collection": "directus_activity",
+    "fields": [
+      "action",
+      "collection",
+      "id",
+      "ip",
+      "item",
+      "origin",
+      "revisions",
+      "timestamp",
+      "user",
+      "user_agent"
+    ]
+  },
+  {
+    "collection": "directus_collections",
+    "fields": [
+      "accountability",
+      "accountability_divider",
+      "archive_app_filter",
+      "archive_divider",
+      "archive_field",
+      "archive_value",
+      "collapse",
+      "collection",
+      "collection_divider",
+      "color",
+      "content_versioning_divider",
+      "display_template",
+      "duplication_divider",
+      "group",
+      "hidden",
+      "icon",
+      "item_duplication_fields",
+      "note",
+      "preview_divider",
+      "preview_url",
+      "singleton",
+      "sort",
+      "sort_divider",
+      "sort_field",
+      "translations",
+      "unarchive_value",
+      "versioning"
+    ]
+  },
+  {
+    "collection": "directus_comments",
+    "fields": [
+      "collection",
+      "comment",
+      "date_created",
+      "date_updated",
+      "id",
+      "item",
+      "user_created",
+      "user_updated"
+    ]
+  },
+  {
+    "collection": "directus_dashboards",
+    "fields": [
+      "color",
+      "date_created",
+      "icon",
+      "id",
+      "name",
+      "note",
+      "panels",
+      "user_created"
+    ]
+  },
+  {
+    "collection": "directus_extensions",
+    "fields": [
+      "bundle",
+      "enabled",
+      "folder",
+      "id",
+      "source"
+    ]
+  },
+  {
+    "collection": "directus_fields",
+    "fields": [
+      "collection",
+      "conditions",
+      "display",
+      "display_options",
+      "field",
+      "group",
+      "hidden",
+      "id",
+      "interface",
+      "note",
+      "options",
+      "readonly",
+      "required",
+      "searchable",
+      "sort",
+      "special",
+      "translations",
+      "validation",
+      "validation_message",
+      "width"
+    ]
+  },
+  {
+    "collection": "directus_files",
+    "fields": [
+      "charset",
+      "created_on",
+      "description",
+      "duration",
+      "embed",
+      "filename_disk",
+      "filename_download",
+      "filesize",
+      "focal_point_divider",
+      "focal_point_x",
+      "focal_point_y",
+      "folder",
+      "height",
+      "id",
+      "location",
+      "metadata",
+      "modified_by",
+      "modified_on",
+      "storage",
+      "storage_divider",
+      "tags",
+      "title",
+      "tus_data",
+      "tus_id",
+      "type",
+      "uploaded_by",
+      "uploaded_on",
+      "width"
+    ]
+  },
+  {
+    "collection": "directus_flows",
+    "fields": [
+      "accountability",
+      "color",
+      "date_created",
+      "description",
+      "icon",
+      "id",
+      "name",
+      "operation",
+      "operations",
+      "options",
+      "status",
+      "trigger",
+      "user_created"
+    ]
+  },
+  {
+    "collection": "directus_folders",
+    "fields": [
+      "id",
+      "name",
+      "parent"
+    ]
+  },
+  {
+    "collection": "directus_migrations",
+    "fields": [
+      "name",
+      "timestamp",
+      "version"
+    ]
+  },
+  {
+    "collection": "directus_notifications",
+    "fields": [
+      "collection",
+      "id",
+      "item",
+      "message",
+      "recipient",
+      "sender",
+      "status",
+      "subject",
+      "timestamp"
+    ]
+  },
+  {
+    "collection": "directus_operations",
+    "fields": [
+      "date_created",
+      "flow",
+      "id",
+      "key",
+      "name",
+      "options",
+      "position_x",
+      "position_y",
+      "reject",
+      "resolve",
+      "type",
+      "user_created"
+    ]
+  },
+  {
+    "collection": "directus_panels",
+    "fields": [
+      "color",
+      "dashboard",
+      "date_created",
+      "height",
+      "icon",
+      "id",
+      "name",
+      "note",
+      "options",
+      "position_x",
+      "position_y",
+      "show_header",
+      "type",
+      "user_created",
+      "width"
+    ]
+  },
+  {
+    "collection": "directus_permissions",
+    "fields": [
+      "action",
+      "collection",
+      "fields",
+      "id",
+      "permissions",
+      "policy",
+      "presets",
+      "validation"
+    ]
+  },
+  {
+    "collection": "directus_policies",
+    "fields": [
+      "admin_access",
+      "app_access",
+      "assigned_to_divider",
+      "description",
+      "enforce_tfa",
+      "icon",
+      "id",
+      "ip_access",
+      "name",
+      "permissions",
+      "roles",
+      "users"
+    ]
+  },
+  {
+    "collection": "directus_presets",
+    "fields": [
+      "bookmark",
+      "collection",
+      "color",
+      "filter",
+      "icon",
+      "id",
+      "layout",
+      "layout_options",
+      "layout_query",
+      "refresh_interval",
+      "role",
+      "search",
+      "user"
+    ]
+  },
+  {
+    "collection": "directus_relations",
+    "fields": [
+      "id",
+      "junction_field",
+      "many_collection",
+      "many_field",
+      "one_allowed_collections",
+      "one_collection",
+      "one_collection_field",
+      "one_deselect_action",
+      "one_field",
+      "sort_field"
+    ]
+  },
+  {
+    "collection": "directus_revisions",
+    "fields": [
+      "activity",
+      "collection",
+      "data",
+      "delta",
+      "id",
+      "item",
+      "parent",
+      "version"
+    ]
+  },
+  {
+    "collection": "directus_roles",
+    "fields": [
+      "children",
+      "description",
+      "icon",
+      "id",
+      "name",
+      "parent",
+      "policies",
+      "users",
+      "users_divider",
+      "users_group"
+    ]
+  },
+  {
+    "collection": "directus_sessions",
+    "fields": [
+      "expires",
+      "ip",
+      "next_token",
+      "origin",
+      "share",
+      "token",
+      "user",
+      "user_agent"
+    ]
+  },
+  {
+    "collection": "directus_settings",
+    "fields": [
+      "ai_anthropic_api_key",
+      "ai_openai_api_key",
+      "ai_system_prompt",
+      "auth_login_attempts",
+      "auth_password_policy",
+      "basemaps",
+      "branding_divider",
+      "custom_aspect_ratios",
+      "custom_css",
+      "default_appearance",
+      "default_language",
+      "default_theme_dark",
+      "default_theme_light",
+      "files_divider",
+      "id",
+      "image_editor",
+      "key",
+      "map_divider",
+      "mapbox_key",
+      "mcp_allow_deletes",
+      "mcp_enabled",
+      "mcp_prompts_collection",
+      "mcp_system_prompt",
+      "mcp_system_prompt_enabled",
+      "module_bar",
+      "modules_divider",
+      "org_name",
+      "product_updates",
+      "project_color",
+      "project_descriptor",
+      "project_id",
+      "project_logo",
+      "project_name",
+      "project_owner",
+      "project_status",
+      "project_url",
+      "project_usage",
+      "public_background",
+      "public_favicon",
+      "public_foreground",
+      "public_note",
+      "public_registration",
+      "public_registration_divider",
+      "public_registration_email_filter",
+      "public_registration_role",
+      "public_registration_verify_email",
+      "report_bug_url",
+      "report_error_url",
+      "report_feature_url",
+      "reporting_divider",
+      "security_divider",
+      "storage_asset_presets",
+      "storage_asset_transform",
+      "storage_default_folder",
+      "theme_dark_overrides",
+      "theme_light_overrides",
+      "theming_divider",
+      "theming_group",
+      "value",
+      "visual_editor_urls"
+    ]
+  },
+  {
+    "collection": "directus_shares",
+    "fields": [
+      "collection",
+      "date_created",
+      "date_end",
+      "date_start",
+      "id",
+      "item",
+      "max_uses",
+      "name",
+      "password",
+      "role",
+      "times_used",
+      "user_created"
+    ]
+  },
+  {
+    "collection": "directus_translations",
+    "fields": [
+      "id",
+      "key",
+      "language",
+      "value"
+    ]
+  },
+  {
+    "collection": "directus_users",
+    "fields": [
+      "admin_divider",
+      "appearance",
+      "auth_data",
+      "avatar",
+      "description",
+      "email",
+      "email_notifications",
+      "expire_date",
+      "external_identifier",
+      "first_name",
+      "id",
+      "image_gen_usage",
+      "is_smm_admin",
+      "is_smm_super",
+      "job_title",
+      "language",
+      "last_access",
+      "last_name",
+      "last_page",
+      "location",
+      "omemo_partner_code",
+      "password",
+      "plan",
+      "policies",
+      "preferences_divider",
+      "provider",
+      "role",
+      "status",
+      "tags",
+      "telegram_chat_id",
+      "text_direction",
+      "tfa_secret",
+      "theme_dark",
+      "theme_dark_overrides",
+      "theme_light",
+      "theme_light_overrides",
+      "theming_divider",
+      "title",
+      "token"
+    ]
+  },
+  {
+    "collection": "directus_versions",
+    "fields": [
+      "collection",
+      "date_created",
+      "date_updated",
+      "delta",
+      "hash",
+      "id",
+      "item",
+      "key",
+      "name",
+      "user_created",
+      "user_updated"
+    ]
+  },
+  {
+    "collection": "global_api_keys",
+    "fields": [
+      "api_key",
+      "created_at",
+      "description",
+      "id",
+      "is_active",
+      "service_name",
+      "updated_at"
+    ]
+  },
+  {
+    "collection": "payment_activations",
+    "fields": [
+      "amount",
+      "claimed_at",
+      "completed_at",
+      "currency",
+      "id",
+      "last_error",
+      "needs_reconciliation",
+      "payment_attempt_at",
+      "payment_id",
+      "plan",
+      "source",
+      "status",
+      "user_id"
+    ]
+  },
+  {
+    "collection": "post_comment",
+    "fields": [
+      "author",
+      "comment_id",
+      "date",
+      "id",
+      "platform",
+      "text",
+      "trent_post_id"
+    ]
+  },
+  {
+    "collection": "promo_code_uses",
+    "fields": [
+      "expire_before",
+      "id",
+      "payment_id",
+      "plan_before",
+      "promo_code_id",
+      "used_at",
+      "user_id"
+    ]
+  },
+  {
+    "collection": "promo_codes",
+    "fields": [
+      "code",
+      "description",
+      "expires_at",
+      "id",
+      "is_active",
+      "max_uses",
+      "type",
+      "used_count",
+      "value"
+    ]
+  },
+  {
+    "collection": "promo_reservations",
+    "fields": [
+      "completed_at",
+      "id",
+      "last_error",
+      "needs_reconciliation",
+      "payment_attempt_at",
+      "payment_id",
+      "promo_code_id",
+      "released_at",
+      "reserved_at",
+      "slot_index",
+      "slot_lock",
+      "status",
+      "user_id",
+      "user_lock",
+      "yookassa_payment_id"
+    ]
+  },
+  {
+    "collection": "publication_locks",
+    "fields": [
+      "acquired_at",
+      "content_id",
+      "expires_at",
+      "id",
+      "lock_key",
+      "platform"
+    ]
+  },
+  {
+    "collection": "social_accounts",
+    "fields": [
+      "access_token",
+      "account_avatar",
+      "account_name",
+      "account_username",
+      "campaign_id",
+      "date_created",
+      "date_updated",
+      "expires_at",
+      "id",
+      "is_active",
+      "open_id",
+      "platform",
+      "refresh_token",
+      "user_created",
+      "user_id"
+    ]
+  },
+  {
+    "collection": "source_posts",
+    "fields": [
+      "accountUrl",
+      "campaign_id",
+      "comments",
+      "date",
+      "id",
+      "image_url",
+      "likes",
+      "link",
+      "metadata",
+      "post_content",
+      "post_type",
+      "shares",
+      "source_id",
+      "source_type",
+      "url",
+      "urlForMatching",
+      "video_url",
+      "views"
+    ]
+  },
+  {
+    "collection": "telegram_ai_conversations",
+    "fields": [
+      "campaign_id",
+      "chat_id",
+      "content",
+      "created_at",
+      "id",
+      "metadata",
+      "role",
+      "timestamp",
+      "user_id"
+    ]
+  },
+  {
+    "collection": "telegram_categories",
+    "fields": [
+      "date_created",
+      "date_updated",
+      "description",
+      "icon",
+      "id",
+      "name",
+      "name_en",
+      "name_es",
+      "name_ru",
+      "slug",
+      "user_created",
+      "user_updated"
+    ]
+  },
+  {
+    "collection": "telegram_channels",
+    "fields": [
+      "avg_post_reach",
+      "category_id",
+      "content_type",
+      "date_created",
+      "date_updated",
+      "description",
+      "engagement_rate",
+      "id",
+      "is_active",
+      "is_verified",
+      "language",
+      "link",
+      "subscribers",
+      "title",
+      "user_created",
+      "user_updated",
+      "username"
+    ]
+  },
+  {
+    "collection": "telegram_sessions",
+    "fields": [
+      "chat_id",
+      "created_at",
+      "email",
+      "first_name",
+      "id",
+      "last_activity",
+      "last_name",
+      "refresh_token",
+      "session_data",
+      "token",
+      "token_expires_at",
+      "updated_at",
+      "user_id"
+    ]
+  },
+  {
+    "collection": "user_api_keys",
+    "fields": [
+      "api_key",
+      "id",
+      "service_name",
+      "user_id"
+    ]
+  },
+  {
+    "collection": "user_campaigns",
+    "fields": [
+      "autonomous_settings",
+      "content_style",
+      "created_at",
+      "description",
+      "id",
+      "link",
+      "name",
+      "social_media_settings",
+      "trend_analysis_settings",
+      "updated_at",
+      "user_id"
+    ]
+  },
+  {
+    "collection": "user_keywords_user_campaigns",
+    "fields": [
+      "id"
+    ]
+  },
+  {
+    "collection": "video_projects",
+    "fields": [
+      "additional_details",
+      "animation_model",
+      "clip_duration",
+      "custom_scenario",
+      "date_created",
+      "date_updated",
+      "duration",
+      "error",
+      "format",
+      "heygen_avatar",
+      "id",
+      "landing_url",
+      "language",
+      "music_style",
+      "music_volume",
+      "progress",
+      "progress_message",
+      "script",
+      "script_mode",
+      "status",
+      "subtitle_color",
+      "subtitle_font",
+      "subtitle_size",
+      "subtitle_style",
+      "title",
+      "topic",
+      "user_created",
+      "user_updated",
+      "video_path",
+      "video_url",
+      "voice"
+    ]
+  },
+  {
+    "collection": "video_tutorials",
+    "fields": [
+      "category",
+      "created_at",
+      "description",
+      "duration",
+      "id",
+      "is_active",
+      "mime_type",
+      "size_bytes",
+      "tags",
+      "thumbnail_path",
+      "title",
+      "transcript",
+      "tutorial_id",
+      "updated_at",
+      "uploaded_by",
+      "video_path"
+    ]
+  }
+]

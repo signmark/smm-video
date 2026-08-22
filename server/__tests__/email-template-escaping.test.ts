@@ -36,6 +36,11 @@ beforeEach(() => {
   process.env.DIRECTUS_URL = 'http://directus.test';
   process.env.APP_SIGNING_SECRET = 'test-admin-token';
   process.env.DIRECTUS_STATIC_TOKEN = 'test-static-token';
+  // AI-89: getPublicOrigin() в public-url.ts бросает в проде без
+  // APP_PUBLIC_URL (раньше был silent fallback на smm.omemo.tech —
+  // data-leak risk). Тест проверяет email, а не публичный URL,
+  // поэтому ставим здесь, чтобы маршрут мог построить ссылку.
+  process.env.APP_PUBLIC_URL = 'http://app.test';
 
   vi.stubGlobal(
     'fetch',

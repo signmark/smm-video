@@ -27,6 +27,8 @@ process.env.YOOKASSA_SHOP_ID = 'shop-test';
 process.env.YOOKASSA_SECRET_KEY = 'secret-test';
 process.env.DIRECTUS_URL = 'https://directus.test';
 process.env.DIRECTUS_STATIC_TOKEN = 'admin-token-test';
+  // AI-89: getPublicOrigin() теперь бросает в проде без APP_PUBLIC_URL.
+  process.env.APP_PUBLIC_URL = 'http://app.test';
 
 /** Промокод, который вернёт мок Directus. null = «кода нет в базе». */
 let promoRow: Record<string, any> | null = null;

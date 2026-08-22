@@ -67,6 +67,8 @@ const campaignWithSecret = (secret: string | undefined) => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // AI-89: getPublicOrigin() теперь бросает в проде без APP_PUBLIC_URL.
+  process.env.APP_PUBLIC_URL = 'http://app.test';
   H.authorizeCampaignAccess.mockResolvedValue({ id: CAMPAIGN });
   H.axiosGet.mockResolvedValue(campaignWithSecret(STORED_SECRET));
   H.axiosPatch.mockResolvedValue({ data: { data: {} } });

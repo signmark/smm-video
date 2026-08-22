@@ -20,9 +20,11 @@ import { vi, describe, it, expect, beforeEach, afterEach } from 'vitest';
 /** Возвращает свежий импорт модуля с нужным env */
 async function importPostback(secret = 'test-secret', url?: string) {
   vi.resetModules();
-  vi.stubEnv('OMEMO_POSTBACK_SECRET', secret);
-  if (url) vi.stubEnv('OMEMO_POSTBACK_URL', url);
-  else vi.unstubAllEnvs(); // сбрасываем URL → дефолт; затем снова ставим secret
+  // AI-89: OMEMO_POSTBACK_URL теперь обязательная (getRequiredServiceUrl).
+  // Ставим её по умолчанию, чтобы каждый тест работал как раньше.
+  // Тест, который хочет проверить именно отсутствие URL, должен
+  // вызвать vi.unstubEnv('OMEMO_POSTBACK_URL') сам.
+  vi.stubEnv('OMEMO_POSTBACK_URL', url ?? 'https://postback.example.com');
   vi.stubEnv('OMEMO_POSTBACK_SECRET', secret);
   return await import('../services/partner-postback.js');
 }
@@ -32,6 +34,8 @@ let fetchMock: ReturnType<typeof vi.fn>;
 beforeEach(() => {
   fetchMock = vi.fn();
   vi.stubGlobal('fetch', fetchMock);
+  // AI-89: OMEMO_POSTBACK_URL обязательная, ставим по умолчанию
+  vi.stubEnv('OMEMO_POSTBACK_URL', 'https://postback.example.com');
   vi.resetModules();
 });
 
@@ -52,6 +56,7 @@ describe('sendRegistrationPostback', () => {
     });
 
     vi.stubEnv('OMEMO_POSTBACK_SECRET', 'mysecret');
+    vi.stubEnv('OMEMO_POSTBACK_URL', 'https://postback.example.com');
     vi.resetModules();
     const { sendRegistrationPostback } = await import('../services/partner-postback.js');
 

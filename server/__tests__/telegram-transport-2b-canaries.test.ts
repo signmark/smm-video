@@ -56,6 +56,9 @@ beforeEach(() => {
   process.env.TELEGRAM_BOT_TOKEN = 'BOTTOKEN';
   process.env.DIRECTUS_URL = 'https://directus.local';
   process.env.DIRECTUS_STATIC_TOKEN = 'admin';
+  // AI-89: getPublicOrigin() теперь бросает в проде без APP_PUBLIC_URL
+  // (раньше был silent fallback на smm.omemo.tech).
+  process.env.APP_PUBLIC_URL = 'http://app.test';
 });
 
 describe('Phase 2B, бот: одобрение подписки уведомляет пользователя транспортом', () => {

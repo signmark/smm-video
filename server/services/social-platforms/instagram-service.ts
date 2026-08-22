@@ -5,6 +5,7 @@
  */
 
 import axios from 'axios';
+import { getOptionalServiceUrl } from '../../config/service-urls';
 import { trackExternalCall } from '../../utils/external-call';
 import FormData from 'form-data';
 import { randomUUID } from 'crypto';
@@ -53,7 +54,7 @@ async function proxyVideoForInstagram(videoUrl: string, opId: string): Promise<s
   }
 
   // Fallback: локальный прокси через наш сервер
-  const serverBaseUrl = process.env.APP_PUBLIC_URL ||
+  const serverBaseUrl = getOptionalServiceUrl('APP_PUBLIC_URL') ||
     (process.env.REPLIT_DEV_DOMAIN ? `https://${process.env.REPLIT_DEV_DOMAIN}` : null) ||
     process.env.APP_URL;
   if (serverBaseUrl) {

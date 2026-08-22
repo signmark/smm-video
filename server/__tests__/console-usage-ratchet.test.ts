@@ -50,7 +50,10 @@ import { join } from 'node:path';
  * AI-127 (2026-08-18): планка опущена 1948->1938 — вместе с мёртвым кодом n8n
  * ушли десять его console.*. Отдельной работы по выводу тут не делалось.
  */
-const BASELINE = 1924;
+// AI-89 (2026-08-22): планка опущена 1924→1923 — в server/utils/public-url.ts
+// удалён console.warn про отсутствие APP_PUBLIC_URL, потому что в проде мы теперь
+// не возвращаем LEGACY_FALLBACK_ORIGIN, а бросаем Error. console.* исчез.
+const BASELINE = 1923;
 
 const CONSOLE_CALL = /\bconsole\.(log|error|warn|info|debug)\s*\(/g;
 

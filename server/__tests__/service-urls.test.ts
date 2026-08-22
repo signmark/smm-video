@@ -22,6 +22,8 @@ beforeEach(() => {
   for (const key of REQUIRED_VARS) {
     delete process.env[key];
   }
+  delete process.env.APP_PUBLIC_URL;
+  delete process.env.SMM_HOST;
 });
 
 afterEach(() => {
@@ -78,19 +80,19 @@ describe('AI-89 / getRequiredServiceUrl', () => {
 
 describe('AI-89 / getOptionalServiceUrl', () => {
   it('возвращает значение, если переменная задана', () => {
-    process.env.OMEMO_POSTBACK_URL = 'https://omemo.tech/api/v1/postback';
-    expect(getOptionalServiceUrl('OMEMO_POSTBACK_URL')).toBe(
-      'https://omemo.tech/api/v1/postback',
+    process.env.APP_PUBLIC_URL = 'https://smm.example.com';
+    expect(getOptionalServiceUrl('APP_PUBLIC_URL')).toBe(
+      'https://smm.example.com',
     );
   });
 
   it('возвращает null, если переменная не задана (не бросает)', () => {
-    expect(getOptionalServiceUrl('OMEMO_POSTBACK_URL')).toBeNull();
+    expect(getOptionalServiceUrl('APP_PUBLIC_URL')).toBeNull();
   });
 
   it('возвращает null для пустой строки', () => {
     process.env.OMEMO_POSTBACK_URL = '';
-    expect(getOptionalServiceUrl('OMEMO_POSTBACK_URL')).toBeNull();
+    expect(getOptionalServiceUrl('APP_PUBLIC_URL')).toBeNull();
   });
 });
 

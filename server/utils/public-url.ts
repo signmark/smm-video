@@ -12,10 +12,19 @@
  */
 
 /**
- * Куда падаем, если в проде не задан ни один из вариантов APP_PUBLIC_URL.
- * Исторический прод — чтобы уже работающие инсталляции не сломались молча.
+ * Поведение, если ни один источник публичного URL не задан:
+ *   - dev: возвращаем http://localhost:$PORT (как раньше).
+ *   - production: БРОСАЕМ. Это и есть тот «silent fallback to first
+ *     installation», против которого заведена задача #89 — если
+ *     переменная потеряется, приложение МОЛЧА построит все
+ *     CORS/redirect_uri/OAuth ссылки на чужой домен. Лучше упасть
+ *     с понятным текстом, чем тихо увести пользователя.
+ *
+ * До #89 здесь стоял LEGACY_FALLBACK_ORIGIN = 'https://smm.omemo.tech'.
+ * То есть фактически — статичный «уход в первую установку». Удалён.
  */
-const LEGACY_FALLBACK_ORIGIN = 'https://smm.omemo.tech';
+
+import { getOptionalServiceUrl } from '../config/service-urls';
 
 /** Партнёрские источники, которым разрешён cross-origin к нашему API. */
 const DEFAULT_PARTNER_ORIGINS = [
@@ -24,13 +33,11 @@ const DEFAULT_PARTNER_ORIGINS = [
   'https://needanapp.ru',
 ];
 
-let _warnedAboutFallback = false;
-
 /**
  * Приводит значение к виду `https://host[:port]` — без пути и хвостового слеша.
  * Голый хост (`smm.example.com`) тоже принимается: к нему подставляется https.
  */
-function normalizeOrigin(raw: string | undefined): string | null {
+function normalizeOrigin(raw: string | null | undefined): string | null {
   const value = raw?.trim();
   if (!value) return null;
 
@@ -55,7 +62,7 @@ function isProduction(): boolean {
  */
 export function getPublicOrigin(): string {
   const fromEnv =
-    normalizeOrigin(process.env.APP_PUBLIC_URL) ||
+    normalizeOrigin(getOptionalServiceUrl('APP_PUBLIC_URL')) ||
     normalizeOrigin(process.env.API_BASE_URL) ||
     normalizeOrigin(process.env.PUBLIC_URL) ||
     normalizeOrigin(process.env.APP_URL) ||
@@ -71,14 +78,11 @@ export function getPublicOrigin(): string {
     return `http://localhost:${process.env.PORT || 5000}`;
   }
 
-  if (!_warnedAboutFallback) {
-    console.warn(
-      `[public-url] ⚠️ APP_PUBLIC_URL не задан в проде — использую ${LEGACY_FALLBACK_ORIGIN}. ` +
-      `Пропишите APP_PUBLIC_URL в .env, иначе ссылки в письмах и OAuth-callback'и уйдут на чужой домен.`
-    );
-    _warnedAboutFallback = true;
-  }
-  return LEGACY_FALLBACK_ORIGIN;
+  throw new Error(
+    `[public-url] APP_PUBLIC_URL is not set in production. Refusing to build CORS/origin/redirect_uri from a fallback URL - it would route users to the wrong domain. ` +
+    `Set APP_PUBLIC_URL (or one of the legacy aliases API_BASE_URL/PUBLIC_URL/APP_URL/SMM_DOMAIN) in .env. ` +
+    `Legacy fallback to https://smm.omemo.tech was removed in AI-89.`
+  );
 }
 
 /** Хост без схемы: `smm.example.com`. */

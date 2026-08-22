@@ -163,6 +163,9 @@ beforeEach(() => {
   process.env.DIRECTUS_URL = 'http://directus.test';
   process.env.APP_SIGNING_SECRET = ADMIN_TOKEN;
   process.env.DIRECTUS_STATIC_TOKEN = 'test-static-token';
+  // AI-89: getPublicOrigin() теперь бросает в проде без APP_PUBLIC_URL
+  // (раньше был silent fallback на smm.omemo.tech).
+  process.env.APP_PUBLIC_URL = 'http://app.test';
   process.env.DIRECTUS_STATIC_TOKEN = 'test-static-token';
   stubProfilePatch();
 });

@@ -81,6 +81,8 @@ describe('Telegram collect comments', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // AI-89: getPublicOrigin() теперь бросает в проде без APP_PUBLIC_URL.
+    process.env.APP_PUBLIC_URL = 'http://app.test';
     process.env.TRENDS_WEBHOOK_SECRET = CALLBACK_SECRET;
     vi.mocked(globalApiKeysService.getGlobalApiKey).mockResolvedValue('test-api-key');
     // Тренд принадлежит своей кампании — эти тесты про бизнес-логику, не про границу.

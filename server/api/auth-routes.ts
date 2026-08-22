@@ -514,7 +514,13 @@ export function registerAuthRoutes(app: Express): void {
     // напрямую (календарь, настройки, соцсети), падали бы сетевой ошибкой.
     // Направление безопасное (до боевого Directus браузеру не дотянуться),
     // но прогон E2E показывал бы инфраструктурное красное вместо прикладного.
-    const publicDirectusUrl = process.env.DIRECTUS_PUBLIC_URL || envConfig.directusUrl;
+    // AI-89: раньше здесь был фоллбэк на envConfig.directusUrl. Он означал,
+    // что при потере DIRECTUS_PUBLIC_URL браузер получит внутренний
+    // docker-адрес и пойдёт по нему — это «тихий уход в чужой домен»,
+    // ровно тот случай, против которого заведена задача. Теперь —
+    // fail-fast на старте через validateRequiredServiceUrls(), и если
+    // переменная не задана, мы сюда не доходим.
+    const publicDirectusUrl = getRequiredServiceUrl("DIRECTUS_PUBLIC_URL");
 
     res.json({
       directusUrl: publicDirectusUrl,

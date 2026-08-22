@@ -2,13 +2,19 @@
  * Сервис отправки partner postback на Omemo Partner API.
  *
  * Env vars:
- *   OMEMO_POSTBACK_URL    — полный URL эндпоинта (по умолчанию https://omemo.tech/api/v1/postback)
+ *   OMEMO_POSTBACK_URL    — полный URL эндпоинта. AI-89: обязательная.
+ *                            validateRequiredServiceUrls() на старте проверяет
+ *                            её наличие; раньше был фоллбэк на
+ *                            https://omemo.tech/api/v1/postback, и при потере
+ *                            переменной во второй установке постбэки уходили
+ *                            бы партнёру первой установки (родитель этой задачи).
  *   OMEMO_POSTBACK_SECRET — shared secret (Bearer + X-Omemo-Token)
  */
 
 import { logEvent } from '../utils/logger';
+import { getRequiredServiceUrl } from '../config/service-urls';
 
-const POSTBACK_URL = process.env.OMEMO_POSTBACK_URL || 'https://omemo.tech/api/v1/postback';
+const POSTBACK_URL = getRequiredServiceUrl('OMEMO_POSTBACK_URL');
 const POSTBACK_SECRET = process.env.OMEMO_POSTBACK_SECRET || '';
 const SOURCE_APP = 'smmhub';
 const SCHEMA_VERSION = '1.0';

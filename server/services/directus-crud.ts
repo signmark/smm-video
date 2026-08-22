@@ -10,7 +10,7 @@ import axios, { AxiosRequestConfig } from 'axios';
 import { DirectusAuthResult, DirectusRequestOptions } from './directus-types';
 import { adminTokenManager } from './admin-token-manager';
 import { logEvent } from '../utils/logger';
-import { guardWriteData } from './directus-schema-guard';
+import { guardWriteData, guardReadParams, isKnownCollection, getKnownCollections, DirectusUnknownCollectionError } from './directus-schema-guard';
 
 /**
  * AI-65, этап 3. Граница с Directus — то место, через которое ходит почти всё,
@@ -330,12 +330,31 @@ export class DirectusCrud {
     return this.executeWithRetry('list', collection, async () => {
       const authToken = await this.resolveToken(options, 'list', collection);
       const params = this.buildParams(options);
-      return this.executeRequest<T[]>({
-        method: 'get',
-        url: `/items/${collection}`,
-        params,
-        authToken
-      });
+      // AI-132 slice 2: validate field names in filter/sort/fields/deep before
+      // the request. Production = log, test/dev = throw. See
+      // directus-schema-guard.ts for the skip-list (operators, wildcards, etc.).
+      guardReadParams(collection, params);
+      try {
+        return await this.executeRequest<T[]>({
+          method: 'get',
+          url: `/items/${collection}`,
+          params,
+          authToken
+        });
+      } catch (error: any) {
+        // AI-132 slice 2: 403 on a collection we don't know is almost always a
+        // typo (someone wrote `campain_content` instead of `campaign_content`).
+        // Directus returns 403 FORBIDDEN for both "no such collection" and
+        // "you can't read this collection" — we disambiguate with the schema
+        // snapshot. If we know the collection, the operator needs to fix
+        // permissions; if we don't, the developer needs to fix a typo.
+        if (error.response?.status === 403 && !isKnownCollection(collection)) {
+          const all = [...getKnownCollections()];
+          const sample = all.slice(0, 20);
+          throw new DirectusUnknownCollectionError(collection, sample);
+        }
+        throw error;
+      }
     });
   }
 

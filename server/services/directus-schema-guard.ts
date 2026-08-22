@@ -32,12 +32,15 @@
  * Per @Clause_Dev_Hermi 22.08:
  * — Directus operators in `filter` (`_and`, `_or`, `_eq`, `_in`, `_nnull`, ...).
  *   Anything that starts with `_` is a logical or comparison operator, not a field.
+ * — Point paths in `filter`/`sort`/`fields`: the HEAD segment of a relation path
+ *   (`campaign_id.name`) is checked; the tail is opaque because the snapshot
+ *   does not know relation targets.
  * — Aggregate functions (`count(*)`, `year(created_at)`, `month(...)`).
  * — `fields` wildcard forms: `*`, `*.*`, `rel.*`.
  * — `sort` leading minus is part of syntax, not a field.
- * — `deep` relation paths (`campaign_id.name`) are split on `.` and only the
- *   first segment is validated; subsequent segments belong to the related
- *   collection and are validated separately when the schema knows which.
+ * — `deep`: not validated at all. Directus `deep` is not used in `server/` today;
+ *   the snapshot has no relation targets; sub-parameters go with `_` prefix and
+ *   there is no `fields` key inside `deep`. See the comment in `validateReadParams`.
  *
  * If unsure — SKIP. The violation list is reported at the end of every review.
  */
@@ -250,7 +253,7 @@ export function validateReadParams(
   // and Directus will reject malformed strings on its own.
   const filter = params.filter;
   if (filter && typeof filter === 'object' && !Array.isArray(filter)) {
-    collectFilterKeys(collection, fields, filter, 'filter', violations);
+    collectFilterKeys(fields, filter, 'filter', violations);
   }
 
   // --- sort -----------------------------------------------------------------
@@ -280,46 +283,18 @@ export function validateReadParams(
   }
 
   // --- deep -----------------------------------------------------------------
-  // First segment of every relation key must exist on the parent collection.
-  // Nested `_fields`/`_sort` are validated separately in a second pass once we
-  // know which collection the relation points to.
-  const deep = params.deep;
-  if (deep && typeof deep === 'object' && !Array.isArray(deep)) {
-    for (const [relName, relSpec] of Object.entries(deep as Record<string, unknown>)) {
-      if (isOperatorKey(relName)) continue;
-      if (!fields.has(relName)) {
-        violations.push({ where: 'deep', value: relName });
-        continue;
-      }
-      // Nested fields inside the relation: we DO know the schema map but not
-      // which collection `relName` points to. The snapshot only carries
-      // collection/field names, not relation targets, so we validate the head
-      // of every nested path against ALL collections — if it matches any,
-      // accept it. This is the conservative fallback Tech Lead asked for:
-      // "сомневаешься — пропускай".
-      if (relSpec && typeof relSpec === 'object' && !Array.isArray(relSpec)) {
-        const nested = relSpec as Record<string, unknown>;
-        const nestedFields = nested.fields;
-        if (Array.isArray(nestedFields)) {
-          for (const f of nestedFields) {
-            if (typeof f !== 'string') continue;
-            if (isWildcard(f)) continue;
-            const head = headSegment(f);
-            // Accept if head matches ANY collection — relation target is unknown.
-            const matchesAny = [...schema.values()].some((set) => set.has(head));
-            if (!matchesAny) {
-              violations.push({ where: `deep:${relName}.fields`, value: f });
-            }
-          }
-        }
-        // Nested _filter: same pass-through via operator keys.
-        const nestedFilter = nested._filter;
-        if (nestedFilter && typeof nestedFilter === 'object') {
-          collectFilterKeys(relName, allFieldsUnion(schema), nestedFilter, `deep:${relName}._filter`, violations);
-        }
-      }
-    }
-  }
+  // `deep` is NOT validated here. The check is skipped for two reasons:
+  //   1. The snapshot does not carry relation targets — we cannot tell which
+  //      collection `campaign_id` points to, only that the field exists.
+  //   2. Real shape of `deep` differs from what was checked: Directus takes
+  //      sub-parameters with leading underscores (`_filter`, `_sort`,
+  //      `_limit`) and there is no `fields` key inside it.
+  //   3. Verified empirically: no `options.deep` argument is passed anywhere
+  //      in `server/` today. (@Clause_Dev_Hermi, 22.08 13:15.)
+  //   4. A check that always passes (or always fires on legal input) is worse
+  //      than no check — it looks like coverage and provides none.
+  // If/when `deep` enters the codebase, build a per-relation snapshot or
+  // introduce relation targets in the schema, then re-enable.
 
   return violations;
 }
@@ -327,9 +302,14 @@ export function validateReadParams(
 /**
  * Recursive walker over a filter object. Skips operator keys (`_and`, `_eq`,
  * ...) and recurses into nested operator groups; field keys are validated.
+ *
+ * Point paths are accepted: Directus lets you filter by a relation path
+ * (`{ "campaign_id.name": { "_eq": "x" } }`) as well as by a flat key
+ * (`{ "campaign_id": { "name": { "_eq": "x" } } }`). We accept the head
+ * segment of a point path against `allowed` and treat the tail as opaque —
+ * the relation target's schema is not in the snapshot.
  */
 function collectFilterKeys(
-  context: string,
   allowed: Set<string>,
   node: unknown,
   where: string,
@@ -341,15 +321,17 @@ function collectFilterKeys(
       // Operator group — recurse into its value(s).
       if (Array.isArray(value)) {
         for (const item of value) {
-          collectFilterKeys(context, allowed, item, where, violations);
+          collectFilterKeys(allowed, item, where, violations);
         }
       } else {
-        collectFilterKeys(context, allowed, value, where, violations);
+        collectFilterKeys(allowed, value, where, violations);
       }
       continue;
     }
-    // Real field key.
-    if (!allowed.has(key)) {
+    // Real field key. Accept the head of a point path so that
+    // `{ "campaign_id.name": { "_eq": "x" } }` does not raise.
+    const head = headSegment(key);
+    if (!allowed.has(head)) {
       violations.push({ where, value: key });
     }
     // Field value: if it's an object (operators applied to this field), the
@@ -358,16 +340,10 @@ function collectFilterKeys(
 }
 
 /**
- * Build the union of all known fields. Used as the conservative fallback for
- * `deep` subfields where we don't know the target collection.
+ * (intentionally removed: `allFieldsUnion` was the union of all known fields,
+ *  used only by the abandoned `deep` validation. See the skip comment in
+ *  validateReadParams.)
  */
-function allFieldsUnion(schema: SchemaMap): Set<string> {
-  const out = new Set<string>();
-  for (const set of schema.values()) {
-    for (const f of set) out.add(f);
-  }
-  return out;
-}
 
 /**
  * Guard read params: validate, react according to environment.

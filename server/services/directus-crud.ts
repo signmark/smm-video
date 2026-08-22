@@ -327,13 +327,16 @@ export class DirectusCrud {
    * Получает список записей
    */
   async list<T>(collection: string, options: DirectusRequestOptions = {}): Promise<T[]> {
+    // AI-132 slice 2: validate field names BEFORE the retry loop, mirroring
+    // how `create` runs the write-side guard outside `executeWithRetry`.
+    // Production = log, test/dev = throw. See directus-schema-guard.ts for
+    // the skip-list (operators, wildcards, etc.). Inside the loop the same
+    // request would log up to four identical violation entries on 5xx
+    // retries — not a behaviour we want in prod.
+    const params = this.buildParams(options);
+    guardReadParams(collection, params);
     return this.executeWithRetry('list', collection, async () => {
       const authToken = await this.resolveToken(options, 'list', collection);
-      const params = this.buildParams(options);
-      // AI-132 slice 2: validate field names in filter/sort/fields/deep before
-      // the request. Production = log, test/dev = throw. See
-      // directus-schema-guard.ts for the skip-list (operators, wildcards, etc.).
-      guardReadParams(collection, params);
       try {
         return await this.executeRequest<T[]>({
           method: 'get',
@@ -342,12 +345,18 @@ export class DirectusCrud {
           authToken
         });
       } catch (error: any) {
-        // AI-132 slice 2: 403 on a collection we don't know is almost always a
-        // typo (someone wrote `campain_content` instead of `campaign_content`).
-        // Directus returns 403 FORBIDDEN for both "no such collection" and
-        // "you can't read this collection" — we disambiguate with the schema
-        // snapshot. If we know the collection, the operator needs to fix
-        // permissions; if we don't, the developer needs to fix a typo.
+        // AI-132 slice 2: 403 disambiguation.
+        //
+        // Verified FACT, not assumption (@Clause_Dev_Hermi, 22.08 13:15):
+        // a live service token against this Directus returns BYTE-IDENTICAL
+        // 403 responses for a non-existent collection and for an existing
+        // but closed one (`directus_sessions`). Both are
+        //   403 {"errors":[{"message":"You don't have permission to access this.",
+        //                    "extensions":{"code":"FORBIDDEN"}}]}
+        // Distinguishing them by response body is impossible. The schema
+        // snapshot is the only tool we have: if we know the collection, the
+        // operator needs to fix permissions; if we don't, the developer
+        // needs to fix a typo.
         if (error.response?.status === 403 && !isKnownCollection(collection)) {
           const all = [...getKnownCollections()];
           const sample = all.slice(0, 20);

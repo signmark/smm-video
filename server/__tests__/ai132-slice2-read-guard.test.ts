@@ -72,6 +72,22 @@ describe('AI-132 slice 2: validateReadParams (filter/sort/fields)', () => {
     expect(violations).toEqual([]);
   });
 
+  it('accepts point paths in filter (campaign_id.name) — HEAD is checked, tail is opaque', () => {
+    // Per @Clause_Dev_Hermi 22.08 13:15: Directus lets you filter by a relation
+    // path. We accept the head segment of `campaign_id.name` (campaign_id is
+    // a real field on campaign_content) and skip the tail because the snapshot
+    // does not know relation targets. A bogus head must still be caught.
+    const okViolations = validateReadParams('campaign_content', {
+      filter: { 'campaign_id.name': { _eq: 'x' } } as Record<string, unknown>,
+    });
+    expect(okViolations).toEqual([]);
+
+    const badViolations = validateReadParams('campaign_content', {
+      filter: { 'campain_id.name': { _eq: 'x' } } as Record<string, unknown>,
+    });
+    expect(badViolations).toEqual([{ where: 'filter', value: 'campain_id.name' }]);
+  });
+
   it('skips wildcard forms in fields (*, *.*, rel.*)', () => {
     const violations = validateReadParams('campaign_content', {
       fields: ['*', '*.*', 'campaign_id.*'],
@@ -122,17 +138,20 @@ describe('AI-132 slice 2: validateReadParams (filter/sort/fields)', () => {
   });
 
   it('validates deep — first segment must exist on parent collection', () => {
+    // Per @Clause_Dev_Hermi 22.08 13:15: `deep` is not validated at all.
+    // The check was dropped because the snapshot has no relation targets,
+    // the form of `deep` differs from what was assumed (no `fields` key,
+    // only `_filter`/`_sort`/`_limit`), and no `deep` argument is passed
+    // anywhere in `server/` today. We assert that the validator does NOT
+    // emit violations for `deep` content — even for unknown relation names —
+    // because that branch was deliberately removed.
     const violations = validateReadParams('campaign_content', {
       deep: {
-        // campaign_id exists; bogus_rel does not.
         campaign_id: { _filter: { status: { _eq: 'active' } } },
         bogus_rel: { fields: ['id'] },
       },
     });
-    // campaign_id._filter is a nested filter — the inner 'status' check is
-    // done against the union fallback (see file), so no violation there.
-    // bogus_rel is unknown at parent level — reported.
-    expect(violations).toEqual([{ where: 'deep', value: 'bogus_rel' }]);
+    expect(violations).toEqual([]);
   });
 });
 
@@ -297,6 +316,37 @@ describe('AI-132 slice 2: list() integration', () => {
       expect(caught.message).toMatch(/totally_made_up_field/);
       // axios не вызывался — guard сработал до запроса.
       expect(requestMock).not.toHaveBeenCalled();
+    } finally {
+      if (prev === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = prev;
+      delete process.env.DIRECTUS_URL;
+    }
+  });
+
+  it('list() guardReadParams вызывается ОДИН РАЗ даже при ретраях (mutation: move guard inside executeWithRetry -> red)', async () => {
+    // Per @Clause_Dev_Hermi 22.08 13:15: guard must live OUTSIDE
+    // executeWithRetry, otherwise a 502/503 retry would produce up to four
+    // identical violation entries in prod. We assert by counting logger
+    // calls with a typo-bearing query on a retried request.
+    const prev = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    process.env.DIRECTUS_URL = 'https://directus.test';
+    try {
+      // Первый запрос вернёт 503 (ретрай), второй — 200. Если guard
+      // переехал внутрь executeWithRetry, loggerSpy.error вызовется дважды.
+      requestMock
+        .mockRejectedValueOnce({ isAxiosError: true, response: { status: 503 } })
+        .mockResolvedValueOnce({ data: { data: [] } });
+      const { DirectusCrud } = await import('../services/directus-crud');
+      const crud = new DirectusCrud();
+      loggerSpy.error.mockClear();
+      await crud.list<{ id: string }>('campaign_content', {
+        authToken: 'test',
+        filter: { totally_typoed_field: 'x' },
+      });
+      // Проверяем точное число ошибок: ровно 1 (до ретраев).
+      // Если guard внутри ретрая — будет >=2.
+      expect(loggerSpy.error).toHaveBeenCalledTimes(1);
     } finally {
       if (prev === undefined) delete process.env.NODE_ENV;
       else process.env.NODE_ENV = prev;

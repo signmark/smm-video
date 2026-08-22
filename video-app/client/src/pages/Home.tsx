@@ -4,7 +4,7 @@ import { API } from '../api';
 import { Search, Filter, SortAsc, SortDesc, Trash2, Clock, Smartphone, Monitor, Square, Play, RotateCcw, AlertTriangle, Film, Loader2, X } from 'lucide-react';
 import {
   filterAndSortProjects,
-  isActiveStatus,
+  isRunningStatus,
   STATUS_FILTER_OPTIONS,
   SORT_OPTIONS,
   type StatusFilter,
@@ -65,7 +65,7 @@ export default function Home() {
   useEffect(() => {
     fetchProjects();
     const hasActive = projects.some((p) =>
-      isActiveStatus(p.status)
+      isRunningStatus(p.status)
     );
     if (hasActive) {
       const id = setInterval(fetchProjects, 4000);
@@ -211,7 +211,7 @@ function ProjectCard({ project: p, onClick, onResume, onRestart, onDelete, delet
   onDelete: () => void;
   deleting: boolean;
 }) {
-  const isActive = isActiveStatus(p.status);
+  const isActive = isRunningStatus(p.status);
   const isError = p.status === 'error';
   const isDone = p.status === 'done';
   const expiry = isDone ? getExpiryLabel(p.createdAt) : null;

@@ -31,11 +31,16 @@ export const SORT_OPTIONS: { value: SortOrder; label: string }[] = [
   { value: 'oldest', label: 'Сначала старые' },
 ];
 
-/** Single source of truth for "active" status check. */
-export const ACTIVE_STATUSES = new Set(['idle', 'generating_script', 'generating_images', 'assembling']);
+/** Statuses where the machine is actively working (polling + spinner). */
+export const RUNNING_STATUSES = new Set(['generating_script', 'generating_images', 'assembling']);
 
-export function isActiveStatus(status: string): boolean {
-  return ACTIVE_STATUSES.has(status);
+export function isRunningStatus(status: string): boolean {
+  return RUNNING_STATUSES.has(status);
+}
+
+/** Statuses that belong in the "В работе" filter bucket (not done, not error). */
+export function isActiveFilter(status: string): boolean {
+  return status !== 'done' && status !== 'error';
 }
 
 export function filterAndSortProjects(
@@ -58,7 +63,7 @@ export function filterAndSortProjects(
 
   // Status filter
   if (statusFilter === 'active') {
-    result = result.filter((p) => isActiveStatus(p.status));
+    result = result.filter((p) => isActiveFilter(p.status));
   } else if (statusFilter === 'done') {
     result = result.filter((p) => p.status === 'done');
   } else if (statusFilter === 'error') {

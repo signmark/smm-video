@@ -2,8 +2,9 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   filterAndSortProjects,
-  isActiveStatus,
-  ACTIVE_STATUSES,
+  isRunningStatus,
+  isActiveFilter,
+  RUNNING_STATUSES,
   STATUS_FILTER_OPTIONS,
   SORT_OPTIONS,
   type ProjectForFilter,
@@ -31,25 +32,69 @@ const PROJECTS: ProjectForFilter[] = [
   makeProject({ id: '4', title: 'Fourth', status: 'done', createdAt: new Date(NOW).toISOString() }),
 ];
 
-describe('isActiveStatus', () => {
-  it('idle is active', () => {
-    assert.equal(isActiveStatus('idle'), true);
+describe('isRunningStatus', () => {
+  it('generating_script is running', () => {
+    assert.equal(isRunningStatus('generating_script'), true);
+  });
+
+  it('generating_images is running', () => {
+    assert.equal(isRunningStatus('generating_images'), true);
+  });
+
+  it('assembling is running', () => {
+    assert.equal(isRunningStatus('assembling'), true);
+  });
+
+  it('idle is NOT running', () => {
+    assert.equal(isRunningStatus('idle'), false);
+  });
+
+  it('script_ready is NOT running', () => {
+    assert.equal(isRunningStatus('script_ready'), false);
+  });
+
+  it('done is NOT running', () => {
+    assert.equal(isRunningStatus('done'), false);
+  });
+
+  it('error is NOT running', () => {
+    assert.equal(isRunningStatus('error'), false);
+  });
+
+  it('RUNNING_STATUSES has exactly 3 entries', () => {
+    assert.equal(RUNNING_STATUSES.size, 3);
+  });
+});
+
+describe('isActiveFilter', () => {
+  it('idle is active (in "В работе" bucket)', () => {
+    assert.equal(isActiveFilter('idle'), true);
+  });
+
+  it('script_ready is active (in "В работе" bucket)', () => {
+    assert.equal(isActiveFilter('script_ready'), true);
   });
 
   it('generating_script is active', () => {
-    assert.equal(isActiveStatus('generating_script'), true);
+    assert.equal(isActiveFilter('generating_script'), true);
   });
 
-  it('done is not active', () => {
-    assert.equal(isActiveStatus('done'), false);
+  it('done is NOT active', () => {
+    assert.equal(isActiveFilter('done'), false);
   });
 
-  it('error is not active', () => {
-    assert.equal(isActiveStatus('error'), false);
+  it('error is NOT active', () => {
+    assert.equal(isActiveFilter('error'), false);
   });
 
-  it('ACTIVE_STATUSES has exactly 4 entries', () => {
-    assert.equal(ACTIVE_STATUSES.size, 4);
+  it('script_ready appears in "active" filter', () => {
+    const projects = [
+      makeProject({ id: '1', title: 'A', status: 'script_ready' }),
+      makeProject({ id: '2', title: 'B', status: 'done' }),
+    ];
+    const result = filterAndSortProjects(projects, '', 'active', 'newest');
+    assert.equal(result.length, 1);
+    assert.equal(result[0].id, '1');
   });
 });
 
@@ -73,7 +118,7 @@ describe('filterAndSortProjects', () => {
     assert.ok(result.every((p) => p.status === 'done'));
   });
 
-  it('filter by status: active', () => {
+  it('filter by status: active (not done, not error)', () => {
     const result = filterAndSortProjects(PROJECTS, '', 'active', 'newest');
     assert.equal(result.length, 1);
     assert.equal(result[0].id, '2');

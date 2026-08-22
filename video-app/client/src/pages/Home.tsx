@@ -31,6 +31,10 @@ function FormatIcon({ format }: { format: string }) {
   return <Square size={16} style={{ color: 'var(--text-muted)' }} />;
 }
 
+/** Цвет состояния «нужно пересобрать»: не зелёный (не готово) и не красный
+ *  (ничего не сломалось) — работа просто не доведена до конца. */
+const REBUILD_COLOR = '#f59e0b';
+
 export default function Home() {
   const [projects, setProjects] = useState<VideoProject[]>([]);
   const [loading, setLoading] = useState(true);
@@ -190,7 +194,14 @@ function ProjectCard({ project: p, onClick, onResume, onRestart, onDelete, delet
   const isActive = isRunningStatus(p.status);
   const isError = p.status === 'error';
   const fileStatus = getFileStatus(p.status, p.hasFile ?? false, p.createdAt, p.retentionDays ?? DEFAULT_RETENTION_DAYS);
-  const { isDone, fileMissing, missingLabel, expiryLabel, expiryUrgent } = fileStatus;
+  const { isDone, fileMissing, expiryLabel, expiryUrgent } = fileStatus;
+  /**
+   * Готовый проект, у которого файла уже нет, — не готовое видео. Решение
+   * владельца 22.08: такая карточка не должна изображать готовый ролик
+   * (кадр, «Готово», скачивание); от неё нужна ровно одна вещь — пересобрать.
+   * Сценарий и настройки сохранены, поэтому пересборка идёт с того же места.
+   */
+  const needsRebuild = fileMissing;
 
   // For active projects, show current step from progress-steps
   let activeStepLabel = '';
@@ -234,7 +245,7 @@ function ProjectCard({ project: p, onClick, onResume, onRestart, onDelete, delet
     >
       {/* Thumbnail / status placeholder */}
       <div style={{ position: 'relative', width: '100%', paddingTop: '56.25%', background: 'var(--bg-card2)' }}>
-        {isDone ? (
+        {isDone && !needsRebuild ? (
           <>
             <img
               src={`${API}/videos/${p.id}/thumbnail`}
@@ -265,7 +276,13 @@ function ProjectCard({ project: p, onClick, onResume, onRestart, onDelete, delet
                 <span style={{ fontSize: 12, color: '#ef4444' }}>{errorStepLabel || 'Ошибка'}</span>
               </>
             )}
-            {!isActive && !isError && (
+            {needsRebuild && (
+              <>
+                <RotateCcw size={24} style={{ color: 'var(--text-muted)' }} />
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Видео не сохранилось</span>
+              </>
+            )}
+            {!isActive && !isError && !needsRebuild && (
               <Film size={24} style={{ color: 'var(--text-muted)' }} />
             )}
           </div>
@@ -291,12 +308,12 @@ function ProjectCard({ project: p, onClick, onResume, onRestart, onDelete, delet
           <span
             style={{
               padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 600,
-              background: statusColor(p.status) + '22',
-              color: statusColor(p.status),
-              border: `1px solid ${statusColor(p.status)}44`,
+              background: (needsRebuild ? REBUILD_COLOR : statusColor(p.status)) + '22',
+              color: needsRebuild ? REBUILD_COLOR : statusColor(p.status),
+              border: `1px solid ${needsRebuild ? REBUILD_COLOR : statusColor(p.status)}44`,
             }}
           >
-            {statusLabel(p.status)}
+            {needsRebuild ? 'Нужно пересобрать' : statusLabel(p.status)}
           </span>
           <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>
             {p.duration}с
@@ -306,15 +323,21 @@ function ProjectCard({ project: p, onClick, onResume, onRestart, onDelete, delet
               <Trash2 size={10} /> {expiryLabel}
             </span>
           )}
-          {missingLabel && (
-            <span style={{ fontSize: 11, color: '#ef4444', display: 'flex', alignItems: 'center', gap: 3 }}>
-              <AlertTriangle size={10} /> {missingLabel}
-            </span>
-          )}
+
         </div>
 
         {/* Actions row */}
         <div style={{ display: 'flex', gap: 6, marginTop: 4 }} onClick={(e) => e.stopPropagation()}>
+          {needsRebuild && (
+            <button
+              data-testid={`button-rebuild-${p.id}`}
+              onClick={onRestart}
+              title="Сгенерировать видео заново из сохранённого сценария"
+              style={{ fontSize: 11, padding: '4px 8px', borderRadius: 4, border: 'none', background: '#4c1d95', color: '#fff', cursor: 'pointer', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}
+            >
+              <RotateCcw size={10} /> Сгенерировать заново
+            </button>
+          )}
           {isError && (
             <>
               <button

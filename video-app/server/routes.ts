@@ -17,6 +17,8 @@ import {
   type Script,
 } from './db.js';
 
+const RETENTION_DAYS = parseInt(process.env.VIDEO_RETENTION_DAYS ?? '30', 10);
+
 // Ждёт пока файл появится на диске с ненулевым размером (до 10с, опрос каждые 300мс)
 async function waitForFile(filePath: string, maxMs = 10000): Promise<void> {
   const step = 300;
@@ -134,7 +136,7 @@ router.get('/health', (_req, res) => {
 router.get('/videos', async (_req, res) => {
   try {
     const projects = await listProjects();
-    const enriched = projects.map((p) => ({ ...p, hasFile: hasVideoFile(p.id) }));
+    const enriched = projects.map((p) => ({ ...p, hasFile: hasVideoFile(p.id), retentionDays: RETENTION_DAYS }));
     res.json(enriched);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -145,7 +147,7 @@ router.get('/videos/:id', async (req, res) => {
   try {
     const project = await getProject(req.params.id);
     if (!project) return res.status(404).json({ error: 'Not found' });
-    res.json({ ...project, hasFile: hasVideoFile(project.id) });
+    res.json({ ...project, hasFile: hasVideoFile(project.id), retentionDays: RETENTION_DAYS });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -405,7 +407,7 @@ router.get('/videos/:id/download', async (req, res) => {
     if (project.status !== 'done' || !project.videoPath) {
       return res.status(400).json({ error: 'Video not ready' });
     }
-    if (!hasVideoFile(project.id)) {
+    if (!existsSync(project.videoPath)) {
       return res.status(404).json({ error: 'Video file missing', missing: true });
     }
     res.download(project.videoPath, `${project.title.replace(/[^a-zA-Z0-9а-яА-Я]/g, '_')}.mp4`);
@@ -435,7 +437,7 @@ router.get('/videos/:id/thumbnail', async (req, res) => {
     const thumbPath = project.videoPath.replace(/\.mp4$/, '_thumb.jpg');
 
     if (!existsSync(thumbPath)) {
-      if (!existsSync(project.videoPath)) {
+      if (!hasVideoFile(project.id)) {
         return res.status(404).json({ error: 'Video file missing' });
       }
       // Write to temp file first, then rename atomically

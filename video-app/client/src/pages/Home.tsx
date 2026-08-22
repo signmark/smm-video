@@ -12,7 +12,7 @@ import {
   type ProjectForFilter,
 } from '../lib/project-filter';
 import { getStepStates, getErrorStep, PIPELINE_STEPS } from '../lib/progress-steps';
-import { getFileStatus, RETENTION_DAYS } from '../lib/file-status';
+import { getFileStatus, DEFAULT_RETENTION_DAYS } from '../lib/file-status';
 
 interface VideoProject extends ProjectForFilter {
   progress: number;
@@ -21,6 +21,7 @@ interface VideoProject extends ProjectForFilter {
   duration: number;
   language: string;
   hasFile?: boolean;
+  retentionDays?: number;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -205,7 +206,7 @@ function ProjectCard({ project: p, onClick, onResume, onRestart, onDelete, delet
 }) {
   const isActive = isRunningStatus(p.status);
   const isError = p.status === 'error';
-  const fileStatus = getFileStatus(p.status, p.hasFile ?? false, p.createdAt);
+  const fileStatus = getFileStatus(p.status, p.hasFile ?? false, p.createdAt, p.retentionDays ?? DEFAULT_RETENTION_DAYS);
   const { isDone, fileMissing, expiryLabel, expiryUrgent } = fileStatus;
 
   // For active projects, show current step from progress-steps
@@ -318,7 +319,7 @@ function ProjectCard({ project: p, onClick, onResume, onRestart, onDelete, delet
             {p.duration}с
           </span>
           {expiryLabel && (
-            <span style={{ fontSize: 11, color: expiryUrgent ? '#f87171' : '#6b7280', display: 'flex', alignItems: 'center', gap: 3 }} title={`Видеофайл автоматически удаляется через ${RETENTION_DAYS} дней после создания.`}>
+            <span style={{ fontSize: 11, color: expiryUrgent ? '#f87171' : '#6b7280', display: 'flex', alignItems: 'center', gap: 3 }} title={`Видеофайл автоматически удаляется через ${p.retentionDays ?? DEFAULT_RETENTION_DAYS} дней после создания.`}>
               <Trash2 size={10} /> {expiryLabel}
             </span>
           )}

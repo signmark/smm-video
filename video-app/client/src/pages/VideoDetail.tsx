@@ -317,6 +317,7 @@ interface VideoProject {
   error?: string;
   createdAt: string;
   hasFile?: boolean;
+  retentionDays?: number;
 }
 
 const STATUS_LABELS: Record<string, string> = {

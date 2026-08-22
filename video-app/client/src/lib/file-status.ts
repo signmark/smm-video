@@ -5,8 +5,8 @@
  * Used by Home.tsx and VideoDetail.tsx.
  */
 
-/** Server-side retention period (must match cleanup.ts). */
-export const RETENTION_DAYS = 30;
+/** Default retention period (fallback before server response arrives). */
+export const DEFAULT_RETENTION_DAYS = 30;
 
 export interface FileStatus {
   /** Whether the video file exists on disk. */
@@ -26,12 +26,14 @@ export interface FileStatus {
  * @param status - Project status string
  * @param hasFile - Whether the video file exists on disk (from server)
  * @param createdAt - ISO date string of project creation
+ * @param retentionDays - Retention period from server (or default)
  * @param now - Current timestamp (injectable for testing)
  */
 export function getFileStatus(
   status: string,
   hasFile: boolean,
   createdAt: string,
+  retentionDays: number = DEFAULT_RETENTION_DAYS,
   now: number = Date.now(),
 ): FileStatus {
   const isDone = status === 'done';
@@ -42,7 +44,7 @@ export function getFileStatus(
 
   if (isDone && hasFile) {
     const age = now - new Date(createdAt).getTime();
-    const msRemaining = RETENTION_DAYS * 24 * 60 * 60 * 1000 - age;
+    const msRemaining = retentionDays * 24 * 60 * 60 * 1000 - age;
     if (msRemaining > 0) {
       const daysRemaining = Math.ceil(msRemaining / (24 * 60 * 60 * 1000));
       if (daysRemaining <= 1) {

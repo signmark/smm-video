@@ -2,6 +2,7 @@
 import { Button } from "@/components/ui/button";
 import { Menu, X, User, LogOut, Settings, Sparkles, Send, CreditCard, Bot, Zap, SlidersHorizontal, GitMerge, ClipboardList, Pause, Play } from "lucide-react";
 import { CampaignSelector } from "../CampaignSelector";
+import { AiZone, HelpZone, AccountZone, ZoneDivider } from "./TopbarZones";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -298,7 +299,7 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
 
   return (
     <>
-    <header className="h-16 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between px-4 lg:px-6 lg:pl-6 shadow-sm safe-area-top safe-area-left safe-area-right">
+    <header className="h-16 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between gap-2 px-4 lg:px-6 lg:pl-6 shadow-sm safe-area-top safe-area-left safe-area-right overflow-hidden">
       <div className="flex items-center gap-4">
         {/* Menu button — гамбургер на мобильных, toggle коллапса на десктопе */}
         <Button
@@ -318,265 +319,181 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
             <CampaignSelector persistSelection={true} />
           </div>
         )}
+            {showAutonomousBlock && (
+                      <>
+                      {/* SM-20: пауза — отдельная кнопка ВНЕ TooltipTrigger.
+                          Внутрь asChild её класть нельзя: Radix Slot клонирует ровно
+                          одного ребёнка и вешает на него props и ref, а фрагмент из
+                          двух кнопок их не принимает — тултип теряет якорь. Ни tsc,
+                          ни build этого не ловят: семантика Slot им неизвестна. */}
+                      {isAutonomousActive && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => {
+                          if (isAutonomousPaused) {
+                            resumeAutonomous();
+                          } else {
+                            pauseAutonomous();
+                          }
+                        }}
+                        className="h-9 w-9"
+                        data-testid="button-autonomous-pause"
+                        disabled={isPausingAutonomous || isResumingAutonomous}
+                        aria-label={isAutonomousPaused ? t('nav.autonomous.resumeLabel') : t('nav.autonomous.pauseLabel')}
+                        title={isAutonomousPaused ? t('nav.autonomous.resumeLabel') : t('nav.autonomous.pauseLabel')}
+                      >
+                        {isAutonomousPaused
+                          ? <Play className="h-4 w-4 text-emerald-600" />
+                          : <Pause className="h-4 w-4 text-amber-600" />}
+                      </Button>
+                      )}
+                      <TooltipProvider delayDuration={300}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            {autonomousStatus?.pendingApprovalStep ? (
+                              <Link href={`/campaigns/${selectedCampaignId}`}>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-9 w-9 relative"
+                                  data-testid="button-autonomous-pending"
+                                  aria-label={t('nav.autonomous.pendingLabel')}
+                                  title={t('nav.autonomous.pendingLabel')}
+                                >
+                                  <ClipboardList className="h-4 w-4 text-amber-500 dark:text-amber-400" aria-hidden="true" />
+                                  <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-amber-500 animate-pulse" aria-hidden="true" />
+                                </Button>
+                              </Link>
+                            ) : (
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => {
+                                  // SM-20: клик больше не выключает режим молча. Раньше одно
+                                  // нажатие стирало прогресс без вопроса и без возможности
+                                  // просто поставить на паузу — на это и жаловались.
+                                  if (isAutonomousActive) {
+                                    setConfirmDisable(false);
+                                    setShowManageDialog(true);
+                                  } else {
+                                    setShowModeDialog(true);
+                                  }
+                                }}
+                                className="h-9 w-9 relative"
+                                data-testid="button-autonomous-toggle"
+                                disabled={isTogglingAutonomous || isStoppingAutonomous}
+                                aria-label={
+                                  isAutonomousActive
+                                    ? t('nav.autonomous.manageLabel')
+                                    : t('nav.autonomous.startLabel')
+                                }
+                                aria-pressed={isAutonomousActive}
+                                title={
+                                  isAutonomousActive
+                                    ? t('nav.autonomous.manageLabel')
+                                    : t('nav.autonomous.startLabel')
+                                }
+                              >
+                                <Bot
+                                  className={`h-4 w-4 transition-colors ${
+                                    hasAttention
+                                      ? 'text-yellow-500 dark:text-yellow-400'
+                                      : isAutonomousActive
+                                      ? 'text-green-500 dark:text-green-400'
+                                      : hasQuotaError
+                                      ? 'text-yellow-500 dark:text-yellow-400'
+                                      : 'text-red-400 dark:text-red-500'
+                                  }`}
+                                  aria-hidden="true"
+                                />
+                                <span
+                                  className={`absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full ${
+                                    hasAttention
+                                      ? 'bg-yellow-500 animate-pulse'
+                                      : isAutonomousActive
+                                      ? 'bg-green-500 animate-pulse'
+                                      : hasQuotaError
+                                      ? 'bg-yellow-500 animate-pulse'
+                                      : 'bg-red-400'
+                                  }`}
+                                  aria-hidden="true"
+                                />
+                              </Button>
+                            )}
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom" className="max-w-[220px] text-center">
+                            {autonomousStatus?.pendingApprovalStep ? (
+                              <div className="space-y-0.5">
+                                <p className="font-medium text-amber-600 dark:text-amber-400">{t('topbar.autonomous.pendingTitle')}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {t('topbar.autonomous.pendingDescription')}
+                                </p>
+                              </div>
+                            ) : hasAttention ? (
+                              <div className="space-y-0.5">
+                                <p className="font-medium text-yellow-600 dark:text-yellow-400">Режим работает, но есть проблема</p>
+                                <p className="text-xs text-yellow-700 dark:text-yellow-300">{autonomousStatus.attention.message}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  Неудачных попыток подряд: {autonomousStatus.attention.failedAttempts} из {autonomousStatus.attention.stopsAfter}.
+                                </p>
+                              </div>
+                            ) : isAutonomousActive ? (
+                              <div className="space-y-0.5">
+                                <p className="font-medium text-green-600 dark:text-green-400">{t('topbar.autonomous.activeTitle')}</p>
+                                {buildAutonomousDesc() && (
+                                  <p className="text-xs text-muted-foreground">{buildAutonomousDesc()}</p>
+                                )}
+                                {autonomousStatus?.cyclesCompleted != null && (
+                                  <p className="text-xs text-muted-foreground">
+                                    {t('topbar.autonomous.stats', {
+                                      cycles: autonomousStatus.cyclesCompleted,
+                                      posts: autonomousStatus.postsCreated ?? 0,
+                                    })}
+                                  </p>
+                                )}
+                                <p className="text-xs text-muted-foreground">{t('topbar.autonomous.activeHint')}</p>
+                              </div>
+                            ) : hasStopReason ? (
+                              <div className="space-y-0.5">
+                                <p className="font-medium text-red-600 dark:text-red-400">Режим остановлен</p>
+                                <p className="text-xs text-red-700 dark:text-red-300">{autonomousStatus.stopReason.message}</p>
+                                <p className="text-xs text-muted-foreground">Включите автономный режим снова после входа.</p>
+                              </div>
+                            ) : hasQuotaError ? (
+                              <div className="space-y-0.5">
+                                <p className="font-medium text-yellow-600 dark:text-yellow-400">{t('topbar.autonomous.quotaTitle')}</p>
+                                <p className="text-xs text-yellow-700 dark:text-yellow-300">{autonomousStatus.quotaError.message}</p>
+                                <p className="text-xs text-muted-foreground">{t('topbar.autonomous.quotaHint')}</p>
+                              </div>
+                            ) : (
+                              <div className="space-y-0.5">
+                                <p className="font-medium">{t('topbar.autonomous.offTitle')}</p>
+                                {buildAutonomousDesc() && (
+                                  <p className="text-xs text-muted-foreground">{buildAutonomousDesc()}</p>
+                                )}
+                                <p className="text-xs text-muted-foreground">{t('topbar.autonomous.offHint')}</p>
+                              </div>
+                            )}
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                      </>
+            )}
       </div>
 
-      {/* Right side actions - Language, Theme & User Profile */}
-      <div className="flex items-center gap-2">
-        {/* Language Switcher */}
-        <LanguageSwitcher />
-        
-        {/* SM-80: двухпозиционный переключатель темы — таблетка
-            с бегунком. Заменил квадратную кнопку, которая показывала
-            значок темы, в которую переключишься, а не текущей. */}
-        <ThemeToggle />
-
-        {/* AI Assistant */}
-        {onOpenAIChat && (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onOpenAIChat}
-            className="h-9 w-9 relative"
-            data-testid="button-ai-assistant"
-            title={t('topbar.aiAssistant')}
-          >
-            <Sparkles className="h-4 w-4 text-purple-600 dark:text-purple-400" />
-            <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 animate-pulse" />
-          </Button>
-        )}
-
-        {/* Autonomous Mode Toggle */}
-        {showAutonomousBlock && (
-          <>
-          {/* SM-20: пауза — отдельная кнопка ВНЕ TooltipTrigger.
-              Внутрь asChild её класть нельзя: Radix Slot клонирует ровно
-              одного ребёнка и вешает на него props и ref, а фрагмент из
-              двух кнопок их не принимает — тултип теряет якорь. Ни tsc,
-              ни build этого не ловят: семантика Slot им неизвестна. */}
-          {isAutonomousActive && (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => {
-              if (isAutonomousPaused) {
-                resumeAutonomous();
-              } else {
-                pauseAutonomous();
-              }
-            }}
-            className="h-9 w-9"
-            data-testid="button-autonomous-pause"
-            disabled={isPausingAutonomous || isResumingAutonomous}
-            aria-label={isAutonomousPaused ? t('nav.autonomous.resumeLabel') : t('nav.autonomous.pauseLabel')}
-            title={isAutonomousPaused ? t('nav.autonomous.resumeLabel') : t('nav.autonomous.pauseLabel')}
-          >
-            {isAutonomousPaused
-              ? <Play className="h-4 w-4 text-emerald-600" />
-              : <Pause className="h-4 w-4 text-amber-600" />}
-          </Button>
-          )}
-          <TooltipProvider delayDuration={300}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                {autonomousStatus?.pendingApprovalStep ? (
-                  <Link href={`/campaigns/${selectedCampaignId}`}>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-9 w-9 relative"
-                      data-testid="button-autonomous-pending"
-                      aria-label={t('nav.autonomous.pendingLabel')}
-                      title={t('nav.autonomous.pendingLabel')}
-                    >
-                      <ClipboardList className="h-4 w-4 text-amber-500 dark:text-amber-400" aria-hidden="true" />
-                      <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-amber-500 animate-pulse" aria-hidden="true" />
-                    </Button>
-                  </Link>
-                ) : (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => {
-                      // SM-20: клик больше не выключает режим молча. Раньше одно
-                      // нажатие стирало прогресс без вопроса и без возможности
-                      // просто поставить на паузу — на это и жаловались.
-                      if (isAutonomousActive) {
-                        setConfirmDisable(false);
-                        setShowManageDialog(true);
-                      } else {
-                        setShowModeDialog(true);
-                      }
-                    }}
-                    className="h-9 w-9 relative"
-                    data-testid="button-autonomous-toggle"
-                    disabled={isTogglingAutonomous || isStoppingAutonomous}
-                    aria-label={
-                      isAutonomousActive
-                        ? t('nav.autonomous.manageLabel')
-                        : t('nav.autonomous.startLabel')
-                    }
-                    aria-pressed={isAutonomousActive}
-                    title={
-                      isAutonomousActive
-                        ? t('nav.autonomous.manageLabel')
-                        : t('nav.autonomous.startLabel')
-                    }
-                  >
-                    <Bot
-                      className={`h-4 w-4 transition-colors ${
-                        hasAttention
-                          ? 'text-yellow-500 dark:text-yellow-400'
-                          : isAutonomousActive
-                          ? 'text-green-500 dark:text-green-400'
-                          : hasQuotaError
-                          ? 'text-yellow-500 dark:text-yellow-400'
-                          : 'text-red-400 dark:text-red-500'
-                      }`}
-                      aria-hidden="true"
-                    />
-                    <span
-                      className={`absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full ${
-                        hasAttention
-                          ? 'bg-yellow-500 animate-pulse'
-                          : isAutonomousActive
-                          ? 'bg-green-500 animate-pulse'
-                          : hasQuotaError
-                          ? 'bg-yellow-500 animate-pulse'
-                          : 'bg-red-400'
-                      }`}
-                      aria-hidden="true"
-                    />
-                  </Button>
-                )}
-              </TooltipTrigger>
-              <TooltipContent side="bottom" className="max-w-[220px] text-center">
-                {autonomousStatus?.pendingApprovalStep ? (
-                  <div className="space-y-0.5">
-                    <p className="font-medium text-amber-600 dark:text-amber-400">{t('topbar.autonomous.pendingTitle')}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {t('topbar.autonomous.pendingDescription')}
-                    </p>
-                  </div>
-                ) : hasAttention ? (
-                  <div className="space-y-0.5">
-                    <p className="font-medium text-yellow-600 dark:text-yellow-400">Режим работает, но есть проблема</p>
-                    <p className="text-xs text-yellow-700 dark:text-yellow-300">{autonomousStatus.attention.message}</p>
-                    <p className="text-xs text-muted-foreground">
-                      Неудачных попыток подряд: {autonomousStatus.attention.failedAttempts} из {autonomousStatus.attention.stopsAfter}.
-                    </p>
-                  </div>
-                ) : isAutonomousActive ? (
-                  <div className="space-y-0.5">
-                    <p className="font-medium text-green-600 dark:text-green-400">{t('topbar.autonomous.activeTitle')}</p>
-                    {buildAutonomousDesc() && (
-                      <p className="text-xs text-muted-foreground">{buildAutonomousDesc()}</p>
-                    )}
-                    {autonomousStatus?.cyclesCompleted != null && (
-                      <p className="text-xs text-muted-foreground">
-                        {t('topbar.autonomous.stats', {
-                          cycles: autonomousStatus.cyclesCompleted,
-                          posts: autonomousStatus.postsCreated ?? 0,
-                        })}
-                      </p>
-                    )}
-                    <p className="text-xs text-muted-foreground">{t('topbar.autonomous.activeHint')}</p>
-                  </div>
-                ) : hasStopReason ? (
-                  <div className="space-y-0.5">
-                    <p className="font-medium text-red-600 dark:text-red-400">Режим остановлен</p>
-                    <p className="text-xs text-red-700 dark:text-red-300">{autonomousStatus.stopReason.message}</p>
-                    <p className="text-xs text-muted-foreground">Включите автономный режим снова после входа.</p>
-                  </div>
-                ) : hasQuotaError ? (
-                  <div className="space-y-0.5">
-                    <p className="font-medium text-yellow-600 dark:text-yellow-400">{t('topbar.autonomous.quotaTitle')}</p>
-                    <p className="text-xs text-yellow-700 dark:text-yellow-300">{autonomousStatus.quotaError.message}</p>
-                    <p className="text-xs text-muted-foreground">{t('topbar.autonomous.quotaHint')}</p>
-                  </div>
-                ) : (
-                  <div className="space-y-0.5">
-                    <p className="font-medium">{t('topbar.autonomous.offTitle')}</p>
-                    {buildAutonomousDesc() && (
-                      <p className="text-xs text-muted-foreground">{buildAutonomousDesc()}</p>
-                    )}
-                    <p className="text-xs text-muted-foreground">{t('topbar.autonomous.offHint')}</p>
-                  </div>
-                )}
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-          </>
-        )}
-
-        {/* TG Bot Assistant */}
-        {onOpenTGBot && (
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onOpenTGBot}
-            className="h-9 w-9 relative bg-gradient-to-r from-blue-500 to-cyan-500 text-white hover:from-blue-600 hover:to-cyan-600"
-            data-testid="button-tg-bot"
-            title={t('topbar.tgAssistant')}
-          >
-            <Send className="h-4 w-4" />
-            <span className="absolute -top-1 -right-1 h-2 w-2 rounded-full bg-red-500 animate-pulse" />
-          </Button>
-        )}
-
-        {/* Pricing link */}
-        <Link href="/pricing">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="hidden sm:flex items-center gap-1.5 h-9 px-3 text-blue-600 dark:text-blue-400 hover:text-blue-700 hover:bg-blue-50 dark:hover:bg-blue-900/20"
-            data-testid="button-pricing-nav"
-            title={t('topbar.pricing')}
-          >
-            <CreditCard className="h-4 w-4" />
-            <span className="text-sm font-medium">{t('topbar.pricing')}</span>
-          </Button>
-        </Link>
-
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button 
-              variant="ghost" 
-              className="flex items-center gap-2 h-9 px-3"
-              data-testid="button-user-menu"
-            >
-              <User className="h-4 w-4" />
-              <div className="hidden sm:flex flex-col items-start text-left">
-                <span className="text-sm font-medium">{userDisplayName}</span>
-                {userProfile?.email && userProfile.email !== userDisplayName && (
-                  <span className="text-xs text-gray-500 dark:text-gray-400">{userProfile.email}</span>
-                )}
-              </div>
-              {userIsAdmin && (
-                <span className="hidden md:inline-block bg-blue-500 text-white text-xs px-2 py-1 rounded">
-                  {t('topbar.smmAdmin')}
-                </span>
-              )}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuItem 
-              onClick={onOpenProfile}
-              data-testid="menu-profile"
-            >
-              <User className="mr-2 h-4 w-4" />
-              {t('settings.profile')}
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem 
-              onClick={onLogout}
-              className="text-red-600 dark:text-red-400"
-              data-testid="menu-logout"
-            >
-              <LogOut className="mr-2 h-4 w-4" />
-              {t('auth.logout')}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+      {/* Right side actions — three zones with thin dividers (AI-134). */}
+      <div className="flex items-center gap-1">
+        {onOpenAIChat && <AiZone onOpenAIChat={onOpenAIChat} />}
+        <ZoneDivider />
+        <HelpZone onOpenTGBot={onOpenTGBot} />
+        <ZoneDivider />
+        <AccountZone
+          userDisplayName={userDisplayName}
+          userRoleLabel={t('topbar.smmAdmin')}
+          onLogout={onLogout}
+          onOpenProfile={onOpenProfile}
+        />
       </div>
     </header>
 

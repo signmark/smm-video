@@ -3,6 +3,7 @@ import { useLocation, Link } from 'wouter';
 import { CheckCircle, Loader2, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { queryClient } from '@/lib/queryClient';
+import { SUPPORT } from '@/lib/support';
 
 export default function PaymentSuccessPage() {
   const [, navigate] = useLocation();
@@ -144,7 +145,7 @@ export default function PaymentSuccessPage() {
                   Перейти в приложение
                 </Button>
               </Link>
-              <a href="https://t.me/omemo_support" target="_blank" rel="noopener noreferrer">
+              <a href={SUPPORT.telegram} target="_blank" rel="noopener noreferrer">
                 <Button variant="outline" className="w-full" data-testid="button-contact-support">
                   Написать в поддержку
                 </Button>

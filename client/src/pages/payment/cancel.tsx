@@ -1,6 +1,7 @@
 import { Link } from 'wouter';
 import { XCircle, ArrowLeft, LifeBuoy } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { SUPPORT } from '@/lib/support';
 
 export default function PaymentCancelPage() {
   return (
@@ -26,7 +27,7 @@ export default function PaymentCancelPage() {
               Вернуться к тарифам
             </Button>
           </Link>
-          <a href="https://t.me/omemo_support" target="_blank" rel="noopener noreferrer">
+          <a href={SUPPORT.telegram} target="_blank" rel="noopener noreferrer">
             <Button variant="outline" className="w-full" data-testid="button-contact-support-cancel">
               <LifeBuoy className="w-4 h-4 mr-2" />
               Помощь при оплате
@@ -36,8 +37,8 @@ export default function PaymentCancelPage() {
 
         <p className="text-xs text-gray-400">
           Возникли проблемы?{' '}
-          <a href="mailto:support@omemo.tech" className="underline hover:text-gray-600">
-            support@omemo.tech
+          <a href={`mailto:${SUPPORT.email}`} className="underline hover:text-gray-600">
+            {SUPPORT.email}
           </a>
         </p>
       </div>

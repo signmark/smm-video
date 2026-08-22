@@ -1,8 +1,46 @@
 import fs from 'fs/promises';
-import { existsSync } from 'fs';
 import { listProjects, updateProject, DATA_PATHS, RETENTION_DAYS } from './db.js';
 
 const RETENTION_MS = RETENTION_DAYS * 24 * 60 * 60 * 1000;
+
+/** Возраст артефакта в миллисекундах; `null` — файла (или папки) нет. */
+export type ArtifactAges = { video: number | null; images: number | null };
+
+export interface CleanupPlan {
+  deleteVideo: boolean;
+  deleteImages: boolean;
+  /** Чистить `videoPath`/`videoUrl` в проекте — только если файл действительно удалён. */
+  clearRow: boolean;
+}
+
+/**
+ * Срок хранения считается по возрасту самого артефакта, а не по дате создания
+ * проекта. Проект живёт месяцами и пересобирается: у июльского проекта может
+ * быть сегодняшний ролик. Раньше возраст брался из `project.createdAt`, и это
+ * давало две поломки на ровном месте:
+ *
+ *  1. свежий ролик, пересобранный в старом проекте, удалялся при ближайшем
+ *     перезапуске контейнера — владелец платил за генерацию, а файл исчезал;
+ *  2. очистка, попавшая на середину генерации в старом проекте, сносила папку
+ *     с уже готовыми кадрами прямо под работающим пайплайном.
+ *
+ * Каждый артефакт судится по своему mtime, поэтому то, что пишется прямо
+ * сейчас, под удаление не попадает никогда.
+ */
+export function planCleanup(ages: ArtifactAges, retentionMs: number): CleanupPlan {
+  const expired = (age: number | null) => age !== null && age >= retentionMs;
+  const deleteVideo = expired(ages.video);
+  return { deleteVideo, deleteImages: expired(ages.images), clearRow: deleteVideo };
+}
+
+async function ageOf(path: string, now: number): Promise<number | null> {
+  try {
+    const stat = await fs.stat(path);
+    return now - stat.mtimeMs;
+  } catch {
+    return null;
+  }
+}
 
 export async function cleanupOldVideos(): Promise<void> {
   const now = Date.now();
@@ -12,29 +50,19 @@ export async function cleanupOldVideos(): Promise<void> {
     const projects = await listProjects();
 
     for (const project of projects) {
-      const age = now - new Date(project.createdAt).getTime();
-      if (age < RETENTION_MS) continue;
-
       const videoPath = DATA_PATHS.videoFile(project.id);
       const imagesDir = DATA_PATHS.imagesDir(project.id);
 
-      let hadFiles = false;
+      const plan = planCleanup(
+        { video: await ageOf(videoPath, now), images: await ageOf(imagesDir, now) },
+        RETENTION_MS,
+      );
 
-      if (existsSync(videoPath)) {
-        await fs.unlink(videoPath).catch(() => {});
-        hadFiles = true;
-      }
+      if (plan.deleteVideo) await fs.unlink(videoPath).catch(() => {});
+      if (plan.deleteImages) await fs.rm(imagesDir, { recursive: true, force: true }).catch(() => {});
 
-      if (existsSync(imagesDir)) {
-        await fs.rm(imagesDir, { recursive: true, force: true }).catch(() => {});
-        hadFiles = true;
-      }
-
-      if (hadFiles || project.videoPath || project.videoUrl) {
-        await updateProject(project.id, {
-          videoPath: undefined,
-          videoUrl: undefined,
-        });
+      if (plan.clearRow) {
+        await updateProject(project.id, { videoPath: undefined, videoUrl: undefined });
         cleaned++;
       }
     }

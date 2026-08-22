@@ -1,9 +1,10 @@
 import { useState, useEffect, type ReactNode } from 'react';
+import { LayoutGrid, Clapperboard, ChevronLeft, ChevronRight } from 'lucide-react';
 import { navigate } from '../App';
 
 const NAV_ITEMS = [
-  { path: '/', label: 'Проекты', icon: '📋' },
-  { path: '/create', label: 'Создать', icon: '🎬' },
+  { path: '/', label: 'Проекты', icon: LayoutGrid },
+  { path: '/create', label: 'Создать', icon: Clapperboard },
 ];
 
 export default function Layout({ children, currentPath }: { children: ReactNode; currentPath: string }) {
@@ -18,78 +19,61 @@ export default function Layout({ children, currentPath }: { children: ReactNode;
   }, [collapsed]);
 
   return (
-    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
+    <div className="flex h-screen w-full overflow-hidden" style={{ background: 'var(--bg)' }}>
       {/* Desktop sidebar */}
       <aside
-        style={{
-          width: collapsed ? 60 : 240,
-          minWidth: collapsed ? 60 : 240,
-          background: 'var(--bg-card)',
-          borderRight: '1px solid var(--border)',
-          display: 'flex',
-          flexDirection: 'column',
-          transition: 'width 0.3s, min-width 0.3s',
-          position: 'relative',
-          overflow: 'hidden',
-        }}
-        className="sidebar-desktop"
+        className={`hidden md:flex flex-col h-full shrink-0 border-r relative transition-all duration-300 ease-in-out ${
+          collapsed ? 'w-[60px]' : 'w-64'
+        }`}
+        style={{ borderColor: 'var(--border)', background: 'var(--bg-card)' }}
       >
         {/* Logo */}
-        <div style={{
-          height: 69,
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
-          padding: '0 16px',
-          borderBottom: '1px solid var(--border)',
-          overflow: 'hidden',
-        }}>
-          <div style={{
-            width: 32, height: 32, borderRadius: 8,
-            background: 'var(--accent)', display: 'flex',
-            alignItems: 'center', justifyContent: 'center',
-            color: '#fff', fontWeight: 700, fontSize: 14,
-            flexShrink: 0,
-          }}>
+        <div
+          className="flex items-center gap-3 h-[69px] px-4 shrink-0 overflow-hidden border-b"
+          style={{ borderColor: 'var(--border)' }}
+        >
+          <div
+            className="w-8 h-8 rounded flex items-center justify-center font-bold text-sm shrink-0"
+            style={{ background: 'var(--accent)', color: '#fff' }}
+          >
             V
           </div>
-          <span style={{
-            fontWeight: 700, fontSize: 18, whiteSpace: 'nowrap',
-            opacity: collapsed ? 0 : 1, width: collapsed ? 0 : 'auto',
-            transition: 'opacity 0.3s, width 0.3s', overflow: 'hidden',
-          }}>
+          <span
+            className={`font-bold text-xl tracking-tight whitespace-nowrap transition-all duration-300 ${
+              collapsed ? 'opacity-0 w-0' : 'opacity-100'
+            }`}
+            style={{ color: 'var(--text)' }}
+          >
             Video Generator
           </span>
         </div>
 
         {/* Nav links */}
-        <nav style={{ flex: 1, padding: '20px 8px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div className="flex-1 py-5 px-2 flex flex-col gap-1">
           {!collapsed && (
-            <div style={{
-              fontSize: 10, fontWeight: 600, color: 'var(--text-muted)',
-              textTransform: 'uppercase', letterSpacing: '0.1em',
-              padding: '0 12px', marginBottom: 8,
-            }}>
+            <div
+              className="text-[10px] font-semibold uppercase tracking-widest mb-2 px-3 transition-opacity duration-200"
+              style={{ color: 'var(--text-muted)' }}
+            >
               Студия
             </div>
           )}
           {NAV_ITEMS.map((item) => {
             const active = currentPath === item.path;
+            const Icon = item.icon;
             return (
               <button
                 key={item.path}
                 onClick={() => navigate(item.path)}
                 title={collapsed ? item.label : undefined}
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-150 relative group ${
+                  collapsed ? 'justify-center' : ''
+                }`}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: 12,
-                  padding: '10px 12px', borderRadius: 'var(--radius-sm)',
-                  border: 'none', background: active ? 'rgba(124,58,237,0.1)' : 'transparent',
+                  background: active ? 'rgba(124,58,237,0.1)' : 'transparent',
                   color: active ? 'var(--accent-light)' : 'var(--text-muted)',
-                  fontSize: 14, fontWeight: 500, cursor: 'pointer',
-                  justifyContent: collapsed ? 'center' : 'flex-start',
-                  transition: 'background 0.15s, color 0.15s',
-                  position: 'relative',
-                  whiteSpace: 'nowrap', overflow: 'hidden',
+                  border: 'none',
+                  cursor: 'pointer',
                 }}
                 onMouseEnter={(e) => {
                   if (!active) e.currentTarget.style.background = 'var(--bg-card2)';
@@ -99,44 +83,51 @@ export default function Layout({ children, currentPath }: { children: ReactNode;
                 }}
               >
                 {active && (
-                  <span style={{
-                    position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)',
-                    width: 3, height: 20, borderRadius: 2, background: 'var(--accent)',
-                  }} />
+                  <span
+                    className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-full"
+                    style={{ background: 'var(--accent)' }}
+                  />
                 )}
-                <span style={{ fontSize: 18, flexShrink: 0 }}>{item.icon}</span>
-                <span style={{
-                  opacity: collapsed ? 0 : 1, width: collapsed ? 0 : 'auto',
-                  transition: 'opacity 0.3s, width 0.3s', overflow: 'hidden',
-                }}>
+                <Icon className="w-5 h-5 shrink-0" style={{ color: active ? 'var(--accent-light)' : 'var(--text-muted)' }} />
+                <span
+                  className={`font-medium text-sm whitespace-nowrap overflow-hidden transition-all duration-300 ${
+                    collapsed ? 'w-0 opacity-0' : 'w-auto opacity-100'
+                  }`}
+                >
                   {item.label}
                 </span>
+
+                {/* Tooltip when collapsed */}
+                {collapsed && (
+                  <div
+                    className="absolute left-full ml-3 px-2.5 py-1.5 rounded-md text-xs font-medium shadow-lg opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity duration-150 whitespace-nowrap z-50"
+                    style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', color: 'var(--text)' }}
+                  >
+                    {item.label}
+                  </div>
+                )}
               </button>
             );
           })}
-        </nav>
+        </div>
 
         {/* Footer */}
-        <div style={{
-          borderTop: '1px solid var(--border)', padding: 12,
-          display: 'flex', alignItems: 'center', gap: 12,
-          justifyContent: collapsed ? 'center' : 'flex-start',
-          overflow: 'hidden',
-        }}>
-          <div style={{
-            width: 28, height: 28, borderRadius: '50%',
-            background: 'var(--bg-card2)', border: '1px solid var(--border)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 10, fontFamily: 'monospace', color: 'var(--text-muted)',
-            flexShrink: 0,
-          }}>
+        <div
+          className={`border-t p-3 flex items-center gap-3 overflow-hidden ${collapsed ? 'justify-center' : ''}`}
+          style={{ borderColor: 'var(--border)' }}
+        >
+          <div
+            className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-mono shrink-0"
+            style={{ background: 'var(--bg-card2)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}
+          >
             V1
           </div>
-          <span style={{
-            fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap',
-            opacity: collapsed ? 0 : 1, width: collapsed ? 0 : 'auto',
-            transition: 'opacity 0.3s, width 0.3s', overflow: 'hidden',
-          }}>
+          <span
+            className={`text-xs whitespace-nowrap transition-all duration-300 ${
+              collapsed ? 'opacity-0 w-0' : 'opacity-100'
+            }`}
+            style={{ color: 'var(--text-muted)' }}
+          >
             Движок активен
           </span>
         </div>
@@ -145,61 +136,64 @@ export default function Layout({ children, currentPath }: { children: ReactNode;
         <button
           onClick={() => setCollapsed((v) => !v)}
           title={collapsed ? 'Развернуть' : 'Свернуть'}
+          className="absolute -right-3 top-[52px] w-6 h-6 rounded-full flex items-center justify-center shadow-md z-10 transition-colors duration-150"
           style={{
-            position: 'absolute', right: -12, top: 52,
-            width: 24, height: 24, borderRadius: '50%',
-            background: 'var(--bg-card)', border: '1px solid var(--border)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: 'var(--text-muted)', cursor: 'pointer', zIndex: 10,
-            fontSize: 12, boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border)',
+            color: 'var(--text-muted)',
+            cursor: 'pointer',
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.color = 'var(--accent-light)';
+            e.currentTarget.style.borderColor = 'var(--accent)';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.color = 'var(--text-muted)';
+            e.currentTarget.style.borderColor = 'var(--border)';
           }}
         >
-          {collapsed ? '›' : '‹'}
+          {collapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronLeft className="w-3.5 h-3.5" />}
         </button>
       </aside>
 
       {/* Main content */}
-      <main style={{
-        flex: 1, overflowY: 'auto', background: 'var(--bg)',
-        display: 'flex', flexDirection: 'column',
-      }}>
+      <main className="flex-1 flex flex-col overflow-y-auto" style={{ background: 'var(--bg)' }}>
         {children}
       </main>
 
       {/* Mobile bottom nav */}
-      <nav className="sidebar-mobile-nav">
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 4,
-          padding: '0 16px', borderRight: '1px solid var(--border)',
-          flexShrink: 0,
-        }}>
-          <div style={{
-            width: 28, height: 28, borderRadius: 6,
-            background: 'var(--accent)', display: 'flex',
-            alignItems: 'center', justifyContent: 'center',
-            color: '#fff', fontWeight: 700, fontSize: 12,
-          }}>
+      <nav
+        className="md:hidden fixed bottom-0 left-0 right-0 z-50 flex items-stretch h-14"
+        style={{ background: 'var(--bg-card)', borderTop: '1px solid var(--border)' }}
+      >
+        <div
+          className="flex items-center gap-1 px-4 shrink-0"
+          style={{ borderRight: '1px solid var(--border)' }}
+        >
+          <div
+            className="w-7 h-7 rounded flex items-center justify-center font-bold text-sm"
+            style={{ background: 'var(--accent)', color: '#fff' }}
+          >
             V
           </div>
         </div>
         {NAV_ITEMS.map((item) => {
           const active = currentPath === item.path;
+          const Icon = item.icon;
           return (
             <button
               key={item.path}
               onClick={() => navigate(item.path)}
+              className="flex-1 flex flex-col items-center justify-center gap-1 transition-colors"
               style={{
-                flex: 1, display: 'flex', flexDirection: 'column',
-                alignItems: 'center', justifyContent: 'center', gap: 2,
-                border: 'none', background: 'transparent',
+                background: 'transparent',
+                border: 'none',
                 color: active ? 'var(--accent-light)' : 'var(--text-muted)',
-                fontSize: 10, fontWeight: 600, cursor: 'pointer',
-                textTransform: 'uppercase', letterSpacing: '0.05em',
-                padding: '8px 0',
+                cursor: 'pointer',
               }}
             >
-              <span style={{ fontSize: 18 }}>{item.icon}</span>
-              {item.label}
+              <Icon className="w-5 h-5" />
+              <span className="text-[10px] font-semibold uppercase tracking-wide">{item.label}</span>
             </button>
           );
         })}

@@ -5,6 +5,15 @@
  * пропадёт ключевая обёртка (ZoneDivider, переключение иконки, рендер имени,
  * расположение языка/темы внутри AccountZone) — соответствующий тест
  * покраснеет.
+ *
+ * Правки 22.08 (после ревью Tech Lead):
+ *  — мок i18n возвращает РЕАЛЬНЫЕ строки (те же, что в ru.json), а не
+ *    ключ локали. Иначе нельзя проверить, что текст действительно
+ *    переведён, а не просто остался английским ключом;
+ *  — меню учётки больше НЕ содержит пункта «Документация» (он перенесён
+ *    в HelpZone, чтобы не дублировать);
+ *  — пункт «Тарифы» рендерится как <Link href="/pricing"> (SPA), не
+ *    window.location.href.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
@@ -21,17 +30,35 @@ vi.mock('@/lib/themeStore', () => ({
   })),
 }));
 
-// i18n в jsdom может падать на отсутствующих ресурсах — мокаем минимально.
+// i18n в jsdom может падать на отсутствующих ресурсах — мокаем с теми
+// же строками, что в ru.json. Так тесты проверяют реальный перевод, а
+// не «ключ как строку».
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string) => key,
+    t: (key: string) => {
+      const dict: Record<string, string> = {
+        'topbar.aiAssistantFull': 'ИИ-помощник',
+        'topbar.help': 'Помощь',
+        'topbar.writeSupport': 'Написать в поддержку',
+        'topbar.documentation': 'Документация',
+        'topbar.languageAndTheme': 'Язык и тема',
+        'topbar.tgAssistant': 'TG Ассистент',
+        'topbar.pricing': 'Тарифы',
+        'settings.profile': 'Профиль',
+        'auth.logout': 'Выход',
+      };
+      return dict[key] ?? key;
+    },
     i18n: { changeLanguage: vi.fn() },
   }),
 }));
 
-// router Link: чтобы не падать на навигации, превращаем в <a>.
+// router Link: чтобы не падать на навигации, превращаем в <a> и
+// сохраняем href в data-атрибуте для проверки в тестах.
 vi.mock('wouter', () => ({
-  Link: ({ children, ...rest }: any) => <a {...rest}>{children}</a>,
+  Link: ({ children, href, ...rest }: any) => (
+    <a href={href} {...rest}>{children}</a>
+  ),
 }));
 
 // AccountZone внутри использует LanguageSwitcher и ThemeToggle. Чтобы
@@ -45,8 +72,6 @@ vi.mock('@/components/ThemeToggle', () => ({
 }));
 
 beforeEach(() => {
-  // window.location.href — нужно сбрасывать между тестами, иначе
-  // jsdom будет помнить установленное значение.
   (window as any).__lastHref = undefined;
   Object.defineProperty(window, 'location', {
     value: {
@@ -79,8 +104,8 @@ describe('AI-134 / AiZone — единственный синий акцент',
     render(<AiZone onOpenAIChat={onOpen} />);
     const btn = screen.getByTestId('button-ai-assistant');
     expect(btn).toBeTruthy();
+    // Текст приходит из локали, а не зашит в JSX.
     expect(btn.textContent).toContain('ИИ-помощник');
-    // Синий акцент — критерий 2.
     expect(btn.className).toMatch(/bg-blue-600|bg-blue-500/);
   });
 
@@ -96,15 +121,29 @@ describe('AI-134 / HelpZone — один значок с меню', () => {
   it('рендерит три пункта меню: поддержка, tg-ассистент (если передан), документация', async () => {
     const onTG = vi.fn();
     render(<HelpZone onOpenTGBot={onTG} />);
-    // Открыть меню
     await userEvent.click(screen.getByTestId('button-help'));
-    // Radix dropdown рендерит контент в портале в document.body
     const items = [
       screen.getByTestId('button-help-support'),
       screen.getByTestId('button-tg-bot'),
       screen.getByTestId('button-help-docs'),
     ];
     expect(items).toHaveLength(3);
+  });
+
+  it('текст пунктов меню приходит из локали (поправка 22.08)', async () => {
+    render(<HelpZone />);
+    await userEvent.click(screen.getByTestId('button-help'));
+    expect(screen.getByTestId('button-help-support').textContent).toContain('Написать в поддержку');
+    expect(screen.getByTestId('button-help-docs').textContent).toContain('Документация');
+  });
+
+  it('документация ведёт на /help через <Link> (поправка 22.08: не /docs)', async () => {
+    render(<HelpZone />);
+    await userEvent.click(screen.getByTestId('button-help'));
+    const docs = screen.getByTestId('button-help-docs');
+    // wouter-Link рендерит <a href="/help">
+    expect(docs.tagName).toBe('A');
+    expect(docs.getAttribute('href')).toBe('/help');
   });
 
   it('без onOpenTGBot пункт «Телеграм-ассистент» НЕ рендерится', async () => {
@@ -137,7 +176,6 @@ describe('AI-134 / AccountZone — аватар, имя, роль строкой
         onOpenProfile={() => {}}
       />,
     );
-    // Инициалы: первая буква имени + первая буква фамилии.
     const avatarButton = screen.getByTestId('button-user-menu');
     expect(avatarButton.textContent).toContain('ИП');
   });
@@ -154,7 +192,6 @@ describe('AI-134 / AccountZone — аватар, имя, роль строкой
     await userEvent.click(screen.getByTestId('button-user-menu'));
     const roleLabel = screen.getByTestId('account-role-label');
     expect(roleLabel.textContent).toBe('SMM Admin');
-    // Проверяем, что НЕТ цветной плашки: цвет текста — мьют, не синий.
     expect(roleLabel.className).not.toMatch(/bg-blue-\d+/);
     expect(roleLabel.className).toMatch(/text-muted-foreground/);
   });
@@ -172,9 +209,11 @@ describe('AI-134 / AccountZone — аватар, имя, роль строкой
     const { getByTestId } = within(block);
     expect(getByTestId('lang-stub')).toBeTruthy();
     expect(getByTestId('theme-stub')).toBeTruthy();
+    // Подпись тоже через локаль (поправка 22.08).
+    expect(block.textContent).toContain('Язык и тема');
   });
 
-  it('меню содержит: профиль, тарифы, документация, язык/тема, выход', async () => {
+  it('меню содержит: профиль, тарифы (через Link), язык/тема, выход. Документации нет — она в HelpZone', async () => {
     render(
       <AccountZone
         userDisplayName="Test"
@@ -185,8 +224,24 @@ describe('AI-134 / AccountZone — аватар, имя, роль строкой
     await userEvent.click(screen.getByTestId('button-user-menu'));
     expect(screen.getByTestId('menu-profile')).toBeTruthy();
     expect(screen.getByTestId('menu-pricing')).toBeTruthy();
-    expect(screen.getByTestId('menu-docs')).toBeTruthy();
+    expect(screen.queryByTestId('menu-docs')).toBeNull();
     expect(screen.getByTestId('menu-logout')).toBeTruthy();
+  });
+
+  it('«Тарифы» — это <Link href="/pricing">, не window.location.href (поправка 22.08)', async () => {
+    render(
+      <AccountZone
+        userDisplayName="Test"
+        onLogout={() => {}}
+        onOpenProfile={() => {}}
+      />,
+    );
+    await userEvent.click(screen.getByTestId('button-user-menu'));
+    const pricing = screen.getByTestId('menu-pricing');
+    expect(pricing.tagName).toBe('A');
+    expect(pricing.getAttribute('href')).toBe('/pricing');
+    // window.location.href НЕ должен меняться — это SPA-навигация.
+    expect(window.location.href).not.toContain('/pricing');
   });
 
   it('клик по выходу вызывает onLogout', async () => {
@@ -228,11 +283,6 @@ describe('AI-134 / AccountZone — аватар, имя, роль строкой
 });
 
 describe('AI-134 / topbar test — ровно один синий акцентный элемент в ПРАВОЙ части', () => {
-  // AI-134 / критерий 2 + замечание Tech Lead: «тест должен считать
-  // акценты в отрисованной шапке, а не проверять отсутствие класса у
-  // конкретных кнопок». Рендерим AccountZone, AiZone, HelpZone и
-  // ZoneDivider как правую часть шапки, и считаем, у скольких элементов
-  // есть bg-blue-* класс.
   it('ровно один синий акцентный элемент — AI-кнопка', () => {
     const { container } = render(
       <div>
@@ -247,11 +297,7 @@ describe('AI-134 / topbar test — ровно один синий акцентн
         />
       </div>,
     );
-    // Считаем все элементы, у которых есть bg-blue-* (или dark:bg-blue-*).
     const all = container.querySelectorAll('[class*="bg-blue"]');
-    // Аватар AccountZone имеет bg-muted — не синий. AI-кнопка — синяя.
-    // Меню и dropdown-контенты рендерятся в портале — поэтому учитываем
-    // только первый синий акцент в основном дереве.
     expect(all.length).toBe(1);
   });
 });

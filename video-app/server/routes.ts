@@ -413,6 +413,45 @@ router.get('/videos/:id/download', async (req, res) => {
   }
 });
 
+// Thumbnail: extract first frame from local video file, cache as JPEG
+router.get('/videos/:id/thumbnail', async (req, res) => {
+  try {
+    const project = await getProject(req.params.id);
+    if (!project) return res.status(404).json({ error: 'Not found' });
+    if (!project.videoPath) return res.status(404).json({ error: 'No video file' });
+
+    const { execFile } = await import('child_process');
+    const { promisify } = await import('util');
+    const execFileAsync = promisify(execFile);
+
+    // Cache thumbnail next to video file
+    const thumbPath = project.videoPath.replace(/\.mp4$/, '_thumb.jpg');
+
+    if (!existsSync(thumbPath)) {
+      if (!existsSync(project.videoPath)) {
+        return res.status(404).json({ error: 'Video file missing' });
+      }
+      // Extract frame at 1 second
+      await execFileAsync('ffmpeg', [
+        '-i', project.videoPath,
+        '-ss', '1',
+        '-vframes', '1',
+        '-vf', 'scale=320:-1',
+        '-q:v', '5',
+        '-y',
+        thumbPath,
+      ]);
+    }
+
+    res.setHeader('Content-Type', 'image/jpeg');
+    res.setHeader('Cache-Control', 'public, max-age=86400');
+    const { createReadStream } = await import('fs');
+    createReadStream(thumbPath).pipe(res);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Serve TTS audio preview for a specific scene (generated alongside script)
 router.get('/videos/:id/audio/:sceneIndex', async (req, res) => {
   const { id, sceneIndex } = req.params;

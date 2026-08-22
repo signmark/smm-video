@@ -71,32 +71,45 @@ describe('getStepStates', () => {
 
 describe('getErrorStep', () => {
   it('returns -1 for non-error status', () => {
-    assert.equal(getErrorStep('done'), -1);
-    assert.equal(getErrorStep('generating_script'), -1);
+    assert.equal(getErrorStep('done', 50), -1);
+    assert.equal(getErrorStep('generating_script', 10), -1);
   });
 
-  it('uses progress as primary signal', () => {
-    assert.equal(getErrorStep('error', undefined, 5), 1);   // script phase
-    assert.equal(getErrorStep('error', undefined, 19), 1);
-    assert.equal(getErrorStep('error', undefined, 20), 2);  // visual phase
-    assert.equal(getErrorStep('error', undefined, 74), 2);
-    assert.equal(getErrorStep('error', undefined, 75), 3);  // assembly phase
-    assert.equal(getErrorStep('error', undefined, 100), 3);
-  });
-
-  it('falls back to keyword matching when progress missing', () => {
-    assert.equal(getErrorStep('error', 'Ошибка генерации сценария'), 1);
-    assert.equal(getErrorStep('error', 'Script generation failed'), 1);
-    assert.equal(getErrorStep('error', 'Не удалось сгенерировать изображения'), 2);
-    assert.equal(getErrorStep('error', 'Stock search failed'), 2);
-    assert.equal(getErrorStep('error', 'Рендеринг видео завершилось с ошибкой'), 3);
-    assert.equal(getErrorStep('error', 'Assembly failed'), 3);
-  });
-
-  it('returns -1 when nothing matches', () => {
+  it('returns -1 when progress is undefined', () => {
     assert.equal(getErrorStep('error'), -1);
-    assert.equal(getErrorStep('error', ''), -1);
-    assert.equal(getErrorStep('error', 'Something went wrong'), -1);
+    assert.equal(getErrorStep('error', undefined), -1);
+  });
+
+  // Boundary tests: exact threshold values
+  // Thresholds mirror routes.ts pipeline stages:
+  //   < 20 → script, 20-74 → visual, >= 75 → assembly
+  it('progress 19 → step 1 (script)', () => {
+    assert.equal(getErrorStep('error', 19), 1);
+  });
+
+  it('progress 20 → step 2 (visual)', () => {
+    assert.equal(getErrorStep('error', 20), 2);
+  });
+
+  it('progress 74 → step 2 (visual)', () => {
+    assert.equal(getErrorStep('error', 74), 2);
+  });
+
+  it('progress 75 → step 3 (assembly)', () => {
+    assert.equal(getErrorStep('error', 75), 3);
+  });
+
+  // Interior points for sanity
+  it('progress 0 → step 1 (script)', () => {
+    assert.equal(getErrorStep('error', 0), 1);
+  });
+
+  it('progress 50 → step 2 (visual)', () => {
+    assert.equal(getErrorStep('error', 50), 2);
+  });
+
+  it('progress 100 → step 3 (assembly)', () => {
+    assert.equal(getErrorStep('error', 100), 3);
   });
 });
 
@@ -132,5 +145,17 @@ describe('mutation proof', () => {
     assert.equal(states[2], 'error');
     assert.equal(states[1], 'completed');
     assert.equal(states[3], 'pending');
+  });
+
+  it('shifting threshold 20→19 breaks boundary test', () => {
+    // If someone changes the threshold from 20 to 19 in getErrorStep,
+    // this test will fail because progress 19 would return step 2 instead of 1
+    assert.equal(getErrorStep('error', 19), 1);
+    assert.equal(getErrorStep('error', 20), 2);
+  });
+
+  it('shifting threshold 75→74 breaks boundary test', () => {
+    assert.equal(getErrorStep('error', 74), 2);
+    assert.equal(getErrorStep('error', 75), 3);
   });
 });

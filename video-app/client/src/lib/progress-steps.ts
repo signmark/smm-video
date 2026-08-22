@@ -37,8 +37,6 @@ function completedUpTo(status: string): number {
       return 1;
     case 'assembling':
       return 2;
-    case 'done':
-      return 3; // all 4 steps completed (index 0-3), step 4 = Готово also completed
     default:
       return -1;
   }
@@ -82,8 +80,7 @@ export function getStepStates(status: string, progress?: number): StepState[] {
   }
 
   if (status === 'error') {
-    // Determine which step failed based on progress
-    const errorIdx = getErrorStep(status, undefined, progress);
+    const errorIdx = getErrorStep(status, progress);
     return PIPELINE_STEPS.map((_, idx) => {
       if (errorIdx >= 0 && idx === errorIdx) return 'error' as StepState;
       if (errorIdx >= 0 && idx < errorIdx) return 'completed' as StepState;
@@ -102,30 +99,19 @@ export function getStepStates(status: string, progress?: number): StepState[] {
 }
 
 /**
- * Returns the index of the step where an error occurred.
- * Primary: uses progress value (pipeline sets it by stage).
- *   < 20 → step 1 (script), 20-75 → step 2 (visual), ≥ 75 → step 3 (assembly)
- * Fallback: keyword matching on progressMessage.
- * Returns -1 if undetermined.
+ * Returns the index of the step where an error occurred, based on progress.
+ *
+ * Thresholds mirror the server pipeline in routes.ts:
+ *   - < 20: script generation (server sets progress 0-19 during scripting)
+ *   - 20-75: visual generation / animation (server sets progress 20-75)
+ *   - >= 75: assembly / rendering (server sets progress 76+ for resume, 78+ for assembly)
+ *
+ * Returns -1 if progress is not available.
  */
-export function getErrorStep(status: string, progressMessage?: string, progress?: number): number {
+export function getErrorStep(status: string, progress?: number): number {
   if (status !== 'error') return -1;
-
-  // Primary: use progress value
-  if (typeof progress === 'number') {
-    if (progress < 20) return 1;
-    if (progress < 75) return 2;
-    return 3;
-  }
-
-  // Fallback: keyword matching
-  if (!progressMessage) return -1;
-  const msg = progressMessage.toLowerCase();
-  if (msg.includes('сценари') || msg.includes('script')) return 1;
-  if (msg.includes('визуал') || msg.includes('image') || msg.includes('изображени') ||
-      msg.includes('сток') || msg.includes('stock') || msg.includes('анимац') ||
-      msg.includes('animat') || msg.includes('клип')) return 2;
-  if (msg.includes('рендер') || msg.includes('assembl') || msg.includes('монтаж') ||
-      msg.includes('сборк') || msg.includes('video')) return 3;
-  return -1;
+  if (typeof progress !== 'number') return -1;
+  if (progress < 20) return 1;
+  if (progress < 75) return 2;
+  return 3;
 }

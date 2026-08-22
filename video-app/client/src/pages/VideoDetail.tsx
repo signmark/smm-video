@@ -1008,7 +1008,7 @@ export default function VideoDetail({ id }: { id: string }) {
             <div style={{ position: 'relative', zIndex: 1, display: 'flex', justifyContent: 'space-between' }}>
               {(() => {
                 const stepStates = getStepStates(project.status, project.progress);
-                const errorStepIdx = getErrorStep(project.status, project.progressMessage, project.progress);
+                const errorStepIdx = getErrorStep(project.status, project.progress);
                 return PIPELINE_STEPS.map((step, idx) => {
                   const state: StepState = (isError && idx === errorStepIdx) ? 'error' : stepStates[idx];
                   const isCompleted = state === 'completed';

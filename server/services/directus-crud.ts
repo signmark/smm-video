@@ -431,16 +431,20 @@ export class DirectusCrud {
     //    out for service paths.
     //
     // The 403-on-unknown-collection branch uses the same disambiguation as
-    // `list()`: per the verified FACT in `list()`, Directus returns a
-    // byte-identical 403 for a non-existent collection and an existing but
-    // closed one — `isKnownCollection` is the only tool we have.
+    // `list()`: as measured there, Directus returns a byte-identical 403 for a
+    // non-existent collection and for an existing but closed one, so
+    // `isKnownCollection` is the only tool we have.
+    //
+    // Coverage note: `sort` passed as a comma-separated string (a common shape
+    // in hand-written custom calls) is not validated — validateReadParams only
+    // walks arrays. Deliberate: skipping is cheaper than a false positive.
     const collectionFromCustomPath = collectionFromUrl(path);
     const isItemsPath = /^\/items\/[A-Za-z0-9_]+(\/|$|\?)/.test(path);
     if (method.toUpperCase() === 'GET' && isItemsPath && collectionFromCustomPath !== 'unknown') {
       // Per slice 1 pattern: guard OUTSIDE the retry loop. Otherwise a 502
       // retry in production would log up to four identical violation lines.
-      const params = method.toUpperCase() === 'GET' ? data : undefined;
-      guardReadParams(collectionFromCustomPath, params);
+      // Inside this branch the method is already GET, so `data` is the query.
+      guardReadParams(collectionFromCustomPath, data);
     }
 
     return this.executeWithRetry('custom', path, async () => {

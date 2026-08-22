@@ -7,7 +7,9 @@
  *
  * Two modes:
  * - Test/dev: unknown field throws with details (collection, field, allowed list).
- * - Production: unknown field is stripped, error event logged, request proceeds.
+ * - Production: unknown field is logged as an error event; the data passes through
+ *   unchanged. Stripping is deliberately NOT done — a stale snapshot would then
+ *   cause silent data loss, which is the very failure this guard exists to expose.
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -103,8 +105,8 @@ export function validateWriteData(
 /**
  * Guard write data: validate, react according to environment.
  *
- * Returns cleaned data (unknown fields stripped in production).
- * In test/dev, throws on unknown fields.
+ * Returns the data unchanged. In production an unknown field produces a log entry
+ * only; in test/dev it throws with details.
  */
 export function guardWriteData(
   collection: string,

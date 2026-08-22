@@ -29,7 +29,7 @@
  *
  * ## Skip-list (do not validate)
  *
- * Per @Clause_Dev_Hermi 22.08:
+ * Agreed on review, 22.08:
  * — Directus operators in `filter` (`_and`, `_or`, `_eq`, `_in`, `_nnull`, ...).
  *   Anything that starts with `_` is a logical or comparison operator, not a field.
  * — Point paths in `filter`/`sort`/`fields`: the HEAD segment of a relation path
@@ -283,14 +283,14 @@ export function validateReadParams(
   }
 
   // --- deep -----------------------------------------------------------------
-  // `deep` is NOT validated here. The check is skipped for two reasons:
+  // `deep` is NOT validated here. The check is skipped for four reasons:
   //   1. The snapshot does not carry relation targets — we cannot tell which
   //      collection `campaign_id` points to, only that the field exists.
   //   2. Real shape of `deep` differs from what was checked: Directus takes
   //      sub-parameters with leading underscores (`_filter`, `_sort`,
   //      `_limit`) and there is no `fields` key inside it.
   //   3. Verified empirically: no `options.deep` argument is passed anywhere
-  //      in `server/` today. (@Clause_Dev_Hermi, 22.08 13:15.)
+  //      in `server/` today (checked 22.08).
   //   4. A check that always passes (or always fires on legal input) is worse
   //      than no check — it looks like coverage and provides none.
   // If/when `deep` enters the codebase, build a per-relation snapshot or
@@ -338,12 +338,6 @@ function collectFilterKeys(
     // inner keys are all operators; nothing to validate further.
   }
 }
-
-/**
- * (intentionally removed: `allFieldsUnion` was the union of all known fields,
- *  used only by the abandoned `deep` validation. See the skip comment in
- *  validateReadParams.)
- */
 
 /**
  * Guard read params: validate, react according to environment.

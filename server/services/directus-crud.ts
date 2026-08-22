@@ -347,7 +347,7 @@ export class DirectusCrud {
       } catch (error: any) {
         // AI-132 slice 2: 403 disambiguation.
         //
-        // Verified FACT, not assumption (@Clause_Dev_Hermi, 22.08 13:15):
+        // Measured, not assumed (22.08):
         // a live service token against this Directus returns BYTE-IDENTICAL
         // 403 responses for a non-existent collection and for an existing
         // but closed one (`directus_sessions`). Both are

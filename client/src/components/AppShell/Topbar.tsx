@@ -1,6 +1,6 @@
 ﻿import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Menu, X, User, LogOut, Settings, Sun, Moon, Sparkles, Send, CreditCard, Bot, Zap, SlidersHorizontal, GitMerge, ClipboardList, Pause, Play } from "lucide-react";
+import { Menu, X, User, LogOut, Settings, Sparkles, Send, CreditCard, Bot, Zap, SlidersHorizontal, GitMerge, ClipboardList, Pause, Play } from "lucide-react";
 import { CampaignSelector } from "../CampaignSelector";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
@@ -10,9 +10,9 @@ import { useAuthStore } from "@/lib/store";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useCampaignDetail, useCampaignsList } from "@/hooks/use-campaigns";
 import { useUserProfile } from "@/hooks/use-user-profile";
-import { useThemeStore } from "@/lib/themeStore";
 import { useCampaignStore } from "@/lib/campaignStore";
 import { LanguageSwitcher } from "@/components/LanguageSwitcher";
+import { ThemeToggle } from "@/components/ThemeToggle";
 import { useTranslation } from 'react-i18next';
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
@@ -295,12 +295,6 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
   const userDisplayName = getUserDisplayName();
   const userIsAdmin = userProfile?.is_smm_admin || isAdmin;
 
-  // Тема
-  const { resolvedTheme, setColorMode } = useThemeStore();
-  
-  const toggleTheme = () => {
-    setColorMode(resolvedTheme === 'light' ? 'dark' : 'light');
-  };
 
   return (
     <>
@@ -331,21 +325,10 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
         {/* Language Switcher */}
         <LanguageSwitcher />
         
-        {/* Theme Toggle */}
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={toggleTheme}
-          className="h-9 w-9"
-          data-testid="button-theme-toggle"
-          title={t('settings.theme')}
-        >
-          {resolvedTheme === 'light' ? (
-            <Moon className="h-4 w-4" />
-          ) : (
-            <Sun className="h-4 w-4" />
-          )}
-        </Button>
+        {/* SM-80: двухпозиционный переключатель темы — таблетка
+            с бегунком. Заменил квадратную кнопку, которая показывала
+            значок темы, в которую переключишься, а не текущей. */}
+        <ThemeToggle />
 
         {/* AI Assistant */}
         {onOpenAIChat && (

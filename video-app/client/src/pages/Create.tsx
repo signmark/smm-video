@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, FormEvent } from 'react';
 import { navigate } from '../App';
 import { API } from '../api';
+import { ChevronDown, ChevronUp, Settings, Music, Type, Play, Square, SkipForward, Volume2, Loader2, Sparkles, AlertTriangle, Check } from 'lucide-react';
+import { buildCreateRequest, CREATE_FORM_DEFAULTS, CLIP_DURATION_MODELS } from '../lib/create-request';
 
 function SubtitleStylePreview({ style, color = '#ffffff' }: { style: string; color?: string }) {
   const frame: React.CSSProperties = {
@@ -401,7 +403,6 @@ const SUBTITLE_STYLES = [
 
 type SubtitleStyleValue = typeof SUBTITLE_STYLES[number]['value'];
 
-const CLIP_DURATION_MODELS = new Set(['kling', 'kling-pro', 'seedance', 'seedance2', 'kling-t2v', 'kling-pro-t2v', 'luma', 'seedance-t2v', 'seedance2-t2v', 'happy-horse']);
 
 const SUBTITLE_FONTS = [
   { value: 'DejaVu Sans',      label: 'Стандартный', desc: 'Округлый sans-serif' },
@@ -451,27 +452,27 @@ const VOICES = [
 ] as const;
 
 export default function Create() {
-  const [scriptMode, setScriptMode] = useState<'standard' | 'viral'>('standard');
-  const [inputMode, setInputMode] = useState<'topic' | 'custom' | 'url'>('topic');
-  const [topic, setTopic] = useState('');
-  const [customScenario, setCustomScenario] = useState('');
-  const [landingUrl, setLandingUrl] = useState('');
-  const [additionalDetails, setAdditionalDetails] = useState('');
-  const [title, setTitle] = useState('');
-  const [format, setFormat] = useState('9:16');
-  const [duration, setDuration] = useState(30);
-  const [language, setLanguage] = useState<'ru' | 'en'>('ru');
+  const [scriptMode, setScriptMode] = useState<'standard' | 'viral'>(CREATE_FORM_DEFAULTS.scriptMode);
+  const [inputMode, setInputMode] = useState<'topic' | 'custom' | 'url'>(CREATE_FORM_DEFAULTS.inputMode);
+  const [topic, setTopic] = useState(CREATE_FORM_DEFAULTS.topic);
+  const [customScenario, setCustomScenario] = useState(CREATE_FORM_DEFAULTS.customScenario);
+  const [landingUrl, setLandingUrl] = useState(CREATE_FORM_DEFAULTS.landingUrl);
+  const [additionalDetails, setAdditionalDetails] = useState(CREATE_FORM_DEFAULTS.additionalDetails);
+  const [title, setTitle] = useState(CREATE_FORM_DEFAULTS.title);
+  const [format, setFormat] = useState(CREATE_FORM_DEFAULTS.format);
+  const [duration, setDuration] = useState(CREATE_FORM_DEFAULTS.duration);
+  const [language, setLanguage] = useState<'ru' | 'en'>(CREATE_FORM_DEFAULTS.language);
   const [pipelineMode, setPipelineMode] = useState<'i2v' | 't2v' | 'heygen'>('i2v');
   const [heygenAvatar, setHeygenAvatar] = useState<string>(HEYGEN_AVATARS[0]);
-  const [animationModel, setAnimationModel] = useState('wan');
-  const [subtitleStyle, setSubtitleStyle] = useState<SubtitleStyleValue>('karaoke');
-  const [clipDuration, setClipDuration] = useState<5 | 10>(10);
-  const [subtitleFont, setSubtitleFont] = useState('DejaVu Sans');
-  const [subtitleSize, setSubtitleSize] = useState('medium');
-  const [subtitleColor, setSubtitleColor] = useState('#ffffff');
-  const [voice, setVoice] = useState('alloy');
-  const [musicStyle, setMusicStyle] = useState<MusicStyleValue>('ambient');
-  const [musicVolume, setMusicVolume] = useState(0.18);
+  const [animationModel, setAnimationModel] = useState(CREATE_FORM_DEFAULTS.animationModel);
+  const [subtitleStyle, setSubtitleStyle] = useState<SubtitleStyleValue>(CREATE_FORM_DEFAULTS.subtitleStyle as SubtitleStyleValue);
+  const [clipDuration, setClipDuration] = useState<5 | 10>(CREATE_FORM_DEFAULTS.clipDuration);
+  const [subtitleFont, setSubtitleFont] = useState(CREATE_FORM_DEFAULTS.subtitleFont);
+  const [subtitleSize, setSubtitleSize] = useState(CREATE_FORM_DEFAULTS.subtitleSize);
+  const [subtitleColor, setSubtitleColor] = useState(CREATE_FORM_DEFAULTS.subtitleColor);
+  const [voice, setVoice] = useState(CREATE_FORM_DEFAULTS.voice);
+  const [musicStyle, setMusicStyle] = useState<MusicStyleValue>(CREATE_FORM_DEFAULTS.musicStyle as MusicStyleValue);
+  const [musicVolume, setMusicVolume] = useState(CREATE_FORM_DEFAULTS.musicVolume);
   const [playingVoice, setPlayingVoice] = useState<string | null>(null);
   const [playingMusic, setPlayingMusic] = useState(false);
   const [loadingMusicPreview, setLoadingMusicPreview] = useState(false);
@@ -483,6 +484,27 @@ export default function Create() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [directorBrief, setDirectorBrief] = useState('');
+
+  // Panel visibility with localStorage persistence
+  const [showAdvanced, setShowAdvanced] = useState(() => {
+    try { return localStorage.getItem('vg-panel-advanced') === 'true'; } catch { return false; }
+  });
+  const [showMusicPanel, setShowMusicPanel] = useState(() => {
+    try { return localStorage.getItem('vg-panel-music') === 'true'; } catch { return false; }
+  });
+  const [showSubtitlesPanel, setShowSubtitlesPanel] = useState(() => {
+    try { return localStorage.getItem('vg-panel-subtitles') === 'true'; } catch { return false; }
+  });
+
+  useEffect(() => {
+    try { localStorage.setItem('vg-panel-advanced', String(showAdvanced)); } catch {}
+  }, [showAdvanced]);
+  useEffect(() => {
+    try { localStorage.setItem('vg-panel-music', String(showMusicPanel)); } catch {}
+  }, [showMusicPanel]);
+  useEffect(() => {
+    try { localStorage.setItem('vg-panel-subtitles', String(showSubtitlesPanel)); } catch {}
+  }, [showSubtitlesPanel]);
   const [directorLoading, setDirectorLoading] = useState(false);
   const [directorRationale, setDirectorRationale] = useState('');
   const [directorError, setDirectorError] = useState('');
@@ -703,41 +725,13 @@ export default function Create() {
     setLoading(true);
     setError('');
     try {
-      const defaultTitle =
-        inputMode === 'custom' ? 'Пользовательский сценарий'
-        : inputMode === 'url' ? 'Промо-видео'
-        : topic.trim();
-
-      const body: Record<string, any> = {
-        title: title.trim() || defaultTitle,
-        format,
-        duration,
-        language,
-        animationModel,
-        heygenAvatar: animationModel === 'heygen-avatar' ? heygenAvatar : undefined,
-        subtitleStyle,
-        voice,
-        clipDuration: CLIP_DURATION_MODELS.has(animationModel) ? clipDuration : undefined,
-        subtitleFont: subtitleStyle !== 'none' ? subtitleFont : undefined,
-        subtitleSize: subtitleStyle !== 'none' ? subtitleSize : undefined,
-        subtitleColor: subtitleStyle !== 'none' ? subtitleColor : undefined,
-        musicStyle,
-        musicVolume: musicStyle !== 'none' ? musicVolume : undefined,
-      };
-
-      if (inputMode === 'custom') {
-        body.customScenario = customScenario.trim();
-        body.topic = title.trim() || 'Пользовательский сценарий';
-      } else if (inputMode === 'url') {
-        body.landingUrl = landingUrl.trim();
-        body.topic = title.trim() || defaultTitle;
-        if (additionalDetails.trim()) body.additionalDetails = additionalDetails.trim();
-      } else {
-        body.topic = topic.trim();
-        if (additionalDetails.trim()) body.additionalDetails = additionalDetails.trim();
-      }
-
-      if (scriptMode === 'viral') body.scriptMode = 'viral';
+      const body = buildCreateRequest({
+        inputMode, topic, customScenario, landingUrl, additionalDetails,
+        title, format, duration, language, animationModel, heygenAvatar,
+        subtitleStyle, voice, clipDuration, subtitleFont, subtitleSize,
+        subtitleColor, musicStyle, musicVolume, scriptMode,
+        clipDurationModels: CLIP_DURATION_MODELS,
+      });
 
       // Step 1: create project
       const res = await fetch(`${API}/videos`, {
@@ -930,33 +924,59 @@ export default function Create() {
           />
         </Field>
 
-        {/* Script mode toggle */}
-        <Field label="Режим сценария">
-          <div style={{ display: 'flex', gap: 0, borderRadius: 'var(--radius-sm)', overflow: 'hidden', border: '1.5px solid var(--border)' }}>
-            <button
-              type="button"
-              data-testid="script-mode-standard"
-              onClick={() => setScriptMode('standard')}
-              style={{ flex: 1, padding: '10px 0', fontSize: 14, fontWeight: 600, border: 'none', cursor: 'pointer', background: scriptMode === 'standard' ? 'var(--accent)' : 'var(--bg-card2)', color: scriptMode === 'standard' ? 'white' : 'var(--text-muted)', transition: 'all 0.15s' }}
-            >
-              📊 Стандартный
-            </button>
-            <button
-              type="button"
-              data-testid="script-mode-viral"
-              onClick={() => {
-                setScriptMode('viral');
-                setFormat('9:16');
-                if (duration > 30) setDuration(30);
-              }}
-              style={{ flex: 1, padding: '10px 0', fontSize: 14, fontWeight: 600, border: 'none', borderLeft: '1.5px solid var(--border)', cursor: 'pointer', background: scriptMode === 'viral' ? '#7c3aed' : 'var(--bg-card2)', color: scriptMode === 'viral' ? 'white' : 'var(--text-muted)', transition: 'all 0.15s' }}
-            >
-              🚀 Вирусный Reels
-            </button>
-          </div>
-          {scriptMode === 'viral' && (
-            <div style={{ marginTop: 8, padding: '10px 14px', borderRadius: 'var(--radius-sm)', background: 'rgba(124,58,237,0.12)', border: '1.5px solid rgba(124,58,237,0.35)', fontSize: 13, color: '#c4b5fd', lineHeight: 1.6 }}>
-              <strong style={{ color: '#a78bfa' }}>Hook / Body / CTA структура:</strong> Сцена 1 — резкий крючок (шок-факт, боль), средние сцены — быстрая польза, последняя — триггер комментариев. Рекомендуется 9:16, 15–30с.
+
+        {/* Collapsible: Advanced generation settings */}
+        <div style={{ border: '1.5px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
+          <button
+            type="button"
+            onClick={() => setShowAdvanced((v) => !v)}
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '12px 16px', border: 'none', cursor: 'pointer',
+              background: 'var(--bg-card2)', color: 'var(--text)',
+              transition: 'background 0.15s',
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-card)'}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'var(--bg-card2)'}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Settings size={16} style={{ color: 'var(--accent-light)' }} />
+              <span style={{ fontSize: 14, fontWeight: 600 }}>Настройки генерации</span>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                — {I2V_MODELS.find(m => m.value === animationModel)?.label || animationModel}, {language === 'ru' ? 'Русский' : 'English'}
+              </span>
+            </div>
+            {showAdvanced ? <ChevronUp size={16} style={{ color: 'var(--text-muted)' }} /> : <ChevronDown size={16} style={{ color: 'var(--text-muted)' }} />}
+          </button>
+          {showAdvanced && (
+            <div style={{ padding: '16px', borderTop: '1px solid var(--border)', background: 'var(--bg-card)', display: 'flex', flexDirection: 'column', gap: 20 }}>
+              {/* Script mode toggle */}
+              <Field label="Режим сценария">
+                <div style={{ display: 'flex', gap: 0, borderRadius: 'var(--radius-sm)', overflow: 'hidden', border: '1.5px solid var(--border)' }}>
+                  <button
+                    type="button"
+                    data-testid="script-mode-standard"
+                    onClick={() => setScriptMode('standard')}
+                    style={{ flex: 1, padding: '10px 0', fontSize: 14, fontWeight: 600, border: 'none', cursor: 'pointer', background: scriptMode === 'standard' ? 'var(--accent)' : 'var(--bg-card2)', color: scriptMode === 'standard' ? 'white' : 'var(--text-muted)', transition: 'all 0.15s' }}
+                  >
+                    📊 Стандартный
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="script-mode-viral"
+                    onClick={() => {
+                      setScriptMode('viral');
+                      setFormat('9:16');
+                      if (duration > 30) setDuration(30);
+                    }}
+                    style={{ flex: 1, padding: '10px 0', fontSize: 14, fontWeight: 600, border: 'none', borderLeft: '1.5px solid var(--border)', cursor: 'pointer', background: scriptMode === 'viral' ? '#7c3aed' : 'var(--bg-card2)', color: scriptMode === 'viral' ? 'white' : 'var(--text-muted)', transition: 'all 0.15s' }}
+                  >
+                    🚀 Вирусный Reels
+                  </button>
+                </div>
+                {scriptMode === 'viral' && (
+                  <div style={{ marginTop: 8, padding: '10px 14px', borderRadius: 'var(--radius-sm)', background: 'rgba(124,58,237,0.12)', border: '1.5px solid rgba(124,58,237,0.35)', fontSize: 13, color: '#c4b5fd', lineHeight: 1.6 }}>
+                    <strong style={{ color: '#a78bfa' }}>Hook / Body / CTA структура:</strong> Сцена 1 — резкий крючок (шок-факт, боль), средние сцены — быстрая польза, последняя — триггер комментариев. Рекомендуется 9:16, 15–30с.
             </div>
           )}
         </Field>
@@ -1137,7 +1157,7 @@ export default function Create() {
           </Field>
         )}
 
-        <Field label="Голос озвучки" hint="Выберите голос и нажмите ▶ чтобы послушать пример">
+        <Field label="Голос озвучки" hint="Выберите голос и нажмите Play чтобы послушать пример">
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
             {VOICES.map((v) => {
               const active = voice === v.value;
@@ -1161,7 +1181,7 @@ export default function Create() {
                       title="Прослушать"
                       style={{ width: 26, height: 26, borderRadius: '50%', border: `1px solid ${isPlaying ? 'var(--accent)' : 'var(--border)'}`, background: isPlaying ? 'var(--accent)' : 'transparent', color: isPlaying ? 'white' : 'var(--text-muted)', fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all 0.15s' }}
                     >
-                      {isPlaying ? '■' : '▶'}
+                      {isPlaying ? <Square size={11} /> : <Play size={11} />}
                     </button>
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.4 }}>{v.desc}</div>
@@ -1171,95 +1191,127 @@ export default function Create() {
             })}
           </div>
           <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5, padding: '6px 10px', borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}>
-            ⚠️ Голоса работают через OpenAI TTS. При проблемах с ключом или исчерпанном лимите будет использован стандартный голос (Edge TTS).
+            <AlertTriangle size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} /> Голоса работают через OpenAI TTS. При проблемах с ключом или исчерпанном лимите будет использован стандартный голос (Edge TTS).
           </div>
         </Field>
+            </div>
+          )}
+        </div>
 
-        <Field label="Фоновая музыка" hint="Стиль музыки, которая будет подмешана под озвучку. Ищется в Jamendo (бесплатный сток) или генерируется AI.">
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-            {MUSIC_STYLES.map((m) => {
-              const active = musicStyle === m.value;
-              return (
-                <button
-                  key={m.value}
-                  type="button"
-                  data-testid={`music-style-${m.value}`}
-                  onClick={() => setMusicStyle(m.value)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 10,
-                    padding: '10px 12px', borderRadius: 'var(--radius-sm)',
-                    border: `1.5px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
-                    background: active ? '#1e1040' : 'var(--bg-card2)',
-                    color: 'var(--text)', textAlign: 'left', cursor: 'pointer', transition: 'all 0.15s',
-                    opacity: m.value === 'none' ? 0.7 : 1,
-                  }}
-                >
-                  <span style={{ fontSize: 20, flexShrink: 0 }}>{m.emoji}</span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: active ? 700 : 500, color: active ? 'var(--accent)' : 'var(--text)' }}>{m.label}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{m.desc}</div>
-                  </div>
-                  {active && <span style={{ fontSize: 14, color: 'var(--accent)', flexShrink: 0 }}>✓</span>}
-                </button>
-              );
-            })}
-          </div>
-          {musicStyle !== 'none' && (
-            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                <button
-                  type="button"
-                  data-testid="music-preview-btn"
-                  onClick={() => playMusicPreview()}
-                  disabled={loadingMusicPreview}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 8,
-                    padding: '7px 14px', borderRadius: 'var(--radius-sm)',
-                    border: `1.5px solid ${playingMusic ? 'var(--accent)' : 'var(--border)'}`,
-                    background: playingMusic ? 'rgba(139,92,246,0.15)' : 'var(--bg-card2)',
-                    color: playingMusic ? 'var(--accent)' : 'var(--text)',
-                    cursor: loadingMusicPreview ? 'wait' : 'pointer',
-                    fontSize: 13, fontWeight: 500, transition: 'all 0.15s',
-                  }}
-                >
-                  <span style={{ fontSize: 16 }}>
-                    {loadingMusicPreview ? '⏳' : playingMusic ? '⏹' : '▶'}
-                  </span>
-                  {loadingMusicPreview ? 'Загрузка...' : playingMusic ? 'Остановить' : 'Прослушать'}
-                </button>
-                <button
-                  type="button"
-                  data-testid="music-next-btn"
-                  onClick={nextMusicTrack}
-                  disabled={loadingMusicPreview}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 6,
-                    padding: '7px 12px', borderRadius: 'var(--radius-sm)',
-                    border: '1.5px solid var(--border)',
-                    background: 'var(--bg-card2)', color: 'var(--text-muted)',
-                    cursor: loadingMusicPreview ? 'wait' : 'pointer',
-                    fontSize: 13, fontWeight: 500, transition: 'all 0.15s',
-                  }}
-                  title="Следующий трек"
-                >
-                  🔀 Другой трек
-                </button>
-              </div>
-              {musicPreviewInfo && (
-                <div style={{ fontSize: 11, color: playingMusic ? 'var(--accent)' : 'var(--text-muted)', padding: '4px 8px', borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
-                  {playingMusic ? '🎵 ' : ''}
-                  <strong>{musicPreviewInfo.trackName}</strong>
-                  {musicPreviewInfo.artistName ? ` — ${musicPreviewInfo.artistName}` : ''}
-                  <span style={{ color: 'var(--text-muted)', marginLeft: 6 }}>#{musicTrackIdx + 1}</span>
+
+        {/* Collapsible: Music */}
+        <div style={{ border: '1.5px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
+          <button
+            type="button"
+            onClick={() => setShowMusicPanel((v) => !v)}
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '12px 16px', border: 'none', cursor: 'pointer',
+              background: 'var(--bg-card2)', color: 'var(--text)',
+              transition: 'background 0.15s',
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-card)'}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'var(--bg-card2)'}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Music size={16} style={{ color: 'var(--accent-light)' }} />
+              <span style={{ fontSize: 14, fontWeight: 600 }}>Фоновая музыка</span>
+              {musicStyle !== 'none' && (
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                  — {MUSIC_STYLES.find(m => m.value === musicStyle)?.label || musicStyle}, {Math.round(musicVolume * 100)}%
+                </span>
+              )}
+              {musicStyle === 'none' && (
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>— выключена</span>
+              )}
+            </div>
+            {showMusicPanel ? <ChevronUp size={16} style={{ color: 'var(--text-muted)' }} /> : <ChevronDown size={16} style={{ color: 'var(--text-muted)' }} />}
+          </button>
+          {showMusicPanel && (
+            <div style={{ padding: '16px', borderTop: '1px solid var(--border)', background: 'var(--bg-card)' }}>
+              <Field label="Фоновая музыка" hint="Стиль музыки, которая будет подмешана под озвучку. Ищется в Jamendo (бесплатный сток) или генерируется AI.">
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  {MUSIC_STYLES.map((m) => {
+                    const active = musicStyle === m.value;
+                    return (
+                      <button
+                        key={m.value}
+                        type="button"
+                        data-testid={`music-style-${m.value}`}
+                        onClick={() => setMusicStyle(m.value)}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 10,
+                          padding: '10px 12px', borderRadius: 'var(--radius-sm)',
+                          border: `1.5px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+                          background: active ? '#1e1040' : 'var(--bg-card2)',
+                          color: 'var(--text)', textAlign: 'left', cursor: 'pointer', transition: 'all 0.15s',
+                          opacity: m.value === 'none' ? 0.7 : 1,
+                        }}
+                      >
+                        <span style={{ fontSize: 20, flexShrink: 0 }}>{m.emoji}</span>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: active ? 700 : 500, color: active ? 'var(--accent)' : 'var(--text)' }}>{m.label}</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{m.desc}</div>
+                        </div>
+                        {active && <Check size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />}
+                      </button>
+                    );
+                  })}
+                </div>
+                {musicStyle !== 'none' && (
+                  <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <button
+                        type="button"
+                        data-testid="music-preview-btn"
+                        onClick={() => playMusicPreview()}
+                        disabled={loadingMusicPreview}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 8,
+                          padding: '7px 14px', borderRadius: 'var(--radius-sm)',
+                          border: `1.5px solid ${playingMusic ? 'var(--accent)' : 'var(--border)'}`,
+                          background: playingMusic ? 'rgba(139,92,246,0.15)' : 'var(--bg-card2)',
+                          color: playingMusic ? 'var(--accent)' : 'var(--text)',
+                          cursor: loadingMusicPreview ? 'wait' : 'pointer',
+                          fontSize: 13, fontWeight: 500, transition: 'all 0.15s',
+                        }}
+                      >
+                        {loadingMusicPreview ? <Loader2 size={16} className="animate-spin" /> : playingMusic ? <Square size={16} /> : <Play size={16} />}
+                        {loadingMusicPreview ? 'Загрузка...' : playingMusic ? 'Остановить' : 'Прослушать'}
+                      </button>
+                      <button
+                        type="button"
+                        data-testid="music-next-btn"
+                        onClick={nextMusicTrack}
+                        disabled={loadingMusicPreview}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: 6,
+                          padding: '7px 12px', borderRadius: 'var(--radius-sm)',
+                          border: '1.5px solid var(--border)',
+                          background: 'var(--bg-card2)', color: 'var(--text-muted)',
+                          cursor: loadingMusicPreview ? 'wait' : 'pointer',
+                          fontSize: 13, fontWeight: 500, transition: 'all 0.15s',
+                        }}
+                        title="Следующий трек"
+                      >
+                        <SkipForward size={14} style={{ marginRight: 4 }} /> Другой трек
+                      </button>
+                    </div>
+                    {musicPreviewInfo && (
+                      <div style={{ fontSize: 11, color: playingMusic ? 'var(--accent)' : 'var(--text-muted)', padding: '4px 8px', borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
+                        {playingMusic ? <Music size={11} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 2 }} /> : ''}
+                        <strong>{musicPreviewInfo.trackName}</strong>
+                        {musicPreviewInfo.artistName ? ` — ${musicPreviewInfo.artistName}` : ''}
+                        <span style={{ color: 'var(--text-muted)', marginLeft: 6 }}>#{musicTrackIdx + 1}</span>
                 </div>
               )}
               <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5, padding: '6px 10px', borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}>
-                🎵 Треки Jamendo под лицензией CC.
+                <Music size={11} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 2 }} /> Треки Jamendo под лицензией CC.
               </div>
               {/* Music volume slider */}
               <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--text-muted)' }}>
-                  <span>🔊 Громкость музыки</span>
+                  <span><Volume2 size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} /> Громкость музыки</span>
                   <span style={{ fontWeight: 600, color: 'var(--text)' }}>{Math.round(musicVolume * 100)}%</span>
                 </div>
                 <input
@@ -1281,85 +1333,122 @@ export default function Create() {
           )}
         </Field>
 
-        <Field label="Субтитры" hint="Как текст будет появляться на видео">
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {SUBTITLE_STYLES.map((s) => {
-              const active = subtitleStyle === s.value;
-              return (
-                <label
-                  key={s.value}
-                  data-testid={`subtitle-${s.value}`}
-                  style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: `1.5px solid ${active ? 'var(--accent)' : 'var(--border)'}`, background: active ? '#1e1040' : 'var(--bg-card2)', cursor: 'pointer', transition: 'all 0.15s' }}
-                >
-                  <input type="radio" name="subtitleStyle" value={s.value} checked={active} onChange={() => setSubtitleStyle(s.value)} style={{ display: 'none' }} />
-                  <SubtitleStylePreview style={s.value} color={subtitleColor} />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 14, fontWeight: 600 }}>{s.label}</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{s.desc}</div>
-                  </div>
-                  {active && <span style={{ fontSize: 16, color: 'var(--accent)', flexShrink: 0 }}>✓</span>}
-                </label>
-              );
-            })}
-          </div>
-        </Field>
+            </div>
+          )}
+        </div>
 
-        {subtitleStyle !== 'none' && (
-          <>
-            <Field label="Шрифт субтитров">
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                {SUBTITLE_FONTS.map((f) => {
-                  const active = subtitleFont === f.value;
-                  return (
-                    <button key={f.value} type="button" data-testid={`subtitle-font-${f.value}`}
-                      onClick={() => setSubtitleFont(f.value)}
-                      style={{ padding: '10px 12px', borderRadius: 'var(--radius-sm)', border: `1.5px solid ${active ? 'var(--accent)' : 'var(--border)'}`, background: active ? '#1e1040' : 'var(--bg-card2)', color: active ? 'var(--accent)' : 'var(--text)', textAlign: 'left', cursor: 'pointer', transition: 'all 0.15s' }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, fontFamily: f.value }}>{f.label}</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{f.desc}</div>
-                    </button>
-                  );
-                })}
-              </div>
-            </Field>
-
-            <Field label="Размер субтитров">
-              <div style={{ display: 'flex', gap: 8 }}>
-                {SUBTITLE_SIZES.map((s) => {
-                  const active = subtitleSize === s.value;
-                  return (
-                    <button key={s.value} type="button" data-testid={`subtitle-size-${s.value}`}
-                      onClick={() => setSubtitleSize(s.value)}
-                      title={s.hint}
-                      style={{ flex: 1, padding: '10px 0', borderRadius: 'var(--radius-sm)', border: `1.5px solid ${active ? 'var(--accent)' : 'var(--border)'}`, background: active ? '#1e1040' : 'var(--bg-card2)', color: active ? 'var(--accent)' : 'var(--text)', fontSize: 14, fontWeight: 700, cursor: 'pointer', transition: 'all 0.15s' }}>
-                      {s.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </Field>
-
-            <Field label="Цвет текста">
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                {SUBTITLE_COLOR_PRESETS.map((c) => {
-                  const active = subtitleColor === c.value;
-                  return (
-                    <button key={c.value} type="button" data-testid={`subtitle-color-${c.value.replace('#','')}`}
-                      onClick={() => setSubtitleColor(c.value)}
-                      title={c.label}
-                      style={{ width: 32, height: 32, borderRadius: '50%', border: `2.5px solid ${active ? 'var(--accent)' : 'rgba(255,255,255,0.15)'}`, background: c.value, cursor: 'pointer', transition: 'all 0.15s', flexShrink: 0, boxShadow: active ? '0 0 0 2px var(--accent)' : 'none' }} />
-                  );
-                })}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 4 }}>
-                  <input type="color" value={subtitleColor} onChange={(e) => setSubtitleColor(e.target.value)}
-                    data-testid="subtitle-color-custom"
-                    style={{ width: 32, height: 32, border: 'none', borderRadius: '50%', padding: 0, cursor: 'pointer', background: 'none' }} />
-                  <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{subtitleColor}</span>
+        {/* Collapsible: Subtitles */}
+        <div style={{ border: '1.5px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
+          <button
+            type="button"
+            onClick={() => setShowSubtitlesPanel((v) => !v)}
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '12px 16px', border: 'none', cursor: 'pointer',
+              background: 'var(--bg-card2)', color: 'var(--text)',
+              transition: 'background 0.15s',
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-card)'}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'var(--bg-card2)'}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Type size={16} style={{ color: 'var(--accent-light)' }} />
+              <span style={{ fontSize: 14, fontWeight: 600 }}>Субтитры</span>
+              {subtitleStyle !== 'none' && (
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                  — {SUBTITLE_STYLES.find(s => s.value === subtitleStyle)?.label || subtitleStyle}
+                </span>
+              )}
+              {subtitleStyle === 'none' && (
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>— выключены</span>
+              )}
+            </div>
+            {showSubtitlesPanel ? <ChevronUp size={16} style={{ color: 'var(--text-muted)' }} /> : <ChevronDown size={16} style={{ color: 'var(--text-muted)' }} />}
+          </button>
+          {showSubtitlesPanel && (
+            <div style={{ padding: '16px', borderTop: '1px solid var(--border)', background: 'var(--bg-card)' }}>
+              <Field label="Субтитры" hint="Как текст будет появляться на видео">
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {SUBTITLE_STYLES.map((s) => {
+                    const active = subtitleStyle === s.value;
+                    return (
+                      <label
+                        key={s.value}
+                        data-testid={`subtitle-${s.value}`}
+                        style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '10px 14px', borderRadius: 'var(--radius-sm)', border: `1.5px solid ${active ? 'var(--accent)' : 'var(--border)'}`, background: active ? '#1e1040' : 'var(--bg-card2)', cursor: 'pointer', transition: 'all 0.15s' }}
+                      >
+                        <input type="radio" name="subtitleStyle" value={s.value} checked={active} onChange={() => setSubtitleStyle(s.value)} style={{ display: 'none' }} />
+                        <SubtitleStylePreview style={s.value} color={subtitleColor} />
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 14, fontWeight: 600 }}>{s.label}</div>
+                          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{s.desc}</div>
+                        </div>
+                        {active && <Check size={16} style={{ color: 'var(--accent)', flexShrink: 0 }} />}
+                      </label>
+                    );
+                  })}
                 </div>
-              </div>
-            </Field>
-          </>
-        )}
+              </Field>
 
+              {subtitleStyle !== 'none' && (
+                <>
+                  <Field label="Шрифт субтитров">
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      {SUBTITLE_FONTS.map((f) => {
+                        const active = subtitleFont === f.value;
+                        return (
+                          <button key={f.value} type="button" data-testid={`subtitle-font-${f.value}`}
+                            onClick={() => setSubtitleFont(f.value)}
+                            style={{ padding: '10px 12px', borderRadius: 'var(--radius-sm)', border: `1.5px solid ${active ? 'var(--accent)' : 'var(--border)'}`, background: active ? '#1e1040' : 'var(--bg-card2)', color: active ? 'var(--accent)' : 'var(--text)', textAlign: 'left', cursor: 'pointer', transition: 'all 0.15s' }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, fontFamily: f.value }}>{f.label}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{f.desc}</div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </Field>
+
+                  <Field label="Размер субтитров">
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      {SUBTITLE_SIZES.map((s) => {
+                        const active = subtitleSize === s.value;
+                        return (
+                          <button key={s.value} type="button" data-testid={`subtitle-size-${s.value}`}
+                            onClick={() => setSubtitleSize(s.value)}
+                            title={s.hint}
+                            style={{ flex: 1, padding: '10px 0', borderRadius: 'var(--radius-sm)', border: `1.5px solid ${active ? 'var(--accent)' : 'var(--border)'}`, background: active ? '#1e1040' : 'var(--bg-card2)', color: active ? 'var(--accent)' : 'var(--text)', fontSize: 14, fontWeight: 700, cursor: 'pointer', transition: 'all 0.15s' }}>
+                            {s.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </Field>
+
+                  <Field label="Цвет текста">
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                      {SUBTITLE_COLOR_PRESETS.map((c) => {
+                        const active = subtitleColor === c.value;
+                        return (
+                          <button key={c.value} type="button" data-testid={`subtitle-color-${c.value.replace('#','')}`}
+                            onClick={() => setSubtitleColor(c.value)}
+                            title={c.label}
+                            style={{ width: 32, height: 32, borderRadius: '50%', border: `2.5px solid ${active ? 'var(--accent)' : 'rgba(255,255,255,0.15)'}`, background: c.value, cursor: 'pointer', transition: 'all 0.15s', flexShrink: 0, boxShadow: active ? '0 0 0 2px var(--accent)' : 'none' }} />
+                        );
+                      })}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 4 }}>
+                        <input type="color" value={subtitleColor} onChange={(e) => setSubtitleColor(e.target.value)}
+                          data-testid="subtitle-color-custom"
+                          style={{ width: 32, height: 32, border: 'none', borderRadius: '50%', padding: 0, cursor: 'pointer', background: 'none' }} />
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace' }}>{subtitleColor}</span>
+                      </div>
+                    </div>
+                  </Field>
+                </>
+              )}
+
+            </div>
+          )}
+        </div>
         {error && (
           <div style={{ padding: '12px 16px', borderRadius: 'var(--radius-sm)', background: '#2d0a0a', border: '1px solid #7f1d1d', color: '#fca5a5', fontSize: 14 }}>
             {error}
@@ -1372,7 +1461,7 @@ export default function Create() {
           data-testid="button-submit"
           style={{ padding: '14px', borderRadius: 'var(--radius)', border: 'none', background: loading ? '#4c1d95' : 'var(--accent)', color: 'white', fontSize: 16, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1, transition: 'all 0.15s' }}
         >
-          {loading ? '⏳ Генерирую сценарий...' : '✨ Сгенерировать сценарий'}
+          {loading ? <><Loader2 size={16} className="animate-spin" /> Генерирую сценарий...</> : <><Sparkles size={16} /> Сгенерировать сценарий</>}
         </button>
       </form>
     </div>

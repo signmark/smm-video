@@ -87,7 +87,12 @@
       "disableConfirm": "Sí, apagar",
       "disabling": "Apagando...",
       "cancel": "Cancelar"
-    }
+    },
+    "aiAssistantFull": "Asistente IA",
+    "help": "Ayuda",
+    "writeSupport": "Contactar soporte",
+    "documentation": "Documentación",
+    "languageAndTheme": "Idioma y tema"
   },
   "ui": {
     "retry": "Reintentar",

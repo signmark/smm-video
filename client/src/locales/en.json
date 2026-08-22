@@ -86,7 +86,12 @@
       "disableConfirm": "Yes, turn off",
       "disabling": "Turning off...",
       "cancel": "Cancel"
-    }
+    },
+    "aiAssistantFull": "AI Assistant",
+    "help": "Help",
+    "writeSupport": "Contact support",
+    "documentation": "Documentation",
+    "languageAndTheme": "Language and theme"
   },
   "ui": {
     "retry": "Retry",

@@ -88,7 +88,12 @@
       "disableConfirm": "Да, выключить",
       "disabling": "Выключаем...",
       "cancel": "Отмена"
-    }
+    },
+    "aiAssistantFull": "ИИ-помощник",
+    "help": "Помощь",
+    "writeSupport": "Написать в поддержку",
+    "documentation": "Документация",
+    "languageAndTheme": "Язык и тема"
   },
   "ui": {
     "retry": "Повторить",

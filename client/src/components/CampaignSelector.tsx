@@ -157,7 +157,7 @@ export function CampaignSelector({ persistSelection = false }: CampaignSelectorP
   return (
     <div className="flex items-center py-2">
       <span className="mr-2 text-sm font-medium">{t('campaigns.selectorLabel')}</span>
-      <div className="w-[250px]">
+      <div className="w-[160px] sm:w-[250px]">
         {isLoading ? (
           <div className="flex items-center space-x-2">
             <Loader2 className="h-4 w-4 animate-spin" />

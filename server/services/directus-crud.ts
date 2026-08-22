@@ -419,15 +419,55 @@ export class DirectusCrud {
    * Выполняет произвольный запрос к Directus API
    */
   async custom<T>(method: string, path: string, data?: any, options: DirectusRequestOptions = {}): Promise<T> {
+    // AI-132 slice 2: validate field names on read for `custom()`.
+    //
+    // Why is this guarded separately from `list()`?
+    //  — `list()` always goes to `/items/{collection}` — the schema check is
+    //    trivially scoped.
+    //  — `custom()` accepts ANY path: `/users/me`, `/files`, `/auth/refresh`,
+    //    aggregate endpoints, GraphQL, anything. Schema validation makes
+    //    sense ONLY for paths that point at a collection. We extract the
+    //    collection with the existing `collectionFromUrl` helper and bail
+    //    out for service paths.
+    //
+    // The 403-on-unknown-collection branch uses the same disambiguation as
+    // `list()`: per the verified FACT in `list()`, Directus returns a
+    // byte-identical 403 for a non-existent collection and an existing but
+    // closed one — `isKnownCollection` is the only tool we have.
+    const collectionFromCustomPath = collectionFromUrl(path);
+    const isItemsPath = /^\/items\/[A-Za-z0-9_]+(\/|$|\?)/.test(path);
+    if (method.toUpperCase() === 'GET' && isItemsPath && collectionFromCustomPath !== 'unknown') {
+      // Per slice 1 pattern: guard OUTSIDE the retry loop. Otherwise a 502
+      // retry in production would log up to four identical violation lines.
+      const params = method.toUpperCase() === 'GET' ? data : undefined;
+      guardReadParams(collectionFromCustomPath, params);
+    }
+
     return this.executeWithRetry('custom', path, async () => {
       const authToken = await this.resolveToken(options, 'custom', path);
-      return this.executeRequest<T>({
-        method: method.toLowerCase(),
-        url: path,
-        data: method.toUpperCase() !== 'GET' ? data : undefined,
-        params: method.toUpperCase() === 'GET' ? data : undefined,
-        authToken
-      });
+      try {
+        return await this.executeRequest<T>({
+          method: method.toLowerCase(),
+          url: path,
+          data: method.toUpperCase() !== 'GET' ? data : undefined,
+          params: method.toUpperCase() === 'GET' ? data : undefined,
+          authToken
+        });
+      } catch (error: any) {
+        // Same 403 disambiguation as `list()`: known service paths get the
+        // generic error; collection-shaped paths get the typed
+        // `DirectusUnknownCollectionError` for typo recovery.
+        if (
+          error.response?.status === 403 &&
+          isItemsPath &&
+          !isKnownCollection(collectionFromCustomPath)
+        ) {
+          const all = [...getKnownCollections()];
+          const sample = all.slice(0, 20);
+          throw new DirectusUnknownCollectionError(collectionFromCustomPath, sample);
+        }
+        throw error;
+      }
     });
   }
 

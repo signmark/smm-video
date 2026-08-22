@@ -78,3 +78,38 @@ describe('getFileStatus', () => {
     assert.equal(result.fileMissing, false);
   });
 });
+
+describe('getFileStatus: why the file is gone', () => {
+  it('младше срока хранения: не сваливает пропажу на срок хранения', () => {
+    const result = getFileStatus('done', false, new Date(NOW - 2 * DAY).toISOString(), 30, NOW);
+    assert.equal(result.fileMissing, true);
+    assert.equal(result.missingLabel, 'файла нет — скачать нельзя');
+  });
+
+  it('старше срока хранения: срок хранения и есть причина', () => {
+    const result = getFileStatus('done', false, new Date(NOW - 31 * DAY).toISOString(), 30, NOW);
+    assert.equal(result.fileMissing, true);
+    assert.equal(result.missingLabel, 'файл удалён по сроку хранения');
+  });
+
+  it('ровно на границе срока: считается истёкшим', () => {
+    const result = getFileStatus('done', false, new Date(NOW - 30 * DAY).toISOString(), 30, NOW);
+    assert.equal(result.missingLabel, 'файл удалён по сроку хранения');
+  });
+
+  it('короткий срок хранения меняет причину для того же возраста', () => {
+    const created = new Date(NOW - 10 * DAY).toISOString();
+    assert.equal(getFileStatus('done', false, created, 7, NOW).missingLabel, 'файл удалён по сроку хранения');
+    assert.equal(getFileStatus('done', false, created, 30, NOW).missingLabel, 'файла нет — скачать нельзя');
+  });
+
+  it('файл на месте: причины нет', () => {
+    const result = getFileStatus('done', true, new Date(NOW - DAY).toISOString(), 30, NOW);
+    assert.equal(result.missingLabel, null);
+  });
+
+  it('проект не готов: причины нет, даже если файла нет', () => {
+    const result = getFileStatus('generating_script', false, new Date(NOW - DAY).toISOString(), 30, NOW);
+    assert.equal(result.missingLabel, null);
+  });
+});

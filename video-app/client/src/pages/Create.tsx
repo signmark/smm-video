@@ -952,6 +952,32 @@ export default function Create() {
           />
         </Field>
 
+
+        {/* Collapsible: Advanced generation settings */}
+        <div style={{ border: '1.5px solid var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
+          <button
+            type="button"
+            onClick={() => setShowAdvanced((v) => !v)}
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '12px 16px', border: 'none', cursor: 'pointer',
+              background: 'var(--bg-card2)', color: 'var(--text)',
+              transition: 'background 0.15s',
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-card)'}
+            onMouseLeave={(e) => e.currentTarget.style.background = 'var(--bg-card2)'}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Settings size={16} style={{ color: 'var(--accent-light)' }} />
+              <span style={{ fontSize: 14, fontWeight: 600 }}>Настройки генерации</span>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                — {I2V_MODELS.find(m => m.value === animationModel)?.label || animationModel}, {language === 'ru' ? 'Русский' : 'English'}
+              </span>
+            </div>
+            {showAdvanced ? <ChevronUp size={16} style={{ color: 'var(--text-muted)' }} /> : <ChevronDown size={16} style={{ color: 'var(--text-muted)' }} />}
+          </button>
+          {showAdvanced && (
+            <div style={{ padding: '16px', borderTop: '1px solid var(--border)', background: 'var(--bg-card)', display: 'flex', flexDirection: 'column', gap: 20 }}>
         {/* Script mode toggle */}
         <Field label="Режим сценария">
           <div style={{ display: 'flex', gap: 0, borderRadius: 'var(--radius-sm)', overflow: 'hidden', border: '1.5px solid var(--border)' }}>
@@ -1196,6 +1222,9 @@ export default function Create() {
             ⚠️ Голоса работают через OpenAI TTS. При проблемах с ключом или исчерпанном лимите будет использован стандартный голос (Edge TTS).
           </div>
         </Field>
+            </div>
+          )}
+        </div>
 
 
         {/* Collapsible: Music */}

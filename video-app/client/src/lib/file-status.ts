@@ -19,6 +19,15 @@ export interface FileStatus {
   expiryUrgent: boolean;
   /** Whether the file is missing but was expected (done project without file). */
   fileMissing: boolean;
+  /**
+   * Why the file is gone, in words the user can act on — null when nothing is
+   * missing. Two different causes must not share one sentence: retention only
+   * explains projects older than the retention period. Everything younger is
+   * gone for another reason (22.08: the data volume was mounted at the wrong
+   * path, so finished videos never survived a rebuild), and blaming retention
+   * there tells the user a fact that is not true.
+   */
+  missingLabel: string | null;
 }
 
 /**
@@ -38,6 +47,13 @@ export function getFileStatus(
 ): FileStatus {
   const isDone = status === 'done';
   const fileMissing = isDone && !hasFile;
+  const ageDays = (now - new Date(createdAt).getTime()) / (24 * 60 * 60 * 1000);
+
+  const missingLabel = !fileMissing
+    ? null
+    : ageDays >= retentionDays
+      ? 'файл удалён по сроку хранения'
+      : 'файла нет — скачать нельзя';
 
   let expiryLabel: string | null = null;
   let expiryUrgent = false;
@@ -56,5 +72,5 @@ export function getFileStatus(
     }
   }
 
-  return { hasFile, isDone, expiryLabel, expiryUrgent, fileMissing };
+  return { hasFile, isDone, expiryLabel, expiryUrgent, fileMissing, missingLabel };
 }

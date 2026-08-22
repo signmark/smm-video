@@ -13,6 +13,7 @@ import {
 } from '../lib/project-filter';
 import { getStepStates, getErrorStep, PIPELINE_STEPS } from '../lib/progress-steps';
 import { getFileStatus, DEFAULT_RETENTION_DAYS } from '../lib/file-status';
+import { statusLabel, statusColor } from '../lib/status-labels';
 
 interface VideoProject extends ProjectForFilter {
   progress: number;
@@ -23,24 +24,6 @@ interface VideoProject extends ProjectForFilter {
   hasFile?: boolean;
   retentionDays?: number;
 }
-
-const STATUS_LABEL: Record<string, string> = {
-  idle: 'Ожидание',
-  generating_script: 'Скрипт...',
-  generating_images: 'Изображения...',
-  assembling: 'Рендер...',
-  done: 'Готово',
-  error: 'Ошибка',
-};
-
-const STATUS_COLOR: Record<string, string> = {
-  idle: '#555',
-  generating_script: '#f59e0b',
-  generating_images: '#3b82f6',
-  assembling: '#a78bfa',
-  done: '#22c55e',
-  error: '#ef4444',
-};
 
 function FormatIcon({ format }: { format: string }) {
   if (format === '9:16') return <Smartphone size={16} style={{ color: 'var(--text-muted)' }} />;
@@ -207,7 +190,7 @@ function ProjectCard({ project: p, onClick, onResume, onRestart, onDelete, delet
   const isActive = isRunningStatus(p.status);
   const isError = p.status === 'error';
   const fileStatus = getFileStatus(p.status, p.hasFile ?? false, p.createdAt, p.retentionDays ?? DEFAULT_RETENTION_DAYS);
-  const { isDone, fileMissing, expiryLabel, expiryUrgent } = fileStatus;
+  const { isDone, fileMissing, missingLabel, expiryLabel, expiryUrgent } = fileStatus;
 
   // For active projects, show current step from progress-steps
   let activeStepLabel = '';
@@ -308,12 +291,12 @@ function ProjectCard({ project: p, onClick, onResume, onRestart, onDelete, delet
           <span
             style={{
               padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 600,
-              background: STATUS_COLOR[p.status] + '22',
-              color: STATUS_COLOR[p.status],
-              border: `1px solid ${STATUS_COLOR[p.status]}44`,
+              background: statusColor(p.status) + '22',
+              color: statusColor(p.status),
+              border: `1px solid ${statusColor(p.status)}44`,
             }}
           >
-            {STATUS_LABEL[p.status] || p.status}
+            {statusLabel(p.status)}
           </span>
           <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>
             {p.duration}с
@@ -323,9 +306,9 @@ function ProjectCard({ project: p, onClick, onResume, onRestart, onDelete, delet
               <Trash2 size={10} /> {expiryLabel}
             </span>
           )}
-          {fileMissing && (
+          {missingLabel && (
             <span style={{ fontSize: 11, color: '#ef4444', display: 'flex', alignItems: 'center', gap: 3 }}>
-              <AlertTriangle size={10} /> файл удалён по сроку хранения
+              <AlertTriangle size={10} /> {missingLabel}
             </span>
           )}
         </div>

@@ -997,7 +997,7 @@ router.post('/videos/:id/resume', async (req, res) => {
     // never observe the stale previous 'done'/'error' status while the async
     // pipeline spins up (also makes the 409 double-click guard effective).
     await updateProject(project.id, {
-      status: 'assembling', progress: 1,
+      status: 'assembling', progress: 76,
       progressMessage: mode === 'rebuild' ? 'Пересборка из сохранённых материалов...' : 'Определяю с какого места продолжить...',
     });
 

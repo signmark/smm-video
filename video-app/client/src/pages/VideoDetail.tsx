@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { navigate } from '../App';
 import { API } from '../api';
+import { PIPELINE_STEPS, getStepStates, getErrorStep, type StepState } from '../lib/progress-steps';
+import { CheckCircle2, Loader2, AlertTriangle, Clock, ListChecks } from 'lucide-react';
 
 // ── Token refresh logic (mirrors main app's refreshAuth.ts) ─────────────────
 async function getValidToken(): Promise<string | null> {
@@ -968,7 +970,7 @@ export default function VideoDetail({ id }: { id: string }) {
 
       {/* Status card — step-based pipeline indicator */}
       <div style={{ background: 'var(--bg-card)', border: `1px solid ${isScriptReady ? 'rgba(167,139,250,0.3)' : 'var(--border)'}`, borderRadius: 'var(--radius)', overflow: 'hidden', marginBottom: 24 }}>
-        <div style={{ padding: '20px 20px 16px', borderBottom: (isActive || isSearchingStock || isError) ? '1px solid var(--border)' : 'none' }}>
+        <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid var(--border)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
             <span style={{ fontWeight: 600, fontSize: 15, color: STATUS_COLORS[project.status] }}>
               {STATUS_LABELS[project.status] || project.status}
@@ -978,7 +980,7 @@ export default function VideoDetail({ id }: { id: string }) {
             ) : isDone ? (
               <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--green)', background: 'rgba(34,197,94,0.1)', padding: '2px 8px', borderRadius: 4 }}>ГОТОВО</span>
             ) : (isActive || isSearchingStock) ? (
-              <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent-light)', background: 'rgba(124,58,237,0.1)', padding: '2px 8px', borderRadius: 4, animation: 'pulse 2s infinite' }}>РЕНДЕР</span>
+              <span className="animate-pulse" style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent-light)', background: 'rgba(124,58,237,0.1)', padding: '2px 8px', borderRadius: 4 }}>РЕНДЕР</span>
             ) : null}
           </div>
           {project.progressMessage && (
@@ -986,9 +988,9 @@ export default function VideoDetail({ id }: { id: string }) {
           )}
         </div>
 
+        {/* Progress bar — only during active generation */}
         {(isActive || isSearchingStock) && (
-          <div style={{ padding: '16px 20px' }}>
-            {/* Progress bar */}
+          <div style={{ padding: '16px 20px 0' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, fontFamily: 'monospace', color: 'var(--text-muted)', marginBottom: 8 }}>
               <span>Прогресс</span>
               <span style={{ color: 'var(--accent-light)', fontWeight: 700 }}>{project.progress}%</span>
@@ -996,63 +998,56 @@ export default function VideoDetail({ id }: { id: string }) {
             <div style={{ background: 'var(--bg-card2)', borderRadius: 999, height: 8, overflow: 'hidden' }}>
               <div style={{ height: '100%', width: `${project.progress}%`, background: 'var(--accent)', borderRadius: 999, transition: 'width 0.5s ease' }} />
             </div>
-
-            {/* Step indicator */}
-            <div style={{ position: 'relative', marginTop: 20 }}>
-              <div style={{ position: 'absolute', top: 14, left: 0, right: 0, height: 2, background: 'var(--bg-card2)' }} />
-              <div style={{ position: 'relative', zIndex: 1, display: 'flex', justifyContent: 'space-between' }}>
-                {(() => {
-                  const steps = [
-                    { id: 'idle', label: 'Очередь' },
-                    { id: 'generating_script', label: 'Сценарий' },
-                    { id: 'generating_images', label: 'Визуал' },
-                    { id: 'assembling', label: 'Монтаж' },
-                    { id: 'done', label: 'Готово' },
-                  ];
-                  const statusOrder = ['idle', 'generating_script', 'script_ready', 'searching_stock', 'generating_images', 'animating', 'assembling', 'done'];
-                  const currentIdx = statusOrder.indexOf(project.status);
-                  return steps.map((step, idx) => {
-                    const stepIdx = statusOrder.indexOf(step.id);
-                    const isCompleted = currentIdx > stepIdx || isDone;
-                    const isCurrent = !isDone && !isError && (
-                      (step.id === 'generating_script' && ['generating_script'].includes(project.status)) ||
-                      (step.id === 'generating_images' && ['searching_stock', 'generating_images', 'animating', 'script_ready'].includes(project.status)) ||
-                      (step.id === 'assembling' && project.status === 'assembling') ||
-                      (step.id === 'idle' && project.status === 'idle')
-                    );
-                    return (
-                      <div key={step.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
-                        <div style={{
-                          width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          border: `2px solid ${isCompleted || isCurrent ? 'var(--accent)' : 'var(--border)'}`,
-                          background: isCompleted ? 'var(--accent)' : isCurrent ? 'var(--bg)' : 'var(--bg)',
-                          color: isCompleted ? '#fff' : isCurrent ? 'var(--accent-light)' : 'var(--text-muted)',
-                          fontSize: 10, fontWeight: 700, fontFamily: 'monospace',
-                          boxShadow: isCompleted ? '0 0 12px rgba(124,58,237,0.4)' : isCurrent ? '0 0 8px rgba(124,58,237,0.2)' : 'none',
-                          transition: 'all 0.3s',
-                        }}>
-                          {isCompleted ? '✓' : isCurrent ? '⟳' : idx + 1}
-                        </div>
-                        <span style={{
-                          fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em',
-                          color: isCompleted || isCurrent ? 'var(--text)' : 'var(--text-muted)',
-                          textAlign: 'center', lineHeight: 1.2,
-                        }}>
-                          {step.label}
-                        </span>
-                      </div>
-                    );
-                  });
-                })()}
-              </div>
-            </div>
           </div>
         )}
+
+        {/* Step indicator — always visible */}
+        <div style={{ padding: '16px 20px' }}>
+          <div style={{ position: 'relative', marginTop: 4 }}>
+            <div style={{ position: 'absolute', top: 14, left: 0, right: 0, height: 2, background: 'var(--bg-card2)' }} />
+            <div style={{ position: 'relative', zIndex: 1, display: 'flex', justifyContent: 'space-between' }}>
+              {(() => {
+                const stepStates = getStepStates(project.status);
+                const errorStepIdx = getErrorStep(project.status, project.progressMessage);
+                return PIPELINE_STEPS.map((step, idx) => {
+                  const state: StepState = (isError && idx === errorStepIdx) ? 'error' : stepStates[idx];
+                  const isCompleted = state === 'completed';
+                  const isCurrent = state === 'current';
+                  const isErrorStep = state === 'error';
+                  return (
+                    <div key={step.id} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                      <div style={{
+                        width: 28, height: 28, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        border: `2px solid ${isCompleted ? 'var(--accent)' : isCurrent ? 'var(--accent)' : isErrorStep ? 'var(--red)' : 'var(--border)'}`,
+                        background: isCompleted ? 'var(--accent)' : isErrorStep ? 'rgba(239,68,68,0.15)' : 'var(--bg)',
+                        color: isCompleted ? '#fff' : isCurrent ? 'var(--accent-light)' : isErrorStep ? 'var(--red)' : 'var(--text-muted)',
+                        boxShadow: isCompleted ? '0 0 12px rgba(124,58,237,0.4)' : isCurrent ? '0 0 8px rgba(124,58,237,0.2)' : 'none',
+                        transition: 'all 0.3s',
+                      }}>
+                        {isCompleted ? <CheckCircle2 size={14} /> :
+                         isCurrent ? <Loader2 size={14} className="animate-spin" /> :
+                         isErrorStep ? <AlertTriangle size={14} /> :
+                         <span style={{ fontSize: 10, fontWeight: 700, fontFamily: 'monospace' }}>{idx + 1}</span>}
+                      </div>
+                      <span style={{
+                        fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em',
+                        color: isCompleted || isCurrent || isErrorStep ? 'var(--text)' : 'var(--text-muted)',
+                        textAlign: 'center', lineHeight: 1.2,
+                      }}>
+                        {step.label}
+                      </span>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          </div>
+        </div>
 
         {isError && project.error && (
           <div style={{ padding: '12px 20px', background: 'rgba(239,68,68,0.05)', borderTop: '1px solid rgba(239,68,68,0.15)' }}>
             <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-              <span style={{ fontSize: 16, lineHeight: 1.4 }}>⚠️</span>
+              <AlertTriangle size={16} style={{ color: '#fca5a5', flexShrink: 0, marginTop: 2 }} />
               <div>
                 <div style={{ fontWeight: 600, fontSize: 13, color: '#fca5a5', marginBottom: 4 }}>Рендер завершился с ошибкой</div>
                 <div style={{ fontSize: 12, color: '#fca5a5', opacity: 0.8 }}>{project.error}</div>
@@ -1063,8 +1058,9 @@ export default function VideoDetail({ id }: { id: string }) {
 
         {isDone && (
           <div style={{ padding: '12px 20px', borderTop: '1px solid var(--border)' }}>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-              {STATUS_LABELS[project.status] || project.status} · {project.progress}%
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-muted)' }}>
+              <CheckCircle2 size={14} style={{ color: 'var(--green)' }} />
+              Видео готово · {project.progress}%
             </div>
           </div>
         )}

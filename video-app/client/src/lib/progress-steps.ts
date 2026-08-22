@@ -20,26 +20,25 @@ export type StepState = 'completed' | 'current' | 'error' | 'pending';
 
 /**
  * Returns the index of the step that is "completed" for a given status.
- * -1 means no step is completed yet.
- * For statuses that represent "step N is in progress", returns N-1 (previous step done).
  * For statuses that represent "step N is done, waiting", returns N.
+ * For statuses that represent "step N is in progress", returns N-1.
  */
 function completedUpTo(status: string): number {
   switch (status) {
     case 'idle':
-      return -1; // nothing completed, step 0 is current
+      return -1;
     case 'generating_script':
-      return 0; // step 0 done, step 1 current
+      return 0;
     case 'script_ready':
-      return 1; // step 1 done (script ready, waiting for user)
+      return 1;
     case 'searching_stock':
     case 'generating_images':
     case 'animating':
-      return 1; // step 1 done, step 2 current
+      return 1;
     case 'assembling':
-      return 2; // step 2 done, step 3 current
+      return 2;
     case 'done':
-      return 4; // all done
+      return 3; // all 4 steps completed (index 0-3), step 4 = Готово also completed
     default:
       return -1;
   }
@@ -47,7 +46,7 @@ function completedUpTo(status: string): number {
 
 /**
  * Returns the index of the step that is "current" for a given status.
- * -1 means no step is current (e.g. done, error, unknown).
+ * -1 means no step is actively running.
  */
 function currentStep(status: string): number {
   switch (status) {
@@ -56,7 +55,7 @@ function currentStep(status: string): number {
     case 'generating_script':
       return 1;
     case 'script_ready':
-      return -1; // waiting for user, no step actively running
+      return -1;
     case 'searching_stock':
     case 'generating_images':
     case 'animating':
@@ -64,7 +63,7 @@ function currentStep(status: string): number {
     case 'assembling':
       return 3;
     case 'done':
-      return -1; // all completed
+      return -1;
     default:
       return -1;
   }
@@ -77,14 +76,19 @@ function currentStep(status: string): number {
  * - error: this step is where the error occurred
  * - pending: step hasn't been reached yet
  */
-export function getStepStates(status: string): StepState[] {
-  if (status === 'error') {
-    // Error state: all pending (caller can override with getErrorStep)
-    return PIPELINE_STEPS.map(() => 'pending' as StepState);
-  }
-
+export function getStepStates(status: string, progress?: number): StepState[] {
   if (status === 'done') {
     return PIPELINE_STEPS.map(() => 'completed' as StepState);
+  }
+
+  if (status === 'error') {
+    // Determine which step failed based on progress
+    const errorIdx = getErrorStep(status, undefined, progress);
+    return PIPELINE_STEPS.map((_, idx) => {
+      if (errorIdx >= 0 && idx === errorIdx) return 'error' as StepState;
+      if (errorIdx >= 0 && idx < errorIdx) return 'completed' as StepState;
+      return 'pending' as StepState;
+    });
   }
 
   const doneUpTo = completedUpTo(status);
@@ -99,14 +103,24 @@ export function getStepStates(status: string): StepState[] {
 
 /**
  * Returns the index of the step where an error occurred.
- * For error status, we look at progressMessage to infer which step was running.
- * Returns -1 if the error step cannot be determined.
+ * Primary: uses progress value (pipeline sets it by stage).
+ *   < 20 → step 1 (script), 20-75 → step 2 (visual), ≥ 75 → step 3 (assembly)
+ * Fallback: keyword matching on progressMessage.
+ * Returns -1 if undetermined.
  */
-export function getErrorStep(status: string, progressMessage?: string): number {
+export function getErrorStep(status: string, progressMessage?: string, progress?: number): number {
   if (status !== 'error') return -1;
+
+  // Primary: use progress value
+  if (typeof progress === 'number') {
+    if (progress < 20) return 1;
+    if (progress < 75) return 2;
+    return 3;
+  }
+
+  // Fallback: keyword matching
   if (!progressMessage) return -1;
   const msg = progressMessage.toLowerCase();
-  // Russian keywords (toLowerCase works on Cyrillic in modern engines)
   if (msg.includes('сценари') || msg.includes('script')) return 1;
   if (msg.includes('визуал') || msg.includes('image') || msg.includes('изображени') ||
       msg.includes('сток') || msg.includes('stock') || msg.includes('анимац') ||

@@ -300,7 +300,9 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
   return (
     <>
     <header className="h-16 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 flex items-center justify-between gap-2 px-4 lg:px-6 lg:pl-6 shadow-sm safe-area-top safe-area-left safe-area-right overflow-hidden">
-      <div className="flex items-center gap-4">
+      {/* min-w-0 + flex-shrink заставляют ЛЕВУЮ часть сжиматься, а не
+          правую — иначе на 375×800 переполнение (правка ревью 22.08). */}
+      <div className="flex items-center gap-4 min-w-0 flex-shrink">
         {/* Menu button — гамбургер на мобильных, toggle коллапса на десктопе */}
         <Button
           variant="ghost"
@@ -313,9 +315,11 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
           <Menu className="h-4 w-4" />
         </Button>
 
-        {/* Campaign selector — скрываем на странице списка кампаний */}
+        {/* Campaign selector — скрываем на странице списка кампаний.
+            gap-2 вместо gap-4 на узком экране — экономит горизонтальное
+            место (правка ревью 22.08). */}
         {showCampaignSelector && (
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 sm:gap-4">
             <CampaignSelector persistSelection={true} />
           </div>
         )}
@@ -482,8 +486,11 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
             )}
       </div>
 
-      {/* Right side actions — three zones with thin dividers (AI-134). */}
-      <div className="flex items-center gap-1">
+      {/* Right side actions — три зоны через ZoneDivider (AI-134).
+          flex-shrink-0 запрещает шапке сжимать правую группу за счёт
+          левой: иначе на 375×800 правая группа уезжает за экран на
+          ~160 пикселей (см. браузерную проверку 22.08). */}
+      <div className="flex items-center gap-1 flex-shrink-0">
         {onOpenAIChat && <AiZone onOpenAIChat={onOpenAIChat} />}
         <ZoneDivider />
         <HelpZone onOpenTGBot={onOpenTGBot} />

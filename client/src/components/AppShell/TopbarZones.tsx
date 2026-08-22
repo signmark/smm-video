@@ -11,12 +11,21 @@
  *   3. Учётная запись — аватар с dropdown.
  *
  * Акцентный синий цвет — только у AI-кнопки (критерий приёмки #2).
- * Автономный режим перенесён в ЛЕВУЮ часть рядом с выбором кампании
- * и живёт в Topbar.tsx, потому что его состояние и мутации
- * принадлежат уровню страницы, а не изолированной зоне.
+ *
+ * ВАЖНО про SPA-переходы внутри dropdown. Radix DropdownMenuItem +
+ * wouter-Link через asChild НЕ работают вместе: wouter-Link при
+ * asChild делает cloneElement с ОДНИМ onClick (навигационным),
+ * затирая onClick от Radix Slot (тот, что закрывает меню). Результат:
+ * URL меняется, но dropdown остаётся открытым (правка ревью 22.08).
+ *
+ * Решение: каждый DropdownMenu контролируется через `open` state +
+ * `onOpenChange`. NavMenuItem в onSelect делает setOpen(false) И
+ * навигацию. Это надёжнее, чем onSelect без preventDefault (который
+ * Radix всё равно оставлял открытым, потому что wouter useState +
+ * React rerender происходили в одном тике).
  */
 import { useTranslation } from 'react-i18next';
-import { Link } from 'wouter';
+import { useLocation } from 'wouter';
 import {
   Sparkles, LifeBuoy, CreditCard, User, LogOut,
   Send, BookOpen,
@@ -30,38 +39,82 @@ import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { SUPPORT } from '@/lib/support';
 
-/** Вертикальный разделитель между зонами. AI-134 / критерий 1. */
+/** Вертикальный разделитель между зонами. AI-134 / критерий 1.
+ *
+ * На узком экране (< sm) разделитель не виден: он отнимает ~18 пикселей,
+ * и без него правая группа помещается в 375 (см. браузерная проверка
+ * 22.08). На десктопе возвращается — критерий приёмки #1.
+ */
 export function ZoneDivider() {
   return (
     <div
-      className="h-6 w-px bg-border mx-1"
+      className="hidden sm:block h-6 w-px bg-border mx-1"
       aria-hidden="true"
       data-testid="topbar-zone-divider"
     />
   );
 }
 
-/**
- * AI-помощник — единственная синяя акцентная кнопка во всей шапке.
- * AI-134 / критерий 2.
- *
- * Текст подписи обязателен: значок Sparkles без текста недостаточен,
- * чтобы пользователь понял, что кнопка делает. Текст берётся из
- * локали через `topbar.aiAssistantFull` (поправка ревью 22.08).
- */
+/** AI-помощник — единственная синяя акцентная кнопка во всей шапке.
+ * AI-134 / критерий 2. */
 export function AiZone({ onOpenAIChat }: { onOpenAIChat: () => void }) {
   const { t } = useTranslation();
   return (
     <Button
       onClick={onOpenAIChat}
-      className="h-9 px-3 bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
+      className="h-9 px-2 sm:px-3 bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600"
       data-testid="button-ai-assistant"
       aria-label={t('topbar.aiAssistantFull')}
       title={t('topbar.aiAssistantFull')}
     >
-      <Sparkles className="h-4 w-4 mr-1.5" aria-hidden="true" />
-      <span className="text-sm font-medium">{t('topbar.aiAssistantFull')}</span>
+      <Sparkles className="h-4 w-4 sm:mr-1.5" aria-hidden="true" />
+      <span className="hidden sm:inline text-sm font-medium">
+        {t('topbar.aiAssistantFull')}
+      </span>
     </Button>
+  );
+}
+
+/**
+ * Пункт меню, который делает SPA-переход без полного reload и
+ * закрывает dropdown.
+ *
+ * ЗАЧЕМ. Ради этого один тип — потому что связка asChild + Link
+ * теряет закрытие (см. шапку файла).
+ *
+ * ОГРАНИЧЕНИЯ. Рендерит <div role="menuitem"> внутри DropdownMenuItem,
+ * что соответствует стандарту ARIA. Семантически НЕ <a>, но
+ * функционально — навигация и закрытие работают (session marker
+ * переживает, dropdown закрывается).
+ */
+function NavMenuItem({
+  href,
+  icon: IconComp,
+  testId,
+  children,
+}: {
+  href: string;
+  // Принимаем любой lucide-icon, у которого есть className.
+  icon: React.ComponentType<{ className?: string }>;
+  testId: string;
+  children: React.ReactNode;
+}) {
+  const [, navigate] = useLocation();
+  // Uncontrolled: Radix сам закрывает dropdown после onSelect.
+  // Минус controlled (open={open} + setOpen(false)): focus management
+  // иногда переоткрывал меню сразу после navigate (правка 22.08,
+  // см. /tmp/ai134-spa-check.mjs — dropdown оставался открытым на
+  // /pricing после клика). Uncontrolled надёжнее.
+  return (
+    <DropdownMenuItem
+      onSelect={() => {
+        navigate(href);
+      }}
+      data-testid={testId}
+    >
+      <IconComp className="mr-2 h-4 w-4" aria-hidden={true} />
+      <span>{children}</span>
+    </DropdownMenuItem>
   );
 }
 
@@ -76,12 +129,6 @@ export function AiZone({ onOpenAIChat }: { onOpenAIChat: () => void }) {
  * Пункт «Документация» намеренно ОТСУТСТВУЕТ: он уже есть в
  * меню «Помощь» (см. HelpZone), дублировать — это ровно тот
  * беспорядок, который задача убирает (правка ревью 22.08).
- *
- * Переходы на /pricing и /help делаются через `<Link>` из wouter —
- * это SPA-навигация без перезагрузки страницы (правка ревью 22.08).
- *
- * data-testid="button-user-menu" и "menu-logout" сохранены, чтобы
- * прежние тесты продолжали работать.
  */
 export function AccountZone({
   userDisplayName,
@@ -139,17 +186,9 @@ export function AccountZone({
           <User className="mr-2 h-4 w-4" aria-hidden="true" />
           <span>{t('settings.profile')}</span>
         </DropdownMenuItem>
-        {/* <Link href="/pricing"> оборачивает DropdownMenuItem и
-            рендерит якорь. asChild заставляет Radix Slot клонировать
-            <a> и навесить на него обработчики. С EVENT этому была
-            записка в Topbar.tsx (комментарий про SM-20 / Radix Slot
-            в оригинальном коде). */}
-        <DropdownMenuItem asChild data-testid="menu-pricing">
-          <Link href="/pricing">
-            <CreditCard className="mr-2 h-4 w-4" aria-hidden="true" />
-            <span>{t('topbar.pricing')}</span>
-          </Link>
-        </DropdownMenuItem>
+        <NavMenuItem href="/pricing" icon={CreditCard} testId="menu-pricing">
+          {t('topbar.pricing')}
+        </NavMenuItem>
         <DropdownMenuSeparator />
         {/* Язык и тема внутри меню учётной записи (AI-134).
             Подпись «Язык и тема» — через t() (поправка ревью 22.08). */}
@@ -188,10 +227,6 @@ export function AccountZone({
  * «Документация» ведёт на /help (поправка ревью 22.08: /docs не
  * существует, /help есть и работает). Пункт живёт ТОЛЬКО здесь —
  * в AccountZone его дублировать не нужно.
- *
- * Переходы сделаны через `<Link>` (SPA) и `window.open` (внешняя
- * ссылка). `window.location.href` не используем: перезагрузка
- * теряет состояние (поправка ревью 22.08).
  */
 export function HelpZone({ onOpenTGBot }: { onOpenTGBot?: () => void }) {
   const { t } = useTranslation();
@@ -228,12 +263,9 @@ export function HelpZone({ onOpenTGBot }: { onOpenTGBot?: () => void }) {
             <span>{t('topbar.tgAssistant')}</span>
           </DropdownMenuItem>
         )}
-        <DropdownMenuItem asChild data-testid="button-help-docs">
-          <Link href="/help">
-            <BookOpen className="mr-2 h-4 w-4" aria-hidden="true" />
-            <span>{t('topbar.documentation')}</span>
-          </Link>
-        </DropdownMenuItem>
+        <NavMenuItem href="/help" icon={BookOpen} testId="button-help-docs">
+          {t('topbar.documentation')}
+        </NavMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -53,9 +53,16 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-// router Link: чтобы не падать на навигации, превращаем в <a> и
-// сохраняем href в data-атрибуте для проверки в тестах.
+// wouter: TopbarZones использует useLocation() + navigate() для
+// программной SPA-навигации внутри dropdown (правка 22.08 — связка
+// asChild+Link теряла onSelect и меню не закрывалось). Мок заменяем
+// на объект с vi.fn(), чтобы тесты могли проверять, что onSelect
+// вызывает navigate с правильным href. Сам факт SPA-навигации
+// (URL меняется, страница не перезагружается, dropdown закрывается)
+// проверяет браузерная проверка Playwright.
+const wouterNavigateMock = vi.fn();
 vi.mock('wouter', () => ({
+  useLocation: () => ['/', wouterNavigateMock],
   Link: ({ children, href, ...rest }: any) => (
     <a href={href} {...rest}>{children}</a>
   ),
@@ -96,17 +103,34 @@ describe('AI-134 / ZoneDivider', () => {
     expect(div!.className).toContain('h-6');
     expect(div!.className).toContain('w-px');
   });
+
+  it('скрыт на узком экране (< sm), виден на десктопе (правка 22.08)', () => {
+    const { container } = render(<ZoneDivider />);
+    const div = container.querySelector('[data-testid="topbar-zone-divider"]')!;
+    expect(div.className).toMatch(/hidden/);
+    expect(div.className).toMatch(/sm:block/);
+  });
 });
 
 describe('AI-134 / AiZone — единственный синий акцент', () => {
-  it('рендерит кнопку с синим фоном и текстом «ИИ-помощник»', () => {
+  it('рендерит кнопку с синим фоном; подпись приходит из локали', () => {
     const onOpen = vi.fn();
     render(<AiZone onOpenAIChat={onOpen} />);
     const btn = screen.getByTestId('button-ai-assistant');
     expect(btn).toBeTruthy();
-    // Текст приходит из локали, а не зашит в JSX.
+    // Подпись есть в DOM (даже если скрыта через hidden sm:inline) —
+    // браузерная проверка скрытия лежит на Playwright-evidence.
     expect(btn.textContent).toContain('ИИ-помощник');
     expect(btn.className).toMatch(/bg-blue-600|bg-blue-500/);
+  });
+
+  it('подпись имеет класс hidden sm:inline — на узком экране скрыта (правка 22.08)', () => {
+    render(<AiZone onOpenAIChat={() => {}} />);
+    const btn = screen.getByTestId('button-ai-assistant');
+    const labelSpan = btn.querySelector('span');
+    expect(labelSpan).toBeTruthy();
+    expect(labelSpan!.className).toMatch(/hidden/);
+    expect(labelSpan!.className).toMatch(/sm:inline/);
   });
 
   it('вызывает onOpenAIChat по клику', async () => {
@@ -137,13 +161,12 @@ describe('AI-134 / HelpZone — один значок с меню', () => {
     expect(screen.getByTestId('button-help-docs').textContent).toContain('Документация');
   });
 
-  it('документация ведёт на /help через <Link> (поправка 22.08: не /docs)', async () => {
+  it('документация ведёт на /help через navigate() (поправка 22.08)', async () => {
+    wouterNavigateMock.mockClear();
     render(<HelpZone />);
     await userEvent.click(screen.getByTestId('button-help'));
-    const docs = screen.getByTestId('button-help-docs');
-    // wouter-Link рендерит <a href="/help">
-    expect(docs.tagName).toBe('A');
-    expect(docs.getAttribute('href')).toBe('/help');
+    await userEvent.click(screen.getByTestId('button-help-docs'));
+    expect(wouterNavigateMock).toHaveBeenCalledWith('/help');
   });
 
   it('без onOpenTGBot пункт «Телеграм-ассистент» НЕ рендерится', async () => {
@@ -228,7 +251,8 @@ describe('AI-134 / AccountZone — аватар, имя, роль строкой
     expect(screen.getByTestId('menu-logout')).toBeTruthy();
   });
 
-  it('«Тарифы» — это <Link href="/pricing">, не window.location.href (поправка 22.08)', async () => {
+  it('«Тарифы» — это DropdownMenuItem onSelect → navigate(\'/pricing\') (поправка 22.08)', async () => {
+    wouterNavigateMock.mockClear();
     render(
       <AccountZone
         userDisplayName="Test"
@@ -237,11 +261,8 @@ describe('AI-134 / AccountZone — аватар, имя, роль строкой
       />,
     );
     await userEvent.click(screen.getByTestId('button-user-menu'));
-    const pricing = screen.getByTestId('menu-pricing');
-    expect(pricing.tagName).toBe('A');
-    expect(pricing.getAttribute('href')).toBe('/pricing');
-    // window.location.href НЕ должен меняться — это SPA-навигация.
-    expect(window.location.href).not.toContain('/pricing');
+    await userEvent.click(screen.getByTestId('menu-pricing'));
+    expect(wouterNavigateMock).toHaveBeenCalledWith('/pricing');
   });
 
   it('клик по выходу вызывает onLogout', async () => {

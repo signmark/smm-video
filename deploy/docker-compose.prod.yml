@@ -1,0 +1,233 @@
+# Установка SMM Manager на чистую машину.
+#
+# Это НЕ файл, по которому работает текущий прод: там живёт
+# /root/docker-compose.yml, где рядом стоят сервисы других продуктов
+# (n8n, pgadmin, лендинг, ReelForge). Здесь только то, что нужно самому
+# SMM Manager, чтобы вторая установка поднималась из репозитория, а не
+# копированием файла с боевого сервера.
+#
+# Значения не хранятся: все переменные приходят из .env рядом с этим
+# файлом, шаблон — deploy/.env.example.
+#
+# Проверка расхождения с боевым файлом: scripts/check-compose-drift.sh
+version: "3"
+
+services:
+  traefik:
+    image: traefik:v2.11
+    restart: always
+    command:
+      - "--providers.docker.network=proxy"
+      - "--api=true"
+      - "--api.insecure=true"
+      - "--api.dashboard=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.mytlschallenge.acme.tlschallenge=true"
+      - "--certificatesresolvers.mytlschallenge.acme.email=${SSL_EMAIL}"
+      - "--certificatesresolvers.mytlschallenge.acme.storage=/letsencrypt/acme.json"
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./traefik_data:/letsencrypt
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - proxy
+
+
+  postgres:
+    image: postgres:16
+    restart: always
+    shm_size: 128mb
+    environment:
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    volumes:
+      - ./postgres:/var/lib/postgresql/data
+    networks:
+      - proxy
+
+
+  directus-uploads-init:
+    image: busybox:1.36
+    command: chown -R 1000:1000 /uploads
+    volumes:
+      - ./directus_data:/uploads
+    restart: "no"
+    # Сети не нужны вообще: контейнер только меняет владельца каталога.
+    # Без этой строки compose кладёт сервис в неявную сеть по умолчанию и
+    # создаёт root_default, хотя весь остальной файл живёт во внешней proxy.
+    network_mode: "none"
+
+  directus:
+    image: directus/directus:11.2.2
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_started
+      directus-uploads-init:
+        condition: service_completed_successfully
+    environment:
+      - PUBLIC_URL=https://directus.roboflow.space
+      - DB_CLIENT=pg
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      # Обычное значение — directus. Переключается через DIRECTUS_DB в /root/.env
+      # (напр. directus_old — копия старого прода) для сравнительного тестирования.
+      # Откат: убрать DIRECTUS_DB из .env и docker compose up -d directus
+      - DB_DATABASE=${DIRECTUS_DB:-directus}
+      - DB_USER=postgres
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
+      - ADMIN_EMAIL=${DIRECTUS_ADMIN_EMAIL}
+      - ADMIN_PASSWORD=${DIRECTUS_ADMIN_PASSWORD}
+      - CORS_ENABLED=true
+      - CORS_ORIGIN=true
+      - CORS_METHODS=GET,POST,PATCH,DELETE
+      - CORS_ALLOWED_HEADERS=Content-Type,Authorization
+      - CORS_EXPOSED_HEADERS=Content-Range
+      - CORS_CREDENTIALS=true
+      - CORS_MAX_AGE=18000
+      - ACCESS_TOKEN_TTL=1d
+      # AI-71/сессии (17.08.2026): срок жизни токена обновления снижен с 7 суток до 1.
+      # Решение владельца: выкидывать из сессии раз в сутки, как принято в зрелых проектах.
+      # Практический смысл — украденный или забытый токен живёт максимум сутки, а не неделю.
+      - REFRESH_TOKEN_TTL=1d
+      - AUTH_TOKEN_TTL=1d
+    volumes:
+      - ./directus_data:/directus/uploads
+    labels:
+      - traefik.enable=true
+      # Два хоста → один сервис directus. Отдельные роутеры (а не один с "||"),
+      # чтобы каждый заказывал свой сертификат независимо — см. пояснение у smm.
+      # Хосты задаются в .env: DIRECTUS_HOST / DIRECTUS_HOST_ALT.
+      - traefik.http.routers.directus.rule=Host(`${DIRECTUS_HOST:-directus.roboflow.space}`)
+      - traefik.http.routers.directus.tls=true
+      - traefik.http.routers.directus.entrypoints=web,websecure
+      - traefik.http.routers.directus.tls.certresolver=mytlschallenge
+      - traefik.http.routers.directus.service=directus
+      - traefik.http.routers.directus-alt.rule=Host(`${DIRECTUS_HOST_ALT:-directus.nplanner.ru}`)
+      - traefik.http.routers.directus-alt.tls=true
+      - traefik.http.routers.directus-alt.entrypoints=web,websecure
+      - traefik.http.routers.directus-alt.tls.certresolver=mytlschallenge
+      - traefik.http.routers.directus-alt.service=directus
+      - traefik.http.services.directus.loadbalancer.server.port=8055
+      - traefik.docker.network=proxy
+    networks:
+      - proxy
+
+
+  smm:
+    # Образ собирает ТОЛЬКО scripts/deploy-smm.sh (AI-50). Секции build: здесь
+    # намеренно нет: docker берёт контекст из рабочего дерева, а не из HEAD, и
+    # `docker compose build smm` собрал бы прод из общего /root/smm вместе с
+    # чужим незакоммиченным WIP. Канон блока — smm/docs/deploy/compose-smm.fragment.yml
+    #
+    # root-smm:deployed — подвижный алиас на текущий выкаченный образ. Его
+    # переставляет только deploy-скрипт под локом, после повторной сверки
+    # origin/main. Конкретные сборки остаются как root-smm:<full-sha> и служат
+    # точками отката: scripts/deploy-smm.sh --rollback <sha>
+    # На чистой машине этого образа ещё нет: первую сборку делает
+    # scripts/deploy-smm.sh, он же переставляет алиас deployed.
+    image: root-smm:deployed
+    container_name: smm
+    restart: always
+    # 11.08 здесь стоял пин api.telegram.org на 149.154.167.220: клиент ходил
+    # одной A-записью, упирался в мёртвый 149.154.166.110, и публикация во все
+    # Telegram-каналы встала разом. AI-101 фаза 2C перевела клиент на перебор
+    # всех адресов с запасным списком в TELEGRAM_API_IPS; 13.08 это проверено
+    # на боевом трафике — публикация прошла именно переходом на запасной адрес.
+    # Пин снят: он больше ничего не чинит, а лишь прячет отказ перебора.
+    # Возвращать его имеет смысл только как аварийную меру, и тогда он же
+    # скроет причину — сначала смотрите логи выбора адреса в telegram-http.
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - PORT=5000
+      # Пояс процесса задан ЯВНО. Метки времени публикации лежат в колонках без
+      # часового пояса и по договорённости кода означают UTC (AI-115,
+      # shared/schedule-time.ts). Код больше не зависит от этой переменной, но
+      # пустое значение раньше было единственным, что удерживало расписание от
+      # сдвига на три часа. Менять только вместе с разбором хранения времени.
+      - TZ=UTC
+      - DIRECTUS_URL=http://directus:8055
+      - VIDEO_APP_HOST=video-app
+    command: npm run start
+    labels:
+      - traefik.enable=true
+      # Домены задаются в .env (SMM_HOST / SMM_HOST_ALT), в compose их нет.
+      #
+      # Два ОТДЕЛЬНЫХ роутера, а не один с "||": Traefik заказывает ОДИН
+      # SAN-сертификат на все домены роутера, и провал валидации любого из них
+      # оставляет без сертификата все остальные. Пока у smm.omemo.tech DNS
+      # смотрит на мёртвый 45.130.212.62, его ACME-заказ обязан быть отдельным —
+      # иначе он утаскивает за собой рабочий smm.nplanner.ru.
+      #
+      # Нужен один домен — поставьте SMM_HOST_ALT равным SMM_HOST.
+      - traefik.http.routers.smm.rule=Host(`${SMM_HOST:-smm.nplanner.ru}`)
+      - traefik.http.routers.smm.tls=true
+      - traefik.http.routers.smm.entrypoints=web,websecure
+      - traefik.http.routers.smm.tls.certresolver=mytlschallenge
+      - traefik.http.routers.smm.service=smm
+      - traefik.http.routers.smm-alt.rule=Host(`${SMM_HOST_ALT:-smm.omemo.tech}`)
+      - traefik.http.routers.smm-alt.tls=true
+      - traefik.http.routers.smm-alt.entrypoints=web,websecure
+      - traefik.http.routers.smm-alt.tls.certresolver=mytlschallenge
+      - traefik.http.routers.smm-alt.service=smm
+      # Третий алиас (staging/roboflow). Пустой SMM_HOST_ALT2 — роутер не создаётся.
+      - traefik.http.routers.smm-rf.rule=Host(`${SMM_HOST_ALT2:-smm.roboflow.space}`)
+      - traefik.http.routers.smm-rf.tls=true
+      - traefik.http.routers.smm-rf.entrypoints=web,websecure
+      - traefik.http.routers.smm-rf.tls.certresolver=mytlschallenge
+      - traefik.http.routers.smm-rf.service=smm
+      - traefik.http.services.smm.loadbalancer.server.port=5000
+      - traefik.docker.network=proxy
+    networks:
+      - proxy
+
+  video-app:
+    build:
+      context: ./smm/video-app
+      dockerfile: Dockerfile
+    container_name: video_app
+    restart: always
+    depends_on:
+      - postgres
+      - directus
+    environment:
+      - NODE_ENV=production
+      - VIDEO_APP_PORT=3001
+      - DIRECTUS_URL=http://directus:8055
+      - DIRECTUS_ADMIN_EMAIL=${DIRECTUS_ADMIN_EMAIL}
+      - DIRECTUS_ADMIN_PASSWORD=${DIRECTUS_ADMIN_PASSWORD}
+      # Единственное имя служебного токена. DIRECTUS_ADMIN_TOKEN и
+      # DIRECTUS_PROD_TOKEN удалены: то же назначение под разными именами.
+      - DIRECTUS_STATIC_TOKEN=${DIRECTUS_STATIC_TOKEN}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - HUGGINGFACE_API_KEY=${HUGGINGFACE_API_KEY}
+      - FAL_AI_API_KEY=${FAL_AI_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_PROXY_URL=${GEMINI_PROXY_URL}
+      - DATABASE_URL=postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/postgres
+    volumes:
+      - ./video_app_data:/app/data
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.video.rule=Host(`${VIDEO_HOST:-video.omemo.tech}`)
+      - traefik.http.routers.video.tls=true
+      - traefik.http.routers.video.entrypoints=web,websecure
+      - traefik.http.routers.video.tls.certresolver=mytlschallenge
+      - traefik.http.services.video.loadbalancer.server.port=3001
+      - traefik.docker.network=proxy
+    networks:
+      - proxy
+
+
+networks:
+  proxy:
+    external: true

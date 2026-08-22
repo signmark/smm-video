@@ -1063,8 +1063,13 @@ router.post('/videos/:id/resume', async (req, res) => {
     res.json({ success: true });
 
     // Determine resume point asynchronously
-    runResumePipeline(project.id, mode).catch((err) => {
-      console.error('[resume] Pipeline error:', err);
+    runResumePipeline(project.id, mode).catch(async (err) => {
+      console.error('[resume] Pipeline error (outer catch):', err);
+      await updateProject(project.id, {
+        status: 'error',
+        error: err?.message ?? String(err),
+        progressMessage: `Ошибка resume: ${err?.message ?? String(err)}`,
+      }).catch((e) => console.error('[resume] Failed to record pipeline error:', e));
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -1257,8 +1262,14 @@ router.post('/videos/:id/generate', async (req, res) => {
 
     res.json({ success: true, message: 'Generation started' });
 
-    runGenerationPipeline(project.id).catch((err) => {
-      console.error('[video-gen] Pipeline error:', err);
+    runGenerationPipeline(project.id).catch(async (err) => {
+      console.error('[video-gen] Pipeline error (outer catch):', err);
+      // If the inner catch in runGenerationPipeline itself failed, set error here.
+      await updateProject(project.id, {
+        status: 'error',
+        error: err?.message ?? String(err),
+        progressMessage: `Ошибка: ${err?.message ?? String(err)}`,
+      }).catch((e) => console.error('[video-gen] Failed to record pipeline error:', e));
     });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

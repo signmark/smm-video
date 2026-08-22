@@ -602,4 +602,28 @@ export function hasVideoFile(project: { id: string; videoPath?: string }): boole
   return existsSync(project.videoPath ?? DATA_PATHS.videoFile(project.id));
 }
 
+/**
+ * Statuses that indicate a pipeline is actively running.
+ * Projects in these states should be reset to 'error' on server startup
+ * because the pipeline process is dead (server was restarted).
+ *
+ * `idle` and `script_ready` are NOT included — no pipeline is running,
+ * the project is waiting for user input.
+ */
+export const PIPELINE_ACTIVE_STATUSES: VideoStatus[] = [
+  'generating_script',
+  'searching_stock',
+  'generating_images',
+  'animating',
+  'assembling',
+];
+
+/**
+ * Pure function: given a list of projects, return those stuck in an active
+ * pipeline status (i.e. the server was restarted while they were running).
+ */
+export function findStuckProjects(projects: Pick<VideoProject, 'id' | 'status'>[]): Pick<VideoProject, 'id' | 'status'>[] {
+  return projects.filter(p => PIPELINE_ACTIVE_STATUSES.includes(p.status));
+}
+
 ensureDataDir().catch(() => {});

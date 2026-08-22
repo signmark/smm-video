@@ -5,17 +5,30 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import { loadKeysFromDirectus } from './load-keys.js';
 
+// ── Global crash handlers ─────────────────────────────────────────────────────
+// Registered BEFORE any async work (loadKeysFromDirectus, DB queries) so that
+// unhandled errors during startup are logged instead of dying silently.
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL] Uncaught exception:', err);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[FATAL] Unhandled rejection:', reason);
+  process.exit(1);
+});
+
 // Load API keys from Directus before anything else
 await loadKeysFromDirectus();
 
 import apiRouter from './routes.js';
-import { listProjects, updateProject } from './db.js';
+import { listProjects, updateProject, findStuckProjects } from './db.js';
 import { scheduleCleanup } from './cleanup.js';
 
 // Reset projects stuck in active states (server was restarted mid-generation)
 try {
   const all = await listProjects();
-  const stuck = all.filter(p => ['generating_images', 'animating', 'assembling'].includes(p.status));
+  const stuck = findStuckProjects(all);
   for (const p of stuck) {
     await updateProject(p.id, {
       status: 'error',
@@ -28,7 +41,7 @@ try {
   console.warn('[startup] Could not reset stuck projects:', e.message);
 }
 
-// Schedule daily cleanup of video files older than 3 days
+// Schedule daily cleanup of video files older than 30 days (VIDEO_RETENTION_DAYS)
 try {
   scheduleCleanup();
 } catch (e: any) {

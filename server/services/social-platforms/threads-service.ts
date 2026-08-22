@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { trackExternalCall } from '../../utils/external-call';
 import FormData from 'form-data';
 import { randomUUID } from 'crypto';
 import { log } from '../../utils/logger';
@@ -26,7 +27,7 @@ async function uploadVideoToCloudinary(buffer: Buffer, contentType: string, opId
     form.append('resource_type', 'video');
     form.append('folder', 'threads-videos');
 
-    const res = await axios.post(
+    const res = await trackExternalCall('threads', 'token.oauth', () => axios.post(
       `https://api.cloudinary.com/v1_1/${cloudName}/video/upload`,
       form,
       {
@@ -35,7 +36,7 @@ async function uploadVideoToCloudinary(buffer: Buffer, contentType: string, opId
         maxContentLength: 300 * 1024 * 1024,
         maxBodyLength: 300 * 1024 * 1024
       }
-    );
+    ));
 
     if (res.data?.secure_url) {
       log(`[${opId}] Видео загружено в Cloudinary: ${res.data.secure_url}`, 'threads-service');
@@ -58,11 +59,11 @@ async function uploadImageToCloudinary(imageUrl: string, opId: string): Promise<
     const uploadPreset = process.env.CLOUDINARY_UPLOAD_PRESET || 'My Unsigned Preset';
 
     log(`[${opId}] Скачиваем изображение для Cloudinary: ${imageUrl.substring(0, 80)}`, 'threads-service');
-    const resp = await axios.get(imageUrl, {
+    const resp = await trackExternalCall('threads', 'users.me', () => axios.get(imageUrl, {
       responseType: 'arraybuffer',
       timeout: 60000,
       maxContentLength: 50 * 1024 * 1024
-    });
+    }));
     const buffer = Buffer.from(resp.data);
     const contentType = (resp.headers['content-type'] as string) || 'image/jpeg';
     const base64 = buffer.toString('base64');
@@ -74,7 +75,7 @@ async function uploadImageToCloudinary(imageUrl: string, opId: string): Promise<
     form.append('resource_type', 'image');
     form.append('folder', 'threads-images');
 
-    const res = await axios.post(
+    const res = await trackExternalCall('threads', 'media.create', () => axios.post(
       `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
       form,
       {
@@ -83,7 +84,7 @@ async function uploadImageToCloudinary(imageUrl: string, opId: string): Promise<
         maxContentLength: 50 * 1024 * 1024,
         maxBodyLength: 50 * 1024 * 1024
       }
-    );
+    ));
 
     if (res.data?.secure_url) {
       log(`[${opId}] Изображение загружено в Cloudinary: ${res.data.secure_url}`, 'threads-service');
@@ -103,11 +104,11 @@ async function uploadImageToCloudinary(imageUrl: string, opId: string): Promise<
  */
 async function proxyVideoForThreads(videoUrl: string, opId: string): Promise<string> {
   log(`[${opId}] Скачиваем видео для проксирования: ${videoUrl.substring(0, 80)}`, 'threads-service');
-  const resp = await axios.get(videoUrl, {
+  const resp = await trackExternalCall('threads', 'token.refresh', () => axios.get(videoUrl, {
     responseType: 'arraybuffer',
     timeout: 120000,
     maxContentLength: 300 * 1024 * 1024
-  });
+  }));
 
   const buffer = Buffer.from(resp.data);
   const contentType = (resp.headers['content-type'] as string) || 'video/mp4';
@@ -157,9 +158,9 @@ class ThreadsService {
   async validateToken(settings: Partial<ThreadsSettings>): Promise<{ isValid: boolean; error?: string; username?: string; pendingReview?: boolean }> {
     if (!settings.accessToken) return { isValid: false, error: 'Токен отсутствует' };
     try {
-      const res = await axios.get(`${THREADS_API}/me`, {
+      const res = await trackExternalCall('threads', 'token.long_lived', () => axios.get(`${THREADS_API}/me`, {
         params: { fields: 'id,username', access_token: settings.accessToken }
-      });
+      }));
       return { isValid: true, username: res.data.username };
     } catch (err: any) {
       const msg = describePlatformError(err, { platform: 'Threads', step: 'проверка доступа' });
@@ -177,9 +178,9 @@ class ThreadsService {
   }
 
   async getUserId(accessToken: string): Promise<{ id: string; username: string }> {
-    const res = await axios.get(`${THREADS_API}/me`, {
+    const res = await trackExternalCall('threads', 'container.status', () => axios.get(`${THREADS_API}/me`, {
       params: { fields: 'id,username', access_token: accessToken }
-    });
+    }));
     return { id: res.data.id, username: res.data.username };
   }
 
@@ -189,13 +190,13 @@ class ThreadsService {
    */
   async refreshLongLivedToken(accessToken: string): Promise<string> {
     try {
-      const res = await axios.get('https://graph.threads.net/refresh_access_token', {
+      const res = await trackExternalCall('threads', 'media.info', () => axios.get('https://graph.threads.net/refresh_access_token', {
         params: {
           grant_type: 'th_refresh_token',
           access_token: accessToken
         },
         timeout: 10000
-      });
+      }));
       const newToken = res.data.access_token;
       if (newToken) {
         log(`refreshLongLivedToken: токен успешно обновлён [REDACTED]`, 'threads-service');
@@ -212,13 +213,17 @@ class ThreadsService {
   async getLongLivedToken(shortToken: string, appId: string, appSecret: string): Promise<string> {
     try {
       log(`getLongLivedToken: appId=${appId}, hasToken=${!!shortToken}`, 'threads-service');
-      const res = await axios.get(THREADS_LONG_LIVED, {
-        params: {
-          grant_type: 'th_exchange_token',
-          client_secret: appSecret,
-          access_token: shortToken
-        }
-      });
+      const res = await trackExternalCall(
+        'threads',
+        'token.long_lived.exchange',
+        () => axios.get(THREADS_LONG_LIVED, {
+          params: {
+            grant_type: 'th_exchange_token',
+            client_secret: appSecret,
+            access_token: shortToken
+          }
+        })
+      );
       log(`getLongLivedToken success: hasToken=${!!res.data.access_token}`, 'threads-service');
       return res.data.access_token;
     } catch (err: any) {
@@ -238,9 +243,9 @@ class ThreadsService {
         redirect_uri: redirectUri,
         code
       });
-      const res = await axios.post(THREADS_AUTH, body.toString(), {
+      const res = await trackExternalCall('threads', 'media.publish', () => axios.post(THREADS_AUTH, body.toString(), {
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
-      });
+      }));
       log(`exchangeCodeForToken success: hasAccessToken=${!!res.data.access_token}, user_id=${res.data.user_id || 'нет'}`, 'threads-service');
       return { access_token: res.data.access_token, user_id: res.data.user_id?.toString() };
     } catch (err: any) {
@@ -334,11 +339,11 @@ class ThreadsService {
       }
 
       log(`[${opId}] Step 1: Creating ${mediaType} container`, 'threads-service');
-      const containerRes = await axios.post(
+      const containerRes = await trackExternalCall('threads', 'text.create', () => axios.post(
         `${THREADS_API}/${threadsUserId}/threads`,
         null,
         { params: containerParams }
-      );
+      ));
 
       const creationId = containerRes.data.id;
       if (!creationId) throw new Error('Не получен ID контейнера от Threads API');
@@ -353,9 +358,13 @@ class ThreadsService {
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
           await new Promise(resolve => setTimeout(resolve, pollInterval));
           try {
-            const statusRes = await axios.get(`${THREADS_API}/${creationId}`, {
-              params: { fields: 'status,error_message', access_token: accessToken }
-            });
+            const statusRes = await trackExternalCall(
+              'threads',
+              'container.status',
+              () => axios.get(`${THREADS_API}/${creationId}`, {
+                params: { fields: 'status,error_message', access_token: accessToken }
+              })
+            );
             const containerStatus = statusRes.data?.status;
             const containerError = statusRes.data?.error_message;
             log(`[${opId}] Container status attempt ${attempt}/${maxAttempts}: ${containerStatus}`, 'threads-service');
@@ -384,20 +393,24 @@ class ThreadsService {
       }
 
       log(`[${opId}] Step 3: Publishing container ${creationId}`, 'threads-service');
-      const publishRes = await axios.post(
+      const publishRes = await trackExternalCall('threads', 'text.publish', () => axios.post(
         `${THREADS_API}/${threadsUserId}/threads_publish`,
         null,
         { params: { creation_id: creationId, access_token: accessToken } }
-      );
+      ));
 
       const postId = publishRes.data.id;
 
       // Получаем permalink с коротким кодом (числовой ID в URL не работает)
       let postUrl = `https://www.threads.net/@${settings.username || threadsUserId}/post/${postId}`;
       try {
-        const mediaInfoRes = await axios.get(`${THREADS_API}/${postId}`, {
-          params: { fields: 'permalink', access_token: accessToken }
-        });
+        const mediaInfoRes = await trackExternalCall(
+          'threads',
+          'post.permalink',
+          () => axios.get(`${THREADS_API}/${postId}`, {
+            params: { fields: 'permalink', access_token: accessToken }
+          })
+        );
         if (mediaInfoRes.data?.permalink) {
           postUrl = mediaInfoRes.data.permalink;
           log(`[${opId}] Got permalink from API: ${postUrl}`, 'threads-service');
@@ -423,18 +436,26 @@ class ThreadsService {
         log(`[${opId}] Retrying as TEXT (no media)`, 'threads-service');
         try {
           const cleanText = this.sanitizeThreadsText(content.text);
-          const textContainerRes = await axios.post(
-            `${THREADS_API}/${settings.threadsUserId}/threads`,
-            null,
-            { params: { media_type: 'TEXT', text: cleanText, access_token: accessToken } }
+          const textContainerRes = await trackExternalCall(
+            'threads',
+            'text.container.create',
+            () => axios.post(
+              `${THREADS_API}/${settings.threadsUserId}/threads`,
+              null,
+              { params: { media_type: 'TEXT', text: cleanText, access_token: accessToken } }
+            )
           );
           const textCreationId = textContainerRes.data.id;
           if (!textCreationId) throw new Error('Нет ID контейнера');
           await new Promise(r => setTimeout(r, process.env.VITEST ? 0 : 3000));
-          const textPublishRes = await axios.post(
-            `${THREADS_API}/${settings.threadsUserId}/threads_publish`,
-            null,
-            { params: { creation_id: textCreationId, access_token: accessToken } }
+          const textPublishRes = await trackExternalCall(
+            'threads',
+            'text.publish',
+            () => axios.post(
+              `${THREADS_API}/${settings.threadsUserId}/threads_publish`,
+              null,
+              { params: { creation_id: textCreationId, access_token: accessToken } }
+            )
           );
           const textPostId = textPublishRes.data.id;
           const postUrl = `https://www.threads.net/@${settings.username || settings.threadsUserId}/post/${textPostId}`;
@@ -454,9 +475,9 @@ class ThreadsService {
    */
   async deletePost(postId: string, accessToken: string): Promise<boolean> {
     try {
-      const res = await axios.delete(`${THREADS_API}/${postId}`, {
+      const res = await trackExternalCall('threads', 'media.delete', () => axios.delete(`${THREADS_API}/${postId}`, {
         params: { access_token: accessToken }
-      });
+      }));
       return res.data?.success === true;
     } catch {
       return false;

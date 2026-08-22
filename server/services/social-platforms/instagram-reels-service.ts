@@ -5,6 +5,7 @@
  */
 
 import axios from 'axios';
+import { trackExternalCall, isInstagramReelsApiError } from '../../utils/external-call';
 import { log } from '../../utils/logger';
 import { directusApi } from '../../directus';
 import { TokenValidationResult } from './base-service';
@@ -47,21 +48,21 @@ export class InstagramReelsService {
 
     try {
       // 1. Проверяем токен и права через /me
-      const response = await axios.get(`https://graph.facebook.com/v17.0/me`, {
+      const response = await trackExternalCall('instagram', 'users.me', () => axios.get(`https://graph.facebook.com/v17.0/me`, {
         params: { 
           fields: 'id,name',
           access_token: token 
         }
-      });
+      }), { isApiError: isInstagramReelsApiError });
 
       // 2. Если есть businessId, проверяем что он доступен
       if (businessId) {
-        const igRes = await axios.get(`https://graph.facebook.com/v17.0/${businessId}`, {
+        const igRes = await trackExternalCall('instagram', 'business.info', () => axios.get(`https://graph.facebook.com/v17.0/${businessId}`, {
           params: { 
             fields: 'id,username,name',
             access_token: token 
           }
-        });
+        }), { isApiError: isInstagramReelsApiError });
         if (!igRes.data.id) {
           return { isValid: false, error: `Аккаунт ${businessId} недоступен` };
         }
@@ -273,7 +274,7 @@ export class InstagramReelsService {
       
       const url = `https://graph.facebook.com/v17.0/${settings.businessAccountId}/media`;
       
-      const response = await axios.post(url, {
+      const response = await trackExternalCall('instagram', 'media.create', () => axios.post(url, {
         media_type: 'REELS',
         video_url: videoUrl,
         caption: caption.substring(0, 2200),
@@ -281,7 +282,7 @@ export class InstagramReelsService {
         access_token: settings.accessToken
       }, {
         timeout: 120000
-      });
+      }), { isApiError: isInstagramReelsApiError });
       
       log(`Контейнер создан: ${JSON.stringify(response.data)}`, LOG_PREFIX);
       
@@ -321,12 +322,12 @@ export class InstagramReelsService {
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       try {
         const url = `https://graph.facebook.com/v17.0/${containerId}`;
-        const response = await axios.get(url, {
+        const response = await trackExternalCall('instagram', 'container.status', () => axios.get(url, {
           params: {
             fields: 'status_code,status',
             access_token: settings.accessToken
           }
-        });
+        }), { isApiError: isInstagramReelsApiError });
         
         const statusCode = response.data.status_code;
         const status = response.data.status;
@@ -385,12 +386,12 @@ export class InstagramReelsService {
       
       const url = `https://graph.facebook.com/v17.0/${settings.businessAccountId}/media_publish`;
       
-      const response = await axios.post(url, {
+      const response = await trackExternalCall('instagram', 'media.publish', () => axios.post(url, {
         creation_id: containerId,
         access_token: settings.accessToken
       }, {
         timeout: 60000
-      });
+      }), { isApiError: isInstagramReelsApiError });
       
       log(`Ответ публикации: ${JSON.stringify(response.data)}`, LOG_PREFIX);
       
@@ -418,12 +419,12 @@ export class InstagramReelsService {
   ): Promise<string> {
     try {
       const url = `https://graph.facebook.com/v17.0/${mediaId}`;
-      const response = await axios.get(url, {
+      const response = await trackExternalCall('instagram', 'permalink', () => axios.get(url, {
         params: {
           fields: 'permalink',
           access_token: settings.accessToken
         }
-      });
+      }), { isApiError: isInstagramReelsApiError });
       
       return response.data.permalink || `https://www.instagram.com/reel/${mediaId}`;
     } catch (error) {

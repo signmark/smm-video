@@ -623,22 +623,13 @@ log.external = (args: {
 };
 
 /**
- * AI-65 срез C: стабильная машинная причина сбоя внешнего вызова.
- * Возвращает короткий ключ из фиксированного набора — не сырой текст.
+ * AI-65 срез E (рефакторинг): реэкспорт из utils/classify-external-error.
+ *
+ * Источник истины — utils/classify-external-error.ts. Этот re-export
+ * сохранён, чтобы не ломать существующих потребителей, которые импортируют
+ * classifyExternalError из ./logger (telegram-http, slice-c тесты).
  */
-export function classifyExternalError(err: any): 'auth' | 'rate_limited' | 'server_5xx' | 'timeout' | 'network' | 'error' {
-  if (!err) return 'error';
-  const code = String(err.code || '');
-  if (code === 'ECONNABORTED' || /timeout/i.test(String(err.message || ''))) return 'timeout';
-  if (code === 'ECONNRESET' || code === 'ENOTFOUND' || code === 'ECONNREFUSED' || code === 'EAI_AGAIN') return 'network';
-  const status = err.response?.status;
-  if (typeof status === 'number') {
-    if (status === 401 || status === 403) return 'auth';
-    if (status === 429) return 'rate_limited';
-    if (status >= 500 && status < 600) return 'server_5xx';
-  }
-  return 'error';
-}
+export { classifyExternalError } from './classify-external-error';
 
 // Экспортируем все функции как единый объект для удобства использования
 export default {

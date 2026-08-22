@@ -8,6 +8,7 @@
  */
 
 import axios from 'axios';
+import { trackExternalCall, isTiktokApiError } from '../../utils/external-call';
 import { BaseSocialService, TokenValidationResult } from './base-service';
 import { CampaignContent, SocialMediaSettings } from '@shared/schema';
 
@@ -105,10 +106,15 @@ export class TikTokService extends BaseSocialService {
 
     try {
       // Проверяем через user info endpoint
-      const response = await axios.get(`${TikTokService.BASE_URL}/user/info/`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-        params: { fields: 'open_id,display_name' }
-      });
+      const response = await trackExternalCall(
+        'tiktok',
+        'user.info',
+        () => axios.get(`${TikTokService.BASE_URL}/user/info/`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+          params: { fields: 'open_id,display_name' }
+        }),
+        { isApiError: isTiktokApiError }
+      );
 
       if (response.data.error?.code !== 'ok') {
         return { isValid: false, error: response.data.error.message };
@@ -131,31 +137,36 @@ export class TikTokService extends BaseSocialService {
     }
 
     try {
-      const response = await axios.post(
-        `${TikTokService.BASE_URL}/post/publish/video/init/`,
-        {
-          post_info: {
-            title: sanitizeTikTokTitle(options.caption),
-            description: options.caption.substring(0, 2200),  // Full description
-            privacy_level: options.privacyLevel || 'SELF_ONLY',
-            disable_comment: options.disableComment || false,
-            disable_duet: options.disableDuet || false,
-            disable_stitch: options.disableStitch || false,
-            video_cover_timestamp_ms: options.videoCoverTimestampMs || 0,
-            brand_content_toggle: options.brandContentToggle || false,
-            brand_organic_toggle: options.brandOrganicToggle || false
+      const response = await trackExternalCall(
+        'tiktok',
+        'post.publish.video.init',
+        () => axios.post(
+          `${TikTokService.BASE_URL}/post/publish/video/init/`,
+          {
+            post_info: {
+              title: sanitizeTikTokTitle(options.caption),
+              description: options.caption.substring(0, 2200),  // Full description
+              privacy_level: options.privacyLevel || 'SELF_ONLY',
+              disable_comment: options.disableComment || false,
+              disable_duet: options.disableDuet || false,
+              disable_stitch: options.disableStitch || false,
+              video_cover_timestamp_ms: options.videoCoverTimestampMs || 0,
+              brand_content_toggle: options.brandContentToggle || false,
+              brand_organic_toggle: options.brandOrganicToggle || false
+            },
+            source_info: {
+              source: 'PULL_FROM_URL',
+              video_url: options.videoUrl
+            }
           },
-          source_info: {
-            source: 'PULL_FROM_URL',
-            video_url: options.videoUrl
+          {
+            headers: {
+              'Authorization': `Bearer ${options.accessToken}`,
+              'Content-Type': 'application/json'
+            }
           }
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${options.accessToken}`,
-            'Content-Type': 'application/json'
-          }
-        }
+        ),
+        { isApiError: isTiktokApiError }
       );
 
       const data = response.data;
@@ -199,30 +210,35 @@ export class TikTokService extends BaseSocialService {
     const chunkSize = Math.min(options.videoSize, 10 * 1024 * 1024); // 10 MB
 
     try {
-      const response = await axios.post(
-        `${TikTokService.BASE_URL}/post/publish/video/init/`,
-        {
-          post_info: {
-            title: sanitizeTikTokTitle(options.caption),
-            description: options.caption.substring(0, 2200),  // Full description
-            privacy_level: options.privacyLevel || 'SELF_ONLY',
-            disable_comment: options.disableComment || false,
-            disable_duet: options.disableDuet || false,
-            disable_stitch: options.disableStitch || false
+      const response = await trackExternalCall(
+        'tiktok',
+        'post.publish.video.init.fileupload',
+        () => axios.post(
+          `${TikTokService.BASE_URL}/post/publish/video/init/`,
+          {
+            post_info: {
+              title: sanitizeTikTokTitle(options.caption),
+              description: options.caption.substring(0, 2200),  // Full description
+              privacy_level: options.privacyLevel || 'SELF_ONLY',
+              disable_comment: options.disableComment || false,
+              disable_duet: options.disableDuet || false,
+              disable_stitch: options.disableStitch || false
+            },
+            source_info: {
+              source: 'FILE_UPLOAD',
+              video_size: options.videoSize!,
+              chunk_size: chunkSize,
+              total_chunk_count: Math.ceil(options.videoSize! / chunkSize)
+            }
           },
-          source_info: {
-            source: 'FILE_UPLOAD',
-            video_size: options.videoSize,
-            chunk_size: chunkSize,
-            total_chunk_count: Math.ceil(options.videoSize / chunkSize)
+          {
+            headers: {
+              'Authorization': `Bearer ${options.accessToken}`,
+              'Content-Type': 'application/json'
+            }
           }
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${options.accessToken}`,
-            'Content-Type': 'application/json'
-          }
-        }
+        ),
+        { isApiError: isTiktokApiError }
       );
 
       const data = response.data;
@@ -253,15 +269,20 @@ export class TikTokService extends BaseSocialService {
    */
   async checkPublishStatus(accessToken: string, publishId: string): Promise<TikTokPublishResult> {
     try {
-      const response = await axios.post(
-        `${TikTokService.BASE_URL}/post/publish/status/fetch/`,
-        { publish_id: publishId },
-        {
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-            'Content-Type': 'application/json'
+      const response = await trackExternalCall(
+        'tiktok',
+        'post.publish.status.fetch',
+        () => axios.post(
+          `${TikTokService.BASE_URL}/post/publish/status/fetch/`,
+          { publish_id: publishId },
+          {
+            headers: {
+              'Authorization': `Bearer ${accessToken}`,
+              'Content-Type': 'application/json'
+            }
           }
-        }
+        ),
+        { isApiError: isTiktokApiError }
       );
 
       const data = response.data;
@@ -315,11 +336,16 @@ export class TikTokService extends BaseSocialService {
     // Скачиваем видео в память
     let videoBuffer: Buffer;
     try {
-      const dlResp = await axios.get(videoUrl, {
-        responseType: 'arraybuffer',
-        timeout: 120000,
-        maxContentLength: 500 * 1024 * 1024 // 500 MB max
-      });
+      const dlResp = await trackExternalCall(
+        'tiktok',
+        'video.download',
+        () => axios.get(videoUrl, {
+          responseType: 'arraybuffer',
+          timeout: 120000,
+          maxContentLength: 500 * 1024 * 1024 // 500 MB max
+        }),
+        { isApiError: isTiktokApiError }
+      );
       videoBuffer = Buffer.from(dlResp.data);
     } catch (err: any) {
       return { success: false, error: `Ошибка скачивания видео: ${err.message}` };
@@ -335,30 +361,35 @@ export class TikTokService extends BaseSocialService {
     // Инициализируем FILE_UPLOAD
     let initData: any;
     try {
-      const initResp = await axios.post(
-        `${TikTokService.BASE_URL}/post/publish/video/init/`,
-        {
-          post_info: {
-            title: sanitizeTikTokTitle(options.caption),
-            privacy_level: options.privacyLevel || 'SELF_ONLY',
-            disable_comment: options.disableComment || false,
-            disable_duet: options.disableDuet || false,
-            disable_stitch: options.disableStitch || false,
-            video_cover_timestamp_ms: options.videoCoverTimestampMs || 1000
+      const initResp = await trackExternalCall(
+        'tiktok',
+        'post.publish.video.init.fileupload',
+        () => axios.post(
+          `${TikTokService.BASE_URL}/post/publish/video/init/`,
+          {
+            post_info: {
+              title: sanitizeTikTokTitle(options.caption),
+              privacy_level: options.privacyLevel || 'SELF_ONLY',
+              disable_comment: options.disableComment || false,
+              disable_duet: options.disableDuet || false,
+              disable_stitch: options.disableStitch || false,
+              video_cover_timestamp_ms: options.videoCoverTimestampMs || 1000
+            },
+            source_info: {
+              source: 'FILE_UPLOAD',
+              video_size: videoSize,
+              chunk_size: CHUNK_SIZE,
+              total_chunk_count: totalChunks
+            }
           },
-          source_info: {
-            source: 'FILE_UPLOAD',
-            video_size: videoSize,
-            chunk_size: CHUNK_SIZE,
-            total_chunk_count: totalChunks
+          {
+            headers: {
+              Authorization: `Bearer ${options.accessToken}`,
+              'Content-Type': 'application/json; charset=UTF-8'
+            }
           }
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${options.accessToken}`,
-            'Content-Type': 'application/json; charset=UTF-8'
-          }
-        }
+        ),
+        { isApiError: isTiktokApiError }
       );
       initData = initResp.data;
     } catch (err: any) {
@@ -393,15 +424,20 @@ export class TikTokService extends BaseSocialService {
       const chunk = videoBuffer.slice(start, end);
 
       try {
-        await axios.put(uploadUrl, chunk, {
-          headers: {
-            'Content-Type': 'video/mp4',
-            'Content-Range': `bytes ${start}-${end - 1}/${videoSize}`,
-            'Content-Length': chunk.length
-          },
-          maxBodyLength: 70 * 1024 * 1024,
-          timeout: 120000
-        });
+        await trackExternalCall(
+          'tiktok',
+          'upload.chunk',
+          () => axios.put(uploadUrl, chunk, {
+            headers: {
+              'Content-Type': 'video/mp4',
+              'Content-Range': `bytes ${start}-${end - 1}/${videoSize}`,
+              'Content-Length': chunk.length
+            },
+            maxBodyLength: 70 * 1024 * 1024,
+            timeout: 120000
+          }),
+          { isApiError: isTiktokApiError }
+        );
         console.error(`[tiktok-service] Чанк ${i + 1}/${totalChunks} загружен (${(chunk.length / 1024 / 1024).toFixed(1)} MB)`);
       } catch (err: any) {
         const msg = err.response?.data?.message || err.message;
@@ -458,20 +494,25 @@ export class TikTokService extends BaseSocialService {
     }
 
     try {
-      const response = await axios.post(
-        `${TikTokService.BASE_URL}/post/publish/inbox/video/init/`,
-        {
-          source_info: {
-            source: 'PULL_FROM_URL',
-            video_url: options.videoUrl
+      const response = await trackExternalCall(
+        'tiktok',
+        'post.publish.inbox.video.init',
+        () => axios.post(
+          `${TikTokService.BASE_URL}/post/publish/inbox/video/init/`,
+          {
+            source_info: {
+              source: 'PULL_FROM_URL',
+              video_url: options.videoUrl
+            }
+          },
+          {
+            headers: {
+              'Authorization': `Bearer ${options.accessToken}`,
+              'Content-Type': 'application/json'
+            }
           }
-        },
-        {
-          headers: {
-            'Authorization': `Bearer ${options.accessToken}`,
-            'Content-Type': 'application/json'
-          }
-        }
+        ),
+        { isApiError: isTiktokApiError }
       );
 
       const data = response.data;

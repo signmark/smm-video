@@ -6,6 +6,7 @@
  */
 
 import axios from 'axios';
+import { trackExternalCall } from '../../utils/external-call';
 import { log } from '../../utils/logger';
 import { directusApi } from '../../directus';
 import { YouTubeTokenRefresh } from '../youtube-token-refresh';
@@ -61,9 +62,9 @@ export class YouTubeVideoService {
       // Обновляем токен если нужно
       if (ytSettings.refreshToken) {
         try {
-          const tokenInfo = await axios.get('https://oauth2.googleapis.com/tokeninfo', {
+          const tokenInfo = await trackExternalCall('youtube', 'token.info', () => axios.get('https://oauth2.googleapis.com/tokeninfo', {
             params: { access_token: accessToken }
-          });
+          }));
           const expiresIn = parseInt(tokenInfo.data.expires_in || '3600');
           if (expiresIn < 300) {
             log(`YouTube токен истекает через ${expiresIn}с, обновляю...`, LOG_PREFIX);
@@ -166,11 +167,11 @@ export class YouTubeVideoService {
   }
 
   private async downloadFile(url: string): Promise<Buffer> {
-    const response = await axios.get(url, {
+    const response = await trackExternalCall('youtube', 'videos.insert', () => axios.get(url, {
       responseType: 'arraybuffer',
       timeout: 180000,
       maxContentLength: 1024 * 1024 * 1024,
-    });
+    }));
     return Buffer.from(response.data);
   }
 
@@ -182,7 +183,7 @@ export class YouTubeVideoService {
     tags: string[]
   ): Promise<string> {
     // Шаг 1: инициируем resumable upload
-    const initResponse = await axios.post(
+    const initResponse = await trackExternalCall('youtube', 'upload.init', () => axios.post(
       'https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status',
       {
         snippet: {
@@ -204,7 +205,7 @@ export class YouTubeVideoService {
           'X-Upload-Content-Length': String(videoBuffer.length),
         },
       }
-    );
+    ));
 
     const uploadUri = initResponse.headers['location'];
     if (!uploadUri) {
@@ -217,7 +218,7 @@ export class YouTubeVideoService {
     log(`Resumable upload URI получен, загружаю ${(videoBuffer.length / 1024 / 1024).toFixed(2)} MB...`, LOG_PREFIX);
 
     // Шаг 2: загружаем видео
-    const uploadResponse = await axios.put(uploadUri, videoBuffer, {
+    const uploadResponse = await trackExternalCall('youtube', 'upload.resumable', () => axios.put(uploadUri, videoBuffer, {
       headers: {
         'Content-Type': 'video/mp4',
         'Content-Length': String(videoBuffer.length),
@@ -225,7 +226,7 @@ export class YouTubeVideoService {
       timeout: 600000,
       maxContentLength: Infinity,
       maxBodyLength: Infinity,
-    });
+    }));
 
     const videoId = uploadResponse.data?.id;
     if (!videoId) {
@@ -258,7 +259,7 @@ export class YouTubeVideoService {
 
       log(`Загружаю обложку (${(thumbBuffer.length / 1024).toFixed(0)} KB, ${contentType}) для videoId=${videoId}`, LOG_PREFIX);
 
-      await axios.post(
+      await trackExternalCall('youtube', 'thumbnail.set', () => axios.post(
         `https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId=${videoId}&uploadType=media`,
         thumbBuffer,
         {
@@ -270,7 +271,7 @@ export class YouTubeVideoService {
           timeout: 60000,
           maxBodyLength: Infinity,
         }
-      );
+      ));
 
       log(`Обложка успешно загружена для видео ${videoId}`, LOG_PREFIX);
     } catch (err: any) {

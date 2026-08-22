@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { trackExternalCall } from '../../utils/external-call';
 import { log, logEvent } from '../../utils/logger';
 
 export interface InstagramStoryResult {
@@ -32,10 +33,10 @@ async function pollContainerStatus(
   for (let i = 0; i < maxAttempts; i++) {
     await new Promise(r => setTimeout(r, 5000));
     try {
-      const resp = await axios.get(`https://graph.facebook.com/v19.0/${containerId}`, {
+      const resp = await trackExternalCall('instagram', 'container.status', () => axios.get(`https://graph.facebook.com/v19.0/${containerId}`, {
         params: { fields: 'status_code', access_token: accessToken },
         timeout: 15000
-      });
+      }));
       const statusCode: string = resp.data?.status_code || '';
       log(`[IGStories] Container ${containerId} status: ${statusCode} (attempt ${i + 1}/${maxAttempts})`, 'info');
       if (statusCode === 'FINISHED') return { ready: true, statusCode };
@@ -69,10 +70,10 @@ export async function publishInstagramStory(
   // 1. Получаем контент
   let content: any;
   try {
-    const contentResp = await axios.get(`${directusUrl}/items/campaign_content/${contentId}`, {
+    const contentResp = await trackExternalCall('instagram', 'account.info', () => axios.get(`${directusUrl}/items/campaign_content/${contentId}`, {
       headers: { Authorization: `Bearer ${adminToken}` },
       timeout: 15000
-    });
+    }));
     content = contentResp.data?.data;
   } catch (e: any) {
     return { success: false, error: `Ошибка получения контента: ${e.message}` };
@@ -210,11 +211,11 @@ export async function publishInstagramStory(
       containerParams.image_url = imageUrl!;
     }
 
-    const containerResp = await axios.post(
+    const containerResp = await trackExternalCall('instagram', 'media.create', () => axios.post(
       `https://graph.facebook.com/v19.0/${accountId}/media`,
       null,
       { params: containerParams, timeout: 30000 }
-    );
+    ));
     containerId = containerResp.data?.id;
     if (!containerId) {
       // AI-110: человеку стабильная фраза, тело ответа — в журнал сервера.
@@ -235,11 +236,11 @@ export async function publishInstagramStory(
   // 7. Публикуем
   let postId: string;
   try {
-    const publishResp = await axios.post(
+    const publishResp = await trackExternalCall('instagram', 'media.publish', () => axios.post(
       `https://graph.facebook.com/v18.0/${accountId}/media_publish`,
       null,
       { params: { creation_id: containerId, access_token: accessToken }, timeout: 30000 }
-    );
+    ));
     postId = publishResp.data?.id;
     if (!postId) {
       // AI-110: см. выше.

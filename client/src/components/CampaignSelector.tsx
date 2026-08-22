@@ -29,7 +29,7 @@ interface CampaignSelectorProps {
 
 export function CampaignSelector({ persistSelection = false }: CampaignSelectorProps) {
   const { t } = useTranslation();
-  const { selectedCampaignId, selectedCampaignName, setSelectedCampaign } = useCampaignStore();
+  const { selectedCampaignId, selectedCampaignName, setSelectedCampaign, clearSelectedCampaign } = useCampaignStore();
   const [isFirstLoad, setIsFirstLoad] = useState(true);
   const [initiallySelectedId, setInitiallySelectedId] = useState<string | null>(null);
 
@@ -51,7 +51,7 @@ export function CampaignSelector({ persistSelection = false }: CampaignSelectorP
   // 3. Если сохранённая кампания не существует — выбираем первую из списка
   // 4. Если нет сохранённой — выбираем первую из списка
   useEffect(() => {
-    if (!campaignsResponse?.data?.length || !isFirstLoad) return;
+    if (!campaignsResponse?.data || !isFirstLoad) return;
 
     // Если мы хотим сохранить текущий выбор и у нас есть сохраненный ID
     if (persistSelection && initiallySelectedId) {
@@ -77,14 +77,31 @@ export function CampaignSelector({ persistSelection = false }: CampaignSelectorP
         setIsFirstLoad(false);
         return;
       }
-      // Сохранённая кампания не существует — выберем первую доступную
+      // SM-78: сохранённая кампания не существует — чистим выбор, чтобы
+      // Topbar не показывал блок автономного режима по мёртвой ссылке.
+      // До правки код ниже пытался выбрать первую из списка, и при
+      // пустом списке `firstCampaign.id` бросил бы TypeError; но
+      // важнее другое: ранний возврат в первой строке эффекта
+      // (`!campaignsResponse?.data?.length`) срабатывал на пустом
+      // списке, и до этой ветки дело просто не доходило. Мёртвый id
+      // из localStorage оставался нетронутым, а Topbar видел его
+      // как truthy. Поэтому первая правка эффекта (убрать ранний
+      // возврат на пустом списке) — половина лечения: без неё
+      // очистка здесь недостижима.
+      clearSelectedCampaign();
+      setIsFirstLoad(false);
+      return;
     }
 
-    // Выбираем первую из списка
+    // SM-78: выбора в сторе нет. Берём первую из списка. Если список пуст —
+    // ничего не делаем: selectedCampaignId остаётся null, и Topbar не
+    // показывает блок автономного режима.
     const firstCampaign = campaignsResponse.data[0];
-    setSelectedCampaign(firstCampaign.id, firstCampaign.name);
+    if (firstCampaign) {
+      setSelectedCampaign(firstCampaign.id, firstCampaign.name);
+    }
     setIsFirstLoad(false);
-  }, [campaignsResponse, selectedCampaignId, selectedCampaignName, setSelectedCampaign, isFirstLoad, persistSelection, initiallySelectedId]);
+  }, [campaignsResponse, selectedCampaignId, selectedCampaignName, setSelectedCampaign, clearSelectedCampaign, isFirstLoad, persistSelection, initiallySelectedId]);
 
   const handleCampaignChange = (campaignId: string) => {
     const campaign = campaignsResponse?.data?.find((c: Campaign) => c.id === campaignId);

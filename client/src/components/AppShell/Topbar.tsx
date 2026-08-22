@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { autonomousControls, pauseResultToast } from "@/lib/autonomous-controls";
 import { useAuthStore } from "@/lib/store";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useCampaignDetail } from "@/hooks/use-campaigns";
+import { useCampaignDetail, useCampaignsList } from "@/hooks/use-campaigns";
 import { useUserProfile } from "@/hooks/use-user-profile";
 import { useThemeStore } from "@/lib/themeStore";
 import { useCampaignStore } from "@/lib/campaignStore";
@@ -99,6 +99,22 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
   // autonomous_settings читался с верхнего уровня списочного ответа и всегда
   // был undefined — тултип автономного режима молча пустовал.
   const { data: campaignData } = useCampaignDetail(selectedCampaignId);
+
+  // SM-78: второй эшелон. Topbar показывает блок автономного режима
+  // только когда выбранная кампания реально существует в списке.
+  // Запрос уже делает CampaignSelector; мы тут только читаем кэш —
+  // нового HTTP-вызова нет.
+  //
+  // Скрываем кнопки ТОЛЬКО когда список успешно загружен и выбранной
+  // кампании в нём нет. Пока запрос идёт или упал — ведём себя как
+  // раньше, чтобы пользователь с нормально выбранной кампанией
+  // не потерял функцию из-за сетевого флапа.
+  const campaignsList = useCampaignsList();
+  const campaignsLoaded = !campaignsList.isLoading && !campaignsList.isError && !!campaignsList.data?.data;
+  const selectedCampaignExists = !selectedCampaignId
+    ? false
+    : !!campaignsList.data?.data?.some((c: { id: string }) => c.id === selectedCampaignId);
+  const showAutonomousBlock = !!selectedCampaignId && (!campaignsLoaded || selectedCampaignExists);
 
   // Формируем описание настроек для тултипа
   const autonomousSettings = campaignData?.autonomous_settings;
@@ -347,7 +363,7 @@ export function Topbar({ onMenuClick, isSidebarCollapsed, onLogout, onOpenProfil
         )}
 
         {/* Autonomous Mode Toggle */}
-        {selectedCampaignId && (
+        {showAutonomousBlock && (
           <>
           {/* SM-20: пауза — отдельная кнопка ВНЕ TooltipTrigger.
               Внутрь asChild её класть нельзя: Radix Slot клонирует ровно

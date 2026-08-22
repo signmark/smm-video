@@ -66,6 +66,15 @@ vi.mock('@/lib/campaignStore', () => ({
 // Campaign detail hook: not exercised by this test, but Topbar calls it.
 vi.mock('@/hooks/use-campaigns', () => ({
   useCampaignDetail: () => ({ data: null }),
+  // SM-78: Topbar теперь читает список кампаний для второго эшелона.
+  // SM-20 не зависит от списка — отдаём «успешно загруженный, выбранная
+  // кампания на месте» как в дефолте beforeEach.
+  useCampaignsList: () => ({
+    data: { data: [{ id: 'camp-1', name: 'Camp 1' }] },
+    isLoading: false,
+    isError: false,
+    error: null,
+  }),
 }));
 
 // User profile hook: not exercised here.

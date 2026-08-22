@@ -13,14 +13,12 @@
  * Output: raw timestamped lines to stdout (pipe to file).
  * Format: one JSON object per line for easy post-processing.
  */
-import fs from 'fs';
-
 const DIRECTUS_URL = process.env.DIRECTUS_URL;
 const TOKEN = process.env.DIRECTUS_TOKEN;
 const POLL_INTERVAL_MS = 2000;
 
 if (!DIRECTUS_URL || !TOKEN) {
-  console.error('Required env vars: DIRECTUS_URL, TOKEN');
+  console.error('Required env vars: DIRECTUS_URL, DIRECTUS_TOKEN');
   process.exit(1);
 }
 
@@ -68,6 +66,7 @@ async function poll() {
           status: p.status,
           progress: p.progress,
           progress_message: p.progress_message,
+          from_snapshot: true,
         });
 
         if (RUNNING_STATUSES.has(p.status)) {
@@ -85,9 +84,10 @@ async function poll() {
         const prevTime = new Date(prev.date_updated).getTime();
         const currTime = new Date(p.date_updated).getTime();
         const gapSec = Math.round((currTime - prevTime) / 1000);
+        const isFirstChange = prev.from_snapshot;
 
         emit({
-          t: now, event: 'progress_update',
+          t: now, event: isFirstChange ? 'first_change' : 'progress_update',
           id,
           status: p.status,
           progress: p.progress,
@@ -97,6 +97,7 @@ async function poll() {
           gap_sec: gapSec,
           prev_status: prev.status,
           prev_progress: prev.progress,
+          ...(isFirstChange && { note: 'first change — gap measured from pre-poll snapshot, exclude from max calculation' }),
         });
 
         lastSeen.set(id, {

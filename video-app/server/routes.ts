@@ -413,6 +413,62 @@ router.get('/videos/:id/download', async (req, res) => {
   }
 });
 
+// Thumbnail: extract first frame from local video file, cache as JPEG
+router.get('/videos/:id/thumbnail', async (req, res) => {
+  try {
+    const project = await getProject(req.params.id);
+    if (!project) return res.status(404).json({ error: 'Not found' });
+    if (!project.videoPath) return res.status(404).json({ error: 'No video file' });
+
+    // Safety: only replace .mp4 extension to avoid overwriting video files
+    if (!project.videoPath.endsWith('.mp4')) {
+      return res.status(404).json({ error: 'Unsupported video format' });
+    }
+
+    const { execFile } = await import('child_process');
+    const { promisify } = await import('util');
+    const execFileAsync = promisify(execFile);
+    const { renameSync } = await import('fs');
+
+    // Cache thumbnail next to video file
+    const thumbPath = project.videoPath.replace(/\.mp4$/, '_thumb.jpg');
+
+    if (!existsSync(thumbPath)) {
+      if (!existsSync(project.videoPath)) {
+        return res.status(404).json({ error: 'Video file missing' });
+      }
+      // Write to temp file first, then rename atomically
+      const tmpPath = thumbPath + '.tmp.' + process.pid;
+      try {
+        await execFileAsync('ffmpeg', [
+          '-i', project.videoPath,
+          '-ss', '1',
+          '-vframes', '1',
+          '-vf', 'scale=320:-1',
+          '-q:v', '5',
+          '-y',
+          tmpPath,
+        ]);
+        renameSync(tmpPath, thumbPath);
+      } catch (ffmpegErr) {
+        // Clean up temp file on failure
+        try { const { unlinkSync } = await import('fs'); unlinkSync(tmpPath); } catch {}
+        return res.status(500).json({ error: 'Thumbnail extraction failed' });
+      }
+    }
+
+    // res.sendFile with error callback — does not crash on missing/corrupt file
+    const absThumbPath = path.resolve(thumbPath);
+    res.sendFile(absThumbPath, { maxAge: '1d' }, (sendErr) => {
+      if (sendErr && !res.headersSent) {
+        res.status(404).json({ error: 'Thumbnail not available' });
+      }
+    });
+  } catch (err: any) {
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+  }
+});
+
 // Serve TTS audio preview for a specific scene (generated alongside script)
 router.get('/videos/:id/audio/:sceneIndex', async (req, res) => {
   const { id, sceneIndex } = req.params;

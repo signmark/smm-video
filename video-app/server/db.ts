@@ -496,6 +496,46 @@ export async function listProjects(): Promise<VideoProject[]> {
   );
 }
 
+/** Поле проекта -> колонка в БД. Один список на оба бэкенда, Postgres и Directus. */
+const COLUMN_BY_FIELD: Record<string, string> = {
+  title: 'title', topic: 'topic', format: 'format', duration: 'duration',
+  language: 'language', animationModel: 'animation_model',
+  subtitleStyle: 'subtitle_style', voice: 'voice', clipDuration: 'clip_duration',
+  subtitleFont: 'subtitle_font', subtitleSize: 'subtitle_size', subtitleColor: 'subtitle_color',
+  musicStyle: 'music_style', musicVolume: 'music_volume', heygenAvatar: 'heygen_avatar', status: 'status',
+  progress: 'progress', progressMessage: 'progress_message', script: 'script',
+  customScenario: 'custom_scenario', landingUrl: 'landing_url', additionalDetails: 'additional_details',
+  scriptMode: 'script_mode', videoPath: 'video_path', videoUrl: 'video_url', error: 'error',
+};
+
+/**
+ * Поля, которые код осмысленно стирает: сброс проекта снимает `videoPath`,
+ * `videoUrl` и `error`, очистка снимает путь к удалённому ролику. Остальные
+ * (`status`, `progress`) стирать нечем и незачем — колонки обязательные.
+ */
+const CLEARABLE_FIELDS = [
+  'videoPath', 'videoUrl', 'error', 'progressMessage',
+  'script', 'additionalDetails', 'scriptMode', 'heygenAvatar',
+] as const;
+
+/**
+ * Явное `undefined` в Directus-теле пропадает: `JSON.stringify` выбрасывает
+ * такие ключи, PATCH уходит без них, и поле остаётся со старым значением. Из-за
+ * этого `updateProject(id, { error: undefined })` на проде молча ничего не делал
+ * — проект после «Сгенерировать заново» продолжал показывать старую ошибку, а
+ * строка удалённого ролика продолжала ссылаться на несуществующий файл.
+ * Postgres-ветка этим не болеет: там `val ?? null`.
+ *
+ * Поэтому очистку передаём явным `null` — Directus его понимает.
+ */
+export function directusClearPatch(updates: Record<string, unknown>): Record<string, null> {
+  const patch: Record<string, null> = {};
+  for (const field of CLEARABLE_FIELDS) {
+    if (field in updates && updates[field] === undefined) patch[COLUMN_BY_FIELD[field]] = null;
+  }
+  return patch;
+}
+
 export async function updateProject(
   id: string,
   updates: Partial<VideoProject>
@@ -503,7 +543,7 @@ export async function updateProject(
   const now = new Date().toISOString();
 
   if (await checkDirectus()) {
-    const body = projectToDirectus(updates);
+    const body = { ...projectToDirectus(updates), ...directusClearPatch(updates) };
     delete body.id;
     const res = await directusFetch(`/items/video_projects/${id}`, {
       method: 'PATCH',
@@ -519,18 +559,7 @@ export async function updateProject(
     const values: any[] = [];
     let i = 1;
 
-    const colMap: Record<string, string> = {
-      title: 'title', topic: 'topic', format: 'format', duration: 'duration',
-      language: 'language', animationModel: 'animation_model',
-      subtitleStyle: 'subtitle_style', voice: 'voice', clipDuration: 'clip_duration',
-      subtitleFont: 'subtitle_font', subtitleSize: 'subtitle_size', subtitleColor: 'subtitle_color',
-      musicStyle: 'music_style', musicVolume: 'music_volume', heygenAvatar: 'heygen_avatar', status: 'status',
-      progress: 'progress', progressMessage: 'progress_message', script: 'script',
-      customScenario: 'custom_scenario', landingUrl: 'landing_url', additionalDetails: 'additional_details', scriptMode: 'script_mode', videoPath: 'video_path',
-      videoUrl: 'video_url', error: 'error',
-    };
-
-    for (const [key, col] of Object.entries(colMap)) {
+    for (const [key, col] of Object.entries(COLUMN_BY_FIELD)) {
       if (key in updates) {
         const val = (updates as any)[key];
         fields.push(`${col} = $${i++}`);

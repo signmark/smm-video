@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, FormEvent } from 'react';
 import { navigate } from '../App';
 import { API } from '../api';
-import { ChevronDown, ChevronUp, Settings, Music, Type } from 'lucide-react';
+import { ChevronDown, ChevronUp, Settings, Music, Type, Play, Square, SkipForward, Volume2, Loader2, Sparkles, AlertTriangle, Check } from 'lucide-react';
+import { buildCreateRequest } from '../lib/create-request';
 
 function SubtitleStylePreview({ style, color = '#ffffff' }: { style: string; color?: string }) {
   const frame: React.CSSProperties = {
@@ -725,41 +726,13 @@ export default function Create() {
     setLoading(true);
     setError('');
     try {
-      const defaultTitle =
-        inputMode === 'custom' ? 'Пользовательский сценарий'
-        : inputMode === 'url' ? 'Промо-видео'
-        : topic.trim();
-
-      const body: Record<string, any> = {
-        title: title.trim() || defaultTitle,
-        format,
-        duration,
-        language,
-        animationModel,
-        heygenAvatar: animationModel === 'heygen-avatar' ? heygenAvatar : undefined,
-        subtitleStyle,
-        voice,
-        clipDuration: CLIP_DURATION_MODELS.has(animationModel) ? clipDuration : undefined,
-        subtitleFont: subtitleStyle !== 'none' ? subtitleFont : undefined,
-        subtitleSize: subtitleStyle !== 'none' ? subtitleSize : undefined,
-        subtitleColor: subtitleStyle !== 'none' ? subtitleColor : undefined,
-        musicStyle,
-        musicVolume: musicStyle !== 'none' ? musicVolume : undefined,
-      };
-
-      if (inputMode === 'custom') {
-        body.customScenario = customScenario.trim();
-        body.topic = title.trim() || 'Пользовательский сценарий';
-      } else if (inputMode === 'url') {
-        body.landingUrl = landingUrl.trim();
-        body.topic = title.trim() || defaultTitle;
-        if (additionalDetails.trim()) body.additionalDetails = additionalDetails.trim();
-      } else {
-        body.topic = topic.trim();
-        if (additionalDetails.trim()) body.additionalDetails = additionalDetails.trim();
-      }
-
-      if (scriptMode === 'viral') body.scriptMode = 'viral';
+      const body = buildCreateRequest({
+        inputMode, topic, customScenario, landingUrl, additionalDetails,
+        title, format, duration, language, animationModel, heygenAvatar,
+        subtitleStyle, voice, clipDuration, subtitleFont, subtitleSize,
+        subtitleColor, musicStyle, musicVolume, scriptMode,
+        clipDurationModels: CLIP_DURATION_MODELS,
+      });
 
       // Step 1: create project
       const res = await fetch(`${API}/videos`, {
@@ -1185,7 +1158,7 @@ export default function Create() {
           </Field>
         )}
 
-        <Field label="Голос озвучки" hint="Выберите голос и нажмите ▶ чтобы послушать пример">
+        <Field label="Голос озвучки" hint="Выберите голос и нажмите Play чтобы послушать пример">
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
             {VOICES.map((v) => {
               const active = voice === v.value;
@@ -1209,7 +1182,7 @@ export default function Create() {
                       title="Прослушать"
                       style={{ width: 26, height: 26, borderRadius: '50%', border: `1px solid ${isPlaying ? 'var(--accent)' : 'var(--border)'}`, background: isPlaying ? 'var(--accent)' : 'transparent', color: isPlaying ? 'white' : 'var(--text-muted)', fontSize: 11, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, transition: 'all 0.15s' }}
                     >
-                      {isPlaying ? '■' : '▶'}
+                      {isPlaying ? <Square size={11} /> : <Play size={11} />}
                     </button>
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.4 }}>{v.desc}</div>
@@ -1219,7 +1192,7 @@ export default function Create() {
             })}
           </div>
           <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5, padding: '6px 10px', borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}>
-            ⚠️ Голоса работают через OpenAI TTS. При проблемах с ключом или исчерпанном лимите будет использован стандартный голос (Edge TTS).
+            <AlertTriangle size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} /> Голоса работают через OpenAI TTS. При проблемах с ключом или исчерпанном лимите будет использован стандартный голос (Edge TTS).
           </div>
         </Field>
             </div>
@@ -1281,7 +1254,7 @@ export default function Create() {
                     <div style={{ fontSize: 13, fontWeight: active ? 700 : 500, color: active ? 'var(--accent)' : 'var(--text)' }}>{m.label}</div>
                     <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{m.desc}</div>
                   </div>
-                  {active && <span style={{ fontSize: 14, color: 'var(--accent)', flexShrink: 0 }}>✓</span>}
+                  {active && <Check size={14} style={{ color: 'var(--accent)', flexShrink: 0 }} />}
                 </button>
               );
             })}
@@ -1304,9 +1277,7 @@ export default function Create() {
                     fontSize: 13, fontWeight: 500, transition: 'all 0.15s',
                   }}
                 >
-                  <span style={{ fontSize: 16 }}>
-                    {loadingMusicPreview ? '⏳' : playingMusic ? '⏹' : '▶'}
-                  </span>
+                  {loadingMusicPreview ? <Loader2 size={16} className="animate-spin" /> : playingMusic ? <Square size={16} /> : <Play size={16} />}
                   {loadingMusicPreview ? 'Загрузка...' : playingMusic ? 'Остановить' : 'Прослушать'}
                 </button>
                 <button
@@ -1324,24 +1295,24 @@ export default function Create() {
                   }}
                   title="Следующий трек"
                 >
-                  🔀 Другой трек
+                  <SkipForward size={14} style={{ marginRight: 4 }} /> Другой трек
                 </button>
               </div>
               {musicPreviewInfo && (
                 <div style={{ fontSize: 11, color: playingMusic ? 'var(--accent)' : 'var(--text-muted)', padding: '4px 8px', borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border)' }}>
-                  {playingMusic ? '🎵 ' : ''}
+                  {playingMusic ? <Music size={11} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 2 }} /> : ''}
                   <strong>{musicPreviewInfo.trackName}</strong>
                   {musicPreviewInfo.artistName ? ` — ${musicPreviewInfo.artistName}` : ''}
                   <span style={{ color: 'var(--text-muted)', marginLeft: 6 }}>#{musicTrackIdx + 1}</span>
                 </div>
               )}
               <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.5, padding: '6px 10px', borderRadius: 'var(--radius-sm)', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--border)' }}>
-                🎵 Треки Jamendo под лицензией CC.
+                <Music size={11} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 2 }} /> Треки Jamendo под лицензией CC.
               </div>
               {/* Music volume slider */}
               <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 4 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--text-muted)' }}>
-                  <span>🔊 Громкость музыки</span>
+                  <span><Volume2 size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} /> Громкость музыки</span>
                   <span style={{ fontWeight: 600, color: 'var(--text)' }}>{Math.round(musicVolume * 100)}%</span>
                 </div>
                 <input
@@ -1413,7 +1384,7 @@ export default function Create() {
                     <div style={{ fontSize: 14, fontWeight: 600 }}>{s.label}</div>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{s.desc}</div>
                   </div>
-                  {active && <span style={{ fontSize: 16, color: 'var(--accent)', flexShrink: 0 }}>✓</span>}
+                  {active && <Check size={16} style={{ color: 'var(--accent)', flexShrink: 0 }} />}
                 </label>
               );
             })}
@@ -1491,7 +1462,7 @@ export default function Create() {
           data-testid="button-submit"
           style={{ padding: '14px', borderRadius: 'var(--radius)', border: 'none', background: loading ? '#4c1d95' : 'var(--accent)', color: 'white', fontSize: 16, fontWeight: 600, cursor: loading ? 'not-allowed' : 'pointer', opacity: loading ? 0.7 : 1, transition: 'all 0.15s' }}
         >
-          {loading ? '⏳ Генерирую сценарий...' : '✨ Сгенерировать сценарий'}
+          {loading ? <><Loader2 size={16} className="animate-spin" /> Генерирую сценарий...</> : <><Sparkles size={16} /> Сгенерировать сценарий</>}
         </button>
       </form>
     </div>

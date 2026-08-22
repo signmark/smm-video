@@ -12,6 +12,7 @@ import {
   type ProjectForFilter,
 } from '../lib/project-filter';
 import { getStepStates, getErrorStep, PIPELINE_STEPS } from '../lib/progress-steps';
+import { getFileStatus, RETENTION_DAYS } from '../lib/file-status';
 
 interface VideoProject extends ProjectForFilter {
   progress: number;
@@ -19,6 +20,7 @@ interface VideoProject extends ProjectForFilter {
   error?: string;
   duration: number;
   language: string;
+  hasFile?: boolean;
 }
 
 const STATUS_LABEL: Record<string, string> = {
@@ -193,16 +195,6 @@ export default function Home() {
   );
 }
 
-function getExpiryLabel(createdAt: string): { label: string; urgent: boolean } | null {
-  const RETENTION_DAYS = 3;
-  const age = Date.now() - new Date(createdAt).getTime();
-  const msRemaining = RETENTION_DAYS * 24 * 60 * 60 * 1000 - age;
-  if (msRemaining <= 0) return null;
-  const daysRemaining = Math.ceil(msRemaining / (24 * 60 * 60 * 1000));
-  if (daysRemaining === 1) return { label: 'удалится завтра', urgent: true };
-  return { label: `${daysRemaining} дн.`, urgent: false };
-}
-
 function ProjectCard({ project: p, onClick, onResume, onRestart, onDelete, deleting }: {
   project: VideoProject;
   onClick: () => void;
@@ -213,8 +205,8 @@ function ProjectCard({ project: p, onClick, onResume, onRestart, onDelete, delet
 }) {
   const isActive = isRunningStatus(p.status);
   const isError = p.status === 'error';
-  const isDone = p.status === 'done';
-  const expiry = isDone ? getExpiryLabel(p.createdAt) : null;
+  const fileStatus = getFileStatus(p.status, p.hasFile ?? false, p.createdAt);
+  const { isDone, fileMissing, expiryLabel, expiryUrgent } = fileStatus;
 
   // For active projects, show current step from progress-steps
   let activeStepLabel = '';
@@ -325,9 +317,14 @@ function ProjectCard({ project: p, onClick, onResume, onRestart, onDelete, delet
           <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>
             {p.duration}с
           </span>
-          {expiry && (
-            <span style={{ fontSize: 11, color: expiry.urgent ? '#f87171' : '#6b7280', display: 'flex', alignItems: 'center', gap: 3 }} title="Видеофайл автоматически удаляется через 3 дня после создания.">
-              <Trash2 size={10} /> {expiry.label}
+          {expiryLabel && (
+            <span style={{ fontSize: 11, color: expiryUrgent ? '#f87171' : '#6b7280', display: 'flex', alignItems: 'center', gap: 3 }} title={`Видеофайл автоматически удаляется через ${RETENTION_DAYS} дней после создания.`}>
+              <Trash2 size={10} /> {expiryLabel}
+            </span>
+          )}
+          {fileMissing && (
+            <span style={{ fontSize: 11, color: '#ef4444', display: 'flex', alignItems: 'center', gap: 3 }}>
+              <AlertTriangle size={10} /> файл удалён по сроку хранения
             </span>
           )}
         </div>

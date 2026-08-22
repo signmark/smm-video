@@ -587,4 +587,9 @@ export const DATA_PATHS = {
   videoFile: (projectId: string) => path.join(DATA_DIR, 'videos', `${projectId}.mp4`),
 };
 
+/** Check if video file actually exists on disk. */
+export function hasVideoFile(projectId: string): boolean {
+  return existsSync(DATA_PATHS.videoFile(projectId));
+}
+
 ensureDataDir().catch(() => {});

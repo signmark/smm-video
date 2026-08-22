@@ -2,7 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { navigate } from '../App';
 import { API } from '../api';
 import { PIPELINE_STEPS, getStepStates, getErrorStep, type StepState } from '../lib/progress-steps';
-import { CheckCircle2, Loader2, AlertTriangle, Clock, ListChecks } from 'lucide-react';
+import { getFileStatus } from '../lib/file-status';
+import { CheckCircle2, Loader2, AlertTriangle, Clock, ListChecks, Download, RotateCcw } from 'lucide-react';
 
 // ── Token refresh logic (mirrors main app's refreshAuth.ts) ─────────────────
 async function getValidToken(): Promise<string | null> {
@@ -315,6 +316,7 @@ interface VideoProject {
   videoUrl?: string;
   error?: string;
   createdAt: string;
+  hasFile?: boolean;
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -594,6 +596,10 @@ export default function VideoDetail({ id }: { id: string }) {
       if (!res.ok) throw new Error('Not found');
       const data = await res.json();
       setProject(data);
+      // Set fileMissing based on server's hasFile field
+      if (data.status === 'done' && data.hasFile === false) {
+        setFileMissing(true);
+      }
       // Stop polling on stable states (but keep polling if precheck still running)
       const prechecked = data.script?.stockPrechecked;
       if (['done', 'error'].includes(data.status) || (data.status === 'script_ready' && prechecked)) {
@@ -1092,12 +1098,12 @@ export default function VideoDetail({ id }: { id: string }) {
           <div>
             {fileMissing ? (
               <>
-                <div style={{ fontWeight: 600, color: 'var(--red)' }}>⚠️ Файл видео не найден</div>
-                <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>Среда была перезапущена и файл потерян. Нажмите «Перегенерировать» — сценарий сохранён.</div>
+                <div style={{ fontWeight: 600, color: 'var(--red)', display: 'flex', alignItems: 'center', gap: 6 }}><AlertTriangle size={16} /> Файл удалён по сроку хранения</div>
+                <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>Нажмите «Перегенерировать» — сценарий сохранён.</div>
               </>
             ) : (
               <>
-                <div style={{ fontWeight: 600, color: 'var(--green)' }}>🎬 Видео готово!</div>
+                <div style={{ fontWeight: 600, color: 'var(--green)', display: 'flex', alignItems: 'center', gap: 6 }}><CheckCircle2 size={16} /> Видео готово!</div>
                 <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>Нажмите кнопку для скачивания MP4</div>
               </>
             )}
@@ -1106,18 +1112,18 @@ export default function VideoDetail({ id }: { id: string }) {
             <button
               onClick={handleResetAndRegenerate}
               data-testid="button-regenerate"
-              style={{ padding: '10px 24px', borderRadius: 'var(--radius-sm)', background: '#7c3aed', color: 'white', fontWeight: 600, fontSize: 15, border: 'none', cursor: 'pointer' }}
+              style={{ padding: '10px 24px', borderRadius: 'var(--radius-sm)', background: '#7c3aed', color: 'white', fontWeight: 600, fontSize: 15, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
             >
-              🔄 Перегенерировать
+              <RotateCcw size={16} /> Перегенерировать
             </button>
           ) : (
             <button
               onClick={handleDownload}
               disabled={downloading}
               data-testid="button-download"
-              style={{ padding: '10px 24px', borderRadius: 'var(--radius-sm)', background: downloading ? '#166534' : 'var(--green)', color: 'white', fontWeight: 600, fontSize: 15, border: 'none', cursor: downloading ? 'not-allowed' : 'pointer', opacity: downloading ? 0.7 : 1 }}
+              style={{ padding: '10px 24px', borderRadius: 'var(--radius-sm)', background: downloading ? '#166534' : 'var(--green)', color: 'white', fontWeight: 600, fontSize: 15, border: 'none', cursor: downloading ? 'not-allowed' : 'pointer', opacity: downloading ? 0.7 : 1, display: 'flex', alignItems: 'center', gap: 6 }}
             >
-              {downloading ? '⏳ Загрузка...' : '⬇️ Скачать MP4'}
+              {downloading ? <><Loader2 size={16} className="animate-spin" /> Загрузка...</> : <><Download size={16} /> Скачать MP4</>}
             </button>
           )}
         </div>

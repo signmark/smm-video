@@ -9,6 +9,7 @@ import {
   updateProject,
   deleteProject,
   DATA_PATHS,
+  hasVideoFile,
   type Scene,
   type VideoFormat,
   type AnimationModel,
@@ -133,7 +134,8 @@ router.get('/health', (_req, res) => {
 router.get('/videos', async (_req, res) => {
   try {
     const projects = await listProjects();
-    res.json(projects);
+    const enriched = projects.map((p) => ({ ...p, hasFile: hasVideoFile(p.id) }));
+    res.json(enriched);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -143,7 +145,7 @@ router.get('/videos/:id', async (req, res) => {
   try {
     const project = await getProject(req.params.id);
     if (!project) return res.status(404).json({ error: 'Not found' });
-    res.json(project);
+    res.json({ ...project, hasFile: hasVideoFile(project.id) });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -403,8 +405,7 @@ router.get('/videos/:id/download', async (req, res) => {
     if (project.status !== 'done' || !project.videoPath) {
       return res.status(400).json({ error: 'Video not ready' });
     }
-    const fsSync = await import('fs');
-    if (!fsSync.existsSync(project.videoPath)) {
+    if (!hasVideoFile(project.id)) {
       return res.status(404).json({ error: 'Video file missing', missing: true });
     }
     res.download(project.videoPath, `${project.title.replace(/[^a-zA-Z0-9а-яА-Я]/g, '_')}.mp4`);

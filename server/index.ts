@@ -6,11 +6,8 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import { shouldSkipGlobalApiRateLimit } from './middleware/global-api-rate-limit';
 import swaggerUi from 'swagger-ui-express';
-import swaggerSpecs from './config/swagger';
-import { readFileSync, existsSync } from 'fs';
-import { resolve, dirname } from 'path';
+import { SWAGGER_SPEC } from './data/swagger-spec';
 import { resolveFrontendStaticStrategy } from './services/frontend-static-strategy';
-import { fileURLToPath } from 'url';
 import { createServer, request as httpRequest } from 'http';
 import { WebSocketServer } from 'ws';
 import { isWsAllowed } from './utils/ws-gate';
@@ -807,15 +804,8 @@ app.use('/video-app', (req, res, next) => {
     log("Registering main routes...");
     await registerRoutes(app);
 
-    // Swagger API Documentation - добавляем после всех маршрутов
-    // В продакшн используем pre-generated swagger.json (исходники TS недоступны в контейнере)
-    const __dirname_sw = dirname(fileURLToPath(import.meta.url));
-    const prebuiltSwaggerPath = resolve(__dirname_sw, '../public/swagger.json');
-    const activeSpecs = (process.env.NODE_ENV === 'production' && existsSync(prebuiltSwaggerPath))
-      ? JSON.parse(readFileSync(prebuiltSwaggerPath, 'utf-8'))
-      : swaggerSpecs;
-
-    app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(activeSpecs, {
+    // Swagger API Documentation — spec generated at build time by scripts/generate-swagger-spec.ts
+    app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(SWAGGER_SPEC, {
       customCss: '.swagger-ui .topbar { display: none }',
       customSiteTitle: 'SMM Manager API Documentation',
       customfavIcon: '/favicon.ico',
@@ -831,7 +821,7 @@ app.use('/video-app', (req, res, next) => {
     // JSON endpoint для Swagger spec
     app.get('/api-docs.json', (req, res) => {
       res.setHeader('Content-Type', 'application/json');
-      res.send(activeSpecs);
+      res.send(SWAGGER_SPEC);
     });
 
     log('Swagger API Documentation доступна по адресу /api-docs', 'swagger');

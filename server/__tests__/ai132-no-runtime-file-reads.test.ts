@@ -16,13 +16,13 @@ const SERVER_DIR = join(__dirname, '..');
 /** Files/patterns allowed to use filesystem reads. Each entry has a reason. */
 const ALLOWLIST: Record<string, string> = {
   'server/vite.ts': 'Vite dev server reads HTML templates at dev time only; not included in production bundle',
-  'server/index.ts': 'Swagger JSON read at startup; prebuilt file is bundled alongside dist',
   'server/services/social/base-service.ts': 'Reads user-uploaded image files for publishing to social platforms',
   'server/services/autonomous-ai.ts': 'Persists autonomous cycle state to local file (state file is created at runtime)',
   'server/services/beget-s3-direct.ts': 'Reads local files before uploading to S3 storage',
   'server/services/beget-s3-storage-aws.ts': 'Reads local files before uploading to S3 storage',
   'server/services/publish-fallback-journal.ts': 'Reads fallback journal file (created at runtime)',
   'server/telegram-bot/index.ts': 'Reads temporary files for Telegram media uploads',
+  'server/index.ts': 'Dynamic import of url/path for __dirname computation in production static serving (computed from import.meta.url, not filesystem)',
   'server/routes/video.ts': 'Reads user-uploaded processed video files for serving to clients',
 };
 

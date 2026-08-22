@@ -6,7 +6,7 @@
     "dev": "tsx server/index.ts",
     "build": "vite build",
     "start": "node --experimental-vm-modules node_modules/.bin/tsx server/index.ts",
-    "test:regression": "npx tsx --test tests/resume-policy.test.ts tests/probe-corrupt.test.ts tests/progress-steps.test.ts tests/create-request.test.ts tests/project-filter.test.ts tests/file-status.test.ts",
+    "test:regression": "npx tsx --test tests/resume-policy.test.ts tests/probe-corrupt.test.ts tests/progress-steps.test.ts tests/create-request.test.ts tests/project-filter.test.ts tests/file-status.test.ts tests/stale-pipeline.test.ts",
     "test:rebuild": "npx tsx --test e2e/rebuild.e2e.ts",
     "test:e2e": "npx tsx --test e2e/video-generator.e2e.ts",
     "test:e2e:fast": "SKIP_SLOW=1 npx tsx --test e2e/video-generator.e2e.ts",

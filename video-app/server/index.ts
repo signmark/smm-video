@@ -9,13 +9,13 @@ import { loadKeysFromDirectus } from './load-keys.js';
 await loadKeysFromDirectus();
 
 import apiRouter from './routes.js';
-import { listProjects, updateProject } from './db.js';
+import { listProjects, updateProject, findStuckProjects } from './db.js';
 import { scheduleCleanup } from './cleanup.js';
 
 // Reset projects stuck in active states (server was restarted mid-generation)
 try {
   const all = await listProjects();
-  const stuck = all.filter(p => ['generating_images', 'animating', 'assembling'].includes(p.status));
+  const stuck = findStuckProjects(all);
   for (const p of stuck) {
     await updateProject(p.id, {
       status: 'error',
@@ -28,7 +28,7 @@ try {
   console.warn('[startup] Could not reset stuck projects:', e.message);
 }
 
-// Schedule daily cleanup of video files older than 3 days
+// Schedule daily cleanup of video files older than 30 days (VIDEO_RETENTION_DAYS)
 try {
   scheduleCleanup();
 } catch (e: any) {
@@ -72,6 +72,19 @@ app.use(express.static(distPath, { setHeaders: noCache }));
 app.get('*', (_req, res) => {
   res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
   res.sendFile(path.join(distPath, 'index.html'));
+});
+
+// ── Global crash handlers ─────────────────────────────────────────────────────
+// Without these, the process dies silently on unhandled errors and the container
+// restarts with no trace in the logs. Docker shows exit code 1 but no reason.
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL] Uncaught exception:', err);
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[FATAL] Unhandled rejection:', reason);
+  process.exit(1);
 });
 
 app.listen(PORT, '0.0.0.0', () => {

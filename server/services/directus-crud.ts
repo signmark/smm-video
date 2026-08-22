@@ -10,6 +10,7 @@ import axios, { AxiosRequestConfig } from 'axios';
 import { DirectusAuthResult, DirectusRequestOptions } from './directus-types';
 import { adminTokenManager } from './admin-token-manager';
 import { logEvent } from '../utils/logger';
+import { guardWriteData } from './directus-schema-guard';
 
 /**
  * AI-65, этап 3. Граница с Directus — то место, через которое ходит почти всё,
@@ -310,12 +311,13 @@ export class DirectusCrud {
    * Создает запись в коллекции
    */
   async create<T>(collection: string, data: Record<string, any>, options: DirectusRequestOptions = {}): Promise<T> {
+    const safeData = guardWriteData(collection, data) as Record<string, any>;
     return this.executeWithRetry('create', collection, async () => {
       const authToken = await this.resolveToken(options, 'create', collection);
       return this.executeRequest<T>({
         method: 'post',
         url: `/items/${collection}`,
-        data,
+        data: safeData,
         authToken
       });
     });
@@ -360,12 +362,13 @@ export class DirectusCrud {
    * Обновляет запись
    */
   async update<T>(collection: string, id: string | number, data: Record<string, any>, options: DirectusRequestOptions = {}): Promise<T> {
+    const safeData = guardWriteData(collection, data) as Record<string, any>;
     return this.executeWithRetry('update', collection, async () => {
       const authToken = await this.resolveToken(options, 'update', collection);
       return this.executeRequest<T>({
         method: 'patch',
         url: `/items/${collection}/${id}`,
-        data,
+        data: safeData,
         authToken
       });
     });

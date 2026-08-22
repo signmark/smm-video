@@ -56,7 +56,7 @@ describe('SM-20 Phase A: directusCrud.create preserves client id', () => {
       title: 'X',
       content: 'Y',
       status: 'draft',
-      source: 'ai_generated',
+      content_type: 'ai_generated',
     }, { authToken: 'test-token' });
 
     expect(posts.length).toBe(1);

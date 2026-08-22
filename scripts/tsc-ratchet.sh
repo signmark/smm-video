@@ -29,13 +29,20 @@
 #   tsc-ratchet.sh --update     записать текущее число, если оно не больше планки
 #
 # Переменные окружения (ими же пользуется тест, проходя ТОТ ЖЕ путь, а не его
-# пересказ): RATCHET_REPO, RATCHET_FILE, RATCHET_TSCONFIG, RATCHET_NPX.
+# пересказ): RATCHET_REPO, RATCHET_FILE, RATCHET_TSCONFIG, RATCHET_NPX,
+# RATCHET_LABEL.
+#
+# ПОЧЕМУ У ПЛАНКИ ЕСТЬ ИМЯ (RATCHET_LABEL, 22.08). Тем же скриптом меряется
+# теперь и video-app: у него своя конфигурация и свой файл планки. Логика
+# сравнения должна остаться в одном месте, а вот строка отчёта — нет: «ошибок
+# типизации сервера» под числом от video-app читается как чужой результат.
 set -euo pipefail
 
 REPO="${RATCHET_REPO:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 TSCONFIG="${RATCHET_TSCONFIG:-tsconfig.server-full.json}"
 BASELINE_FILE="${RATCHET_FILE:-$REPO/scripts/tsc-ratchet.baseline}"
 NPX="${RATCHET_NPX:-npx}"
+LABEL="${RATCHET_LABEL:-сервера}"
 
 MODE="check"
 case "${1:-}" in
@@ -139,7 +146,7 @@ if [ "$MODE" = "update" ]; then
   exit 0
 fi
 
-echo "Ошибок типизации сервера: $CURRENT (планка $BASE_COUNT, конфигурация $TSCONFIG)"
+echo "Ошибок типизации $LABEL: $CURRENT (планка $BASE_COUNT, конфигурация $TSCONFIG)"
 
 if [ "$CURRENT" -gt "$BASE_COUNT" ]; then
   echo

@@ -25,17 +25,11 @@ describe('AI-132: generated module freshness', () => {
     const fresh = readFileSync(freshPath, 'utf-8');
 
     // Read the committed file from git
-    let committed: string;
-    try {
-      committed = execSync('git show HEAD:server/data/swagger-spec.ts', {
-        cwd: ROOT,
-        encoding: 'utf-8',
-        timeout: 10000,
-      });
-    } catch {
-      // File not in git yet — first generation
-      return;
-    }
+    const committed = execSync('git show HEAD:server/data/swagger-spec.ts', {
+      cwd: ROOT,
+      encoding: 'utf-8',
+      timeout: 10000,
+    });
 
     expect(fresh).toBe(committed);
   });

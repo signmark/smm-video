@@ -14,9 +14,8 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// Reuse the same options as server/config/swagger.ts
-import { getPublicOrigin, publicUrl } from '../server/utils/public-url';
-
+// Servers are added at runtime (see server/index.ts), not in the generated module.
+// This avoids environment-dependent diffs when regenerating.
 const options: swaggerJSDoc.Options = {
   definition: {
     openapi: '3.0.0',
@@ -25,13 +24,9 @@ const options: swaggerJSDoc.Options = {
       version: '1.0.0',
       description: 'AI-powered Social Media Content Management Platform API.',
       contact: { name: 'SMM Manager Support', email: 'support@nplanner.ru' },
-      license: { name: 'Proprietary', url: publicUrl('/terms') },
+      license: { name: 'Proprietary', url: '/terms' },
     },
-    servers: [
-      { url: 'http://localhost:5000', description: 'Development server' },
-      { url: getPublicOrigin(), description: 'Production server' },
-      { url: 'https://staging.nplanner.ru', description: 'Staging server' },
-    ],
+    // servers: [] — populated at runtime from environment
   },
   apis: [
     './server/swagger-endpoints.ts',

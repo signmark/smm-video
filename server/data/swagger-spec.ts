@@ -15,23 +15,9 @@ export const SWAGGER_SPEC: Record<string, any> = {
     },
     "license": {
       "name": "Proprietary",
-      "url": "https://smm.omemo.tech/terms"
+      "url": "/terms"
     }
   },
-  "servers": [
-    {
-      "url": "http://localhost:5000",
-      "description": "Development server"
-    },
-    {
-      "url": "https://smm.omemo.tech",
-      "description": "Production server"
-    },
-    {
-      "url": "https://staging.nplanner.ru",
-      "description": "Staging server"
-    }
-  ],
   "paths": {
     "/api/debug-fal-ai": {
       "get": {

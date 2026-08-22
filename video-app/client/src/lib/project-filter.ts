@@ -43,12 +43,15 @@ export function isActiveFilter(status: string): boolean {
   return status !== 'done' && status !== 'error';
 }
 
-export function filterAndSortProjects(
-  projects: ProjectForFilter[],
+/** Generic in the project type: filtering and sorting must not strip fields the
+ *  caller added on top of ProjectForFilter, or the result stops being usable as
+ *  the caller's own project. */
+export function filterAndSortProjects<T extends ProjectForFilter>(
+  projects: T[],
   search: string,
   statusFilter: StatusFilter,
   sortOrder: SortOrder,
-): ProjectForFilter[] {
+): T[] {
   let result = projects;
 
   // Search filter

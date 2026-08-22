@@ -213,14 +213,14 @@ function ProjectCard({ project: p, onClick, onResume, onRestart, onDelete, delet
   let activeStepLabel = '';
   if (isActive) {
     const steps = getStepStates(p.status, p.progress);
-    const current = steps.find((s) => s.state === 'current');
-    if (current) activeStepLabel = current.label;
+    const currentIdx = steps.indexOf('current');
+    if (currentIdx >= 0) activeStepLabel = PIPELINE_STEPS[currentIdx].label;
   }
 
   // For error projects, show which step failed
   let errorStepLabel = '';
   if (isError) {
-    const errorStep = getErrorStep(p.progress);
+    const errorStep = getErrorStep(p.status, p.progress);
     if (errorStep >= 0 && errorStep < PIPELINE_STEPS.length) {
       errorStepLabel = PIPELINE_STEPS[errorStep].label;
     }

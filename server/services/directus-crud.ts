@@ -10,7 +10,7 @@ import axios, { AxiosRequestConfig } from 'axios';
 import { DirectusAuthResult, DirectusRequestOptions } from './directus-types';
 import { adminTokenManager } from './admin-token-manager';
 import { logEvent } from '../utils/logger';
-import { guardWriteData } from './directus-schema-guard';
+import { guardWriteData, guardReadParams, isKnownCollection, getKnownCollections, DirectusUnknownCollectionError } from './directus-schema-guard';
 
 /**
  * AI-65, этап 3. Граница с Directus — то место, через которое ходит почти всё,
@@ -327,15 +327,43 @@ export class DirectusCrud {
    * Получает список записей
    */
   async list<T>(collection: string, options: DirectusRequestOptions = {}): Promise<T[]> {
+    // AI-132 slice 2: validate field names BEFORE the retry loop, mirroring
+    // how `create` runs the write-side guard outside `executeWithRetry`.
+    // Production = log, test/dev = throw. See directus-schema-guard.ts for
+    // the skip-list (operators, wildcards, etc.). Inside the loop the same
+    // request would log up to four identical violation entries on 5xx
+    // retries — not a behaviour we want in prod.
+    const params = this.buildParams(options);
+    guardReadParams(collection, params);
     return this.executeWithRetry('list', collection, async () => {
       const authToken = await this.resolveToken(options, 'list', collection);
-      const params = this.buildParams(options);
-      return this.executeRequest<T[]>({
-        method: 'get',
-        url: `/items/${collection}`,
-        params,
-        authToken
-      });
+      try {
+        return await this.executeRequest<T[]>({
+          method: 'get',
+          url: `/items/${collection}`,
+          params,
+          authToken
+        });
+      } catch (error: any) {
+        // AI-132 slice 2: 403 disambiguation.
+        //
+        // Measured, not assumed (22.08):
+        // a live service token against this Directus returns BYTE-IDENTICAL
+        // 403 responses for a non-existent collection and for an existing
+        // but closed one (`directus_sessions`). Both are
+        //   403 {"errors":[{"message":"You don't have permission to access this.",
+        //                    "extensions":{"code":"FORBIDDEN"}}]}
+        // Distinguishing them by response body is impossible. The schema
+        // snapshot is the only tool we have: if we know the collection, the
+        // operator needs to fix permissions; if we don't, the developer
+        // needs to fix a typo.
+        if (error.response?.status === 403 && !isKnownCollection(collection)) {
+          const all = [...getKnownCollections()];
+          const sample = all.slice(0, 20);
+          throw new DirectusUnknownCollectionError(collection, sample);
+        }
+        throw error;
+      }
     });
   }
 

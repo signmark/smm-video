@@ -3,6 +3,7 @@ import { navigate } from '../App';
 import { API } from '../api';
 import { PIPELINE_STEPS, getStepStates, getErrorStep, type StepState } from '../lib/progress-steps';
 import { getFileStatus } from '../lib/file-status';
+import { statusLabel, statusColor } from '../lib/status-labels';
 import { CheckCircle2, Loader2, AlertTriangle, Clock, ListChecks, Download, RotateCcw } from 'lucide-react';
 
 // ── Token refresh logic (mirrors main app's refreshAuth.ts) ─────────────────
@@ -319,30 +320,6 @@ interface VideoProject {
   hasFile?: boolean;
   retentionDays?: number;
 }
-
-const STATUS_LABELS: Record<string, string> = {
-  idle: 'Ожидание',
-  generating_script: 'Генерация сценария...',
-  searching_stock: '🔍 Подбираю стоки...',
-  script_ready: 'Сценарий готов',
-  generating_images: 'Генерация изображений',
-  animating: 'Анимация клипов',
-  assembling: 'Рендеринг видео',
-  done: 'Готово',
-  error: 'Ошибка',
-};
-
-const STATUS_COLORS: Record<string, string> = {
-  idle: 'var(--text-muted)',
-  generating_script: 'var(--yellow)',
-  searching_stock: '#38bdf8',
-  script_ready: '#a78bfa',
-  generating_images: 'var(--blue)',
-  animating: '#60a5fa',
-  assembling: 'var(--accent-light)',
-  done: 'var(--green)',
-  error: 'var(--red)',
-};
 
 const T2V_MODELS = ['wan-t2v', 'kling-t2v', 'kling-pro-t2v', 'luma', 'seedance-t2v', 'chain'];
 
@@ -905,6 +882,15 @@ export default function VideoDetail({ id }: { id: string }) {
   const isDone = project.status === 'done';
   const isError = project.status === 'error';
   const isT2V = T2V_MODELS.includes(project.animationModel);
+  // Одна и та же формулировка про пропавший файл на обоих экранах, и она
+  // называет настоящую причину: сроком хранения удаляются только ролики
+  // старше срока, всё остальное пропало иначе.
+  const missingLabel = getFileStatus(
+    project.status,
+    project.hasFile ?? false,
+    project.createdAt,
+    project.retentionDays,
+  ).missingLabel;
 
   return (
     <div style={{ maxWidth: 720, margin: '0 auto' }}>
@@ -979,8 +965,8 @@ export default function VideoDetail({ id }: { id: string }) {
       <div style={{ background: 'var(--bg-card)', border: `1px solid ${isScriptReady ? 'rgba(167,139,250,0.3)' : 'var(--border)'}`, borderRadius: 'var(--radius)', overflow: 'hidden', marginBottom: 24 }}>
         <div style={{ padding: '20px 20px 16px', borderBottom: '1px solid var(--border)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-            <span style={{ fontWeight: 600, fontSize: 15, color: STATUS_COLORS[project.status] }}>
-              {STATUS_LABELS[project.status] || project.status}
+            <span style={{ fontWeight: 600, fontSize: 15, color: statusColor(project.status) }}>
+              {statusLabel(project.status)}
             </span>
             {isError ? (
               <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--red)', background: 'rgba(239,68,68,0.1)', padding: '2px 8px', borderRadius: 4 }}>ОШИБКА</span>
@@ -1099,7 +1085,7 @@ export default function VideoDetail({ id }: { id: string }) {
           <div>
             {fileMissing ? (
               <>
-                <div style={{ fontWeight: 600, color: 'var(--red)', display: 'flex', alignItems: 'center', gap: 6 }}><AlertTriangle size={16} /> Файл удалён по сроку хранения</div>
+                <div style={{ fontWeight: 600, color: 'var(--red)', display: 'flex', alignItems: 'center', gap: 6 }}><AlertTriangle size={16} /> {missingLabel ?? 'Файла нет'}</div>
                 <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>Нажмите «Перегенерировать» — сценарий сохранён.</div>
               </>
             ) : (

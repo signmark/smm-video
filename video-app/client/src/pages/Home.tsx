@@ -13,6 +13,7 @@ import {
 } from '../lib/project-filter';
 import { getStepStates, getErrorStep, PIPELINE_STEPS } from '../lib/progress-steps';
 import { getFileStatus, DEFAULT_RETENTION_DAYS } from '../lib/file-status';
+import { statusLabel, statusColor } from '../lib/status-labels';
 
 interface VideoProject extends ProjectForFilter {
   progress: number;
@@ -24,29 +25,15 @@ interface VideoProject extends ProjectForFilter {
   retentionDays?: number;
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  idle: 'Ожидание',
-  generating_script: 'Скрипт...',
-  generating_images: 'Изображения...',
-  assembling: 'Рендер...',
-  done: 'Готово',
-  error: 'Ошибка',
-};
-
-const STATUS_COLOR: Record<string, string> = {
-  idle: '#555',
-  generating_script: '#f59e0b',
-  generating_images: '#3b82f6',
-  assembling: '#a78bfa',
-  done: '#22c55e',
-  error: '#ef4444',
-};
-
 function FormatIcon({ format }: { format: string }) {
   if (format === '9:16') return <Smartphone size={16} style={{ color: 'var(--text-muted)' }} />;
   if (format === '16:9') return <Monitor size={16} style={{ color: 'var(--text-muted)' }} />;
   return <Square size={16} style={{ color: 'var(--text-muted)' }} />;
 }
+
+/** Цвет состояния «нужно пересобрать»: не зелёный (не готово) и не красный
+ *  (ничего не сломалось) — работа просто не доведена до конца. */
+const REBUILD_COLOR = '#f59e0b';
 
 export default function Home() {
   const [projects, setProjects] = useState<VideoProject[]>([]);
@@ -208,6 +195,13 @@ function ProjectCard({ project: p, onClick, onResume, onRestart, onDelete, delet
   const isError = p.status === 'error';
   const fileStatus = getFileStatus(p.status, p.hasFile ?? false, p.createdAt, p.retentionDays ?? DEFAULT_RETENTION_DAYS);
   const { isDone, fileMissing, expiryLabel, expiryUrgent } = fileStatus;
+  /**
+   * Готовый проект, у которого файла уже нет, — не готовое видео. Решение
+   * владельца 22.08: такая карточка не должна изображать готовый ролик
+   * (кадр, «Готово», скачивание); от неё нужна ровно одна вещь — пересобрать.
+   * Сценарий и настройки сохранены, поэтому пересборка идёт с того же места.
+   */
+  const needsRebuild = fileMissing;
 
   // For active projects, show current step from progress-steps
   let activeStepLabel = '';
@@ -251,7 +245,7 @@ function ProjectCard({ project: p, onClick, onResume, onRestart, onDelete, delet
     >
       {/* Thumbnail / status placeholder */}
       <div style={{ position: 'relative', width: '100%', paddingTop: '56.25%', background: 'var(--bg-card2)' }}>
-        {isDone ? (
+        {isDone && !needsRebuild ? (
           <>
             <img
               src={`${API}/videos/${p.id}/thumbnail`}
@@ -282,7 +276,13 @@ function ProjectCard({ project: p, onClick, onResume, onRestart, onDelete, delet
                 <span style={{ fontSize: 12, color: '#ef4444' }}>{errorStepLabel || 'Ошибка'}</span>
               </>
             )}
-            {!isActive && !isError && (
+            {needsRebuild && (
+              <>
+                <RotateCcw size={24} style={{ color: 'var(--text-muted)' }} />
+                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Видео не сохранилось</span>
+              </>
+            )}
+            {!isActive && !isError && !needsRebuild && (
               <Film size={24} style={{ color: 'var(--text-muted)' }} />
             )}
           </div>
@@ -308,12 +308,12 @@ function ProjectCard({ project: p, onClick, onResume, onRestart, onDelete, delet
           <span
             style={{
               padding: '2px 8px', borderRadius: 999, fontSize: 11, fontWeight: 600,
-              background: STATUS_COLOR[p.status] + '22',
-              color: STATUS_COLOR[p.status],
-              border: `1px solid ${STATUS_COLOR[p.status]}44`,
+              background: (needsRebuild ? REBUILD_COLOR : statusColor(p.status)) + '22',
+              color: needsRebuild ? REBUILD_COLOR : statusColor(p.status),
+              border: `1px solid ${needsRebuild ? REBUILD_COLOR : statusColor(p.status)}44`,
             }}
           >
-            {STATUS_LABEL[p.status] || p.status}
+            {needsRebuild ? 'Нужно пересобрать' : statusLabel(p.status)}
           </span>
           <span style={{ fontSize: 11, color: 'var(--text-dim)' }}>
             {p.duration}с
@@ -323,15 +323,21 @@ function ProjectCard({ project: p, onClick, onResume, onRestart, onDelete, delet
               <Trash2 size={10} /> {expiryLabel}
             </span>
           )}
-          {fileMissing && (
-            <span style={{ fontSize: 11, color: '#ef4444', display: 'flex', alignItems: 'center', gap: 3 }}>
-              <AlertTriangle size={10} /> файл удалён по сроку хранения
-            </span>
-          )}
+
         </div>
 
         {/* Actions row */}
         <div style={{ display: 'flex', gap: 6, marginTop: 4 }} onClick={(e) => e.stopPropagation()}>
+          {needsRebuild && (
+            <button
+              data-testid={`button-rebuild-${p.id}`}
+              onClick={onRestart}
+              title="Сгенерировать видео заново из сохранённого сценария"
+              style={{ fontSize: 11, padding: '4px 8px', borderRadius: 4, border: 'none', background: '#4c1d95', color: '#fff', cursor: 'pointer', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}
+            >
+              <RotateCcw size={10} /> Сгенерировать заново
+            </button>
+          )}
           {isError && (
             <>
               <button

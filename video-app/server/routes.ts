@@ -719,10 +719,9 @@ router.post('/videos/:id/save-to-campaign', async (req, res) => {
       } catch { /* ignore */ }
     }
 
-    // Try to upload video to S3 for a permanent URL; fall back to local URL if unavailable
-    let videoUrl: string = appUrl
-      ? `${appUrl}${project.videoUrl}`
-      : (project.videoUrl || '');
+    // Upload video to S3 for a permanent URL. If upload fails, reject the save
+    // rather than silently writing a local link that will stop working.
+    let videoUrl: string | null = null;
 
     const localVideoPath = DATA_PATHS.videoFile(req.params.id);
     const fileExists = existsSync(localVideoPath);
@@ -734,11 +733,14 @@ router.post('/videos/:id/save-to-campaign', async (req, res) => {
         const s3Result = await uploadVideoToS3(localVideoPath, req.params.id);
         videoUrl = s3Result.url;
         console.log(`[save-to-campaign] Uploaded to S3: ${videoUrl}`);
-      } catch (s3Err: any) {
-        console.error(`[save-to-campaign] S3 upload FAILED: ${s3Err.message}`, s3Err.stack || '');
+      } catch (s3Err: unknown) {
+        const msg = s3Err instanceof Error ? s3Err.message : String(s3Err);
+        console.error(`[save-to-campaign] S3 upload FAILED: ${msg}`);
+        return res.status(502).json({ error: `S3 upload failed: ${msg}` });
       }
     } else {
       console.warn(`[save-to-campaign] Video file not found at ${localVideoPath}`);
+      return res.status(404).json({ error: 'Video file not found on disk' });
     }
 
     // Build content text from scene narrations/texts + topic prompt

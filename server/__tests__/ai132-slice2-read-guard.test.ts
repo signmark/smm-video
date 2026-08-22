@@ -73,7 +73,7 @@ describe('AI-132 slice 2: validateReadParams (filter/sort/fields)', () => {
   });
 
   it('accepts point paths in filter (campaign_id.name) — HEAD is checked, tail is opaque', () => {
-    // Per @Clause_Dev_Hermi 22.08 13:15: Directus lets you filter by a relation
+    // Review decision, 22.08: Directus lets you filter by a relation
     // path. We accept the head segment of `campaign_id.name` (campaign_id is
     // a real field on campaign_content) and skip the tail because the snapshot
     // does not know relation targets. A bogus head must still be caught.
@@ -138,7 +138,7 @@ describe('AI-132 slice 2: validateReadParams (filter/sort/fields)', () => {
   });
 
   it('validates deep — first segment must exist on parent collection', () => {
-    // Per @Clause_Dev_Hermi 22.08 13:15: `deep` is not validated at all.
+    // Review decision, 22.08: `deep` is not validated at all.
     // The check was dropped because the snapshot has no relation targets,
     // the form of `deep` differs from what was assumed (no `fields` key,
     // only `_filter`/`_sort`/`_limit`), and no `deep` argument is passed
@@ -324,7 +324,7 @@ describe('AI-132 slice 2: list() integration', () => {
   });
 
   it('list() guardReadParams вызывается ОДИН РАЗ даже при ретраях (mutation: move guard inside executeWithRetry -> red)', async () => {
-    // Per @Clause_Dev_Hermi 22.08 13:15: guard must live OUTSIDE
+    // Review decision, 22.08: guard must live OUTSIDE
     // executeWithRetry, otherwise a 502/503 retry would produce up to four
     // identical violation entries in prod. We assert by counting logger
     // calls with a typo-bearing query on a retried request.

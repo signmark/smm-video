@@ -1,3 +1,4 @@
+import { existsSync } from 'fs';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -586,5 +587,19 @@ export const DATA_PATHS = {
   imagesDir: (projectId: string) => path.join(DATA_DIR, 'images', projectId),
   videoFile: (projectId: string) => path.join(DATA_DIR, 'videos', `${projectId}.mp4`),
 };
+
+/** How long finished videos are kept. Read once, in one place: both the
+ *  cleanup job and the API answer must mean the same number of days. */
+export const RETENTION_DAYS = parseInt(process.env.VIDEO_RETENTION_DAYS ?? '30', 10);
+
+/** Does the finished file of this project exist?
+ *
+ *  Takes the project rather than its id so the check answers the question the
+ *  caller actually has: download and thumbnail serve `videoPath`, so that is
+ *  what must exist. The derived path is only a fallback for rows written before
+ *  `videoPath` was stored. */
+export function hasVideoFile(project: { id: string; videoPath?: string }): boolean {
+  return existsSync(project.videoPath ?? DATA_PATHS.videoFile(project.id));
+}
 
 ensureDataDir().catch(() => {});
